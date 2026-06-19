@@ -82,6 +82,28 @@ def test_rewriter_falls_back_to_code_fence():
     assert d.payload["content"] == "print('hi')\n"
 
 
+class RecordingLlm:
+    """Captures the LlmRequest so we can assert sampling params are forwarded."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self.last_req = None
+
+    def complete(self, req):
+        self.last_req = req
+        from jaros.llm import LlmResponse
+        return LlmResponse(text=self._text, model="rec")
+
+
+def test_rewriter_forwards_temperature_and_seed():
+    mod = _load_agent("rewriter_agent.py")
+    rec = RecordingLlm("<<<FILE\nx = 1\nFILE>>>")
+    agent = mod.build(rec)
+    agent.decide({"path": "a.py", "content": "", "instruction": "x",
+                  "temperature": 0.6, "seed": 3})
+    assert rec.last_req.params == {"temperature": 0.6, "seed": 3}
+
+
 # --- REQ-2 commander -------------------------------------------------------
 
 def test_commander_emits_shell_exec():

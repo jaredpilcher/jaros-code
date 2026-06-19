@@ -63,8 +63,17 @@ class RewriterBoundary:
         feedback_text = (ctx.get("feedback", "") or "")[:1500]
         feedback = _FEEDBACK.format(feedback=feedback_text) if feedback_text.strip() else ""
 
+        # Optional sampling controls: the loop escalates temperature on retries so a
+        # deterministically-wrong first answer can be escaped (still local gemma2:2b).
+        params = {}
+        if "temperature" in ctx:
+            params["temperature"] = ctx["temperature"]
+        if "seed" in ctx:
+            params["seed"] = ctx["seed"]
+
         reply = self._llm.complete(LlmRequest(prompt=_PROMPT.format(
-            instruction=instruction, path=path, content=content, feedback=feedback))).text
+            instruction=instruction, path=path, content=content, feedback=feedback),
+            params=params)).text
         new_content = parse_file(reply)
 
         if new_content is None or not new_content.strip():
