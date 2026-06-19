@@ -90,10 +90,12 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
     solved_n = sum(1 for t in per_task if t["solved"])
     total = len(per_task)
     per_tier, frontier, too_easy = _tier_stats(per_task)
+    from harness.report import census  # growth census (agents/tools/evals/specs)
     scorecard = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "suite": suite,
         "model": MODEL,
+        "census": census(),
         "maxIters": max_iters,
         "passRate": round(solved_n / total, 4) if total else 0.0,
         "solved": solved_n,
@@ -160,6 +162,7 @@ def _persist(scorecard: dict) -> None:
         json.dumps(scorecard, indent=2), encoding="utf-8")
     summary = {k: scorecard[k] for k in
                ("timestamp", "suite", "model", "passRate", "solved", "total", "elapsedSec")}
+    summary["census"] = scorecard.get("census")
     with open(HISTORY, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(summary) + "\n")
 

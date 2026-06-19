@@ -18,6 +18,26 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / ".jaros-data" / "artifacts" / "eval"
 HISTORY = ARTIFACTS / "history.jsonl"
 REPORT_MD = ARTIFACTS / "REPORT.md"
+AGENTS_DIR = ROOT / ".jaros-data" / "agents"
+TOOLS_DIR = ROOT / ".jaros-data" / "tools"
+EVALS_DIR = ROOT / "evals" / "coding_tasks"
+SPECS_DIR = ROOT / ".jarify"
+
+# The swarm goal (PRIME-001): hundreds -> thousands -> tens of thousands.
+SWARM_GOAL = 10000
+
+
+def census() -> dict:
+    """Count the system's agents, tools, eval tasks, and specs. Success is visible
+    only as these COUNTS rising (toward the swarm goal) with improving quality."""
+    def count_py(d: Path) -> int:
+        return len([p for p in d.glob("*.py") if not p.name.startswith("_")]) if d.exists() else 0
+    return {
+        "agents": count_py(AGENTS_DIR),
+        "tools": count_py(TOOLS_DIR),
+        "evals": len(list(EVALS_DIR.glob("*.json"))) if EVALS_DIR.exists() else 0,
+        "specs": len([p for p in SPECS_DIR.glob("EXT-*") if p.is_dir()]) if SPECS_DIR.exists() else 0,
+    }
 
 
 def wilson_interval(solved: int, total: int, z: float = 1.96) -> tuple[float, float]:
@@ -60,8 +80,20 @@ def build_report() -> dict:
     suites = sorted({r.get("suite", "authored") for r in trend} | {sc.get("suite", "authored")})
     has_real = "humaneval" in suites
 
-    headline = (f"jaros-code {solved}/{total}={pct}% (95% CI {round(lo*100)}-{round(hi*100)}%) "
-                f"frontier t{sc.get('frontierTier')} | gemma2:2b vs Opus4.8=100%")[:199]
+    # Growth census: counts must rise over time (with quality). Compare to the
+    # earliest recorded census so the owner sees agents/tools/evals increasing.
+    now_c = census()
+    first_c = next((r["census"] for r in trend if isinstance(r.get("census"), dict)), None)
+
+    def _delta(key: str) -> str:
+        if not first_c:
+            return ""
+        d = now_c[key] - first_c.get(key, 0)
+        return f" (+{d})" if d > 0 else (f" ({d})" if d < 0 else " (=)")
+
+    headline = (f"jaros-code A{now_c['agents']} T{now_c['tools']} E{now_c['evals']} | "
+                f"{solved}/{total}={pct}% (CI {round(lo*100)}-{round(hi*100)}%) "
+                f"frontier t{sc.get('frontierTier')} | vs Opus4.8=100%")[:199]
 
     lines = []
     lines.append(f"# jaros-code convergence report")
@@ -74,6 +106,12 @@ def build_report() -> dict:
     for t in tiers:
         td = sc["perTier"][t]
         lines.append(f"  - tier {t}: {td['solved']}/{td['total']}  ({round(td['passRate']*100)}%)")
+    lines.append(f"\n## Growth toward the swarm (must increase, with quality)")
+    lines.append(f"- **Agents: {now_c['agents']}{_delta('agents')}**  ·  "
+                 f"**Tools: {now_c['tools']}{_delta('tools')}**  ·  "
+                 f"**Evals: {now_c['evals']}{_delta('evals')}**  ·  Specs: {now_c['specs']}{_delta('specs')}")
+    lines.append(f"- Goal: hundreds → thousands → tens of thousands "
+                 f"(swarm target ~{SWARM_GOAL:,} agents/tools/evals). Prune what doesn't help; net up.")
     lines.append(f"\n## Measurement accuracy (tightening)")
     lines.append(f"- Tasks measured: **{total}**  ·  tiers: **{len(tiers)}**  ·  CI width: **{ci_w}pts** (smaller = more accurate)")
     lines.append(f"- Real public benchmark included: **{'yes (HumanEval)' if has_real else 'not yet'}**")
@@ -90,6 +128,7 @@ def build_report() -> dict:
         "frontierTier": sc.get("frontierTier"), "tooEasy": sc.get("tooEasy"),
         "tasks": total, "tiers": len(tiers), "hasRealBenchmark": has_real,
         "perTier": sc.get("perTier", {}),
+        "census": now_c,
     }
 
 

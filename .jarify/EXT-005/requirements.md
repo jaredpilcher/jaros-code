@@ -77,6 +77,30 @@ breadth increasing. A short headline is pushable to the owner's phone.
 - [ ] Report coverage (number of tasks, tiers, whether real benchmarks are included)
 - [ ] Render a markdown report and a <200-char headline suitable for a push notification
 
+### [REQ-8] Scheduled phone reports with quiet hours
+
+The supervisor pushes a phone report on a fixed cadence (default every 30 min) but
+NEVER during quiet hours (default 02:00–08:00 local). The gating is deterministic and
+testable; the last-push time is persisted so cadence holds across cycles.
+
+#### Acceptance Criteria
+- [ ] `in_quiet_hours` is true for 02:00–07:59 local and false otherwise
+- [ ] `should_push` returns false during quiet hours regardless of elapsed time
+- [ ] Outside quiet hours, `should_push` is true only when >= interval since last push
+- [ ] The last-push timestamp is persisted and re-read across supervisor cycles
+
+### [REQ-9] Growth census (agents, tools, evals increasing)
+
+The report counts the system's agents, tools, eval tasks, and specs, and shows their
+growth over time — because success is visible only as these COUNTS increasing (toward
+the thousands/tens-of-thousands swarm goal) alongside improving quality.
+
+#### Acceptance Criteria
+- [ ] Count single-purpose agents, deterministic tools, eval tasks, and EXT specs
+- [ ] Persist the census each run so the growth trend is recorded
+- [ ] The report shows current counts, their change vs the first recorded run, and the goal
+- [ ] The headline includes the counts so increasing agents/tools/evals is visible at a glance
+
 ### [REQ-7] Continuous always-on operation
 
 The harness runs continuously (forever), perpetually exercising itself over the suite
