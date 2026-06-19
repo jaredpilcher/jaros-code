@@ -1,0 +1,10 @@
+{
+  "id": "csv_parse",
+  "tier": 3,
+  "intent": "Build parse_csv(text): the first line is a comma-separated header row; each following non-empty line is a data row of comma-separated values. Return a list of dicts, one per data row, mapping each header name to the corresponding value (values stay as strings). Assume no quoting or escaping. parse_csv('a,b\\n1,2') returns [{'a': '1', 'b': '2'}].",
+  "target": "csv_parse.py",
+  "func": "parse_csv",
+  "signature": "def parse_csv(text):",
+  "test_cmd": "python -m pytest -q",
+  "oracle_test": "from csv_parse import parse_csv\n\n\ndef test_oracle():\n    assert parse_csv('a,b\\n1,2\\n3,4') == [{'a': '1', 'b': '2'}, {'a': '3', 'b': '4'}]\n    assert parse_csv('name\\nAda') == [{'name': 'Ada'}]\n    assert parse_csv('x,y,z\\n1,2,3') == [{'x': '1', 'y': '2', 'z': '3'}]\n"
+}

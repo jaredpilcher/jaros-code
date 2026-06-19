@@ -1,0 +1,16 @@
+{
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/test_writer_agent.py",
+      "startLine": 1,
+      "endLine": 80
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 1,
+      "endLine": 110
+    }
+  ]
+}

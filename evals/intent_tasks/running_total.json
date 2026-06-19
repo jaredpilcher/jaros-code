@@ -1,0 +1,10 @@
+{
+  "id": "running_total",
+  "tier": 2,
+  "intent": "Build running_total(nums): given a list of numbers, return a new list where element i is the sum of nums[0] through nums[i] (a running cumulative sum). For example running_total([1, 2, 3]) returns [1, 3, 6]. An empty list returns an empty list.",
+  "target": "running_total.py",
+  "func": "running_total",
+  "signature": "def running_total(nums):",
+  "test_cmd": "python -m pytest -q",
+  "oracle_test": "from running_total import running_total\n\n\ndef test_oracle():\n    assert running_total([1, 2, 3]) == [1, 3, 6]\n    assert running_total([]) == []\n    assert running_total([5]) == [5]\n    assert running_total([-1, 1, -1]) == [-1, 0, -1]\n    assert running_total([10, 0, 0]) == [10, 10, 10]\n"
+}
