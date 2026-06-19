@@ -184,7 +184,18 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # 1) reasoning: editor proposes one exact edit (gemma2:2b). On retries it
         # gets the previous failure output as feedback, so it can correct itself
         # (greedy decoding alone would just repeat the same mistake).
-        content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
+        # Wire the fs.read TOOL: the agent's content comes through a recorded tool
+        # decision (decision log stays complete; fs.read is a used wiring, not orphan).
+        content = ""
+        if target_path.is_file():
+            try:
+                rres = rt.apply(create_decision(
+                    id=f"read-{uuid.uuid4().hex}", source="orchestrator",
+                    type="fs.read", payload={"path": str(target)}))
+                if isinstance(rres, dict):
+                    content = rres.get("content", "") or ""
+            except RuntimeError:
+                content = target_path.read_text(encoding="utf-8")
         # Wire the py.symbols TOOL into the agent's context: run the deterministic
         # tool through the runtime and feed its structure summary to the rewriter.
         symbols = ""
@@ -221,11 +232,18 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
             _v(_step, "apply", f"\033[31mrejected\033[0m: {exc}")
             continue
 
-        # 1b) deterministic syntax guard: a broken .py can never import, so catch it
-        # now and feed the exact SyntaxError back next round (don't waste a test run).
+        # 1b) deterministic syntax guard via the py.check TOOL: a broken .py can never
+        # import, so catch it now and feed the exact SyntaxError back next round (don't
+        # waste a test run). Wiring the py.check tool keeps it a used, non-orphan verb.
         if str(target).endswith(".py") and target_path.is_file():
-            serr = python_syntax_error(target_path.read_text(encoding="utf-8"))
-            if serr:
+            try:
+                cres = rt.apply(create_decision(
+                    id=f"chk-{uuid.uuid4().hex}", source="orchestrator",
+                    type="py.check", payload={"path": str(target)}))
+            except RuntimeError:
+                cres = None
+            if isinstance(cres, dict) and cres.get("valid") is False:
+                serr = f"line {cres.get('line')}: {cres.get('error')}"
                 last_output = f"SyntaxError: {serr}"
                 _v(_step, "py.check", f"\033[31msyntax error\033[0m {serr}")
                 continue
