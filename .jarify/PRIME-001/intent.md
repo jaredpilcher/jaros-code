@@ -4,6 +4,17 @@
 match or exceed Claude Code at real coding work **while every reasoning call is
 served by a single small local model — Ollama `gemma2:2b` — at zero inference cost.**
 
+**The bar is explicit and high: the system must become so good that it overcomes
+the model limitations of `gemma2:2b` and reaches the quality of Claude Code running
+on Claude Opus 4.8.** The harness — not the model — closes that gap. We do not get
+to claim we are near the bar; we have to *prove* it. So this system is built
+together with a growing suite of **tests and evaluations** that measure, run over
+run, whether we are getting closer to Claude-Code-on-Opus-4.8 parity on real coding
+tasks. We both author our own task evals *and* run existing public coding
+benchmarks where they exist (e.g. SWE-bench / SWE-bench-Verified, HumanEval/MBPP,
+Aider's edit benchmark) so the bar is an external, recognized one — not a yardstick
+we drew ourselves. Progress is the benchmark trend, not a feeling.
+
 The wager behind this system: *small models have not been useful for development
 because their harnesses are thin, not because the models are incapable.* A
 deterministic, reproducible, capability-safe harness that decomposes development
