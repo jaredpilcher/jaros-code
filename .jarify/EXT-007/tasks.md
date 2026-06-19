@@ -64,6 +64,21 @@ A tiny single-purpose router so surgical edits are used on large files.
 #### Implements
 - [REQ-2] Net growth with quality
 
+### [TASK-8] Wire agents to use tools (and safety-gate generated code)
+
+Agents must use the deterministic tools when they need information, and the
+generated code must itself be safe. This is an ongoing, growing responsibility.
+
+#### Steps
+1. Safety-gate generated code in code.write_file / code.apply_patch (DONE — EXT-001/REQ-11).
+2. Wire py.symbols output into the rewriter's context (DONE).
+3. Grow wiring: feed fs.grep/fs.read/fs.find context to agents for multi-file tasks;
+   add a navigator agent that emits fs.find/fs.grep to locate code; have agents
+   recommend which tool to use next. Add tests for each wiring.
+
+#### Implements
+- [REQ-2] Net growth with quality
+
 ### [TASK-7] Per-agent/eval usefulness metric + prune
 
 Measure which agents/tools/evals contribute; remove dead weight (record why).

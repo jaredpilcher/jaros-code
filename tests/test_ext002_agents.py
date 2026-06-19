@@ -104,6 +104,17 @@ def test_rewriter_forwards_temperature_and_seed():
     assert rec.last_req.params == {"temperature": 0.6, "seed": 3}
 
 
+def test_rewriter_uses_py_symbols_context():
+    # The agent is wired to use the py.symbols tool output passed by the loop.
+    mod = _load_agent("rewriter_agent.py")
+    rec = RecordingLlm("<<<FILE\nx = 1\nFILE>>>")
+    agent = mod.build(rec)
+    agent.decide({"path": "a.py", "content": "x = 0\n", "instruction": "set x=1",
+                  "symbols": "greet(function)"})
+    assert "py.symbols" in rec.last_req.prompt
+    assert "greet(function)" in rec.last_req.prompt
+
+
 # --- REQ-2 commander -------------------------------------------------------
 
 def test_commander_emits_shell_exec():

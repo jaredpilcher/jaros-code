@@ -158,11 +158,23 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # gets the previous failure output as feedback, so it can correct itself
         # (greedy decoding alone would just repeat the same mistake).
         content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
+        # Wire the py.symbols TOOL into the agent's context: run the deterministic
+        # tool through the runtime and feed its structure summary to the rewriter.
+        symbols = ""
+        if str(target).endswith(".py") and target_path.is_file():
+            try:
+                sres = rt.apply(create_decision(
+                    id=f"sym-{uuid.uuid4().hex}", source="orchestrator",
+                    type="py.symbols", payload={"path": str(target)}))
+                if isinstance(sres, dict) and sres.get("symbols"):
+                    symbols = ", ".join(f"{s['name']}({s['kind']})" for s in sres["symbols"])
+            except RuntimeError:
+                pass
         # Attempt 1 is greedy (temp 0, repeatable). Retries escalate temperature and
         # vary the seed so a deterministically-wrong answer can be escaped.
         temperature = 0.0 if r == 1 else min(0.8, 0.3 * (r - 1))
         [edit] = editor.decide({"path": str(target), "content": content,
-                                "instruction": instruction,
+                                "instruction": instruction, "symbols": symbols,
                                 "feedback": last_output if r > 1 else "",
                                 "temperature": temperature, "seed": r})
         if edit.type == "code.apply_patch":

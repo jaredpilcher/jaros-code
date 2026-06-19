@@ -28,6 +28,7 @@ _PROMPT = (
     "Keep everything that is correct; change only what the instruction requires. Do not explain.\n\n"
     "INSTRUCTION: {instruction}\n"
     "{feedback}"
+    "{symbols}"
     "\nCURRENT FILE ({path}):\n{content}\n"
 )
 
@@ -35,6 +36,9 @@ _FEEDBACK = (
     "\nYour PREVIOUS attempt did not work. Here is the failure output — fix the cause:\n"
     "{feedback}\n"
 )
+
+# Structure surfaced by the py.symbols tool (EXT-001) — the agent is wired to use it.
+_SYMBOLS = "\nFILE STRUCTURE (from the py.symbols tool): {symbols}\n"
 
 _FILE_RE = re.compile(r"<<<FILE\r?\n(.*?)\r?\nFILE>>>", re.S)
 _FENCE_RE = re.compile(r"```(?:[\w+-]*\r?\n)?(.*?)```", re.S)
@@ -62,6 +66,8 @@ class RewriterBoundary:
         instruction = ctx.get("instruction", "")
         feedback_text = (ctx.get("feedback", "") or "")[:1500]
         feedback = _FEEDBACK.format(feedback=feedback_text) if feedback_text.strip() else ""
+        symbols_text = (ctx.get("symbols", "") or "")[:500]
+        symbols = _SYMBOLS.format(symbols=symbols_text) if symbols_text.strip() else ""
 
         # Optional sampling controls: the loop escalates temperature on retries so a
         # deterministically-wrong first answer can be escaped (still local gemma2:2b).
@@ -72,7 +78,8 @@ class RewriterBoundary:
             params["seed"] = ctx["seed"]
 
         reply = self._llm.complete(LlmRequest(prompt=_PROMPT.format(
-            instruction=instruction, path=path, content=content, feedback=feedback),
+            instruction=instruction, path=path, content=content,
+            feedback=feedback, symbols=symbols),
             params=params)).text
         new_content = parse_file(reply)
 
