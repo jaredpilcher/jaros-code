@@ -1,0 +1,11 @@
+{
+  "id": "json_config",
+  "tier": 2,
+  "instruction": "The config.json is wrong: \"port\" should be the number 9090 (not 8080) and \"debug\" should be the JSON boolean true (not the string \"yes\"). Fix config.json so it is valid JSON with those values.",
+  "target": "config.json",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "config.json": "{\n  \"port\": 8080,\n  \"debug\": \"yes\"\n}\n",
+    "test_config.py": "import json\n\n\ndef test_config():\n    c = json.load(open('config.json'))\n    assert c['port'] == 9090\n    assert c['debug'] is True\n"
+  }
+}

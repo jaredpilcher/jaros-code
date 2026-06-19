@@ -47,6 +47,19 @@ accomplish it, emitting a `shell.exec` Decision. Used to run builds and tests.
 - [ ] Emit a `shell.exec` Decision carrying that command and optional `cwd`
 - [ ] On empty output emit an honest `advance` Decision (events start, fail)
 
+### [REQ-6] config-editor — specialist for config files
+
+A specialist agent `config-editor` (split from the broad rewriter per EXT-007/REQ-6)
+edits CONFIG files (JSON/YAML/INI/TOML) with a config-focused prompt, emitting a
+`code.write_file` Decision. The loop's dispatcher routes config-extension targets to
+it (so it fires); `json.check` guards its JSON edits.
+
+#### Acceptance Criteria
+- [ ] Build a config-focused prompt from `{path, content, instruction}` (+ feedback)
+- [ ] Parse the `<<<FILE ... FILE>>>` block (or code fence) and emit `code.write_file`
+- [ ] On unparseable output emit an honest `advance` Decision (events start, fail)
+- [ ] The loop dispatches config-extension targets to this specialist (it appears in wiringUsage)
+
 ### [REQ-5] navigator — locate code via a tool
 
 An agent named `navigator` decides ONE search term for a task and emits an `fs.grep`

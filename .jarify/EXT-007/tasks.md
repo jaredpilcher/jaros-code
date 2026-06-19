@@ -13,6 +13,11 @@
 - **Fix under test:** raise the runner's default `max_iters` 2→3. MEASURE the next
   full-suite heartbeat; if pass rate does not rise, this hypothesis is wrong — say so
   and try the next lever (real decomposition: a planner/test-reflection agent).
+- **2026-06-19 RESULT (honest WIN, measured):** max_iters 2→3 moved the full-suite
+  pass rate from **12/18=67% → 20/24=83%** (+16pts, on a HARDER 24-task suite, CI
+  40→29pts). The diagnosis was correct: round-1 format/syntax errors needed recovery
+  room. This is real capability improvement, not plumbing. Next lever: split broad
+  agents into specialists (REQ-6) and crack the remaining frontier fails.
 
 
 The supervisor advances one task per cycle (frontier-first), appends new tasks as

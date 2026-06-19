@@ -96,6 +96,19 @@ class Runtime:
 # #EXT-003-REQ-1 End
 
 
+# Specialist dispatch by target type (EXT-007 / REQ-6): config files go to the
+# config-editor specialist; code/other go to the default rewriter. An explicit
+# editor_agent override is always respected.
+_CONFIG_EXTS = {".json", ".yaml", ".yml", ".ini", ".toml", ".cfg"}
+
+
+def select_editor_agent(target: str, editor_agent: str = "rewriter_agent.py") -> str:
+    ext = Path(target).suffix.lower()
+    if editor_agent == "rewriter_agent.py" and ext in _CONFIG_EXTS:
+        return "config_editor_agent.py"
+    return editor_agent
+
+
 def _load_agent(filename: str, llm):
     path = AGENTS_DIR / filename
     spec = importlib.util.spec_from_file_location(f"agent_{path.stem}", path)
@@ -167,9 +180,12 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     """
     rt = Runtime()
     llm = build_llm()
-    editor = _load_agent(editor_agent, llm)
-    test_reader = _load_agent("test_reader_agent.py", llm)
     target_path = Path(target)
+    # Dispatcher (EXT-007/REQ-6): route to the specialist agent by target type.
+    editor = _load_agent(select_editor_agent(target, editor_agent), llm)
+    # Pick the deterministic syntax checker for this file type (py.check / json.check).
+    check_type = {".py": "py.check", ".json": "json.check"}.get(target_path.suffix.lower())
+    test_reader = _load_agent("test_reader_agent.py", llm)
 
     def _v(fn, *a):
         if verbose:
@@ -232,20 +248,20 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
             _v(_step, "apply", f"\033[31mrejected\033[0m: {exc}")
             continue
 
-        # 1b) deterministic syntax guard via the py.check TOOL: a broken .py can never
-        # import, so catch it now and feed the exact SyntaxError back next round (don't
-        # waste a test run). Wiring the py.check tool keeps it a used, non-orphan verb.
-        if str(target).endswith(".py") and target_path.is_file():
+        # 1b) deterministic syntax guard via the dispatched checker (py.check for .py,
+        # json.check for .json): broken syntax can never pass, so catch it now and feed
+        # the exact error back next round. Keeps those tools used, non-orphan verbs.
+        if check_type and target_path.is_file():
             try:
                 cres = rt.apply(create_decision(
                     id=f"chk-{uuid.uuid4().hex}", source="orchestrator",
-                    type="py.check", payload={"path": str(target)}))
+                    type=check_type, payload={"path": str(target)}))
             except RuntimeError:
                 cres = None
             if isinstance(cres, dict) and cres.get("valid") is False:
-                serr = f"line {cres.get('line')}: {cres.get('error')}"
-                last_output = f"SyntaxError: {serr}"
-                _v(_step, "py.check", f"\033[31msyntax error\033[0m {serr}")
+                serr = cres.get("error") if check_type == "json.check" else f"line {cres.get('line')}: {cres.get('error')}"
+                last_output = f"{'JSON error' if check_type=='json.check' else 'SyntaxError'}: {serr}"
+                _v(_step, check_type, f"\033[31msyntax error\033[0m {serr}")
                 continue
 
         # 2) operator: run the test command via shell.exec (deterministic tool)

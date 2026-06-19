@@ -81,6 +81,16 @@ non-existent path creates a new file.
 - [ ] Apply the replacement and report `{applied, path, bytesBefore, bytesAfter}`
 - [ ] Support new-file creation when `old` is empty and the file is absent
 
+### [REQ-12] json.check — validate JSON
+
+A read-only tool named `json.check` validates JSON (file or text), the config analogue
+of `py.check`, so the config specialist's edit is caught if malformed before a test run.
+
+#### Acceptance Criteria
+- [ ] Reject a payload lacking both `path` and `text`
+- [ ] Return `{valid: true}` for valid JSON, `{valid: false, error}` for invalid
+- [ ] Never write or mutate the host (read-only / replay-safe)
+
 ### [REQ-9] py.symbols — list a file's top-level functions and classes
 
 A read-only tool named `py.symbols` parses a Python file (via `ast`) and lists its
