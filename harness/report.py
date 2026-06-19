@@ -95,10 +95,19 @@ def build_report() -> dict:
                 f"{solved}/{total}={pct}% (CI {round(lo*100)}-{round(hi*100)}%) "
                 f"frontier t{sc.get('frontierTier')} | vs Opus4.8=100%")[:199]
 
+    from harness.honesty import audit, format_flags
+    flags = audit(sc, trend)
+
     lines = []
     lines.append(f"# jaros-code convergence report")
     lines.append(f"_generated {datetime.now(timezone.utc).isoformat(timespec='seconds')}  ·  model {sc['model']}_\n")
-    lines.append(f"## Capability (improving)")
+    lines.append(f"## Honesty audit (must be clean)")
+    if flags:
+        for f in flags:
+            lines.append(f"- **[{f['level']}]** {f['message']}")
+    else:
+        lines.append("- clean — no honesty flags")
+    lines.append(f"\n## Capability (improving)")
     lines.append(f"- **Pass rate: {solved}/{total} = {pct}%**  (95% CI {round(lo*100)}–{round(hi*100)}%, ±{ci_w//2}pts)")
     lines.append(f"- Target = Claude Code on Opus 4.8 = **100%**")
     lines.append(f"- Frontier tier (focus here): **{sc.get('frontierTier')}**" +
@@ -152,6 +161,7 @@ def build_report() -> dict:
         "tasks": total, "tiers": len(tiers), "hasRealBenchmark": has_real,
         "perTier": sc.get("perTier", {}),
         "census": now_c,
+        "honestyFlags": flags,
     }
 
 

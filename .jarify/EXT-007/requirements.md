@@ -40,6 +40,33 @@ or eval tasks — and may prune agents/tools/evals that do not help. The recorde
 - [ ] Unhelpful agents/tools/evals are removed, with the reason recorded in the commit
 - [ ] Quality trend (pass rate up, Wilson CI narrowing) accompanies the count growth
 
+### [REQ-5] Continual honesty audit
+
+The system mechanically audits its own honesty every cycle so it cannot lie to itself:
+flagging zero-model-call runs, tiny/non-representative suites reported as headlines,
+stagnation (flat full-suite pass rate), and orphan inflation. The supervisor must ACT
+on flags, never paper over them.
+
+#### Acceptance Criteria
+- [ ] Flag CRITICAL when a run solved tasks with `modelCalls.count == 0`
+- [ ] Flag MISLEADING when a sub-representative suite (<10 tasks) is reported
+- [ ] Flag STAGNATION when the full-suite pass rate is flat across recent runs
+- [ ] Surface the flags in the report; the supervisor acts on them each cycle
+
+### [REQ-6] Specialized agent fleet (split + wire everything)
+
+Capability toward Opus-4.8 comes from MANY specialized single-purpose agents, not a
+few broad ones. Broad agents are split into specialists by language/domain (e.g.
+python-fixer, config/JSON/YAML editor, Dockerfile editor, regex/algorithm helpers,
+architecture/spec agents) and every one is wired so it actually fires — chosen by a
+router/dispatcher. No broad catch-all agents; no orphans.
+
+#### Acceptance Criteria
+- [ ] Identify code/config/domain types and define one specialized agent per type
+- [ ] A router/dispatcher selects the right specialist for a task (and it fires)
+- [ ] Each specialist is single-purpose with its own tests; broad agents are split or pruned
+- [ ] Every added specialist is wired (appears in wiringUsage), never an orphan
+
 ### [REQ-4] Wiring telemetry (watch + optimize the agent↔tool wirings)
 
 The system records how often each tool/decision type fires during eval runs, so we

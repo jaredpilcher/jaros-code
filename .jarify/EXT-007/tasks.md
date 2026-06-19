@@ -94,6 +94,21 @@ generated code must itself be safe. This is an ongoing, growing responsibility.
 #### Implements
 - [REQ-2] Net growth with quality
 
+### [TASK-9] Split into specialized agents + a router (wire everything)
+
+Decompose the broad agents into specialists by language/domain and dispatch to them.
+
+#### Steps
+1. Add a `router` agent that classifies a task/target (python / json / yaml / dockerfile
+   / markdown / algorithm) and selects the specialist.
+2. Add specialist agents: `python_fixer`, `config_editor` (JSON/YAML/INI),
+   `dockerfile_editor`, `regex_helper`, etc. — each single-purpose, each tested.
+3. Wire the loop to dispatch via the router so each specialist FIRES (no orphans);
+   add config/Dockerfile eval tasks so the new specialists are exercised.
+
+#### Implements
+- [REQ-6] Specialized agent fleet
+
 ### [TASK-7] Per-agent/eval usefulness metric + prune
 
 Measure which agents/tools/evals contribute; remove dead weight (record why).
