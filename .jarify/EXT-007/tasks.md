@@ -37,6 +37,14 @@
   decomposition — a `planner` agent that breaks a task into sub-steps, or best-of-N
   sampling (generate several candidates per attempt, keep one that passes). Bigger change;
   do it deliberately and MEASURE against these 4.
+- **2026-06-19 best-of-N probe (max_iters=6 on the 4):** greet_format SOLVED at attempt 4;
+  binary_search, fizzbuzz, roman_numerals FAIL even at 6. Conclusion: more attempts cracks
+  greet_format only -> raised runner default max_iters 3→4 (measured win, modest cost).
+  The remaining HARD CORE = binary_search, fizzbuzz, roman_numerals: more shots do NOT
+  help — these are at gemma2:2b's one/few-shot ceiling in this harness. Next: a `planner`
+  agent (decompose: e.g. for binary_search "the bug is the loop condition < vs <=") and
+  MEASURE; if a 2B planner can't crack them either, honestly accept them as the model's
+  limit and pivot effort to breadth (more specialists, real benchmarks, CLI parity).
 
 
 The supervisor advances one task per cycle (frontier-first), appends new tasks as
