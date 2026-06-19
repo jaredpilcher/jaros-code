@@ -42,3 +42,43 @@ def test_grep(tmp_path: Path):
     (tmp_path / "x.py").write_text("alpha = 1\nbeta = 2\n", encoding="utf-8")
     out = cli.dispatch(f"/grep alpha {tmp_path}")
     assert "match" in out and "alpha" in out
+
+
+# --- orchestrator routing (NL -> which agent/tool) -------------------------
+
+import importlib.util
+
+from jaros.llm import LlmResponse
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_orch():
+    p = ROOT / ".jaros-data" / "agents" / "orchestrator_agent.py"
+    spec = importlib.util.spec_from_file_location("orch", p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+class FakeLlm:
+    def __init__(self, text):
+        self._t = text
+
+    def complete(self, req):
+        return LlmResponse(text=self._t, model="fake")
+
+
+def test_orchestrator_parses_action_and_arg():
+    mod = _load_orch()
+    assert mod.parse_route("ACTION: find\nARG: login") == ("find", "login")
+    assert mod.parse_route("ACTION: fix\nARG: calc.py") == ("fix", "calc.py")
+    action, _ = mod.parse_route("nonsense")
+    assert action == "help"  # safe default
+
+
+def test_orchestrator_emits_route_decision():
+    mod = _load_orch()
+    agent = mod.build(FakeLlm("ACTION: run\nARG: pytest -q"))
+    [d] = agent.decide({"request": "please run the tests"})
+    assert d.payload["action"] == "run" and d.payload["arg"] == "pytest -q"

@@ -25,6 +25,7 @@ Commands (Claude-Code-style):
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -135,6 +136,33 @@ class JcodeCli:
         res = fix_loop(bits[0], bits[1], bits[2], max_iters=3, verbose=True)
         return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
 
+    def _nl_fix(self, request: str, arg: str) -> str:
+        """Natural-language fix: find a file token, use the request as the instruction."""
+        m = re.search(r"[\w./\\-]+\.\w+", arg) or re.search(r"[\w./\\-]+\.\w+", request)
+        if not m:
+            return ("orchestrator chose 'fix' but I couldn't spot a file. "
+                    "Try: /fix <file> :: <instruction> :: <test command>")
+        from harness.coding_loop import fix_loop
+        res = fix_loop(m.group(0), request, "python -m pytest -q", max_iters=3, verbose=True)
+        return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
+
+    def handle(self, line: str) -> str:
+        """Top-level: slash commands run directly; plain language is ROUTED by the
+        orchestrator agent, which decides which agent/tool serves the request."""
+        line = line.strip()
+        if not line:
+            return ""
+        if line.startswith("/"):
+            return self.dispatch(line)
+        orch = self._load_agent("orchestrator_agent.py", self.llm)
+        [d] = orch.decide({"request": line})
+        action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
+        banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
+        if action == "fix":
+            return banner + "\n" + self._nl_fix(line, arg)
+        handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
+        return banner + "\n" + handler(arg)
+
     # -- dispatch ----------------------------------------------------------
     _ALIASES = {"/exit": "/quit", "/q": "/quit", "/h": "/help"}
 
@@ -143,7 +171,7 @@ class JcodeCli:
         if not line:
             return ""
         if not line.startswith("/"):
-            return "commands start with '/'. Try /help."
+            return "commands start with '/'. Try /help. (Or just type a request — the orchestrator will route it.)"
         head, _, arg = line.partition(" ")
         head = self._ALIASES.get(head, head)
         handler = getattr(self, "cmd_" + head[1:], None)
@@ -168,7 +196,7 @@ def repl() -> int:
         if line.strip() == "/clear":
             print("\033[2J\033[H", end="")
             continue
-        out = cli.dispatch(line)
+        out = cli.handle(line)
         if out:
             print(out)
 

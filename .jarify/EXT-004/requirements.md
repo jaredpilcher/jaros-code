@@ -39,6 +39,19 @@ Commands invoke the agents/tools so they actually fire: `/find` (navigator→fs.
 - [ ] `/grep` `/ls` `/read` `/symbols` invoke their read-only tools through the Runtime
 - [ ] `/status` and `/report` surface the live metrics; `/fix` runs the coding loop
 
+### [REQ-4] Natural-language routing (the system decides which agents/tools)
+
+The user types a plain request (no slash); an `orchestrator` agent classifies it into an
+action and the CLI dispatches to the matching specialist/tool. The model decides *what*
+the user wants; the deterministic CLI decides *how* — the user never has to know which
+agent/tool to invoke.
+
+#### Acceptance Criteria
+- [ ] Non-slash input is routed by the `orchestrator` agent (gemma2:2b) to one action
+- [ ] The chosen action dispatches to the matching command (fix/find/run/read/list/symbols)
+- [ ] A safe default (help) is used when the request is unclear
+- [ ] The routing decision is shown to the user ("[orchestrator → …]") for transparency
+
 ### [REQ-3] Continual Claude-Code parity
 
 The CLI is iterated toward Claude Code's UX (slash commands, status line, transcript,
