@@ -94,12 +94,38 @@ and replay any run. The front-end issues jobs and reads `status.json` / `outbox/
 it never bypasses the two planes. Look and feel mirror Claude Code; authority stays
 with the deterministic harness.
 
+## Jarify all the way down (convergence on intent)
+
+The harness operates on a user's project with the **same** jarify loop that built
+the harness. This self-similarity is the mechanism by which every actor — operator,
+agents, tools — converges on one explicit, written intent rather than drifting.
+
+```text
+   how jaros-code is built              how jaros-code builds a user's project
+   ────────────────────────            ──────────────────────────────────────
+   PRIME-001 (this directive)    ⇄     project PRIME directive (the user's intent)
+   EXT-00x requirements/design   ⇄     feature requirements/design for the project
+   tasks.md ([TASK-x])           ⇄     decomposed tasks for the project
+   single-purpose agents +       ⇄     same single-purpose agents + deterministic
+     deterministic tools                 tools implement one task at a time
+   index.json traceability       ⇄     code traced back to the project's spec
+```
+
+The fleet mirrors the jarify roles: a **spec agent** drafts/updates requirements &
+design, a **task agent** decomposes a requirement into scoped tasks, a **builder
+agent** implements exactly one task, and an **architect agent** validates the task
+against its requirement before commit — each a small, single-purpose `gemma2:2b`
+reasoning boundary, each backed by the deterministic tools of EXT-001. Intent flows
+top-down through the specs; results and traceability flow back up. Nothing acts
+except in service of a written requirement that serves the prime directive.
+
 ## Spec map
 
 ```text
   PRIME-001  ── north star (this document; intent.md + design.md only)
      ├── EXT-001  deterministic tool plane (fs.read, fs.list, shell.exec, …)
-     ├── EXT-002  single-purpose coding agent fleet (planner, editor, test-reader, …)
+     ├── EXT-002  single-purpose coding agent fleet (spec, task, builder, architect,
+     │            planner, editor, test-reader, … — mirroring the jarify roles)
      ├── EXT-003  orchestration / bounded coding loop (handoff + outer driver)
      ├── EXT-004  operator terminal UX (Claude-Code-like front-end)
      └── EXT-005  self-evaluation & monitoring (parity benchmarks, health)

@@ -47,11 +47,20 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    failing test is reported as failing; a skipped step is reported as skipped. The
    decision log is the auditable truth of what the system did and why.
 
-4. **Spec-first, the jarify way.**
+4. **Spec-first, the jarify way — all the way down.**
    Behavior is governed by `.jarify` specifications. Code traces back to
    requirements through `index.json`. When specified behavior changes, the spec
    and the code change in the same commit. Stale specs are defects. This Prime
    Directive is the north star every other spec must serve and must never contradict.
+
+   This is reflexive: **the harness builds software the same jarify way it is itself
+   built.** When `jaros-code` works on a user's project it establishes a prime
+   directive for that project, decomposes intent into requirements / design / tasks,
+   implements one scoped task at a time, and traces code back to the spec — the
+   identical loop that produced `jaros-code`. The jarify method is *how the system
+   converges on intent*: every actor (the operator, each single-purpose agent, every
+   deterministic tool) is pulled toward the same explicit, written intent instead of
+   drifting. We build the harness the way we want the harness to build.
 
 5. **Claude-Code-like experience.**
    The operator-facing experience should feel familiar and transparent: a terminal
