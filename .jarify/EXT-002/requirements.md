@@ -60,6 +60,18 @@ it (so it fires); `json.check` guards its JSON edits.
 - [ ] On unparseable output emit an honest `advance` Decision (events start, fail)
 - [ ] The loop dispatches config-extension targets to this specialist (it appears in wiringUsage)
 
+### [REQ-7] dockerfile-editor — specialist for Dockerfiles
+
+A specialist agent `dockerfile-editor` (EXT-007/REQ-6 split) edits Dockerfiles with a
+Docker-focused prompt, emitting `code.write_file`. The dispatcher routes Dockerfile
+targets to it (so it fires).
+
+#### Acceptance Criteria
+- [ ] Build a Docker-focused prompt from `{path, content, instruction}` (+ feedback)
+- [ ] Parse the `<<<FILE ... FILE>>>` block (or code fence) and emit `code.write_file`
+- [ ] On unparseable output emit an honest `advance` Decision (events start, fail)
+- [ ] The loop dispatches Dockerfile targets to this specialist (appears in wiringUsage)
+
 ### [REQ-5] navigator — locate code via a tool
 
 An agent named `navigator` decides ONE search term for a task and emits an `fs.grep`

@@ -54,3 +54,14 @@ def test_loop_dispatches_config_files_to_config_editor():
     assert select_editor_agent("app.yaml") == "config_editor_agent.py"
     assert select_editor_agent("calc.py") == "rewriter_agent.py"
     assert select_editor_agent("calc.py", "editor_agent.py") == "editor_agent.py"  # override respected
+    assert select_editor_agent("Dockerfile") == "dockerfile_editor_agent.py"
+    assert select_editor_agent("web.dockerfile") == "dockerfile_editor_agent.py"
+
+
+def test_dockerfile_editor_emits_write_file():
+    mod = _load(AGENTS / "dockerfile_editor_agent.py")
+    agent = mod.build(FakeLlm("<<<FILE\nFROM python:3.12-slim\nEXPOSE 8080\nFILE>>>"))
+    [d] = agent.decide({"path": "Dockerfile", "content": "FROM python:3.9\n",
+                        "instruction": "use 3.12-slim and expose 8080"})
+    assert d.type == "code.write_file"
+    assert "python:3.12-slim" in d.payload["content"]

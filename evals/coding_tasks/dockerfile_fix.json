@@ -1,0 +1,11 @@
+{
+  "id": "dockerfile_fix",
+  "tier": 2,
+  "instruction": "Update the Dockerfile: change the base image to python:3.12-slim (it is currently python:3.9), and add an `EXPOSE 8080` line before the CMD. Keep the rest.",
+  "target": "Dockerfile",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "Dockerfile": "FROM python:3.9\nWORKDIR /app\nCOPY . /app\nCMD [\"python\", \"app.py\"]\n",
+    "test_dockerfile.py": "def test_dockerfile():\n    c = open('Dockerfile').read()\n    assert 'python:3.12-slim' in c\n    assert 'python:3.9' not in c\n    assert 'EXPOSE 8080' in c\n"
+  }
+}

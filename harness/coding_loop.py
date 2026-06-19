@@ -103,8 +103,13 @@ _CONFIG_EXTS = {".json", ".yaml", ".yml", ".ini", ".toml", ".cfg"}
 
 
 def select_editor_agent(target: str, editor_agent: str = "rewriter_agent.py") -> str:
-    ext = Path(target).suffix.lower()
-    if editor_agent == "rewriter_agent.py" and ext in _CONFIG_EXTS:
+    if editor_agent != "rewriter_agent.py":
+        return editor_agent  # explicit override always respected
+    p = Path(target)
+    name, ext = p.name.lower(), p.suffix.lower()
+    if name.startswith("dockerfile") or ext == ".dockerfile":
+        return "dockerfile_editor_agent.py"
+    if ext in _CONFIG_EXTS:
         return "config_editor_agent.py"
     return editor_agent
 
