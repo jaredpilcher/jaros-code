@@ -10,9 +10,10 @@ from harness.intent_loop import build_from_intent  # noqa: E402
 
 tasks = [json.loads(p.read_text()) for p in sorted((ROOT / "evals" / "intent_tasks").glob("*.json"))]
 which = sys.argv[1] if len(sys.argv) > 1 else None
+max_iters = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 for t in tasks:
     if which and t["id"] != which:
         continue
-    print(f"\n===== {t['id']} (tier {t['tier']}) =====", flush=True)
-    r = build_from_intent(t, max_iters=3, verbose=True)
+    print(f"\n===== {t['id']} (tier {t['tier']}, max_iters={max_iters}) =====", flush=True)
+    r = build_from_intent(t, max_iters=max_iters, verbose=True)
     print(f"  -> self_pass={r.self_pass}  oracle_pass={r.oracle_pass}  [{r.note}]", flush=True)
