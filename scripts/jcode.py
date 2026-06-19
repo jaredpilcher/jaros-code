@@ -23,6 +23,11 @@ from harness.coding_loop import fix_loop  # noqa: E402
 
 
 def main() -> int:
+    # No args -> Claude-Code-like interactive slash-command REPL.
+    if len(sys.argv) == 1:
+        from harness.cli import repl
+        return repl()
+
     parser = argparse.ArgumentParser(prog="jcode", description="jaros-code coding harness")
     sub = parser.add_subparsers(dest="cmd", required=True)
     fix = sub.add_parser("fix", help="iterate edit->test->judge until tests pass")
