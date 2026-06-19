@@ -7,7 +7,7 @@ implementation:
   - file: harness/coding_loop.py
     ranges:
       - - 1
-        - 240
+        - 394
 ---
 
 This spec serves **Tenets 1, 3 & 5** of PRIME-001. Single-purpose agents (EXT-002)
@@ -49,3 +49,24 @@ tool's real result, so the operator sees exactly what the harness is doing.
 - [ ] Print a per-round header and the model/provider in use
 - [ ] Show each agent's emitted Decision type and the tool result summary
 - [ ] Show the final PASS/FAIL outcome and the number of attempts used
+
+### [REQ-4] Deterministic boundary-mutation repair fallback
+
+Some bugs turn on a single operator a 2B model cannot reason about (`<` vs `<=`).
+Empirically, every *model-side* decomposition of such a fix (locate the line, fix the
+line, quote the snippet) bottoms out on that same judgement gemma2:2b cannot make. So
+for the boundary/off-by-one bug class the fix moves into the **deterministic plane**:
+when the whole-file rewrite (REQ-2) fails on an existing `.py` bug, try each
+single-operator mutation (`<`↔`<=`, `>`↔`>=`, `±1`) via the `code.write_file` tool, run
+the suite via `shell.exec`, and keep the first candidate that passes. No reasoning call
+is involved, so the repair is byte-identically reproducible (Tenet 3). This honours the
+decomposition mandate honestly: the ant-sized grain is a mechanical edit + test, not a
+judgement the model is incapable of.
+
+#### Acceptance Criteria
+- [ ] `boundary_repair_candidates` is pure and deterministic: one single-operator edit
+      per candidate, de-duplicated and stably ordered
+- [ ] `mutation_repair_loop` applies each candidate via the Runtime and runs the suite,
+      returning success on the first candidate that makes the tests pass
+- [ ] On total failure it restores the original file (never leaves a worse file)
+- [ ] Wired as the `fix_loop` fallback for `.py` bug-fixes the rewriter cannot crack

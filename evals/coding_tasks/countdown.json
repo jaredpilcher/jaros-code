@@ -1,0 +1,11 @@
+{
+  "id": "countdown",
+  "tier": 2,
+  "instruction": "countdown(n) should return the list from n down to 0 inclusive, e.g. countdown(3) == [3, 2, 1, 0]. There is an off-by-one bug in the loop condition: it stops one step too early and never appends 0. Fix the boundary so 0 is included.",
+  "target": "countdown.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "countdown.py": "def countdown(n):\n    out = []\n    while n > 0:\n        out.append(n)\n        n = n - 1\n    return out\n",
+    "test_countdown.py": "from countdown import countdown\n\n\ndef test_countdown():\n    assert countdown(3) == [3, 2, 1, 0]\n    assert countdown(0) == [0]\n    assert countdown(1) == [1, 0]\n"
+  }
+}

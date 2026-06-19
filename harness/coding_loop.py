@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import sys
 import uuid
 from collections import Counter
@@ -186,6 +187,73 @@ def _step(label: str, detail: str) -> None:
     print(f"    \033[2m{label:<14}\033[0m {detail}")
 
 
+# #EXT-003-REQ-4 Start
+# Off-by-one / boundary operator mutations. The hardest bug class for a 2B model is
+# the one that turns on a single operator it cannot reason about (`<` vs `<=`). We
+# learned the honest lesson empirically: every *model-side* decomposition (locate the
+# line, fix the line, quote the snippet) bottoms out on that same judgement gemma2:2b
+# cannot make. So we move the fix into the DETERMINISTIC plane — try each candidate
+# single-operator edit, keep the first that turns the test suite green. No model call,
+# so it is 100% reproducible (Tenet 3). This is classic automated program repair,
+# scoped to the boundary-bug class the rewriter reliably misses.
+_BOUNDARY_MUTATIONS = [
+    (re.compile(r"(?<![<>=!])<(?![=])"), "<="),   # <  -> <=
+    (re.compile(r"(?<![<>=!])>(?![=])"), ">="),   # >  -> >=
+    (re.compile(r"<="), "<"),                       # <= -> <
+    (re.compile(r">="), ">"),                       # >= -> >
+    (re.compile(r"(?<![<>=!])<(?![=])"), ">"),    # <  -> >
+    (re.compile(r"(?<![<>=!])>(?![=])"), "<"),    # >  -> <
+    (re.compile(r"\+\s*1\b"), "- 1"),              # + 1 -> - 1
+    (re.compile(r"-\s*1\b"), "+ 1"),               # - 1 -> + 1
+]
+
+
+def boundary_repair_candidates(source: str) -> list[str]:
+    """Pure, deterministic: every single-operator boundary mutation of ``source``,
+    one occurrence changed per candidate (so a multi-occurrence operator yields one
+    variant per site). Ordered and de-duplicated for reproducibility."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for pat, repl in _BOUNDARY_MUTATIONS:
+        for m in pat.finditer(source):
+            cand = source[:m.start()] + repl + source[m.end():]
+            if cand != source and cand not in seen:
+                seen.add(cand)
+                out.append(cand)
+    return out
+
+
+def mutation_repair_loop(target: str, test_cmd: str, *, cwd: str | None = None,
+                         verbose: bool = False) -> LoopResult:
+    """Deterministic boundary-bug repair (the ant, not the boulder): mechanically try
+    each single-operator mutation via the write_file TOOL, run the suite via the
+    shell.exec TOOL, and keep the first candidate that passes. No reasoning call — the
+    judgement the 2B can't make is replaced by exhaustive deterministic search over a
+    tiny, safe edit space."""
+    rt = Runtime()
+    target_path = Path(target)
+    original = target_path.read_text(encoding="utf-8")
+    candidates = boundary_repair_candidates(original)
+
+    def _run_tests() -> int | None:
+        res = rt.apply(create_decision(id=f"t-{uuid.uuid4().hex}", source="orchestrator",
+                       type="shell.exec", payload={"command": test_cmd, **({"cwd": cwd} if cwd else {})}))
+        return res.get("exitCode") if isinstance(res, dict) else None
+
+    for i, cand in enumerate(candidates, 1):
+        rt.apply(create_decision(id=f"mut-{uuid.uuid4().hex}", source="mutation-repair",
+                 type="code.write_file", payload={"path": str(target), "content": cand}))
+        code = _run_tests()
+        if verbose:
+            _step("mutate", f"candidate {i}/{len(candidates)} -> exit {code}")
+        if code == 0:
+            return LoopResult(success=True, attempts=i, final_output="boundary mutation passed")
+    # No candidate worked: restore the original bug so we never leave a worse file.
+    target_path.write_text(original, encoding="utf-8", newline="\n")
+    return LoopResult(success=False, attempts=len(candidates), final_output="no boundary mutation passed")
+# #EXT-003-REQ-4 End
+
+
 # #EXT-003-REQ-2 Start
 def fix_loop(target: str, instruction: str, test_cmd: str, *,
              max_iters: int = 4, cwd: str | None = None,
@@ -204,6 +272,9 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     # Pick the deterministic syntax checker for this file type (py.check / json.check).
     check_type = {".py": "py.check", ".json": "json.check"}.get(target_path.suffix.lower())
     test_reader = _load_agent("test_reader_agent.py", llm)
+    # Capture the ORIGINAL content so the decomposed bug-fix fallback can run on the
+    # real bug (not the rewriter's mangled attempt) if the whole-file approach fails.
+    original_content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
 
     def _v(fn, *a):
         if verbose:
@@ -302,6 +373,20 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         if exit_code == 0:
             _v(print, f"\n  \033[32m[OK] solved in {r} attempt(s)\033[0m\n")
             return LoopResult(success=True, attempts=r, final_output=last_output)
+
+    # Fallback (ant, not boulder): if the whole-file rewrite couldn't crack a .py BUG FIX
+    # (existing buggy code, not a from-scratch stub), hand the real bug to the
+    # DETERMINISTIC boundary-mutation repair — it tries each single-operator edit and
+    # keeps the first that turns the suite green. Runs on a FRESH copy of the original
+    # bug, so it never regresses what the rewriter already solves (only runs on failure).
+    if (str(target).endswith(".py") and original_content
+            and "NotImplementedError" not in original_content):
+        _v(print, "\n  whole-file rewrite failed — trying deterministic boundary-mutation repair...")
+        target_path.write_text(original_content, encoding="utf-8", newline="\n")  # restore the real bug
+        lr = mutation_repair_loop(target, test_cmd, cwd=cwd, verbose=verbose)
+        if lr.success:
+            _v(print, f"\n  \033[32m[OK] boundary-mutation repair solved it\033[0m\n")
+            return lr
 
     _v(print, f"\n  \033[31m[X] not solved in {max_iters} attempts\033[0m\n")
     return LoopResult(success=False, attempts=max_iters, final_output=last_output)
