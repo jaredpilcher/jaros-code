@@ -112,12 +112,29 @@ def build_report() -> dict:
                  f"**Evals: {now_c['evals']}{_delta('evals')}**  ·  Specs: {now_c['specs']}{_delta('specs')}")
     lines.append(f"- Goal: hundreds → thousands → tens of thousands "
                  f"(swarm target ~{SWARM_GOAL:,} agents/tools/evals). Prune what doesn't help; net up.")
+    mc = sc.get("modelCalls") or {}
+    if mc.get("count"):
+        avg = round(mc["totalLatencySec"] / mc["count"], 2) if mc["count"] else 0
+        lines.append(f"\n## Local model calls (proof gemma2:2b is doing the work)")
+        lines.append(f"- **{mc['model']} calls this run: {mc['count']}**  (avg {avg}s/call, last {mc.get('lastCall')})")
+        lines.append(f"- Tail `.jaros-data/artifacts/eval/model_calls.log` to watch calls stream live.")
+
+    wiring = sc.get("wiringUsage") or {}
     usage = sc.get("toolUsage") or {}
-    if usage:
-        ranked = sorted(usage.items(), key=lambda kv: -kv[1])
-        lines.append(f"\n## Wiring usage (watch + optimize)")
-        lines.append("- " + "  ·  ".join(f"{k}={v}" for k, v in ranked))
-        lines.append("- Tools never firing across runs are candidates to wire in better or prune.")
+    lines.append(f"\n## Wiring usage (must be USED by agents; no orphans)")
+    if wiring:
+        ranked = sorted(wiring.items(), key=lambda kv: -kv[1])
+        lines.append(f"- **Wirings actually fired: {len(wiring)} distinct agent→tool edges**")
+        for edge, n in ranked:
+            lines.append(f"  - {edge}  ({n})")
+    # Orphans: components that exist but never fired this run -> wire in or prune.
+    tools_fired = {t for t in usage if t != "advance"}
+    orphan_tools = max(0, now_c["tools"] - len(tools_fired))
+    sources_fired = {e.split(" -> ")[0] for e in wiring} - {"orchestrator"}
+    lines.append(f"- Tools fired: {len(tools_fired)}/{now_c['tools']}  ·  agent sources firing: {len(sources_fired)}/{now_c['agents']}")
+    lines.append(f"- **Orphans (exist but never fired): ~{orphan_tools} tools, "
+                 f"~{max(0, now_c['agents'] - len(sources_fired))} agents** — wire them in or prune (owner rule).")
+
     lines.append(f"\n## Measurement accuracy (tightening)")
     lines.append(f"- Tasks measured: **{total}**  ·  tiers: **{len(tiers)}**  ·  CI width: **{ci_w}pts** (smaller = more accurate)")
     lines.append(f"- Real public benchmark included: **{'yes (HumanEval)' if has_real else 'not yet'}**")

@@ -1,7 +1,0 @@
-{
-  "id": "system-health",
-  "agent": "system-health",
-  "input": {},
-  "every_seconds": 30,
-  "enabled": true
-}

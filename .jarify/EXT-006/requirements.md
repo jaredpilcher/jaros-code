@@ -29,6 +29,18 @@ gemma2:2b endpoint (no paid/cloud inference, Tenet 2).
 - [ ] Select the model from `OLLAMA_MODEL` (default `gemma2:2b`); standard library only
 - [ ] Allow per-request overrides via `LlmRequest.params` (e.g. temperature, seed, num_predict)
 
+### [REQ-3] Model-call telemetry (proof the local model is doing the work)
+
+The client counts every real call to local gemma2:2b and appends an audit line
+(timestamp, model, latency, sizes) to a log, so there is undeniable, ongoing proof
+that the work is done by the local model — not skipped, cached, or a different model.
+
+#### Acceptance Criteria
+- [ ] Each successful `complete` increments a call counter and records the model + latency
+- [ ] Every call appends a line to `model_calls.log` (tailable in real time)
+- [ ] The eval scorecard records `modelCalls` (count, model, total latency)
+- [ ] The report shows the per-run call count and average latency for gemma2:2b
+
 ### [REQ-2] Harness uses deterministic inference by default
 
 The coding loop builds its LLM through this client so every reasoning step is greedy

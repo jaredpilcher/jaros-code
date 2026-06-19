@@ -44,6 +44,9 @@ MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
 # fires, so we can SEE which agent<->tool wirings are actually used and prune dead
 # ones. Module-level so it aggregates across the many fix_loops in one eval run.
 _TOOL_USAGE: Counter = Counter()
+# Wiring EDGES that actually fired: "<source-agent> -> <tool/decision-type>". This is
+# how we prove wirings are USED by agents and detect orphans (EXT-007 / REQ-4).
+_WIRING_USAGE: Counter = Counter()
 
 
 def tool_usage() -> dict:
@@ -51,8 +54,14 @@ def tool_usage() -> dict:
     return dict(_TOOL_USAGE)
 
 
+def wiring_usage() -> dict:
+    """Snapshot of '<agent> -> <tool>' edge -> count: the wirings actually used."""
+    return dict(_WIRING_USAGE)
+
+
 def reset_tool_usage() -> None:
     _TOOL_USAGE.clear()
+    _WIRING_USAGE.clear()
 
 
 # #EXT-003-REQ-1 Start
@@ -81,7 +90,8 @@ class Runtime:
         )
         if not outcome.applied:
             raise RuntimeError(f"executor refused {decision.type}: {outcome.reason}")
-        _TOOL_USAGE[decision.type] += 1  # telemetry: this wiring fired
+        _TOOL_USAGE[decision.type] += 1  # telemetry: this tool fired
+        _WIRING_USAGE[f"{decision.source} -> {decision.type}"] += 1  # which agent used it
         return outcome.output
 # #EXT-003-REQ-1 End
 

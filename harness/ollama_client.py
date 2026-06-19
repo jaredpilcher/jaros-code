@@ -10,12 +10,43 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
 
 from jaros.llm import LlmRequest, LlmResponse
 
 # #EXT-006-REQ-1 Start
 _DEFAULT_SEED = 7
+
+# Model-call telemetry (EXT-006 / REQ-3): undeniable, ongoing proof that the LOCAL
+# gemma2:2b is actually being invoked. Every real call increments a counter and
+# appends to an audit log the owner can tail in real time.
+_CALL_LOG = Path(__file__).resolve().parents[1] / ".jaros-data" / "artifacts" / "eval" / "model_calls.log"
+_STATS = {"count": 0, "model": None, "totalLatencySec": 0.0, "lastCall": None}
+
+
+def model_call_stats() -> dict:
+    return dict(_STATS)
+
+
+def reset_model_calls() -> None:
+    _STATS.update(count=0, model=None, totalLatencySec=0.0, lastCall=None)
+
+
+def _record_call(model: str, latency: float, prompt_len: int, resp_len: int) -> None:
+    _STATS["count"] += 1
+    _STATS["model"] = model
+    _STATS["totalLatencySec"] = round(_STATS["totalLatencySec"] + latency, 3)
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _STATS["lastCall"] = ts
+    try:
+        _CALL_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_CALL_LOG, "a", encoding="utf-8") as fh:
+            fh.write(f"{ts}  model={model}  latency={latency:.2f}s  prompt={prompt_len}c  resp={resp_len}c\n")
+    except OSError:
+        pass
 
 
 class DeterministicOllamaClient:
@@ -42,10 +73,13 @@ class DeterministicOllamaClient:
         request = urllib.request.Request(
             f"{self.host.rstrip('/')}/api/generate",
             data=data, headers={"Content-Type": "application/json"}, method="POST")
+        t0 = time.time()
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
                 resp = json.loads(response.read().decode("utf-8"))
-                return LlmResponse(text=(resp.get("response", "") or "").strip(), model=self.model)
+                text = (resp.get("response", "") or "").strip()
+                _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
+                return LlmResponse(text=text, model=self.model)
         except Exception as exc:  # surfaced, never silent (Tenet 3)
             raise RuntimeError(f"Ollama complete failed ({self.model}): {exc}")
 # #EXT-006-REQ-1 End

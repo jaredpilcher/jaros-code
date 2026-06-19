@@ -9,22 +9,22 @@
   "REQ-4": [
     {
       "file": "harness/eval_runner.py",
-      "startLine": 114,
-      "endLine": 152
+      "startLine": 120,
+      "endLine": 158
     }
   ],
   "REQ-2": [
     {
       "file": "harness/eval_runner.py",
       "startLine": 56,
-      "endLine": 153
+      "endLine": 159
     }
   ],
   "REQ-3": [
     {
       "file": "harness/eval_runner.py",
-      "startLine": 156,
-      "endLine": 175
+      "startLine": 162,
+      "endLine": 181
     }
   ]
 }
