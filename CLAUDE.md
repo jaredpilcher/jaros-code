@@ -31,6 +31,14 @@ silently resolve it.
   one or a bigger model.
 - **Tools are deterministic.** Every host effect (read, write, shell, patch) is a
   Jaros custom tool with `validate()` + `execute()`. Agents never touch the host.
+- **Plane-placement triage.** For each grain ask: is its core a judgement
+  `gemma2:2b` can reliably make? If yes (classify, pick, transform-by-example, read a
+  result) → a tiny agent. If no (count, arithmetic, operator semantics, exhaustive
+  search) → a deterministic tool, usually generate-and-test. When a model-side
+  pipeline keeps failing, run a raw single-call probe to see what the 2B actually
+  emits *before* building more agents; if it's genuine incomprehension, move that
+  grain to the execution plane rather than slicing it smaller. Prove generalization
+  with a second eval of the same class. Never ship a net-negative fallback.
 
 ## Running
 

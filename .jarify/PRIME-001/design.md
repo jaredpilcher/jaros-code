@@ -70,6 +70,40 @@ filename, or a single old→new pair) — the regime where a 2B model is reliabl
 *intelligence of the system* lives in the decomposition and the determinism of the
 tools, not in any one model call.
 
+### Plane placement: route each grain to the plane that can do it
+
+Decomposition is necessary but not sufficient — each grain must land on the plane that
+can actually execute it. The triage:
+
+```text
+   for each grain, ask: is its CORE a judgement gemma2:2b can reliably make?
+   ─────────────────────────────────────────────────────────────────────────
+   YES → tiny AGENT (reasoning plane)      NO → deterministic TOOL (exec plane)
+   • classify a bug class                  • count lines / arithmetic
+   • pick the relevant file                • operator semantics (`<` vs `<=`)
+   • transform-by-example                  • exhaustive generate-and-test
+   • read a PASS/FAIL result               • anything the 2B cannot comprehend
+```
+
+A grain whose core the model cannot do is a boulder no *model-side* slice shrinks —
+slicing it thinner just reproduces the same failure smaller. The fix is to move the
+work across the gate into the execution plane. Proven case (EXT-003/REQ-4): a
+single-operator off-by-one (`while lo < hi:` → `<=`) defeated **every** model-side
+decomposition — a line-locator hallucinated line 6 of a 3-line file (2B can't count
+lines); an OLD/NEW snippet prompt reproduced the bug unchanged across 5 seeds (2B can't
+comprehend the off-by-one). The model-free `mutation_repair_loop` — try each candidate
+operator edit, keep the first the suite accepts — cracks it on the first candidate and
+generalizes to other operators (`countdown`: `>` → `>=`). Zero model calls, so it is
+byte-identically reproducible (Tenet 3). This is the swarm vision intact: agents and
+tools grow *together*; the craft is the routing.
+
+**Method when a model-side pipeline stalls:** run a raw single-call probe to see exactly
+what the 2B emits *before* building more agents. If the failure is genuine
+incomprehension (not formatting/parsing), build a deterministic tool for that grain.
+Prove generalization with a second eval of the same bug class — never game one task. And
+never ship a net-negative fallback (the discarded line-number pipeline corrupted
+indentation; it was removed, not committed).
+
 ### Scale: a swarm of tiny agents
 
 The target is a **swarm — hundreds, then thousands, then tens of thousands of

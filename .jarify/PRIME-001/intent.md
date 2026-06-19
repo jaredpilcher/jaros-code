@@ -50,6 +50,20 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    the work into smaller agent steps and stronger deterministic tools**, never to
    escalate the model.
 
+   **Decomposition has two directions, not one.** "Decompose" does *not* only mean
+   "more, tinier agents." Some judgements are boulders no model-side slice can shrink:
+   when a grain's *core* is something a 2B genuinely cannot do — count lines, do
+   arithmetic, comprehend that `<` should be `<=` — slicing it thinner just reproduces
+   the same failure at smaller scale. The correct move there is to push the work across
+   to the **execution plane**: replace the impossible judgement with a deterministic
+   tool, often generate-and-test (try each candidate edit, keep the one the suite
+   accepts). This shrinks the model's role to something it *can* do — or to nothing —
+   and it is a *deepening* of Tenet 1, not an escape from the swarm. This was proven,
+   not theorized: a single-operator off-by-one fix defeated every model-side
+   decomposition (a line-locator hallucinated line 6 of a 3-line file; an OLD/NEW
+   prompt reproduced the bug unchanged across 5 seeds), and a model-free boundary
+   mutation-repair cracked it on the first candidate, byte-identically reproducibly.
+
 3. **Reproducible & honest.**
    Every run is hash-chain logged and replayable to byte-identical state with zero
    model calls. The harness never hides, rounds away, or fabricates a result. A
@@ -89,6 +103,18 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
 single-purpose agents each making one narrow judgement, wired together by
 deterministic tools and a durable state machine — not from one big agent, one big
 prompt, or a bigger model. Build the fleet wide and the tools sharp.
+
+**Plane-placement is the core craft.** Composition alone is not enough; each grain
+must be routed to the plane that can actually do it. For every grain ask: *is its core
+a judgement `gemma2:2b` can reliably make?* If yes (classify a bug class, pick a file,
+transform-by-example, read a test result) → a tiny **agent**. If no (counting,
+arithmetic, operator semantics, exhaustive search) → a deterministic **tool**, usually
+generate-and-test. Agents and tools therefore grow *together*; the skill that closes
+the Opus-4.8 gap is this triage, not a preference for either plane. When a model-side
+pipeline keeps failing, the discipline is to run a raw single-call probe to see exactly
+what the 2B emits, and — if the failure is genuine incomprehension rather than
+formatting — move that grain to the execution plane rather than slicing it smaller. A
+fallback that is net-negative (e.g. one that corrupts the file) is never shipped.
 
 **The scale is the strategy.** We are explicitly aiming for a *swarm* — hundreds,
 then thousands, then tens of thousands of agents — to reach Claude-Code-on-Opus-4.8
