@@ -77,6 +77,19 @@ breadth increasing. A short headline is pushable to the owner's phone.
 - [ ] Report coverage (number of tasks, tiers, whether real benchmarks are included)
 - [ ] Render a markdown report and a <200-char headline suitable for a push notification
 
+### [REQ-7] Continuous always-on operation
+
+The harness runs continuously (forever), perpetually exercising itself over the suite
+and emitting fresh metrics + a heartbeat each cycle, fault-isolated so no single
+cycle stops it. It is safe to leave running unattended (local model + temp-dir tests
+only). Improvements committed between cycles are picked up automatically.
+
+#### Acceptance Criteria
+- [ ] A runner loops forever: eval → report → heartbeat → short pause → repeat
+- [ ] Any cycle error is logged and the loop continues (never crashes the process)
+- [ ] A machine-readable heartbeat (cycle, timestamp, passRate, CI) is written each cycle
+- [ ] Uses only local inference + temp-dir tests (no network, no host mutation outside artifacts)
+
 ### [REQ-5] Real public benchmark integration
 
 Beyond home-grown tasks, the harness runs a real, recognized public benchmark
