@@ -1,0 +1,11 @@
+{
+  "id": "sum_js",
+  "tier": 1,
+  "instruction": "This JavaScript sum(a, b) function has a bug: it subtracts instead of adding. Fix it so sum(2, 3) === 5. Keep the module.exports.",
+  "target": "sum.js",
+  "test_cmd": "node test_sum.js",
+  "files": {
+    "sum.js": "function sum(a, b) {\n  return a - b;\n}\nmodule.exports = sum;\n",
+    "test_sum.js": "const assert = require('assert');\nconst sum = require('./sum');\nassert.strictEqual(sum(2, 3), 5);\nassert.strictEqual(sum(0, 0), 0);\nassert.strictEqual(sum(-1, 1), 0);\nconsole.log('ok');\n"
+  }
+}
