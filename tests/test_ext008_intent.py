@@ -41,6 +41,31 @@ def test_stub_raises_not_implemented():
     assert "NotImplementedError" in s
 
 
+def test_extract_examples_pulls_user_ground_truth():
+    mod = _load_agent("test_writer_agent.py")
+    intent = ("Build running_total(nums): a running cumulative sum. "
+              "running_total([1, 2, 3]) returns [1, 3, 6]. Empty list returns empty list.")
+    ex = mod.extract_examples(intent, "running_total")
+    assert ("running_total([1, 2, 3])", "[1, 3, 6]") in ex
+    tests = mod.build_tests_from_examples("running_total", "running_total", ex)
+    assert "assert running_total([1, 2, 3]) == [1, 3, 6]" in tests
+    assert "from running_total import running_total" in tests
+
+
+def test_extract_examples_handles_dicts_and_strings():
+    mod = _load_agent("test_writer_agent.py")
+    intent = "parse_csv('a,b\\n1,2') returns [{'a': '1', 'b': '2'}]."
+    ex = mod.extract_examples(intent, "parse_csv")
+    assert len(ex) == 1
+    call, lit = ex[0]
+    assert lit == "[{'a': '1', 'b': '2'}]"
+
+
+def test_extract_examples_empty_when_no_example():
+    mod = _load_agent("test_writer_agent.py")
+    assert mod.extract_examples("Build a function that sorts a list.", "mysort") == []
+
+
 def test_oracle_passes_correct_impl_fails_wrong():
     good = "def running_total(nums):\n    out, s = [], 0\n    for n in nums:\n        s += n\n        out.append(s)\n    return out\n"
     bad = "def running_total(nums):\n    return list(nums)\n"
