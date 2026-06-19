@@ -50,7 +50,7 @@ def main() -> int:
     from harness.eval_runner import run_suite
     from harness.report import write_report
 
-    max_iters = int(os.environ.get("JCODE_MAX_ITERS", "2"))
+    max_iters = int(os.environ.get("JCODE_MAX_ITERS", "3"))
     pause = int(os.environ.get("JCODE_CYCLE_PAUSE_S", "20"))
     _log(f"run_forever START pid={os.getpid()} model={os.environ['OLLAMA_MODEL']} "
          f"max_iters={max_iters} pause={pause}s")

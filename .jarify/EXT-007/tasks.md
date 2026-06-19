@@ -1,5 +1,20 @@
 # Implementation Tasks — Self-Improvement Backlog (toward Opus-4.8 parity)
 
+## Honest findings (kept truthful — what is / isn't working)
+
+- **2026-06-19: pass rate was FLAT at ~67% all session** (6/9 → 12/18), despite
+  rewriter, deterministic inference, syntax guard, feedback, temp escalation,
+  telemetry, wiring, and growing evals 9→24. Adding evals/plumbing tightened
+  measurement but did NOT improve capability.
+- **Diagnosed root cause:** retry budget too small. With `max_iters=2`, round 1 is
+  frequently wasted on a format/syntax error (e.g. a markdown fence or dropped
+  quote), leaving only one real attempt. Live debug: `count_vowels` FAILED at
+  max_iters=2 but PASSED at max_iters=3 (round 1 syntax error → round 2 correct).
+- **Fix under test:** raise the runner's default `max_iters` 2→3. MEASURE the next
+  full-suite heartbeat; if pass rate does not rise, this hypothesis is wrong — say so
+  and try the next lever (real decomposition: a planner/test-reflection agent).
+
+
 The supervisor advances one task per cycle (frontier-first), appends new tasks as
 failures/ideas surface, and keeps the census trending up with quality.
 
