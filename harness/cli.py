@@ -18,6 +18,8 @@ Commands (Claude-Code-style):
   /ls [path]                    fs.list tool
   /read <file>                  fs.read tool
   /symbols <file>               py.symbols tool
+  /files <pattern> [path]       fs.find tool (locate files)
+  /patch <file> :: <old> :: <new>   code.apply_patch tool (surgical edit)
   /run <task>                   commander agent -> shell.exec (gated)
   /fix <file> :: <instr> :: <testcmd>   run the edit->test->judge loop
   /clear  /quit
@@ -134,6 +136,28 @@ class JcodeCli:
         out = self._tool("py.symbols", {"path": arg.strip()})
         ss = out.get("symbols", []) if isinstance(out, dict) else []
         return "".join(f"\n  {s['kind']:<8} {s['name']} (line {s['line']})" for s in ss) or "(no symbols)"
+
+    def cmd_files(self, arg: str) -> str:
+        """fs.find tool: locate files by glob pattern (wires fs.find)."""
+        parts = arg.split()
+        if not parts:
+            return "usage: /files <pattern> [path]"
+        out = self._tool("fs.find", {"pattern": parts[0], "path": parts[1] if len(parts) > 1 else "."})
+        ms = out.get("matches", []) if isinstance(out, dict) else []
+        return f"{len(ms)} file(s):" + "".join(f"\n  {m}" for m in ms[:25])
+
+    def cmd_patch(self, arg: str) -> str:
+        """code.apply_patch tool: surgical edit (wires apply_patch). Deterministic —
+        the user supplies the exact old/new, so no unreliable 2B OLD/NEW generation."""
+        bits = arg.split("::")
+        if len(bits) < 3:
+            return "usage: /patch <file> :: <old text> :: <new text>"
+        path, old, new = bits[0].strip(), bits[1].strip(), bits[2].strip()
+        try:
+            out = self._tool("code.apply_patch", {"path": path, "old": old, "new": new})
+        except RuntimeError as exc:
+            return f"patch rejected: {exc}"
+        return f"applied to {out.get('path')} ({out.get('bytesAfter')} bytes)" if isinstance(out, dict) else str(out)
 
     def cmd_run(self, arg: str) -> str:
         """commander agent proposes a command; shell.exec runs it (gated)."""

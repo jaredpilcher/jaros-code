@@ -44,6 +44,16 @@ def test_grep(tmp_path: Path):
     assert "match" in out and "alpha" in out
 
 
+def test_files_and_patch_wire_those_tools(tmp_path: Path):
+    cli = JcodeCli()
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    assert "a.py" in cli.dispatch(f"/files *.py {tmp_path}")
+    f = tmp_path / "a.py"
+    out = cli.dispatch(f"/patch {f} :: x = 1 :: x = 2")
+    assert "applied" in out
+    assert f.read_text(encoding="utf-8") == "x = 2\n"
+
+
 # --- orchestrator routing (NL -> which agent/tool) -------------------------
 
 import importlib.util
