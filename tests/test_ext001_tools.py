@@ -151,6 +151,39 @@ def test_py_check_rejects_empty():
     assert tool.validate(_decision("py.check", {})).ok is False
 
 
+# --- REQ-9 py.symbols ------------------------------------------------------
+
+def test_py_symbols_lists_defs():
+    tool = _load_tool("py_symbols_tool.py", "PySymbolsTool")
+    code = "def a():\n    pass\n\nclass B:\n    def m(self):\n        pass\n\ndef c():\n    pass\n"
+    out = tool.execute(_decision("py.symbols", {"code": code}))
+    names = [(s["name"], s["kind"]) for s in out["symbols"]]
+    assert names == [("a", "function"), ("B", "class"), ("c", "function")]
+
+
+def test_py_symbols_rejects_empty():
+    tool = _load_tool("py_symbols_tool.py", "PySymbolsTool")
+    assert tool.validate(_decision("py.symbols", {})).ok is False
+
+
+# --- REQ-10 fs.find --------------------------------------------------------
+
+def test_fs_find_matches_glob(tmp_path):
+    tool = _load_tool("fs_find_tool.py", "FsFindTool")
+    (tmp_path / "a.py").write_text("x", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.py").write_text("y", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("z", encoding="utf-8")
+    out = tool.execute(_decision("fs.find", {"pattern": "*.py", "path": str(tmp_path)}))
+    assert out["count"] == 2
+    assert all(m.endswith(".py") for m in out["matches"])
+
+
+def test_fs_find_rejects_empty():
+    tool = _load_tool("fs_find_tool.py", "FsFindTool")
+    assert tool.validate(_decision("fs.find", {})).ok is False
+
+
 # --- REQ-7 shell.exec safety denylist (unattended-safe) --------------------
 
 import pytest as _pytest

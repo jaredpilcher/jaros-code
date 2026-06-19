@@ -81,6 +81,29 @@ non-existent path creates a new file.
 - [ ] Apply the replacement and report `{applied, path, bytesBefore, bytesAfter}`
 - [ ] Support new-file creation when `old` is empty and the file is absent
 
+### [REQ-9] py.symbols — list a file's top-level functions and classes
+
+A read-only tool named `py.symbols` parses a Python file (via `ast`) and lists its
+top-level functions and classes with line numbers, so a navigation agent can locate
+the right symbol before editing.
+
+#### Acceptance Criteria
+- [ ] Reject a payload lacking both `path` and `code`
+- [ ] Return each top-level function/class as `{name, kind, line}`
+- [ ] Report a clear error for unparseable input (no crash)
+- [ ] Never write or mutate the host (read-only / replay-safe)
+
+### [REQ-10] fs.find — locate files by name pattern
+
+A read-only tool named `fs.find` returns files whose name matches a glob pattern
+under a root, deterministically ordered, so an agent can find the file it needs.
+
+#### Acceptance Criteria
+- [ ] Reject a payload lacking a non-empty `pattern` string
+- [ ] Return matching file paths sorted, bounded by `max_results`
+- [ ] Skip noise dirs (.git, __pycache__, node_modules, .jaros-data)
+- [ ] Never write or mutate the host (read-only / replay-safe)
+
 ### [REQ-8] py.check — validate Python syntax
 
 A read-only tool named `py.check` deterministically validates Python syntax (via
