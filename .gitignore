@@ -18,3 +18,4 @@ evals/benchmarks/
 __pycache__/
 *.pyc
 .env
+evals/benchmarks/*.jsonl
