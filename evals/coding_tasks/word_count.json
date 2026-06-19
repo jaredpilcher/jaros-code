@@ -1,0 +1,11 @@
+{
+  "id": "word_count",
+  "tier": 1,
+  "instruction": "Implement word_count(s): return the number of whitespace-separated words in s. word_count('hello world') == 2, word_count('  a  b c ') == 3, word_count('') == 0.",
+  "target": "wc.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "wc.py": "def word_count(s):\n    raise NotImplementedError\n",
+    "test_wc.py": "from wc import word_count\n\n\ndef test_word_count():\n    assert word_count('hello world') == 2\n    assert word_count('  a  b c ') == 3\n    assert word_count('') == 0\n"
+  }
+}

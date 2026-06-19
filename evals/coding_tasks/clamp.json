@@ -1,0 +1,11 @@
+{
+  "id": "clamp",
+  "tier": 1,
+  "instruction": "Implement clamp(x, lo, hi): return x constrained to the range [lo, hi] — lo if x < lo, hi if x > hi, otherwise x. clamp(5, 0, 10) == 5, clamp(-3, 0, 10) == 0, clamp(99, 0, 10) == 10.",
+  "target": "clamp.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "clamp.py": "def clamp(x, lo, hi):\n    raise NotImplementedError\n",
+    "test_clamp.py": "from clamp import clamp\n\n\ndef test_clamp():\n    assert clamp(5, 0, 10) == 5\n    assert clamp(-3, 0, 10) == 0\n    assert clamp(99, 0, 10) == 10\n"
+  }
+}

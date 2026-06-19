@@ -1,0 +1,11 @@
+{
+  "id": "flatten",
+  "tier": 2,
+  "instruction": "Implement flatten(xss): given a list of lists, return a single list with all elements in order. flatten([[1, 2], [3], [], [4, 5]]) == [1, 2, 3, 4, 5], flatten([]) == [].",
+  "target": "flatten.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "flatten.py": "def flatten(xss):\n    raise NotImplementedError\n",
+    "test_flatten.py": "from flatten import flatten\n\n\ndef test_flatten():\n    assert flatten([[1, 2], [3], [], [4, 5]]) == [1, 2, 3, 4, 5]\n    assert flatten([]) == []\n    assert flatten([[1]]) == [1]\n"
+  }
+}
