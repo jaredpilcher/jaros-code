@@ -123,6 +123,47 @@ each holds only harness-granted capabilities, and the hash-chained decision log
 keeps a swarm of thousands reproducible and attributable. A bigger problem is met
 with a wider swarm, sharper tools, and more evals — full stop.
 
+### The convergence loop (supervisor-owned, continuous)
+
+Capability is grown by a standing loop, not a one-time build. A named supervisor runs
+it forever and owns the outcome: keep the system converging on parity with Claude Code
+on Opus 4.8. Each turn of the loop discovers what *type of sand* the system is missing
+and where it belongs.
+
+```text
+   ┌──────────────────────────── the convergence loop ───────────────────────────────┐
+   │                                                                                   │
+   │   MEASURE ──► DIAGNOSE ──► DISCOVER ──► PLACE ──► WIRE ──► RE-MEASURE ──► PRUNE    │
+   │   (honest    (probe raw   (name the    (plane-   (no      (did a real   (drop     │
+   │    evals +    model out-   missing     placement orphans) metric move?) net-zero/ │
+   │    census +   put: which   grain type) triage:                          negative) │
+   │    wiring)    grain, why)              agent│tool)                                │
+   │      ▲                                                                      │      │
+   │      └──────────────────────────── forever ◄───────────────────────────────┘      │
+   └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Worked example (this is how the loop actually ran, not a hypothetical):
+
+```text
+   MEASURE    from-intent eval running_total → self✗/oracle✗ (unsolved)
+   DIAGNOSE   probe test-writer → it COMPUTED `running_total([2,3])==[1,3,6]` (wrong);
+              gemma2:2b cannot do the arithmetic → impossible tests, not a bad implementer
+   DISCOVER   missing grain: "ground-truth from the user's stated examples, not computed"
+   PLACE      deterministic TOOL — extract_examples parses the intent's own f(x)=y lines
+              (no model arithmetic); model kept only as fallback when no example is stated
+   WIRE       test-writer.decide prefers extraction → code.write_file (used, not orphan)
+   RE-MEASURE csv_parse 0 → self✓/oracle✓ on the first attempt; running_total's bottleneck
+              MOVED to the implementer (next turn of the loop)
+   PRUNE      (nothing to remove; the net-negative line-number repair was already removed)
+```
+
+The supervisor watches three honest signal families every cycle and corrects against
+them: **capability** (repair pass-rate + generative self-vs-oracle fidelity), **growth**
+(agents/tools/evals counts rising), and **health** (wiring usage — every agent→tool edge
+actually fires, no orphans; no net-negative fallback shipped). Activity is never the
+metric; the convergence trend is.
+
 ### The difficulty ratchet (evals get harder and harder)
 
 ```text
@@ -201,9 +242,10 @@ except in service of a written requirement that serves the prime directive.
      ├── EXT-001  deterministic tool plane (fs.read, fs.list, shell.exec, …)
      ├── EXT-002  single-purpose coding agent fleet (spec, task, builder, architect,
      │            planner, editor, test-reader, … — mirroring the jarify roles)
-     ├── EXT-003  orchestration / bounded coding loop (handoff + outer driver)
+     ├── EXT-003  orchestration / bounded coding loop (+ REQ-4 deterministic repair)
      ├── EXT-004  operator terminal UX (Claude-Code-like front-end)
-     └── EXT-005  self-evaluation & monitoring (parity benchmarks, health)
+     ├── EXT-005  self-evaluation & monitoring + the supervisor convergence loop
+     └── EXT-008  from-intent build loop (generative spine, hidden-oracle scoring)
 ```
 
 Every `EXT` serves exactly one tenet of the Intent and must never contradict a

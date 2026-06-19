@@ -114,6 +114,35 @@ only). Improvements committed between cycles are picked up automatically.
 - [ ] A machine-readable heartbeat (cycle, timestamp, passRate, CI) is written each cycle
 - [ ] Uses only local inference + temp-dir tests (no network, no host mutation outside artifacts)
 
+### [REQ-10] Generative convergence metric (self vs. hidden oracle)
+
+Repair pass-rate alone does not prove we can build from intent. The harness also tracks
+the EXT-008 from-intent metric: per task, `self_pass` (own tests) and `oracle_pass`
+(held-out oracle), aggregated into a generative pass-rate trend alongside the repair
+trend. The un-gameable headline is the **intent-fidelity** rate (oracle pass), and the
+**self-yes/oracle-no** rate is surfaced as the "misread intent" gap to drive down.
+
+#### Acceptance Criteria
+- [ ] Run the `evals/intent_tasks/` suite through `build_from_intent` and record per task
+      `{id, self_pass, oracle_pass}`
+- [ ] Report a generative pass-rate (oracle) trend distinct from the repair pass-rate
+- [ ] Surface the self-yes/oracle-no ("misread intent") rate as its own tracked number
+- [ ] The oracle is never written into a build dir or shown to any agent (honesty)
+
+### [REQ-11] Supervisor convergence loop: wiring health & correction
+
+The supervisor runs the standing MEASURE→DIAGNOSE→DISCOVER→PLACE→WIRE→RE-MEASURE→PRUNE
+loop (PRIME-001 design). The harness must give it the signals to do so honestly: which
+agent→tool wirings actually fire (no orphans), which agents/tools/evals are unused
+(prune candidates), and whether any change was net-negative (revert signal).
+
+#### Acceptance Criteria
+- [ ] Report wiring usage: every agent→tool edge exercised in a run, with fire counts
+- [ ] Flag orphans: agents that never emit a used Decision and tools never invoked
+- [ ] The honesty audit flags STAGNATION (flat trend), MISLEADING (tiny N), and UNUSED
+      (orphans) so the supervisor knows where to correct
+- [ ] Census + trend are persisted so net-negative changes are detectable and reversible
+
 ### [REQ-5] Real public benchmark integration
 
 Beyond home-grown tasks, the harness runs a real, recognized public benchmark

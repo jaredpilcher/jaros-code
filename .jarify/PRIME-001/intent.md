@@ -125,3 +125,27 @@ matched by an equally **extensive library of deterministic tools** (the verbs th
 agents compose) and an **extensive suite of evaluations** (the proof we are
 converging on the bar). More capability is always answered by *more, smaller* agents,
 *sharper* tools, and *more* evals — never by a bigger model.
+
+**The convergence loop is a standing, supervised discipline — never finished.**
+Reaching the bar is not a one-time build; it is a loop run continuously and owned by a
+named supervisor whose job is to *keep the system converging on the ultimate intent:
+replacing Claude Code on Opus 4.8.* The loop, run forever:
+
+1. **Measure honestly** — run the evals (repair pass-rate AND generative self-vs-oracle
+   fidelity), the growth census, and the wiring/orphan health. No flattering numbers.
+2. **Diagnose, don't guess** — when something fails, probe the raw model output to find
+   *which grain* failed and *why* before changing anything.
+3. **Discover the next type of sand** — name the missing grain the failure demands.
+   The mountain needs *many distinct grain types*, not many copies of one; a new failure
+   class is a new grain to invent.
+4. **Place it on the right plane** — apply plane-placement triage: a judgement the 2B
+   can make → a tiny agent; computation/search/arithmetic it cannot → a deterministic
+   tool (often generate-and-test). Wire it so it actually fires (no orphans).
+5. **Re-measure and prune** — keep only what raises a real metric; remove agents, tools,
+   and evals that do not help. Net-negative changes are reverted, never shipped.
+
+The supervisor **watches the system closely and corrects it** — the wiring, the agents,
+the deterministic tools, the evals — and treats the convergence trend (not activity) as
+the sole proof of progress. This loop, and the supervisor's ownership of it, is itself
+part of the intent: the system is never "done" until parity is proven on genuinely hard,
+external problems.
