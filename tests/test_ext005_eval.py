@@ -6,6 +6,7 @@ from pathlib import Path
 
 from harness.eval_runner import _tier_stats, load_tasks, setup_task
 from harness.humaneval import problem_to_task
+from harness.report import wilson_interval
 
 
 def test_tasks_load_with_required_fields():
@@ -41,6 +42,14 @@ def test_tier_stats_flags_too_easy_when_all_mastered():
     per = [{"tier": 1, "solved": True}, {"tier": 2, "solved": True}]
     _per_tier, frontier, too_easy = _tier_stats(per)
     assert frontier is None and too_easy is True
+
+
+def test_wilson_interval_narrows_as_n_grows():
+    # Same observed proportion (60%), more samples -> a tighter interval.
+    lo_small, hi_small = wilson_interval(6, 10)
+    lo_big, hi_big = wilson_interval(60, 100)
+    assert (hi_small - lo_small) > (hi_big - lo_big)
+    assert 0.0 <= lo_big < hi_big <= 1.0
 
 
 def test_humaneval_problem_maps_to_pytest_task():

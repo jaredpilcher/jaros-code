@@ -63,6 +63,20 @@ get harder and harder).
 - [ ] A suite whose every tier is mastered is flagged as "too easy — add harder tasks"
 - [ ] Harder authored tiers (multi-edit, edge cases, small algorithms) exist beyond tier 1
 
+### [REQ-6] Operator metrics report (better and more accurate over time)
+
+A report summarizes how convergence is going with metrics that both *improve* (pass
+rate, per-tier, frontier) and become *more accurate* over time: the pass rate
+carries a Wilson 95% confidence interval that tightens as the suite grows, and a
+coverage section (task count, tiers, real-benchmark inclusion) shows measurement
+breadth increasing. A short headline is pushable to the owner's phone.
+
+#### Acceptance Criteria
+- [ ] Compute the pass rate with a Wilson 95% interval whose width shrinks as N grows
+- [ ] Report per-tier pass rates, the frontier tier, and the recent trend from history
+- [ ] Report coverage (number of tasks, tiers, whether real benchmarks are included)
+- [ ] Render a markdown report and a <200-char headline suitable for a push notification
+
 ### [REQ-5] Real public benchmark integration
 
 Beyond home-grown tasks, the harness runs a real, recognized public benchmark
