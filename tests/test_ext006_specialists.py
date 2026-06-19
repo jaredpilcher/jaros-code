@@ -56,6 +56,15 @@ def test_loop_dispatches_config_files_to_config_editor():
     assert select_editor_agent("calc.py", "editor_agent.py") == "editor_agent.py"  # override respected
     assert select_editor_agent("Dockerfile") == "dockerfile_editor_agent.py"
     assert select_editor_agent("web.dockerfile") == "dockerfile_editor_agent.py"
+    assert select_editor_agent("README.md") == "markdown_editor_agent.py"
+
+
+def test_markdown_editor_emits_write_file():
+    mod = _load(AGENTS / "markdown_editor_agent.py")
+    agent = mod.build(FakeLlm("<<<FILE\n# jaros-code\n\n- local\nFILE>>>"))
+    [d] = agent.decide({"path": "README.md", "content": "# project\n", "instruction": "rename + add bullet"})
+    assert d.type == "code.write_file"
+    assert "# jaros-code" in d.payload["content"]
 
 
 def test_dockerfile_editor_emits_write_file():

@@ -1,0 +1,11 @@
+{
+  "id": "markdown_fix",
+  "tier": 2,
+  "instruction": "Fix README.md: change the top heading to exactly '# jaros-code', and add a bullet list item '- local' on its own line somewhere after the heading. Keep it valid Markdown.",
+  "target": "README.md",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "README.md": "# project\n\nA tool.\n",
+    "test_readme.py": "def test_readme():\n    c = open('README.md').read()\n    assert '# jaros-code' in c\n    assert '- local' in c\n"
+  }
+}

@@ -109,6 +109,8 @@ def select_editor_agent(target: str, editor_agent: str = "rewriter_agent.py") ->
     name, ext = p.name.lower(), p.suffix.lower()
     if name.startswith("dockerfile") or ext == ".dockerfile":
         return "dockerfile_editor_agent.py"
+    if ext in {".md", ".markdown"}:
+        return "markdown_editor_agent.py"
     if ext in _CONFIG_EXTS:
         return "config_editor_agent.py"
     return editor_agent
