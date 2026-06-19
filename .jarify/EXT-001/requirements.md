@@ -117,6 +117,20 @@ back for correction — a sharp verb that helps a 2B model recover from syntax s
 - [ ] Return `{valid: false, error, line}` for invalid Python
 - [ ] Never write or mutate the host (read-only / replay-safe)
 
+### [REQ-11] Generated-code safety gate (unattended-safe)
+
+The agents generate code (via gemma2:2b) that is written to disk and then EXECUTED by
+the test command, so the model's output must be gated too. `code.write_file` and
+`code.apply_patch` deterministically REFUSE content containing dangerous operations:
+process/shell execution, network egress, destructive filesystem ops, and dynamic
+eval/exec/import/unsafe-deserialization. Refused content is never written.
+
+#### Acceptance Criteria
+- [ ] Reject generated code containing `os.system`/`subprocess`/`socket`/`urllib`/`requests`
+- [ ] Reject `shutil.rmtree`/`os.remove`/`os.unlink` and `eval(`/`exec(`/`__import__(`/`pickle.loads`
+- [ ] Allow ordinary pure-function solution code (arithmetic, strings, lists, dicts)
+- [ ] The gate applies to both `code.write_file` (content) and `code.apply_patch` (new text)
+
 ### [REQ-7] shell.exec safety denylist (unattended-safe)
 
 Because the harness runs unattended, `shell.exec` must deterministically REFUSE

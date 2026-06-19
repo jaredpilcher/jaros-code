@@ -9,8 +9,16 @@ recorded before the edit is applied (PRIME-001 Tenet 3).
 from __future__ import annotations
 
 import os
+import sys
 
 from jaros.core.decision_gate import ValidationResult
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from _codesafety import unsafe_reason  # generated-code safety gate (REQ-11)
+except Exception:  # pragma: no cover
+    def unsafe_reason(code):  # type: ignore
+        return None
 
 # #EXT-001-REQ-4 Start
 
@@ -27,6 +35,11 @@ class ApplyPatchTool:
             return ValidationResult.reject("code.apply_patch requires 'old' and 'new' strings")
         if not isinstance(payload.get("old"), str) or not isinstance(payload.get("new"), str):
             return ValidationResult.reject("'old' and 'new' must be strings")
+        hit = unsafe_reason(payload.get("new", ""))
+        if hit is not None:
+            return ValidationResult.reject(
+                f"code.apply_patch refused unsafe generated code (matched {hit!r}): "
+                "no network/process/destructive-fs/dynamic-exec operations allowed")
         return ValidationResult.accept(decision)
 
     def execute(self, decision, **collaborators) -> dict:

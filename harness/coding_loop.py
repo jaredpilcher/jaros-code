@@ -176,7 +176,11 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
             if isinstance(out, dict) and out.get("applied"):
                 _v(_step, out.get("tool", "tool"), f"applied to {out['path']} ({out['bytesAfter']} bytes)")
         except RuntimeError as exc:
+            # A gate/safety rejection (e.g. unsafe generated code) is fed back so the
+            # agent can correct, rather than silently retried.
+            last_output = f"Your edit was rejected by the validation/safety gate: {exc}"
             _v(_step, "apply", f"\033[31mrejected\033[0m: {exc}")
+            continue
 
         # 1b) deterministic syntax guard: a broken .py can never import, so catch it
         # now and feed the exact SyntaxError back next round (don't waste a test run).

@@ -116,6 +116,43 @@ def test_write_file_rejects_non_string_content():
     assert tool.validate(_decision("code.write_file", {"path": "x", "content": 5})).ok is False
 
 
+# --- REQ-11 generated-code safety gate -------------------------------------
+
+import pytest as _pt
+
+
+@_pt.mark.parametrize("bad", [
+    "import os\nos.system('rm -rf /')\n",
+    "import subprocess\nsubprocess.run(['x'])\n",
+    "import socket\n",
+    "import urllib.request\n",
+    "import requests\n",
+    "import shutil\nshutil.rmtree('/')\n",
+    "eval('1+1')\n",
+    "exec('x=1')\n",
+    "import pickle\npickle.loads(b'')\n",
+])
+def test_write_file_refuses_unsafe_generated_code(bad):
+    tool = _load_tool("write_file_tool.py", "WriteFileTool")
+    assert tool.validate(_decision("code.write_file", {"path": "s.py", "content": bad})).ok is False
+
+
+@_pt.mark.parametrize("good", [
+    "def add(a, b):\n    return a + b\n",
+    "def title_case(s):\n    return ' '.join(w.capitalize() for w in s.split())\n",
+    "def rle(s):\n    out=[]\n    for c in s:\n        out.append(c)\n    return ''.join(out)\n",
+])
+def test_write_file_allows_safe_solution_code(good):
+    tool = _load_tool("write_file_tool.py", "WriteFileTool")
+    assert tool.validate(_decision("code.write_file", {"path": "s.py", "content": good})).ok is True
+
+
+def test_apply_patch_refuses_unsafe_new_text(tmp_path):
+    tool = _load_tool("apply_patch_tool.py", "ApplyPatchTool")
+    d = _decision("code.apply_patch", {"path": "s.py", "old": "x", "new": "import os; os.system('x')"})
+    assert tool.validate(d).ok is False
+
+
 # --- REQ-5 shell.exec ------------------------------------------------------
 
 def test_shell_exec_captures_output():

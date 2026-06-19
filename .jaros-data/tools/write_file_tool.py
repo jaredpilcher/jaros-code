@@ -8,8 +8,16 @@ file. Effectful; the Decision is recorded before the write (PRIME-001 Tenet 3).
 from __future__ import annotations
 
 import os
+import sys
 
 from jaros.core.decision_gate import ValidationResult
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from _codesafety import unsafe_reason  # generated-code safety gate (REQ-11)
+except Exception:  # pragma: no cover - fail safe if helper missing
+    def unsafe_reason(code):  # type: ignore
+        return None
 
 # #EXT-001-REQ-6 Start
 _MAX_BYTES = 1_000_000
@@ -28,6 +36,11 @@ class WriteFileTool:
             return ValidationResult.reject("code.write_file requires a 'content' string")
         if len(content.encode("utf-8")) > _MAX_BYTES:
             return ValidationResult.reject("code.write_file content exceeds size cap")
+        hit = unsafe_reason(content)
+        if hit is not None:
+            return ValidationResult.reject(
+                f"code.write_file refused unsafe generated code (matched {hit!r}): "
+                "no network/process/destructive-fs/dynamic-exec operations allowed")
         return ValidationResult.accept(decision)
 
     def execute(self, decision, **collaborators) -> dict:
