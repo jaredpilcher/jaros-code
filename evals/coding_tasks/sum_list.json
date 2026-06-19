@@ -1,0 +1,11 @@
+{
+  "id": "sum_list",
+  "tier": 1,
+  "instruction": "The total function should return the sum of a list of numbers, but it always returns 0. Fix it so total([1, 2, 3]) == 6.",
+  "target": "summer.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "summer.py": "def total(xs):\n    return 0\n",
+    "test_summer.py": "from summer import total\n\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n    assert total([]) == 0\n    assert total([5]) == 5\n"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "run_length_encode",
+  "instruction": "Implement rle(s): run-length-encode a string as consecutive (char, count) pairs concatenated, e.g. rle('aaabbc') == 'a3b2c1', rle('') == '', rle('x') == 'x1'.",
+  "tier": 3,
+  "target": "rle.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "rle.py": "def rle(s):\n    raise NotImplementedError\n",
+    "test_rle.py": "from rle import rle\n\n\ndef test_rle():\n    assert rle(\"aaabbc\") == \"a3b2c1\"\n    assert rle(\"\") == \"\"\n    assert rle(\"x\") == \"x1\"\n"
+  }
+}

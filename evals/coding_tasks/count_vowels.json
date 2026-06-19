@@ -1,0 +1,11 @@
+{
+  "id": "count_vowels",
+  "tier": 1,
+  "instruction": "Implement count_vowels(s): return the number of vowels (a, e, i, o, u, case-insensitive) in the string s. count_vowels('Hello') == 2, count_vowels('xyz') == 0.",
+  "target": "vowels.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "vowels.py": "def count_vowels(s):\n    raise NotImplementedError\n",
+    "test_vowels.py": "from vowels import count_vowels\n\n\ndef test_vowels():\n    assert count_vowels(\"Hello\") == 2\n    assert count_vowels(\"xyz\") == 0\n    assert count_vowels(\"AEIOU\") == 5\n"
+  }
+}

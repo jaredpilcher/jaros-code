@@ -1,0 +1,11 @@
+{
+  "id": "palindrome",
+  "instruction": "Implement is_palindrome(s): return True iff s reads the same forwards and backwards, ignoring case and non-alphanumeric characters. is_palindrome('A man, a plan, a canal: Panama') == True, is_palindrome('hello') == False.",
+  "tier": 2,
+  "target": "palindrome.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "palindrome.py": "def is_palindrome(s):\n    raise NotImplementedError\n",
+    "test_palindrome.py": "from palindrome import is_palindrome\n\n\ndef test_palindrome():\n    assert is_palindrome(\"A man, a plan, a canal: Panama\") is True\n    assert is_palindrome(\"hello\") is False\n    assert is_palindrome(\"\") is True\n"
+  }
+}

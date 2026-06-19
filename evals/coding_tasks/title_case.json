@@ -1,0 +1,11 @@
+{
+  "id": "title_case",
+  "instruction": "Implement title_case(s): capitalize the first letter of each whitespace-separated word and lowercase the rest. title_case('hello world') == 'Hello World', title_case('the QUICK fox') == 'The Quick Fox'.",
+  "tier": 2,
+  "target": "titlecase.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "titlecase.py": "def title_case(s):\n    raise NotImplementedError\n",
+    "test_titlecase.py": "from titlecase import title_case\n\n\ndef test_title_case():\n    assert title_case(\"hello world\") == \"Hello World\"\n    assert title_case(\"the QUICK fox\") == \"The Quick Fox\"\n"
+  }
+}

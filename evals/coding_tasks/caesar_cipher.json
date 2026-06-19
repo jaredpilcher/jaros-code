@@ -1,0 +1,11 @@
+{
+  "id": "caesar_cipher",
+  "instruction": "Implement encode(text, shift): shift each ASCII letter by `shift` positions within its case (wrapping a-z and A-Z), leaving non-letters unchanged. encode('abc', 1) == 'bcd', encode('xyz', 3) == 'abc', encode('Hello, World!', 13) == 'Uryyb, Jbeyq!'.",
+  "tier": 3,
+  "target": "caesar.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "caesar.py": "def encode(text, shift):\n    raise NotImplementedError\n",
+    "test_caesar.py": "from caesar import encode\n\n\ndef test_caesar():\n    assert encode(\"abc\", 1) == \"bcd\"\n    assert encode(\"xyz\", 3) == \"abc\"\n    assert encode(\"Hello, World!\", 13) == \"Uryyb, Jbeyq!\"\n"
+  }
+}

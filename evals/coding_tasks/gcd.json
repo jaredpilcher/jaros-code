@@ -1,0 +1,11 @@
+{
+  "id": "gcd",
+  "instruction": "The gcd function should return the greatest common divisor of a and b, but it returns their product. Fix it (e.g. Euclid's algorithm) so gcd(12, 8) == 4 and gcd(17, 5) == 1.",
+  "tier": 2,
+  "target": "gcd.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "gcd.py": "def gcd(a, b):\n    return a * b\n",
+    "test_gcd.py": "from gcd import gcd\n\n\ndef test_gcd():\n    assert gcd(12, 8) == 4\n    assert gcd(17, 5) == 1\n    assert gcd(100, 10) == 10\n"
+  }
+}

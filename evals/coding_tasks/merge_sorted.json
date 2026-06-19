@@ -1,0 +1,11 @@
+{
+  "id": "merge_sorted",
+  "instruction": "Implement merge(a, b): given two ascending-sorted lists, return one merged ascending-sorted list containing all elements. merge([1, 3, 5], [2, 4]) == [1, 2, 3, 4, 5], merge([], [1]) == [1].",
+  "tier": 3,
+  "target": "merge.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "merge.py": "def merge(a, b):\n    raise NotImplementedError\n",
+    "test_merge.py": "from merge import merge\n\n\ndef test_merge():\n    assert merge([1, 3, 5], [2, 4]) == [1, 2, 3, 4, 5]\n    assert merge([], [1]) == [1]\n    assert merge([1, 2], []) == [1, 2]\n"
+  }
+}

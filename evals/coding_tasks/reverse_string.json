@@ -1,0 +1,11 @@
+{
+  "id": "reverse_string",
+  "tier": 1,
+  "instruction": "The reverse function should return the string reversed, but it returns it unchanged. Fix it so reverse('abc') == 'cba'.",
+  "target": "rev.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "rev.py": "def reverse(s):\n    return s\n",
+    "test_rev.py": "from rev import reverse\n\n\ndef test_reverse():\n    assert reverse(\"abc\") == \"cba\"\n    assert reverse(\"\") == \"\"\n    assert reverse(\"x\") == \"x\"\n"
+  }
+}
