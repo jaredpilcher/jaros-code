@@ -12,6 +12,7 @@ Commands (Claude-Code-style):
   /status                       model + latest pass rate + census
   /agents  /tools               the live fleet/catalog
   /report                       latest convergence report
+  /trend                        pass-rate history (full runs)
   /find <term>                  navigator agent -> fs.grep (locate code)
   /grep <pattern> [path]        fs.grep tool
   /ls [path]                    fs.list tool
@@ -74,6 +75,26 @@ class JcodeCli:
     def cmd_report(self, _arg: str) -> str:
         from harness.report import write_report
         return write_report()["markdown"]
+
+    def cmd_trend(self, _arg: str) -> str:
+        """Pass-rate history (full runs) — a Claude-Code-like status view."""
+        import glob
+        import json
+        rows = []
+        for line in open(ROOT / ".jaros-data" / "artifacts" / "eval" / "history.jsonl",
+                         encoding="utf-8") if (ROOT / ".jaros-data" / "artifacts" / "eval" / "history.jsonl").is_file() else []:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+        fulls = [r for r in rows if r.get("total", 0) >= 10][-12:]
+        if not fulls:
+            return "(no full-suite runs yet)"
+        out = ["pass-rate trend (toward 100% = Claude-Code/Opus-4.8):"]
+        for r in fulls:
+            pct = round(r["passRate"] * 100)
+            bar = "#" * (pct // 5) + "." * (20 - pct // 5)
+            out.append(f"  {r['timestamp'][:16]}  [{bar}] {r['solved']:>2}/{r['total']:<2} {pct}%")
+        return "\n".join(out)
 
     def cmd_find(self, arg: str) -> str:
         """navigator agent decides a search term, then fs.grep runs (wired)."""
