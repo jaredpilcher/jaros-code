@@ -147,3 +147,21 @@ def test_test_reader_defaults_to_fail_when_ambiguous():
     agent = mod.build(FakeLlm("hmm not sure"))
     [d] = agent.decide({"output": "..."})
     assert d.payload["events"] == ["start", "fail"]
+
+
+# --- REQ-5 navigator (agent -> fs.grep tool wiring) ------------------------
+
+def test_navigator_emits_fs_grep():
+    mod = _load_agent("navigator_agent.py")
+    agent = mod.build(FakeLlm("greet"))
+    [d] = agent.decide({"task": "fix the greet function", "path": "src"})
+    assert d.type == "fs.grep"
+    assert d.payload == {"pattern": "greet", "path": "src"}
+
+
+def test_navigator_empty_is_honest_fail():
+    mod = _load_agent("navigator_agent.py")
+    agent = mod.build(FakeLlm(""))
+    [d] = agent.decide({"task": "x"})
+    assert d.type == "advance"
+    assert d.payload["events"] == ["start", "fail"]

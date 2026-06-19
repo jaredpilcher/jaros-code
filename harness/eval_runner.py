@@ -62,8 +62,9 @@ def run_suite(max_iters: int = 3, verbose: bool = False) -> dict:
 def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = False,
                   suite: str = "authored") -> dict:
     """Run any task list through fix_loop in isolation; return a scorecard dict."""
-    from harness.coding_loop import fix_loop  # local import: sets up env first
+    from harness.coding_loop import fix_loop, reset_tool_usage, tool_usage  # local: sets env first
 
+    reset_tool_usage()
     started = time.time()
     print(f"\n\033[1m jaros-code eval \033[0m  suite={suite}  {len(tasks)} tasks  model={MODEL}  max_iters={max_iters}")
     print("   " + "-" * 56)
@@ -103,6 +104,7 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
         "perTier": per_tier,
         "frontierTier": frontier,
         "tooEasy": too_easy,
+        "toolUsage": tool_usage(),
         "elapsedSec": round(time.time() - started, 1),
         "perTask": per_task,
     }

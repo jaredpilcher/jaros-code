@@ -47,6 +47,17 @@ accomplish it, emitting a `shell.exec` Decision. Used to run builds and tests.
 - [ ] Emit a `shell.exec` Decision carrying that command and optional `cwd`
 - [ ] On empty output emit an honest `advance` Decision (events start, fail)
 
+### [REQ-5] navigator — locate code via a tool
+
+An agent named `navigator` decides ONE search term for a task and emits an `fs.grep`
+Decision — a genuine agent→tool wiring where the agent reasons about *what* to find
+and the deterministic tool does the search. Used to locate where to change code.
+
+#### Acceptance Criteria
+- [ ] Build a focused prompt from `{task}` and extract a single search term
+- [ ] Emit an `fs.grep` Decision carrying that term and the search root
+- [ ] On empty output emit an honest `advance` Decision (events start, fail)
+
 ### [REQ-3] test-reader — judge a test run
 
 An agent named `test-reader` reads captured test/command output and judges

@@ -15,6 +15,7 @@ import importlib.util
 import os
 import sys
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +38,21 @@ DATA_DIR = ROOT / ".jaros-data"
 AGENTS_DIR = DATA_DIR / "agents"
 TOOLS_DIR = DATA_DIR / "tools"
 MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+
+
+# Tool-usage telemetry (EXT-007 / REQ-4): count how often each tool/decision type
+# fires, so we can SEE which agent<->tool wirings are actually used and prune dead
+# ones. Module-level so it aggregates across the many fix_loops in one eval run.
+_TOOL_USAGE: Counter = Counter()
+
+
+def tool_usage() -> dict:
+    """Snapshot of decision-type -> invocation count since the last reset."""
+    return dict(_TOOL_USAGE)
+
+
+def reset_tool_usage() -> None:
+    _TOOL_USAGE.clear()
 
 
 # #EXT-003-REQ-1 Start
@@ -65,6 +81,7 @@ class Runtime:
         )
         if not outcome.applied:
             raise RuntimeError(f"executor refused {decision.type}: {outcome.reason}")
+        _TOOL_USAGE[decision.type] += 1  # telemetry: this wiring fired
         return outcome.output
 # #EXT-003-REQ-1 End
 

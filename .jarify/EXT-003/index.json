@@ -2,15 +2,15 @@
   "REQ-1": [
     {
       "file": "harness/coding_loop.py",
-      "startLine": 42,
-      "endLine": 69
+      "startLine": 43,
+      "endLine": 70
     }
   ],
   "REQ-2": [
     {
       "file": "harness/coding_loop.py",
-      "startLine": 131,
-      "endLine": 217
+      "startLine": 132,
+      "endLine": 230
     }
   ]
 }

@@ -112,6 +112,12 @@ def build_report() -> dict:
                  f"**Evals: {now_c['evals']}{_delta('evals')}**  ·  Specs: {now_c['specs']}{_delta('specs')}")
     lines.append(f"- Goal: hundreds → thousands → tens of thousands "
                  f"(swarm target ~{SWARM_GOAL:,} agents/tools/evals). Prune what doesn't help; net up.")
+    usage = sc.get("toolUsage") or {}
+    if usage:
+        ranked = sorted(usage.items(), key=lambda kv: -kv[1])
+        lines.append(f"\n## Wiring usage (watch + optimize)")
+        lines.append("- " + "  ·  ".join(f"{k}={v}" for k, v in ranked))
+        lines.append("- Tools never firing across runs are candidates to wire in better or prune.")
     lines.append(f"\n## Measurement accuracy (tightening)")
     lines.append(f"- Tasks measured: **{total}**  ·  tiers: **{len(tiers)}**  ·  CI width: **{ci_w}pts** (smaller = more accurate)")
     lines.append(f"- Real public benchmark included: **{'yes (HumanEval)' if has_real else 'not yet'}**")

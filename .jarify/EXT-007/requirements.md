@@ -40,6 +40,18 @@ or eval tasks — and may prune agents/tools/evals that do not help. The recorde
 - [ ] Unhelpful agents/tools/evals are removed, with the reason recorded in the commit
 - [ ] Quality trend (pass rate up, Wilson CI narrowing) accompanies the count growth
 
+### [REQ-4] Wiring telemetry (watch + optimize the agent↔tool wirings)
+
+The system records how often each tool/decision type fires during eval runs, so we
+can SEE which agent↔tool wirings are actually used and optimize: wire-in or prune
+ones that never fire. Reported alongside the metrics.
+
+#### Acceptance Criteria
+- [ ] Each executed decision increments a per-type usage counter
+- [ ] The usage snapshot is recorded in the scorecard each run
+- [ ] The report shows tool/wiring usage ranked, flagging never-fired tools
+- [ ] The counter resets per run so usage reflects the current suite
+
 ### [REQ-3] Frontier-driven prioritization
 
 The next improvement targets the measured frontier — the lowest unmastered tier / the
