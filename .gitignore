@@ -1,0 +1,17 @@
+# Jaros runtime state (regenerable / mutable). Source lives in
+# .jaros-data/agents, .jaros-data/tools, .jaros-data/config, .jaros-data/schedules.
+.jaros-data/inbox/
+.jaros-data/outbox/
+.jaros-data/processed/
+.jaros-data/failed/
+.jaros-data/claimed/
+.jaros-data/state/
+.jaros-data/artifacts/
+.jaros-data/status.json
+.jaros-data/*.log
+.jaros-data/daemon.log
+
+# Python
+__pycache__/
+*.pyc
+.env

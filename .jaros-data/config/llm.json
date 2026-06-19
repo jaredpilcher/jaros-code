@@ -1,0 +1,6 @@
+{
+  "provider": "ollama",
+  "options": {
+    "model": "gemma2:2b"
+  }
+}
