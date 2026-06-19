@@ -1,0 +1,11 @@
+{
+  "id": "roman_decode",
+  "tier": 3,
+  "instruction": "Implement from_roman(s): convert a Roman numeral string to its integer value, handling subtractive forms. from_roman('IV')==4, from_roman('IX')==9, from_roman('LVIII')==58, from_roman('MCMXCIV')==1994.",
+  "target": "fromroman.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "fromroman.py": "def from_roman(s):\n    raise NotImplementedError\n",
+    "test_fromroman.py": "from fromroman import from_roman\n\n\ndef test_from_roman():\n    assert from_roman('IV') == 4\n    assert from_roman('IX') == 9\n    assert from_roman('LVIII') == 58\n    assert from_roman('MCMXCIV') == 1994\n"
+  }
+}

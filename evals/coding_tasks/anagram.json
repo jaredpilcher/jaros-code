@@ -1,0 +1,11 @@
+{
+  "id": "anagram",
+  "tier": 2,
+  "instruction": "Implement is_anagram(a, b): return True iff a and b are anagrams of each other ignoring spaces and letter case. is_anagram('Listen', 'Silent') == True, is_anagram('Dormitory', 'Dirty Room') == True, is_anagram('abc', 'abd') == False.",
+  "target": "anagram.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "anagram.py": "def is_anagram(a, b):\n    raise NotImplementedError\n",
+    "test_anagram.py": "from anagram import is_anagram\n\n\ndef test_anagram():\n    assert is_anagram('Listen', 'Silent') is True\n    assert is_anagram('Dormitory', 'Dirty Room') is True\n    assert is_anagram('abc', 'abd') is False\n"
+  }
+}
