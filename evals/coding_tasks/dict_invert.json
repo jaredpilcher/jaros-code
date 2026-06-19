@@ -1,0 +1,11 @@
+{
+  "id": "dict_invert",
+  "tier": 2,
+  "instruction": "Implement invert(d): return a new dict mapping each value back to its key. invert({'a': 1, 'b': 2}) == {1: 'a', 2: 'b'}, invert({}) == {}.",
+  "target": "invert.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "invert.py": "def invert(d):\n    raise NotImplementedError\n",
+    "test_invert.py": "from invert import invert\n\n\ndef test_invert():\n    assert invert({'a': 1, 'b': 2}) == {1: 'a', 2: 'b'}\n    assert invert({}) == {}\n"
+  }
+}

@@ -45,6 +45,11 @@
   agent (decompose: e.g. for binary_search "the bug is the loop condition < vs <=") and
   MEASURE; if a 2B planner can't crack them either, honestly accept them as the model's
   limit and pivot effort to breadth (more specialists, real benchmarks, CLI parity).
+- **2026-06-19 max_iters 3→4 REVERTED.** Two iters=4 full runs both 81% with greet_format
+  STILL failing (probe's attempt-4 solve was a flaky one-off); no rate gain, cycle time
+  not better. Reverted to 3 for faster measurement. greet_format is variance-dominated —
+  no practical max_iters reliably fixes it. Strategy confirmed: breadth + honesty, accept
+  the 2B ceiling tasks. Specialists: config/dockerfile/markdown live and firing.
 
 
 The supervisor advances one task per cycle (frontier-first), appends new tasks as

@@ -1,0 +1,11 @@
+{
+  "id": "second_largest",
+  "tier": 2,
+  "instruction": "Implement second_largest(xs): return the second largest DISTINCT value in the list. second_largest([3, 1, 4, 4, 2]) == 3, second_largest([5, 5, 1]) == 1.",
+  "target": "second.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "second.py": "def second_largest(xs):\n    raise NotImplementedError\n",
+    "test_second.py": "from second import second_largest\n\n\ndef test_second_largest():\n    assert second_largest([3, 1, 4, 4, 2]) == 3\n    assert second_largest([5, 5, 1]) == 1\n"
+  }
+}
