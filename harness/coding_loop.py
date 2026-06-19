@@ -1,0 +1,171 @@
+"""Bounded edit->test->judge coding loop (EXT-003).
+
+Composes the EXT-002 single-purpose agents and EXT-001 deterministic tools into a
+multi-step coding loop, routing every Decision through the real Jaros gate +
+executor + decision log so each step is validated, executed, and recorded (replay
+faithful). The transcript mirrors Claude Code's look and feel.
+
+Only `editor` and `test-reader` call gemma2:2b (the reasoning steps). Everything
+else is deterministic: the model decides *what*, the executor and tools decide *how*.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+
+# Windows consoles default to cp1252; force UTF-8 so the transcript never crashes.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+from jaros.core import create_decision
+from jaros.core.decision_gate import validate_decision
+from jaros.execution import executor
+from jaros.execution.handlers import make_advance_handler
+from jaros.execution.tools import load_custom_tools
+from jaros.llm import LlmConfig, create_llm_client
+from jaros.state import DecisionLog, TransitionLog, record_decision
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / ".jaros-data"
+AGENTS_DIR = DATA_DIR / "agents"
+TOOLS_DIR = DATA_DIR / "tools"
+MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+
+
+# #EXT-003-REQ-1 Start
+class Runtime:
+    """Faithful Jaros execution path: gate -> executor -> decision log."""
+
+    def __init__(self, data_dir: Path = DATA_DIR) -> None:
+        state_dir = data_dir / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        executor.register_handler("advance", make_advance_handler())
+        load_custom_tools(TOOLS_DIR)  # registers fs.*, code.apply_patch, shell.exec
+        self._log = TransitionLog(state_dir)
+        self._log.ensure()
+        self._dlog = DecisionLog(state_dir)
+        self._dlog.ensure()
+
+    def apply(self, decision):
+        """Validate at the gate, then execute, recording the accepted Decision."""
+        gated = validate_decision(decision)
+        if not gated.ok:
+            raise RuntimeError(f"gate rejected {decision.type}: {gated.reason}")
+        outcome = executor.apply(
+            decision,
+            on_accept=lambda d: record_decision(self._dlog, d),
+            log=self._log,
+        )
+        if not outcome.applied:
+            raise RuntimeError(f"executor refused {decision.type}: {outcome.reason}")
+        return outcome.output
+# #EXT-003-REQ-1 End
+
+
+def _load_agent(filename: str, llm):
+    path = AGENTS_DIR / filename
+    spec = importlib.util.spec_from_file_location(f"agent_{path.stem}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build(llm)
+
+
+def build_llm():
+    os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
+    os.environ.setdefault("OLLAMA_MODEL", MODEL)
+    return create_llm_client(LlmConfig(provider="ollama"))
+
+
+@dataclass
+class LoopResult:
+    success: bool
+    attempts: int
+    final_output: str
+
+
+# --- Claude-Code-like transcript ------------------------------------------
+
+def _banner(target: str, test_cmd: str, max_iters: int) -> None:
+    print("\n\033[1m jaros-code \033[0m  software-dev harness on Jaros")
+    print(f"   model    : {MODEL}  (ollama, zero paid inference)")
+    print(f"   target   : {target}")
+    print(f"   test     : {test_cmd}")
+    print(f"   max tries: {max_iters}")
+    print("   " + "-" * 56)
+
+
+def _round_header(r: int, total: int) -> None:
+    print(f"\n  \033[36m[*] round {r}/{total}\033[0m")
+
+
+def _step(label: str, detail: str) -> None:
+    print(f"    \033[2m{label:<14}\033[0m {detail}")
+
+
+# #EXT-003-REQ-2 Start
+def fix_loop(target: str, instruction: str, test_cmd: str, *,
+             max_iters: int = 4, cwd: str | None = None,
+             editor_agent: str = "rewriter_agent.py") -> LoopResult:
+    """Run the bounded edit->test->judge loop until tests pass or attempts run out.
+
+    ``editor_agent`` selects the editing agent: ``rewriter_agent.py`` (whole-file,
+    2B-reliable; default) or ``editor_agent.py`` (surgical OLD/NEW edit).
+    """
+    rt = Runtime()
+    llm = build_llm()
+    editor = _load_agent(editor_agent, llm)
+    test_reader = _load_agent("test_reader_agent.py", llm)
+    target_path = Path(target)
+
+    _banner(target, test_cmd, max_iters)
+    last_output = ""
+
+    for r in range(1, max_iters + 1):
+        _round_header(r, max_iters)
+
+        # 1) reasoning: editor proposes one exact edit (gemma2:2b)
+        content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
+        [edit] = editor.decide({"path": str(target), "content": content, "instruction": instruction})
+        if edit.type == "code.apply_patch":
+            _step("editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
+        elif edit.type == "code.write_file":
+            _step("rewriter", f"rewrite {edit.payload['path']} ({len(edit.payload['content'])} chars)")
+        else:
+            _step("editor", f"no edit ({edit.payload.get('note','')})")
+        try:
+            out = rt.apply(edit)
+            if isinstance(out, dict) and out.get("applied"):
+                _step(out.get("tool", "tool"), f"applied to {out['path']} ({out['bytesAfter']} bytes)")
+        except RuntimeError as exc:
+            _step("apply", f"\033[31mrejected\033[0m: {exc}")
+
+        # 2) operator: run the test command via shell.exec (deterministic tool)
+        test_dec = create_decision(
+            id=f"test-{uuid.uuid4().hex}", source="orchestrator",
+            type="shell.exec", payload={"command": test_cmd, **({"cwd": cwd} if cwd else {})})
+        result = rt.apply(test_dec)
+        last_output = (result.get("stdout", "") + result.get("stderr", "")) if isinstance(result, dict) else str(result)
+        exit_code = result.get("exitCode") if isinstance(result, dict) else None
+        _step("shell.exec", f"exit={exit_code}  {last_output.strip().splitlines()[-1] if last_output.strip() else ''}")
+
+        # 3) reasoning: test-reader judges PASS/FAIL (gemma2:2b)
+        [verdict] = test_reader.decide({"output": last_output})
+        rt.apply(verdict)
+        passed = verdict.payload.get("verdict") == "pass"
+        _step("test-reader", ("\033[32mPASS\033[0m" if passed else "\033[31mFAIL\033[0m") + f"  ({verdict.payload.get('note','')})")
+
+        if passed and exit_code == 0:
+            print(f"\n  \033[32m[OK] solved in {r} attempt(s)\033[0m\n")
+            return LoopResult(success=True, attempts=r, final_output=last_output)
+
+    print(f"\n  \033[31m[X] not solved in {max_iters} attempts\033[0m\n")
+    return LoopResult(success=False, attempts=max_iters, final_output=last_output)
+# #EXT-003-REQ-2 End
+# #EXT-003-REQ-3 End

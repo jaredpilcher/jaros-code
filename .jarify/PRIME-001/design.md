@@ -70,6 +70,25 @@ filename, or a single old→new pair) — the regime where a 2B model is reliabl
 *intelligence of the system* lives in the decomposition and the determinism of the
 tools, not in any one model call.
 
+### Scale: a swarm of tiny agents
+
+The target is a **swarm — hundreds, then thousands, then tens of thousands of
+agents** — every one single-purpose and tiny. Capability scales by *adding agents,
+tools, and evals*, never by enlarging the model.
+
+```text
+   ┌──────────── the swarm grows along three axes (never the model) ───────────┐
+   │  AGENTS   100 → 1k → 10k+   each: one judgement, one tiny prompt/contract  │
+   │  TOOLS    an extensive library of deterministic verbs the agents compose   │
+   │  EVALS    an extensive suite proving convergence on Claude-Code/Opus-4.8    │
+   └────────────────────────────────────────────────────────────────────────────┘
+```
+
+Jaros makes this safe at scale: agents run as lightweight threads (not services),
+each holds only harness-granted capabilities, and the hash-chained decision log
+keeps a swarm of thousands reproducible and attributable. A bigger problem is met
+with a wider swarm, sharper tools, and more evals — full stop.
+
 ## Orchestration on Jaros
 
 - A **job** (`inbox/<id>.json` = `{id, agent, input}`) selects one agent by name.

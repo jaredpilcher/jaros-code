@@ -80,3 +80,13 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
 single-purpose agents each making one narrow judgement, wired together by
 deterministic tools and a durable state machine — not from one big agent, one big
 prompt, or a bigger model. Build the fleet wide and the tools sharp.
+
+**The scale is the strategy.** We are explicitly aiming for a *swarm* — hundreds,
+then thousands, then tens of thousands of agents — to reach Claude-Code-on-Opus-4.8
+quality. Every agent is expected to be **single-purpose and tiny**: one narrow
+judgement, a minimal prompt, a minimal output contract — never a generalist. The
+intelligence is in the multitude and the wiring, not in any one agent. This swarm is
+matched by an equally **extensive library of deterministic tools** (the verbs the
+agents compose) and an **extensive suite of evaluations** (the proof we are
+converging on the bar). More capability is always answered by *more, smaller* agents,
+*sharper* tools, and *more* evals — never by a bigger model.

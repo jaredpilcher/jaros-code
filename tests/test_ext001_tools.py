@@ -101,6 +101,21 @@ def test_apply_patch_creates_new_file(tmp_path):
     assert f.read_text(encoding="utf-8") == "hello"
 
 
+# --- REQ-6 code.write_file -------------------------------------------------
+
+def test_write_file_overwrites(tmp_path):
+    tool = _load_tool("write_file_tool.py", "WriteFileTool")
+    f = tmp_path / "deep" / "w.py"
+    out = tool.execute(_decision("code.write_file", {"path": str(f), "content": "ok\n"}))
+    assert out["applied"] is True and out["created"] is True
+    assert f.read_text(encoding="utf-8") == "ok\n"
+
+
+def test_write_file_rejects_non_string_content():
+    tool = _load_tool("write_file_tool.py", "WriteFileTool")
+    assert tool.validate(_decision("code.write_file", {"path": "x", "content": 5})).ok is False
+
+
 # --- REQ-5 shell.exec ------------------------------------------------------
 
 def test_shell_exec_captures_output():

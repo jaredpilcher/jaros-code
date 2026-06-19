@@ -37,12 +37,17 @@ _NEW_RE = re.compile(r"<<<NEW\r?\n(.*?)\r?\nNEW>>>", re.S)
 
 
 def parse_edit(text: str):
-    """Extract (old, new) from the model output, or None if absent."""
+    """Extract (old, new) from the model output, or None if absent/placeholder."""
     old = _OLD_RE.search(text)
     new = _NEW_RE.search(text)
     if not old or not new:
         return None
-    return old.group(1), new.group(1)
+    old_text = old.group(1)
+    # Guard: a 2B model sometimes echoes the prompt's placeholder verbatim. Treat
+    # that as a non-edit (the deterministic tool would reject it anyway).
+    if "copied character-for-character" in old_text or not old_text.strip():
+        return None
+    return old_text, new.group(1)
 
 
 class EditorBoundary:

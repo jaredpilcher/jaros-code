@@ -54,6 +54,34 @@ def test_editor_unparseable_is_honest_fail():
     assert d.payload["events"] == ["start", "fail"]
 
 
+def test_editor_rejects_placeholder_echo():
+    mod = _load_agent("editor_agent.py")
+    reply = ("<<<OLD\n(snippet copied character-for-character from the FILE)\nOLD>>>\n"
+             "<<<NEW\nx = 2\nNEW>>>")
+    agent = mod.build(FakeLlm(reply))
+    [d] = agent.decide({"path": "f.py", "content": "x = 1\n", "instruction": "set x=2"})
+    assert d.type == "advance"  # placeholder echo -> honest non-edit, not a bad patch
+
+
+# --- REQ-4 rewriter --------------------------------------------------------
+
+def test_rewriter_emits_write_file_from_sentinel():
+    mod = _load_agent("rewriter_agent.py")
+    agent = mod.build(FakeLlm("<<<FILE\ndef add(a, b):\n    return a + b\nFILE>>>"))
+    [d] = agent.decide({"path": "calc.py", "content": "def add(a, b):\n    return a - b\n",
+                        "instruction": "make it add"})
+    assert d.type == "code.write_file"
+    assert d.payload["content"] == "def add(a, b):\n    return a + b\n"
+
+
+def test_rewriter_falls_back_to_code_fence():
+    mod = _load_agent("rewriter_agent.py")
+    agent = mod.build(FakeLlm("```python\nprint('hi')\n```"))
+    [d] = agent.decide({"path": "a.py", "content": "", "instruction": "x"})
+    assert d.type == "code.write_file"
+    assert d.payload["content"] == "print('hi')\n"
+
+
 # --- REQ-2 commander -------------------------------------------------------
 
 def test_commander_emits_shell_exec():

@@ -1,0 +1,16 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 35,
+      "endLine": 62
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 105,
+      "endLine": 156
+    }
+  ]
+}
