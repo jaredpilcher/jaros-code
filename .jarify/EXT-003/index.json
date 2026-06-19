@@ -9,8 +9,8 @@
   "REQ-2": [
     {
       "file": "harness/coding_loop.py",
-      "startLine": 176,
-      "endLine": 295
+      "startLine": 187,
+      "endLine": 306
     }
   ]
 }

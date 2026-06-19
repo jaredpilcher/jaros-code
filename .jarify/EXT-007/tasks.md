@@ -18,6 +18,15 @@
   40→29pts). The diagnosis was correct: round-1 format/syntax errors needed recovery
   room. This is real capability improvement, not plumbing. Next lever: split broad
   agents into specialists (REQ-6) and crack the remaining frontier fails.
+- **2026-06-19 HONEST caveat — run-to-run VARIANCE:** the trend is noisy
+  (83%/24 → 80%/25 → 69%/26) and the solved COUNT dropped (20→18). Debugged: `clamp`
+  (trivial) PASSES standalone but FAILED in a full run — so gemma2:2b on CPU is NOT
+  fully reproducible across separate runs even at temp=0+seed (CPU float/thread
+  nondeterminism). The single-run pass rate is a noisy ~70-80% sample; borderline
+  tasks flip. The CONSISTENT fails are the true frontier: greet_format, binary_search,
+  fizzbuzz, palindrome, roman_numerals, run_length_encode. config-editor &
+  dockerfile-editor PASS. Action: sharpen retry feedback (distill the failing
+  assertion) to help the consistent fails; treat the headline as noisy, not a clean 83%.
 
 
 The supervisor advances one task per cycle (frontier-first), appends new tasks as

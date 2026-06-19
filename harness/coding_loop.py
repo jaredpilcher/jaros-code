@@ -122,6 +122,17 @@ def _load_agent(filename: str, llm):
     return module.build(llm)
 
 
+def distill_failure(output: str) -> str:
+    """Pull the salient failure lines (assertion/error/traceback) out of noisy test
+    output, so the agent gets a SHARP signal on retry instead of the whole dump."""
+    if not output:
+        return ""
+    keep = [ln for ln in output.splitlines()
+            if any(k in ln for k in ("Error", "assert", "FAILED", "Traceback", "E   ", "line "))]
+    distilled = "\n".join(keep[-12:]) if keep else ""
+    return distilled or output[-600:]
+
+
 def python_syntax_error(src: str) -> str | None:
     """Return a short description if ``src`` is not valid Python, else None.
 
@@ -234,7 +245,7 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         temperature = 0.0 if r == 1 else min(0.8, 0.3 * (r - 1))
         [edit] = editor.decide({"path": str(target), "content": content,
                                 "instruction": instruction, "symbols": symbols,
-                                "feedback": last_output if r > 1 else "",
+                                "feedback": distill_failure(last_output) if r > 1 else "",
                                 "temperature": temperature, "seed": r})
         if edit.type == "code.apply_patch":
             _v(_step, "editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
