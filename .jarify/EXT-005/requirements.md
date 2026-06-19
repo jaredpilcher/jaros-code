@@ -49,3 +49,28 @@ over time is the explicit convergence signal toward the bar.
 - [ ] Write a full scorecard JSON per run under the artifacts dir
 - [ ] Append one summary line per run to a history file (model, passRate, counts, time)
 - [ ] The history is machine-readable so trend can be charted/monitored
+
+### [REQ-4] Difficulty tiers and the hardening ratchet
+
+Tasks carry a difficulty `tier`. The runner scores per tier and a ratchet escalates
+focus to the next, harder tier once the current tier is mastered — and the suite is
+expected to keep adding harder tasks so it never stays easy (PRIME-001: evals must
+get harder and harder).
+
+#### Acceptance Criteria
+- [ ] Each task declares an integer `tier` (1 = easiest); runner reports per-tier pass rate
+- [ ] The runner computes the current "frontier" tier (lowest tier not yet mastered at a threshold)
+- [ ] A suite whose every tier is mastered is flagged as "too easy — add harder tasks"
+- [ ] Harder authored tiers (multi-edit, edge cases, small algorithms) exist beyond tier 1
+
+### [REQ-5] Real public benchmark integration
+
+Beyond home-grown tasks, the harness runs a real, recognized public benchmark
+(HumanEval first) in the same isolated-run, exit-code-honest way, so the bar is
+external. The adapter reads the standard benchmark format and runs a subset or all.
+
+#### Acceptance Criteria
+- [ ] A loader reads the HumanEval JSONL format (`task_id`, `prompt`, `test`, `entry_point`)
+- [ ] Each problem runs in isolation; solved iff the official test passes (exit 0)
+- [ ] Results feed the same scorecard/trend, labelled as the external benchmark
+- [ ] If the dataset is absent, the runner reports clearly how to obtain it (no silent pass)

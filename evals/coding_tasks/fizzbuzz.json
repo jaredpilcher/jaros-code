@@ -1,0 +1,11 @@
+{
+  "id": "fizzbuzz",
+  "tier": 2,
+  "instruction": "Implement fizzbuzz(n): return a list of strings for the numbers 1..n where multiples of 3 are 'Fizz', multiples of 5 are 'Buzz', multiples of BOTH 3 and 5 are 'FizzBuzz', and all other numbers are the number itself as a string.",
+  "target": "fizzbuzz.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "fizzbuzz.py": "def fizzbuzz(n):\n    raise NotImplementedError\n",
+    "test_fizzbuzz.py": "from fizzbuzz import fizzbuzz\n\n\ndef test_fizzbuzz():\n    assert fizzbuzz(5) == [\"1\", \"2\", \"Fizz\", \"4\", \"Buzz\"]\n    assert fizzbuzz(15)[-1] == \"FizzBuzz\"\n    assert fizzbuzz(15)[8] == \"Fizz\"\n"
+  }
+}

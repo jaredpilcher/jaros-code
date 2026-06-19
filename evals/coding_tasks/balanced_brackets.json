@@ -1,0 +1,11 @@
+{
+  "id": "balanced_brackets",
+  "tier": 3,
+  "instruction": "Implement is_balanced(s): return True iff every bracket in s is correctly matched and nested across the three bracket types (), [], {}. Examples: '([]{})' -> True, '([)]' -> False, '(' -> False, '' -> True.",
+  "target": "brackets.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "brackets.py": "def is_balanced(s):\n    raise NotImplementedError\n",
+    "test_brackets.py": "from brackets import is_balanced\n\n\ndef test_balanced():\n    assert is_balanced(\"([]{})\") is True\n    assert is_balanced(\"([)]\") is False\n    assert is_balanced(\"(\") is False\n    assert is_balanced(\"\") is True\n"
+  }
+}

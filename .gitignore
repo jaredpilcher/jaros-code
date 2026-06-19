@@ -11,6 +11,9 @@
 .jaros-data/*.log
 .jaros-data/daemon.log
 
+# Real benchmark datasets (large / separately licensed — fetched, not vendored)
+evals/benchmarks/
+
 # Python
 __pycache__/
 *.pyc

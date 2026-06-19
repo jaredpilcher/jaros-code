@@ -1,5 +1,6 @@
 {
   "id": "greet_format",
+  "tier": 1,
   "instruction": "The greet function returns 'Hello NAME' but the test expects 'Hello, NAME!' (a comma after Hello and an exclamation mark at the end). Fix the returned string so greet('Sam') == 'Hello, Sam!'.",
   "target": "greet.py",
   "test_cmd": "python -m pytest -q",

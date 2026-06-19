@@ -89,6 +89,24 @@ each holds only harness-granted capabilities, and the hash-chained decision log
 keeps a swarm of thousands reproducible and attributable. A bigger problem is met
 with a wider swarm, sharper tools, and more evals — full stop.
 
+### The difficulty ratchet (evals get harder and harder)
+
+```text
+   pass rate on tier T crosses the bar  ──►  escalate to tier T+1 (harder)
+   ──────────────────────────────────────────────────────────────────────
+   tier 1  toy single-edit bugs (home-grown)              ── master ──┐
+   tier 2  multi-edit / edge-case / small algorithms                  │
+   tier 3  multi-file, real refactors                                 ▼
+   tier 4+ REAL public benchmarks: HumanEval → MBPP → Aider → SWE-bench
+                                                  (the external, recognized bar)
+```
+
+The ratchet only turns one way. When a tier is mastered the suite escalates to a
+harder tier (and, at the top, to tougher real benchmarks); we never soften it. An
+eval the harness can ace is a defect in the eval suite, not a victory — hardening it
+is required work. Parity is "matches Claude-Code-on-Opus-4.8 on genuinely hard,
+external problems," nothing less.
+
 ## Orchestration on Jaros
 
 - A **job** (`inbox/<id>.json` = `{id, agent, input}`) selects one agent by name.

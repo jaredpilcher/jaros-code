@@ -1,5 +1,6 @@
 {
   "id": "max_two",
+  "tier": 1,
   "instruction": "The maximum function should return the LARGER of a and b, but it returns the smaller one. Fix the comparison so maximum(3, 7) == 7 and maximum(9, 2) == 9.",
   "target": "mymax.py",
   "test_cmd": "python -m pytest -q",

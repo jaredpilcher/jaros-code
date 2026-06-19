@@ -15,6 +15,15 @@ benchmarks where they exist (e.g. SWE-bench / SWE-bench-Verified, HumanEval/MBPP
 Aider's edit benchmark) so the bar is an external, recognized one — not a yardstick
 we drew ourselves. Progress is the benchmark trend, not a feeling.
 
+**The evaluations must get harder and harder.** An eval suite the harness can ace is
+too easy to be informative and MUST be made harder — this is a non-negotiable
+ratchet. As the pass rate on a tier climbs, the system escalates: harder authored
+tasks, then progressively harder *real public benchmarks*, raising the bar until
+parity is proven on genuinely hard, external problems and not before. We never lower
+the bar to flatter the system; when it masters a level, the level gets harder. If our
+home-grown evals are not good enough, hardening them — and pulling in tougher real
+benchmarks — is itself required work, not optional.
+
 The wager behind this system: *small models have not been useful for development
 because their harnesses are thin, not because the models are incapable.* A
 deterministic, reproducible, capability-safe harness that decomposes development

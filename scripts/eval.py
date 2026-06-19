@@ -33,7 +33,8 @@ def main() -> int:
         print("\n pass-rate trend (toward 100% = Claude-Code on Opus-4.8)")
         for row in rows:
             pct = int(row["passRate"] * 100)
-            print(f"   {row['timestamp'][:19]}  {row['solved']}/{row['total']}  {pct:>3}%  {row['model']}")
+            suite = row.get("suite", "authored")
+            print(f"   {row['timestamp'][:19]}  {suite:<10} {row['solved']}/{row['total']}  {pct:>3}%  {row['model']}")
         print()
         return 0
 

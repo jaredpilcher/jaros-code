@@ -78,9 +78,15 @@ def _load_agent(filename: str, llm):
 
 
 def build_llm():
+    """Return the deterministic local Ollama client (EXT-006): greedy + seeded so
+    gemma2:2b is repeatable. Falls back to the stock adapter only if unavailable."""
     os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
     os.environ.setdefault("OLLAMA_MODEL", MODEL)
-    return create_llm_client(LlmConfig(provider="ollama"))
+    try:
+        from harness.ollama_client import DeterministicOllamaClient
+        return DeterministicOllamaClient(model=MODEL)
+    except Exception:
+        return create_llm_client(LlmConfig(provider="ollama"))
 
 
 @dataclass

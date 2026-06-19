@@ -1,0 +1,30 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/eval_runner.py",
+      "startLine": 25,
+      "endLine": 53
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/eval_runner.py",
+      "startLine": 112,
+      "endLine": 150
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/eval_runner.py",
+      "startLine": 56,
+      "endLine": 151
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/eval_runner.py",
+      "startLine": 154,
+      "endLine": 172
+    }
+  ]
+}

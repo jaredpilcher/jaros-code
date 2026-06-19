@@ -1,5 +1,6 @@
 {
   "id": "add_sum",
+  "tier": 1,
   "instruction": "The add function must return the SUM of a and b, but it currently subtracts (return a - b). Change it to return a + b so add(2, 3) == 5.",
   "target": "calc.py",
   "test_cmd": "python -m pytest -q",

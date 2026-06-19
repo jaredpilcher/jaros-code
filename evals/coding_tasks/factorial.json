@@ -1,5 +1,6 @@
 {
   "id": "factorial",
+  "tier": 1,
   "instruction": "The fact function has an off-by-one bug: range(1, n) excludes n, so fact(5) returns 24 instead of 120. Fix the range so it includes n and fact(5) == 120.",
   "target": "fact.py",
   "test_cmd": "python -m pytest -q",

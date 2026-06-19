@@ -1,5 +1,6 @@
 {
   "id": "is_even",
+  "tier": 1,
   "instruction": "The is_even function is inverted: it currently returns True for odd numbers. Fix it so is_even(4) is True and is_even(3) is False.",
   "target": "parity.py",
   "test_cmd": "python -m pytest -q",

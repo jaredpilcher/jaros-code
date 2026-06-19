@@ -1,0 +1,11 @@
+{
+  "id": "binary_search",
+  "tier": 2,
+  "instruction": "search() is a binary search over a sorted list with a bug: the loop condition stops one step too early, so it misses a target that lands on the final index. Fix it so it returns the index of target, or -1 if absent.",
+  "target": "bsearch.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "bsearch.py": "def search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n",
+    "test_bsearch.py": "from bsearch import search\n\n\ndef test_search():\n    assert search([1, 3, 5, 7, 9], 7) == 3\n    assert search([1, 3, 5, 7, 9], 1) == 0\n    assert search([1, 3, 5, 7, 9], 9) == 4\n    assert search([1, 3, 5, 7, 9], 4) == -1\n"
+  }
+}

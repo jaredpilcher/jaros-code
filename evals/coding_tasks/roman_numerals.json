@@ -1,0 +1,11 @@
+{
+  "id": "roman_numerals",
+  "tier": 3,
+  "instruction": "Implement to_roman(n) converting an integer 1..3999 to its Roman numeral string, including subtractive forms: to_roman(4)=='IV', to_roman(9)=='IX', to_roman(40)=='XL', to_roman(58)=='LVIII', to_roman(1994)=='MCMXCIV'.",
+  "target": "roman.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "roman.py": "def to_roman(n):\n    raise NotImplementedError\n",
+    "test_roman.py": "from roman import to_roman\n\n\ndef test_roman():\n    assert to_roman(4) == \"IV\"\n    assert to_roman(9) == \"IX\"\n    assert to_roman(58) == \"LVIII\"\n    assert to_roman(1994) == \"MCMXCIV\"\n"
+  }
+}
