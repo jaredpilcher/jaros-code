@@ -81,6 +81,19 @@ non-existent path creates a new file.
 - [ ] Apply the replacement and report `{applied, path, bytesBefore, bytesAfter}`
 - [ ] Support new-file creation when `old` is empty and the file is absent
 
+### [REQ-8] py.check — validate Python syntax
+
+A read-only tool named `py.check` deterministically validates Python syntax (via
+`compile`) for a file or a code string, reporting the error and line on failure. It
+lets the loop catch a broken edit before wasting a test run and feed the exact error
+back for correction — a sharp verb that helps a 2B model recover from syntax slips.
+
+#### Acceptance Criteria
+- [ ] Reject a payload lacking both `path` and `code`
+- [ ] Return `{valid: true}` for syntactically valid Python
+- [ ] Return `{valid: false, error, line}` for invalid Python
+- [ ] Never write or mutate the host (read-only / replay-safe)
+
 ### [REQ-7] shell.exec safety denylist (unattended-safe)
 
 Because the harness runs unattended, `shell.exec` must deterministically REFUSE

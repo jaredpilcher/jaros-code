@@ -131,6 +131,26 @@ def test_shell_exec_rejects_empty():
     assert tool.validate(_decision("shell.exec", {"command": ""})).ok is False
 
 
+# --- REQ-8 py.check --------------------------------------------------------
+
+def test_py_check_valid(tmp_path):
+    tool = _load_tool("py_check_tool.py", "PyCheckTool")
+    out = tool.execute(_decision("py.check", {"code": "def f():\n    return 1\n"}))
+    assert out["valid"] is True
+
+
+def test_py_check_invalid_reports_line(tmp_path):
+    tool = _load_tool("py_check_tool.py", "PyCheckTool")
+    out = tool.execute(_decision("py.check", {"code": 'x = "unterminated\n'}))
+    assert out["valid"] is False
+    assert out["line"] == 1
+
+
+def test_py_check_rejects_empty():
+    tool = _load_tool("py_check_tool.py", "PyCheckTool")
+    assert tool.validate(_decision("py.check", {})).ok is False
+
+
 # --- REQ-7 shell.exec safety denylist (unattended-safe) --------------------
 
 import pytest as _pytest

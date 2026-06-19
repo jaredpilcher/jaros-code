@@ -77,6 +77,19 @@ def _load_agent(filename: str, llm):
     return module.build(llm)
 
 
+def python_syntax_error(src: str) -> str | None:
+    """Return a short description if ``src`` is not valid Python, else None.
+
+    Deterministic (no model): the loop uses this to catch a broken edit immediately
+    and feed the precise error back, instead of wasting a test run on code that can
+    never import."""
+    try:
+        compile(src, "<edited>", "exec")
+        return None
+    except SyntaxError as exc:
+        return f"line {exc.lineno}: {exc.msg}"
+
+
 def build_llm():
     """Return the deterministic local Ollama client (EXT-006): greedy + seeded so
     gemma2:2b is repeatable. Falls back to the stock adapter only if unavailable."""
@@ -164,6 +177,15 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
                 _v(_step, out.get("tool", "tool"), f"applied to {out['path']} ({out['bytesAfter']} bytes)")
         except RuntimeError as exc:
             _v(_step, "apply", f"\033[31mrejected\033[0m: {exc}")
+
+        # 1b) deterministic syntax guard: a broken .py can never import, so catch it
+        # now and feed the exact SyntaxError back next round (don't waste a test run).
+        if str(target).endswith(".py") and target_path.is_file():
+            serr = python_syntax_error(target_path.read_text(encoding="utf-8"))
+            if serr:
+                last_output = f"SyntaxError: {serr}"
+                _v(_step, "py.check", f"\033[31msyntax error\033[0m {serr}")
+                continue
 
         # 2) operator: run the test command via shell.exec (deterministic tool)
         test_dec = create_decision(
