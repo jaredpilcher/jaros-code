@@ -1,0 +1,10 @@
+{
+  "id": "max_two",
+  "instruction": "The maximum function should return the LARGER of a and b, but it returns the smaller one. Fix the comparison so maximum(3, 7) == 7 and maximum(9, 2) == 9.",
+  "target": "mymax.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "mymax.py": "def maximum(a, b):\n    return a if a < b else b\n",
+    "test_mymax.py": "from mymax import maximum\n\n\ndef test_max():\n    assert maximum(3, 7) == 7\n    assert maximum(9, 2) == 9\n"
+  }
+}

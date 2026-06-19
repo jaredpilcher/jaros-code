@@ -1,0 +1,10 @@
+{
+  "id": "factorial",
+  "instruction": "The fact function has an off-by-one bug: range(1, n) excludes n, so fact(5) returns 24 instead of 120. Fix the range so it includes n and fact(5) == 120.",
+  "target": "fact.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "fact.py": "def fact(n):\n    r = 1\n    for i in range(1, n):\n        r *= i\n    return r\n",
+    "test_fact.py": "from fact import fact\n\n\ndef test_fact():\n    assert fact(5) == 120\n    assert fact(4) == 24\n"
+  }
+}

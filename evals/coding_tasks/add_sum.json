@@ -1,0 +1,10 @@
+{
+  "id": "add_sum",
+  "instruction": "The add function must return the SUM of a and b, but it currently subtracts (return a - b). Change it to return a + b so add(2, 3) == 5.",
+  "target": "calc.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "calc.py": "def add(a, b):\n    return a - b\n",
+    "test_calc.py": "from calc import add\n\n\ndef test_add():\n    assert add(2, 3) == 5\n    assert add(10, 5) == 15\n"
+  }
+}

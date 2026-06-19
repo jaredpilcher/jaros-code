@@ -112,11 +112,12 @@ def _step(label: str, detail: str) -> None:
 # #EXT-003-REQ-2 Start
 def fix_loop(target: str, instruction: str, test_cmd: str, *,
              max_iters: int = 4, cwd: str | None = None,
-             editor_agent: str = "rewriter_agent.py") -> LoopResult:
+             editor_agent: str = "rewriter_agent.py", verbose: bool = True) -> LoopResult:
     """Run the bounded edit->test->judge loop until tests pass or attempts run out.
 
     ``editor_agent`` selects the editing agent: ``rewriter_agent.py`` (whole-file,
     2B-reliable; default) or ``editor_agent.py`` (surgical OLD/NEW edit).
+    ``verbose`` prints the Claude-Code-like transcript (off for batch evals).
     """
     rt = Runtime()
     llm = build_llm()
@@ -124,27 +125,31 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     test_reader = _load_agent("test_reader_agent.py", llm)
     target_path = Path(target)
 
-    _banner(target, test_cmd, max_iters)
+    def _v(fn, *a):
+        if verbose:
+            fn(*a)
+
+    _v(_banner, target, test_cmd, max_iters)
     last_output = ""
 
     for r in range(1, max_iters + 1):
-        _round_header(r, max_iters)
+        _v(_round_header, r, max_iters)
 
         # 1) reasoning: editor proposes one exact edit (gemma2:2b)
         content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
         [edit] = editor.decide({"path": str(target), "content": content, "instruction": instruction})
         if edit.type == "code.apply_patch":
-            _step("editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
+            _v(_step, "editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
         elif edit.type == "code.write_file":
-            _step("rewriter", f"rewrite {edit.payload['path']} ({len(edit.payload['content'])} chars)")
+            _v(_step, "rewriter", f"rewrite {edit.payload['path']} ({len(edit.payload['content'])} chars)")
         else:
-            _step("editor", f"no edit ({edit.payload.get('note','')})")
+            _v(_step, "editor", f"no edit ({edit.payload.get('note','')})")
         try:
             out = rt.apply(edit)
             if isinstance(out, dict) and out.get("applied"):
-                _step(out.get("tool", "tool"), f"applied to {out['path']} ({out['bytesAfter']} bytes)")
+                _v(_step, out.get("tool", "tool"), f"applied to {out['path']} ({out['bytesAfter']} bytes)")
         except RuntimeError as exc:
-            _step("apply", f"\033[31mrejected\033[0m: {exc}")
+            _v(_step, "apply", f"\033[31mrejected\033[0m: {exc}")
 
         # 2) operator: run the test command via shell.exec (deterministic tool)
         test_dec = create_decision(
@@ -153,19 +158,21 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         result = rt.apply(test_dec)
         last_output = (result.get("stdout", "") + result.get("stderr", "")) if isinstance(result, dict) else str(result)
         exit_code = result.get("exitCode") if isinstance(result, dict) else None
-        _step("shell.exec", f"exit={exit_code}  {last_output.strip().splitlines()[-1] if last_output.strip() else ''}")
+        _v(_step, "shell.exec", f"exit={exit_code}  {last_output.strip().splitlines()[-1] if last_output.strip() else ''}")
 
-        # 3) reasoning: test-reader judges PASS/FAIL (gemma2:2b)
+        # 3) reasoning: test-reader judges PASS/FAIL (gemma2:2b) — recorded as the
+        # advance verdict. Ground-truth success, however, is the deterministic exit
+        # code (Tenet 3): a hallucinated PASS must never count as solved.
         [verdict] = test_reader.decide({"output": last_output})
         rt.apply(verdict)
         passed = verdict.payload.get("verdict") == "pass"
-        _step("test-reader", ("\033[32mPASS\033[0m" if passed else "\033[31mFAIL\033[0m") + f"  ({verdict.payload.get('note','')})")
+        _v(_step, "test-reader", ("\033[32mPASS\033[0m" if passed else "\033[31mFAIL\033[0m") + f"  ({verdict.payload.get('note','')})")
 
-        if passed and exit_code == 0:
-            print(f"\n  \033[32m[OK] solved in {r} attempt(s)\033[0m\n")
+        if exit_code == 0:
+            _v(print, f"\n  \033[32m[OK] solved in {r} attempt(s)\033[0m\n")
             return LoopResult(success=True, attempts=r, final_output=last_output)
 
-    print(f"\n  \033[31m[X] not solved in {max_iters} attempts\033[0m\n")
+    _v(print, f"\n  \033[31m[X] not solved in {max_iters} attempts\033[0m\n")
     return LoopResult(success=False, attempts=max_iters, final_output=last_output)
 # #EXT-003-REQ-2 End
 # #EXT-003-REQ-3 End

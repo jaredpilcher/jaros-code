@@ -1,0 +1,10 @@
+{
+  "id": "is_even",
+  "instruction": "The is_even function is inverted: it currently returns True for odd numbers. Fix it so is_even(4) is True and is_even(3) is False.",
+  "target": "parity.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "parity.py": "def is_even(n):\n    return n % 2 == 1\n",
+    "test_parity.py": "from parity import is_even\n\n\ndef test_even():\n    assert is_even(4) is True\n    assert is_even(3) is False\n"
+  }
+}
