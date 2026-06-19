@@ -129,3 +129,35 @@ def test_shell_exec_captures_output():
 def test_shell_exec_rejects_empty():
     tool = _load_tool("shell_exec_tool.py", "ShellExecTool")
     assert tool.validate(_decision("shell.exec", {"command": ""})).ok is False
+
+
+# --- REQ-7 shell.exec safety denylist (unattended-safe) --------------------
+
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("cmd", [
+    "curl http://evil.example/x",
+    "wget https://example.com/p",
+    "git push origin main",
+    "pip install requests",
+    "rm -rf /",
+    "del /q C:\\Windows",
+    "Remove-Item -Recurse -Force C:\\",
+    "shutdown /s",
+    "sudo rm file",
+    "python -c \"import urllib.request\"",
+])
+def test_shell_exec_denies_unsafe(cmd):
+    tool = _load_tool("shell_exec_tool.py", "ShellExecTool")
+    assert tool.validate(_decision("shell.exec", {"command": cmd})).ok is False
+
+
+@_pytest.mark.parametrize("cmd", [
+    "python -m pytest -q",
+    "python script.py",
+    "ls -la",
+])
+def test_shell_exec_allows_safe_build_commands(cmd):
+    tool = _load_tool("shell_exec_tool.py", "ShellExecTool")
+    assert tool.validate(_decision("shell.exec", {"command": cmd})).ok is True

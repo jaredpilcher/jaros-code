@@ -141,9 +141,13 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     for r in range(1, max_iters + 1):
         _v(_round_header, r, max_iters)
 
-        # 1) reasoning: editor proposes one exact edit (gemma2:2b)
+        # 1) reasoning: editor proposes one exact edit (gemma2:2b). On retries it
+        # gets the previous failure output as feedback, so it can correct itself
+        # (greedy decoding alone would just repeat the same mistake).
         content = target_path.read_text(encoding="utf-8") if target_path.is_file() else ""
-        [edit] = editor.decide({"path": str(target), "content": content, "instruction": instruction})
+        [edit] = editor.decide({"path": str(target), "content": content,
+                                "instruction": instruction,
+                                "feedback": last_output if r > 1 else ""})
         if edit.type == "code.apply_patch":
             _v(_step, "editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
         elif edit.type == "code.write_file":

@@ -24,9 +24,16 @@ _PROMPT = (
     "<<<FILE\n"
     "...the full corrected file contents...\n"
     "FILE>>>\n"
-    "Do not explain. Keep everything that is correct; change only what the instruction requires.\n\n"
-    "INSTRUCTION: {instruction}\n\n"
-    "CURRENT FILE ({path}):\n{content}\n"
+    "Write valid, syntactically-correct code. Close every quote and bracket. "
+    "Keep everything that is correct; change only what the instruction requires. Do not explain.\n\n"
+    "INSTRUCTION: {instruction}\n"
+    "{feedback}"
+    "\nCURRENT FILE ({path}):\n{content}\n"
+)
+
+_FEEDBACK = (
+    "\nYour PREVIOUS attempt did not work. Here is the failure output — fix the cause:\n"
+    "{feedback}\n"
 )
 
 _FILE_RE = re.compile(r"<<<FILE\r?\n(.*?)\r?\nFILE>>>", re.S)
@@ -53,9 +60,11 @@ class RewriterBoundary:
         path = ctx.get("path", "")
         content = (ctx.get("content", "") or "")[:_MAX_CONTENT]
         instruction = ctx.get("instruction", "")
+        feedback_text = (ctx.get("feedback", "") or "")[:1500]
+        feedback = _FEEDBACK.format(feedback=feedback_text) if feedback_text.strip() else ""
 
         reply = self._llm.complete(LlmRequest(prompt=_PROMPT.format(
-            instruction=instruction, path=path, content=content))).text
+            instruction=instruction, path=path, content=content, feedback=feedback))).text
         new_content = parse_file(reply)
 
         if new_content is None or not new_content.strip():

@@ -81,6 +81,19 @@ non-existent path creates a new file.
 - [ ] Apply the replacement and report `{applied, path, bytesBefore, bytesAfter}`
 - [ ] Support new-file creation when `old` is empty and the file is absent
 
+### [REQ-7] shell.exec safety denylist (unattended-safe)
+
+Because the harness runs unattended, `shell.exec` must deterministically REFUSE
+dangerous commands at the gate: any network egress (no internet writes/exfiltration,
+no remote pushes/installs) and any destructive or privilege-escalating host
+operation. A refused command never executes.
+
+#### Acceptance Criteria
+- [ ] Reject network commands (curl/wget/ssh/scp, git push/pull/clone, pip/npm install, http(s) URLs)
+- [ ] Reject destructive commands (rm -rf, del /, format, mkfs, dd, shutdown/reboot, recursive deletes)
+- [ ] Reject privilege escalation (sudo/runas/doas)
+- [ ] Allow ordinary build/test commands (e.g. `python -m pytest -q`); rejection states the match
+
 ### [REQ-5] shell.exec — run a bounded command
 
 A tool named `shell.exec` runs a command with a timeout and captures stdout,
