@@ -27,6 +27,16 @@
   fizzbuzz, palindrome, roman_numerals, run_length_encode. config-editor &
   dockerfile-editor PASS. Action: sharpen retry feedback (distill the failing
   assertion) to help the consistent fails; treat the headline as noisy, not a clean 83%.
+- **2026-06-19 distill_failure: real help.** Sharper retry feedback moved 18/26→21/26;
+  palindrome/run_length_encode/clamp flipped to pass. Kept.
+- **2026-06-19 rewriter "pitfalls" prompt: REVERTED.** Across runs it was net-neutral
+  within noise (21→20): cracked anagram but regressed palindrome/run_length_encode, and
+  longer prompts can hurt a 2B model. Disciplined revert — do not keep unproven changes.
+- **TRUE persistent frontier (fails EVERY full run) = 4: binary_search, fizzbuzz,
+  greet_format, roman_numerals.** Prompt tweaks do not crack these. NEXT REAL LEVER:
+  decomposition — a `planner` agent that breaks a task into sub-steps, or best-of-N
+  sampling (generate several candidates per attempt, keep one that passes). Bigger change;
+  do it deliberately and MEASURE against these 4.
 
 
 The supervisor advances one task per cycle (frontier-first), appends new tasks as
