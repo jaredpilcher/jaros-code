@@ -94,11 +94,15 @@ and replay any run. The front-end issues jobs and reads `status.json` / `outbox/
 it never bypasses the two planes. Look and feel mirror Claude Code; authority stays
 with the deterministic harness.
 
-## Jarify all the way down (convergence on intent)
+## Jarify all the way down (convergence on the user's intent)
 
-The harness operates on a user's project with the **same** jarify loop that built
-the harness. This self-similarity is the mechanism by which every actor — operator,
-agents, tools — converges on one explicit, written intent rather than drifting.
+`jaros-code` is a code-building tool, and the way it builds a user's system is the
+way jarify is used. It operates on a user's project with the **same** jarify loop
+that built the harness itself. This self-similarity is the mechanism by which every
+actor — operator, agents, tools — converges on the **user's** explicit, written
+intent (captured as that project's prime directive) rather than drifting. The spec
+is the shared north star; jarify is what makes a fleet of small models build what
+the user actually meant.
 
 ```text
    how jaros-code is built              how jaros-code builds a user's project

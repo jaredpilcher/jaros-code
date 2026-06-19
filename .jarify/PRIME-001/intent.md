@@ -53,14 +53,21 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    and the code change in the same commit. Stale specs are defects. This Prime
    Directive is the north star every other spec must serve and must never contradict.
 
-   This is reflexive: **the harness builds software the same jarify way it is itself
-   built.** When `jaros-code` works on a user's project it establishes a prime
-   directive for that project, decomposes intent into requirements / design / tasks,
-   implements one scoped task at a time, and traces code back to the spec — the
-   identical loop that produced `jaros-code`. The jarify method is *how the system
-   converges on intent*: every actor (the operator, each single-purpose agent, every
-   deterministic tool) is pulled toward the same explicit, written intent instead of
-   drifting. We build the harness the way we want the harness to build.
+   This is reflexive, and it is the product itself: **`jaros-code` is a code-building
+   tool, and the way it builds a user's system IS the way jarify is used.** When it
+   takes on a user's project it first captures *the user's* intent as a prime
+   directive for that project, decomposes that intent into requirements / design /
+   tasks, implements one scoped task at a time with single-purpose agents, validates
+   each task against its requirement, and traces the resulting code back to the spec —
+   the identical loop that produced `jaros-code` itself.
+
+   **Jarify is the mechanism of convergence on the user's intent.** Because a 2B
+   model left to free-form prompting drifts, jarify pins every actor — the operator,
+   each single-purpose agent, every deterministic tool — to one explicit, written
+   statement of what the *user* asked for. The spec is the shared north star that
+   keeps the whole fleet pulling toward the user's actual goal instead of wandering.
+   We build the harness the way we want the harness to build; the harness builds the
+   user's software the jarify way so the result converges on what the user meant.
 
 5. **Claude-Code-like experience.**
    The operator-facing experience should feel familiar and transparent: a terminal
