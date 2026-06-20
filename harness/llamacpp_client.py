@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 from jaros.llm import LlmRequest, LlmResponse
@@ -31,8 +32,9 @@ class DeterministicLlamaCppClient:
     def __init__(self, model: str | None = None, host: str | None = None,
                  seed: int = _DEFAULT_SEED) -> None:
         self.model = model or os.environ.get(
-            "LLAMACPP_MODEL", os.environ.get("OLLAMA_MODEL", "gemma4:e2b-it-qat"))
-        self.host = (host or os.environ.get("LLAMACPP_HOST", "http://localhost:8080")).rstrip("/")
+            "LLAMACPP_MODEL", os.environ.get("OLLAMA_MODEL", "gemma-4-e2b"))
+        # Default to the Jetson llama-server on the LAN (override via LLAMACPP_HOST).
+        self.host = (host or os.environ.get("LLAMACPP_HOST", "http://192.168.1.183:8000")).rstrip("/")
         self.seed = seed
 
     def build_payload(self, req: LlmRequest) -> dict:
@@ -60,18 +62,27 @@ class DeterministicLlamaCppClient:
 
     def complete(self, req: LlmRequest) -> LlmResponse:
         data = json.dumps(self.build_payload(req)).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.host}/v1/chat/completions",
-            data=data, headers={"Content-Type": "application/json"}, method="POST")
         t0 = time.time()
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                resp = json.loads(response.read().decode("utf-8"))
-                text = self.parse_response(resp)
-                _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
-                return LlmResponse(text=text, model=self.model)
-        except Exception as exc:  # surfaced, never silent (Tenet 3)
-            raise RuntimeError(f"llama.cpp complete failed ({self.model} @ {self.host}): {exc}")
+        last_exc = None
+        # Retry transient connection drops (the device gets moved/rebooted); a few short
+        # backoffs ride out a blip without failing the whole cycle. Long outages are
+        # handled upstream by the runner's endpoint health-gate.
+        for attempt in range(3):
+            request = urllib.request.Request(
+                f"{self.host}/v1/chat/completions",
+                data=data, headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    resp = json.loads(response.read().decode("utf-8"))
+                    text = self.parse_response(resp)
+                    _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
+                    return LlmResponse(text=text, model=self.model)
+            except urllib.error.URLError as exc:  # connection-level — retry
+                last_exc = exc
+                time.sleep(2 * (attempt + 1))
+            except Exception as exc:  # response/parse error — fail fast, surfaced (Tenet 3)
+                raise RuntimeError(f"llama.cpp complete failed ({self.model} @ {self.host}): {exc}")
+        raise RuntimeError(f"llama.cpp unreachable after retries ({self.model} @ {self.host}): {last_exc}")
 
 
 def health(host: str | None = None, timeout: float = 8.0) -> dict:

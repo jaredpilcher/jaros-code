@@ -4,8 +4,9 @@
 #   pwsh scripts/jcode.ps1 "fix foo.py"    # one plain-language request
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$env:JAROS_LLM_PROVIDER = "ollama"
-if (-not $env:OLLAMA_MODEL) { $env:OLLAMA_MODEL = "gemma2:2b" }
+# Inference on the Jetson (small Gemma 4 via llama.cpp), not Ollama. Override via env.
+if (-not $env:JCODE_LLM_BACKEND) { $env:JCODE_LLM_BACKEND = "llamacpp" }
+if (-not $env:LLAMACPP_HOST) { $env:LLAMACPP_HOST = "http://192.168.1.183:8000" }
 $env:PYTHONIOENCODING = "utf-8"
 Set-Location $root
 python -m harness.cli @args

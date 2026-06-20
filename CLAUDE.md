@@ -2,7 +2,11 @@
 
 A software-development harness built on **Jaros** that aims to match or exceed
 Claude Code at real coding work, while every reasoning call is served by a single
-small local model — **Ollama `gemma2:2b`** — at zero inference cost.
+small **local** model at zero inference cost. Inference runs on a **Jetson Orin Nano**
+(small **Gemma 4 `e2b`** served by **llama.cpp**) at `http://192.168.1.183:8000` —
+select via `JCODE_LLM_BACKEND=llamacpp` + `LLAMACPP_HOST` (legacy local Ollama
+`gemma2:2b` still selectable with `JCODE_LLM_BACKEND=ollama`). Tenet 2 ("small-model,
+zero paid") is unchanged — the LAN device is the intended local-inference path.
 
 ## Governance (binds every run)
 

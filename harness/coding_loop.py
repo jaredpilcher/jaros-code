@@ -177,7 +177,7 @@ def build_llm():
       'ollama'   (default) -> DeterministicOllamaClient  (local Ollama, /api/generate)
       'llamacpp'           -> DeterministicLlamaCppClient (llama-server /v1/chat, e.g. Jetson)
     Either way it is a LOCAL model only (Tenet 2)."""
-    backend = os.environ.get("JCODE_LLM_BACKEND", "ollama").strip().lower()
+    backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
     if backend in ("llamacpp", "llama.cpp", "llama_cpp", "llama-cpp"):
         from harness.llamacpp_client import DeterministicLlamaCppClient
         return DeterministicLlamaCppClient()

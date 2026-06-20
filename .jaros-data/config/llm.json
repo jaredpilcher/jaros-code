@@ -1,6 +1,8 @@
 {
-  "provider": "ollama",
+  "provider": "llamacpp",
+  "host": "http://192.168.1.183:8000",
   "options": {
-    "model": "gemma2:2b"
-  }
+    "model": "gemma-4-e2b"
+  },
+  "note": "Inference runs on the Jetson Orin Nano via llama.cpp (llama-server). LOCAL, zero-paid. Override with JCODE_LLM_BACKEND / LLAMACPP_HOST env."
 }

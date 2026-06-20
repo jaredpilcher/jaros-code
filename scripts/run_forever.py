@@ -29,8 +29,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
-os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
+# Inference now runs on the Jetson (small Gemma 4 via llama.cpp), NOT Ollama. Override
+# with env if the device IP/port changes.
+os.environ.setdefault("JCODE_LLM_BACKEND", "llamacpp")
+os.environ.setdefault("LLAMACPP_HOST", "http://192.168.1.183:8000")
+os.environ.setdefault("LLAMACPP_MODEL", "gemma-4-e2b")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 ARTIFACTS = ROOT / ".jaros-data" / "artifacts" / "eval"
@@ -50,14 +53,39 @@ def main() -> int:
     from harness.eval_runner import run_suite
     from harness.report import write_report
 
+    from harness.llamacpp_client import health
+
     max_iters = int(os.environ.get("JCODE_MAX_ITERS", "3"))
     pause = int(os.environ.get("JCODE_CYCLE_PAUSE_S", "20"))
-    _log(f"run_forever START pid={os.getpid()} model={os.environ['OLLAMA_MODEL']} "
+    backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp")
+    model = os.environ.get("LLAMACPP_MODEL") or os.environ.get("OLLAMA_MODEL", "?")
+    _log(f"run_forever START pid={os.getpid()} backend={backend} model={model} "
          f"max_iters={max_iters} pause={pause}s")
+
+    def _endpoint_ready() -> bool:
+        """Health-gate: when on llama.cpp (the Jetson), don't burn cycles while the device
+        is moving/rebooting — wait for it to answer, writing a 'waiting' heartbeat so the
+        supervisor sees the runner is alive but the endpoint is down."""
+        if backend != "llamacpp":
+            return True
+        h = health()
+        if h.get("ok"):
+            return True
+        HEARTBEAT.write_text(json.dumps({
+            "cycle": cycle, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "alive": True, "endpointUp": False, "endpoint": h.get("host"),
+            "note": f"waiting for inference endpoint ({h.get('error', 'down')})",
+        }, indent=2), encoding="utf-8")
+        _log(f"endpoint down ({h.get('host')}) — waiting for the Jetson to come back")
+        return False
 
     cycle = 0
     while True:
         cycle += 1
+        if not _endpoint_ready():
+            cycle -= 1            # don't count a skipped cycle
+            time.sleep(15)
+            continue
         t0 = time.time()
         try:
             sc = run_suite(max_iters=max_iters, verbose=False)

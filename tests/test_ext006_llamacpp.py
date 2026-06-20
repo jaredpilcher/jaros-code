@@ -43,8 +43,16 @@ def test_build_llm_selects_llamacpp_backend(monkeypatch):
     assert isinstance(llm, DeterministicLlamaCppClient)
 
 
-def test_build_llm_defaults_to_ollama(monkeypatch):
+def test_build_llm_defaults_to_llamacpp(monkeypatch):
+    # Inference now runs on the Jetson (llama.cpp) by default, not Ollama.
     from harness import coding_loop
     monkeypatch.delenv("JCODE_LLM_BACKEND", raising=False)
+    llm = coding_loop.build_llm()
+    assert isinstance(llm, DeterministicLlamaCppClient)
+
+
+def test_build_llm_ollama_still_selectable(monkeypatch):
+    from harness import coding_loop
+    monkeypatch.setenv("JCODE_LLM_BACKEND", "ollama")
     llm = coding_loop.build_llm()
     assert type(llm).__name__ == "DeterministicOllamaClient"
