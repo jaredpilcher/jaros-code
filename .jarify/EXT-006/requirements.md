@@ -50,3 +50,20 @@ and repeatable by default.
 - [ ] `harness.coding_loop.build_llm` returns the deterministic client
 - [ ] The same prompt returns identical text across repeated calls (greedy)
 - [ ] A failed Ollama call raises a clear, surfaced error (never silent)
+
+### [REQ-4] Pluggable local backend (Ollama or llama.cpp)
+
+The reasoning client is local-only but not Ollama-locked: the backend is selected by
+`JCODE_LLM_BACKEND`, so the same harness can run against local Ollama (`/api/generate`)
+or a llama.cpp `llama-server` (OpenAI-compatible `/v1/chat/completions`, e.g. a Jetson
+Orin Nano on the LAN). Both are LOCAL, zero-paid inference (Tenet 2); a LAN device is the
+intended local path, not internet egress. The same model-call telemetry (REQ-3) applies
+to either backend, so the proof-of-local-work holds regardless of engine.
+
+#### Acceptance Criteria
+- [ ] `build_llm` selects the backend from `JCODE_LLM_BACKEND` (`ollama` default, `llamacpp`)
+- [ ] The llama.cpp client posts chat-completions (greedy + seeded) and parses the reply,
+      honouring per-request param overrides (temperature/seed/num_predict→max_tokens)
+- [ ] `LLAMACPP_HOST` selects the server URL; a `health()` probe verifies an endpoint
+      before switchover
+- [ ] Telemetry records calls identically so model-call proof is backend-independent

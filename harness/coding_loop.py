@@ -172,8 +172,15 @@ def python_syntax_error(src: str) -> str | None:
 
 
 def build_llm():
-    """Return the deterministic local Ollama client (EXT-006): greedy + seeded so
-    gemma2:2b is repeatable. Falls back to the stock adapter only if unavailable."""
+    """Return the deterministic local reasoning client (EXT-006): greedy + seeded so the
+    model is repeatable. Backend selected by JCODE_LLM_BACKEND:
+      'ollama'   (default) -> DeterministicOllamaClient  (local Ollama, /api/generate)
+      'llamacpp'           -> DeterministicLlamaCppClient (llama-server /v1/chat, e.g. Jetson)
+    Either way it is a LOCAL model only (Tenet 2)."""
+    backend = os.environ.get("JCODE_LLM_BACKEND", "ollama").strip().lower()
+    if backend in ("llamacpp", "llama.cpp", "llama_cpp", "llama-cpp"):
+        from harness.llamacpp_client import DeterministicLlamaCppClient
+        return DeterministicLlamaCppClient()
     os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
     os.environ.setdefault("OLLAMA_MODEL", MODEL)
     try:
