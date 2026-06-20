@@ -88,5 +88,5 @@ def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd:
         (odp / f"test_oracle_{module}.py").write_text(oracle_test, encoding="utf-8", newline="\n")
         rt = Runtime()
         res = rt.apply(create_decision(id=f"orc-{uuid.uuid4().hex}", source="oracle",
-                       type="shell.exec", payload={"command": test_cmd, "cwd": str(odp)}))
+                       type="shell.exec", payload={"command": test_cmd, "timeout_s": 15, "cwd": str(odp)}))
         return isinstance(res, dict) and res.get("exitCode") == 0

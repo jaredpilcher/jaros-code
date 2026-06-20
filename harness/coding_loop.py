@@ -39,6 +39,10 @@ DATA_DIR = ROOT / ".jaros-data"
 AGENTS_DIR = DATA_DIR / "agents"
 TOOLS_DIR = DATA_DIR / "tools"
 MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+# Unit tests finish in well under a second; a generated infinite loop must NOT burn the
+# shell.exec 120s default (12 attempts x 120s = ~24 min wasted on one bad problem). Cap
+# test runs short so the eval/repair loops stay fast and never hang on a bad generation.
+TEST_TIMEOUT_S = int(os.environ.get("JCODE_TEST_TIMEOUT_S", "15"))
 
 
 # Tool-usage telemetry (EXT-007 / REQ-4): count how often each tool/decision type
@@ -237,7 +241,7 @@ def mutation_repair_loop(target: str, test_cmd: str, *, cwd: str | None = None,
 
     def _run_tests() -> int | None:
         res = rt.apply(create_decision(id=f"t-{uuid.uuid4().hex}", source="orchestrator",
-                       type="shell.exec", payload={"command": test_cmd, **({"cwd": cwd} if cwd else {})}))
+                       type="shell.exec", payload={"command": test_cmd, "timeout_s": TEST_TIMEOUT_S, **({"cwd": cwd} if cwd else {})}))
         return res.get("exitCode") if isinstance(res, dict) else None
 
     for i, cand in enumerate(candidates, 1):
@@ -356,7 +360,7 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # 2) operator: run the test command via shell.exec (deterministic tool)
         test_dec = create_decision(
             id=f"test-{uuid.uuid4().hex}", source="orchestrator",
-            type="shell.exec", payload={"command": test_cmd, **({"cwd": cwd} if cwd else {})})
+            type="shell.exec", payload={"command": test_cmd, "timeout_s": TEST_TIMEOUT_S, **({"cwd": cwd} if cwd else {})})
         result = rt.apply(test_dec)
         last_output = (result.get("stdout", "") + result.get("stderr", "")) if isinstance(result, dict) else str(result)
         exit_code = result.get("exitCode") if isinstance(result, dict) else None
