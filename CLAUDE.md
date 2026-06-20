@@ -40,6 +40,11 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   → WIRE it (no orphans) → RE-MEASURE → PRUNE. Then commit.
 - **Build, don't defer.** If you catch yourself *describing* the next improvement instead of
   building it ("teed up for next"), that is the failure mode — build it now and measure it.
+- **Always keep one improvement experiment running (the self-sustaining chain).** A running
+  experiment's completion re-invokes you; when it finishes, act on the result (commit/revert)
+  AND immediately launch the next — so the loop drives itself without the owner prodding.
+  "Stable, nothing notable" across reports means the chain went idle — that is a failure to
+  fix, not an acceptable report. (Owner-chosen mechanism, 2026-06-20.)
 - **The owner prodding you ("how's it going?", "are you driving this?") is a signal you have
   been too reactive.** Reports should say what you *did and decided this cycle*, not just
   "still running."
