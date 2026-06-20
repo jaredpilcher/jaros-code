@@ -1,0 +1,11 @@
+{
+  "id": "longest_common_prefix",
+  "instruction": "Implement lcp(strs): return the longest common prefix string of a list of strings, or '' if there is none. lcp(['flower', 'flow', 'flight']) == 'fl'; lcp(['dog', 'racecar', 'car']) == ''.",
+  "tier": 3,
+  "target": "lcp.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "lcp.py": "def lcp(*args, **kwargs):\n    raise NotImplementedError\n",
+    "test_lcp.py": "from lcp import lcp\n\n\ndef test_longest_common_prefix():\n    assert lcp(['flower', 'flow', 'flight']) == 'fl'\n    assert lcp(['dog', 'racecar', 'car']) == ''\n    assert lcp(['interspecies', 'interstellar', 'interstate']) == 'inters'\n    assert lcp(['a']) == 'a'\n"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "two_sum",
+  "instruction": "Implement two_sum(nums, target): return the indices [i, j] (i < j) of the two distinct elements that add up to target. Exactly one solution exists. two_sum([2, 7, 11, 15], 9) == [0, 1]; two_sum([3, 2, 4], 6) == [1, 2].",
+  "tier": 3,
+  "target": "two_sum.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "two_sum.py": "def two_sum(*args, **kwargs):\n    raise NotImplementedError\n",
+    "test_two_sum.py": "from two_sum import two_sum\n\n\ndef test_two_sum():\n    assert two_sum([2, 7, 11, 15], 9) == [0, 1]\n    assert two_sum([3, 2, 4], 6) == [1, 2]\n    assert two_sum([3, 3], 6) == [0, 1]\n"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "my_atoi",
+  "instruction": "Implement my_atoi(s): parse a leading 32-bit signed integer from string s like C's atoi. Skip leading spaces, accept an optional +/- sign, read digits until a non-digit, and ignore trailing characters. Return 0 if no digits are found. my_atoi('   -42') == -42; my_atoi('4193 with words') == 4193; my_atoi('words and 987') == 0.",
+  "tier": 3,
+  "target": "my_atoi.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "my_atoi.py": "def my_atoi(*args, **kwargs):\n    raise NotImplementedError\n",
+    "test_my_atoi.py": "from my_atoi import my_atoi\n\n\ndef test_my_atoi():\n    assert my_atoi('   -42') == -42\n    assert my_atoi('4193 with words') == 4193\n    assert my_atoi('words and 987') == 0\n    assert my_atoi('+13') == 13\n    assert my_atoi('') == 0\n"
+  }
+}
