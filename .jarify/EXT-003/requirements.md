@@ -90,3 +90,7 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
 - [ ] Proven on an EXTERNAL benchmark out-of-sample (HumanEval[40:60]: 13/20 → 17/20,
       +4, zero regressions) — not on tasks tuned against
 - [ ] Repair tasks (existing buggy code) are unaffected: feedback-iteration retained
+- [ ] Cascade attempts mix two generation MODES: `whole` (whole-file rewriter) and `body`
+      (body-completer — outputs only the function body, spliced after the given
+      signature+docstring). Body-only is ~2x faster and solves different problems, widening
+      the union (HumanEval spread: 59%→79% within-budget, ~104s→~49s per problem)

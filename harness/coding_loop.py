@@ -65,9 +65,14 @@ _FEWSHOT = (
     "        m = n if m is None else max(m, n)\n        out.append(m)\n    return out\n\n"
     "Work carefully and handle edge cases. Now the REAL task:\n"
 )
-# (instruction_prefix, temperature) per attempt — plain greedy, plain warm, few-shot,
-# few-shot warm, high-temp x2 — the diversity that produced the union win.
-_CASCADE_STRATEGIES = [("", 0.0), ("", 0.4), (_FEWSHOT, 0.2), (_FEWSHOT, 0.6), ("", 0.9), ("", 1.1)]
+# (mode, instruction_prefix, temperature) per attempt. mode "body" = body-completer
+# (~62% faster, solves different problems); "whole" = whole-file rewriter. Mixing both
+# widens the test-gated union AND front-loads the fast body-only attempts. (EXT-003/REQ-5;
+# whole-file-only cascade proven +4/0 out-of-sample on HumanEval[40:60].)
+_CASCADE_STRATEGIES = [
+    ("body", "", 0.0), ("whole", "", 0.0), ("body", _FEWSHOT, 0.4),
+    ("whole", _FEWSHOT, 0.4), ("body", "", 0.9), ("whole", "", 0.9),
+]
 
 
 # Tool-usage telemetry (EXT-007 / REQ-4): count how often each tool/decision type
@@ -317,8 +322,10 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     # feedback-iteration. The cascade needs its full strategy set, so widen the budget.
     implement = ("NotImplementedError" in original_content
                  or bool(re.search(r"^\s*pass\s*$", original_content, re.M)))
+    body_completer = None
     if implement:
         max_iters = max(max_iters, len(_CASCADE_STRATEGIES))
+        body_completer = _load_agent("body_completer_agent.py", llm)  # fast body-only cascade mode
 
     def _v(fn, *a):
         if verbose:
@@ -361,16 +368,19 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # cascade); the test selects the first pass. Repair: greedy attempt 1, then escalate
         # temperature and feed the failure back so a wrong answer can be corrected.
         if implement:
-            prefix, temperature = _CASCADE_STRATEGIES[(r - 1) % len(_CASCADE_STRATEGIES)]
-            gen_content, gen_instruction, gen_feedback = original_content, prefix + instruction, ""
+            mode, prefix, temperature = _CASCADE_STRATEGIES[(r - 1) % len(_CASCADE_STRATEGIES)]
+            # "body" = fast body-only completer; "whole" = whole-file rewriter. From the clean stub.
+            agent = body_completer if mode == "body" else editor
+            [edit] = agent.decide({"path": str(target), "content": original_content,
+                                   "instruction": prefix + instruction, "symbols": symbols,
+                                   "feedback": "", "temperature": temperature, "seed": r})
         else:
             temperature = 0.0 if r == 1 else min(0.8, 0.3 * (r - 1))
-            gen_content, gen_instruction = content, instruction
             gen_feedback = distill_failure(last_output) if r > 1 else ""
-        [edit] = editor.decide({"path": str(target), "content": gen_content,
-                                "instruction": gen_instruction, "symbols": symbols,
-                                "feedback": gen_feedback,
-                                "temperature": temperature, "seed": r})
+            [edit] = editor.decide({"path": str(target), "content": content,
+                                    "instruction": instruction, "symbols": symbols,
+                                    "feedback": gen_feedback,
+                                    "temperature": temperature, "seed": r})
         if edit.type == "code.apply_patch":
             _v(_step, "editor", f"edit {edit.payload['old']!r} -> {edit.payload['new']!r}")
         elif edit.type == "code.write_file":
