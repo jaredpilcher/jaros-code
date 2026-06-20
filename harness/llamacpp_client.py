@@ -36,6 +36,10 @@ class DeterministicLlamaCppClient:
         # Default to the Jetson llama-server on the LAN (override via LLAMACPP_HOST).
         self.host = (host or os.environ.get("LLAMACPP_HOST", "http://192.168.1.183:8000")).rstrip("/")
         self.seed = seed
+        # A generation is ~2s on the Jetson; cap the call so a stalled/half-open socket
+        # (e.g. the device gets moved mid-request) fails in ~60s instead of hanging the
+        # whole eval. The hung HumanEval run was each cascade attempt burning the old 180s.
+        self.timeout = float(os.environ.get("LLAMACPP_TIMEOUT_S", "60"))
 
     def build_payload(self, req: LlmRequest) -> dict:
         """Construct the /v1/chat/completions body (pure — unit-testable without a server)."""
@@ -72,7 +76,7 @@ class DeterministicLlamaCppClient:
                 f"{self.host}/v1/chat/completions",
                 data=data, headers={"Content-Type": "application/json"}, method="POST")
             try:
-                with urllib.request.urlopen(request, timeout=180) as response:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
                     resp = json.loads(response.read().decode("utf-8"))
                     text = self.parse_response(resp)
                     _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
