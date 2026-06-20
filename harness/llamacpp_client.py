@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -39,7 +40,7 @@ class DeterministicLlamaCppClient:
         # A generation is ~2s on the Jetson; cap the call so a stalled/half-open socket
         # (e.g. the device gets moved mid-request) fails in ~60s instead of hanging the
         # whole eval. The hung HumanEval run was each cascade attempt burning the old 180s.
-        self.timeout = float(os.environ.get("LLAMACPP_TIMEOUT_S", "60"))
+        self.timeout = float(os.environ.get("LLAMACPP_TIMEOUT_S", "90"))
 
     def build_payload(self, req: LlmRequest) -> dict:
         """Construct the /v1/chat/completions body (pure — unit-testable without a server)."""
@@ -53,10 +54,12 @@ class DeterministicLlamaCppClient:
             "seed": params.get("seed", self.seed),
             "stream": False,
         }
-        # accept Ollama-style num_predict as a synonym for OpenAI max_tokens
-        n = params.get("num_predict", params.get("max_tokens"))
-        if n is not None:
-            payload["max_tokens"] = n
+        # ALWAYS bound the output. Without this the model can run away to the context
+        # limit on certain prompts (it never emits a clean stop) — that, not the device,
+        # is what made HumanEval_39/_63 "hang". A code file fits comfortably in the default.
+        n = params.get("num_predict", params.get("max_tokens",
+                       int(os.environ.get("LLAMACPP_MAX_TOKENS", "1024"))))
+        payload["max_tokens"] = n
         return payload
 
     @staticmethod
@@ -81,9 +84,15 @@ class DeterministicLlamaCppClient:
                     text = self.parse_response(resp)
                     _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
                     return LlmResponse(text=text, model=self.model)
-            except urllib.error.URLError as exc:  # connection-level — retry
+            except urllib.error.URLError as exc:
+                # A read timeout (server too slow on THIS prompt) won't get better by
+                # retrying — fail fast. Only retry genuine connection drops (refused/reset).
+                if isinstance(getattr(exc, "reason", None), (TimeoutError, socket.timeout)):
+                    raise RuntimeError(f"llama.cpp timed out >{self.timeout}s ({self.model} @ {self.host})")
                 last_exc = exc
                 time.sleep(2 * (attempt + 1))
+            except (TimeoutError, socket.timeout):
+                raise RuntimeError(f"llama.cpp timed out >{self.timeout}s ({self.model} @ {self.host})")
             except Exception as exc:  # response/parse error — fail fast, surfaced (Tenet 3)
                 raise RuntimeError(f"llama.cpp complete failed ({self.model} @ {self.host}): {exc}")
         raise RuntimeError(f"llama.cpp unreachable after retries ({self.model} @ {self.host}): {last_exc}")
