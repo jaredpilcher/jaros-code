@@ -144,6 +144,26 @@ def build_report() -> dict:
     lines.append(f"- **Orphans (exist but never fired): ~{orphan_tools} tools, "
                  f"~{max(0, now_c['agents'] - len(sources_fired))} agents** — wire them in or prune (owner rule).")
 
+    # Orchestration/wiring QUALITY is a tracked success axis alongside counts: with Jaros
+    # recording every agent->tool decision, better wiring is measurable, not just a diagram.
+    orch = sc.get("orchestration") or {}
+    first_orch = next((r["orchestration"] for r in trend if isinstance(r.get("orchestration"), dict)), None)
+
+    def _od(key: str) -> str:
+        if not first_orch or key not in first_orch:
+            return ""
+        d = round(orch.get(key, 0) - first_orch.get(key, 0), 3)
+        return f" (+{d})" if d > 0 else (f" ({d})" if d < 0 else " (=)")
+
+    if orch:
+        lines.append(f"\n## Orchestration & wiring quality (measured — improves even at flat agent/tool count)")
+        lines.append(f"- **Leverage = solved per agent: {orch.get('leverage')}{_od('leverage')}** — "
+                     f"rises when orchestration/wiring improves WITHOUT adding agents (e.g. the strategy cascade)")
+        lines.append(f"- Distinct wired edges fired: **{orch.get('wiringEdges')}{_od('wiringEdges')}**  ·  "
+                     f"tool fires: {orch.get('toolFires')}  ·  decisions/solved task: {orch.get('decisionsPerSolved')}")
+        lines.append(f"- Jaros logs every agent→tool decision, so the wiring graph is auditable data — "
+                     f"orchestration gains are watched, not asserted.")
+
     lines.append(f"\n## Measurement accuracy (tightening)")
     lines.append(f"- Tasks measured: **{total}**  ·  tiers: **{len(tiers)}**  ·  CI width: **{ci_w}pts** (smaller = more accurate)")
     lines.append(f"- Real public benchmark included: **{'yes (HumanEval)' if has_real else 'not yet'}**")
@@ -161,6 +181,7 @@ def build_report() -> dict:
         "tasks": total, "tiers": len(tiers), "hasRealBenchmark": has_real,
         "perTier": sc.get("perTier", {}),
         "census": now_c,
+        "orchestration": orch,
         "honestyFlags": flags,
     }
 

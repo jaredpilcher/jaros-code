@@ -142,6 +142,10 @@ agent→tool wirings actually fire (no orphans), which agents/tools/evals are un
 - [ ] The honesty audit flags STAGNATION (flat trend), MISLEADING (tiny N), and UNUSED
       (orphans) so the supervisor knows where to correct
 - [ ] Census + trend are persisted so net-negative changes are detectable and reversible
+- [ ] Track ORCHESTRATION/WIRING QUALITY as a trended success axis (not just counts):
+      `leverage` = solved tasks per agent (rises when wiring improves at flat agent count),
+      distinct wired edges fired, and decisions composed per solved task — persisted to
+      history and shown in the report with deltas vs the first recorded run
 
 ### [REQ-5] Real public benchmark integration
 

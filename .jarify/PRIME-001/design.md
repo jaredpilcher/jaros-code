@@ -158,11 +158,20 @@ Worked example (this is how the loop actually ran, not a hypothetical):
    PRUNE      (nothing to remove; the net-negative line-number repair was already removed)
 ```
 
-The supervisor watches three honest signal families every cycle and corrects against
+The supervisor watches four honest signal families every cycle and corrects against
 them: **capability** (repair pass-rate + generative self-vs-oracle fidelity), **growth**
-(agents/tools/evals counts rising), and **health** (wiring usage — every agent→tool edge
-actually fires, no orphans; no net-negative fallback shipped). Activity is never the
-metric; the convergence trend is.
+(agents/tools/evals counts rising), **orchestration/wiring quality**, and **health**
+(no orphans, no net-negative fallback shipped). Activity is never the metric; the
+convergence trend is.
+
+**Orchestration/wiring quality is itself measured — not just agent/tool count.** Because
+Jaros records every agent→tool decision in the hash-chained log, the wiring graph is
+auditable data. So the harness tracks, run over run: **leverage** = solved tasks per
+agent (rises when wiring/orchestration improves WITHOUT adding agents — e.g. the
+strategy-cascade lifted capability at a flat count of 10 agents), the count of **distinct
+wired edges fired**, and **decisions composed per solved task**. A capability gain that
+comes from better composition is real progress and is watched as such; "we got more
+capable from the same swarm by wiring it better" is a first-class, measurable win.
 
 ### The difficulty ratchet (evals get harder and harder)
 

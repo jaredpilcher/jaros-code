@@ -94,11 +94,24 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
     total = len(per_task)
     per_tier, frontier, too_easy = _tier_stats(per_task)
     from harness.report import census  # growth census (agents/tools/evals/specs)
+    cen = census()
+    wu, tu = wiring_usage(), tool_usage()
+    tool_fires = sum(tu.values())
+    # Orchestration/wiring quality is a tracked success axis (not just agent/tool COUNT):
+    # Jaros records every agent->tool decision, so the wiring graph is measurable. LEVERAGE
+    # (solved tasks per agent) rising at a flat agent count IS better orchestration; richer
+    # composition shows as more distinct wired edges and tool fires per solved task.
+    orchestration = {
+        "wiringEdges": len(wu),                                              # distinct agent->tool edges fired
+        "toolFires": tool_fires,                                             # total deterministic tool executions
+        "decisionsPerSolved": round(tool_fires / solved_n, 2) if solved_n else 0.0,
+        "leverage": round(solved_n / cen["agents"], 3) if cen.get("agents") else 0.0,  # capability per agent
+    }
     scorecard = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "suite": suite,
         "model": MODEL,
-        "census": census(),
+        "census": cen,
         "maxIters": max_iters,
         "passRate": round(solved_n / total, 4) if total else 0.0,
         "solved": solved_n,
@@ -106,8 +119,9 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
         "perTier": per_tier,
         "frontierTier": frontier,
         "tooEasy": too_easy,
-        "toolUsage": tool_usage(),
-        "wiringUsage": wiring_usage(),
+        "toolUsage": tu,
+        "wiringUsage": wu,
+        "orchestration": orchestration,
         "modelCalls": model_call_stats(),
         "elapsedSec": round(time.time() - started, 1),
         "perTask": per_task,
@@ -169,6 +183,7 @@ def _persist(scorecard: dict) -> None:
     summary = {k: scorecard[k] for k in
                ("timestamp", "suite", "model", "passRate", "solved", "total", "elapsedSec")}
     summary["census"] = scorecard.get("census")
+    summary["orchestration"] = scorecard.get("orchestration")  # wiring quality trends too
     with open(HISTORY, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(summary) + "\n")
 
