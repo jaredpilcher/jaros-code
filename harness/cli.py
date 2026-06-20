@@ -245,3 +245,22 @@ def repl() -> int:
         if out:
             print(out)
 
+
+def main() -> int:
+    """Entry point: a one-shot request if given as args, else the interactive REPL.
+
+      python -m harness.cli                 # interactive REPL (Claude-Code-like)
+      python -m harness.cli /status         # run one command and exit
+      python -m harness.cli "fix the bug in foo.py"   # one plain-language request
+    """
+    import sys
+    args = sys.argv[1:]
+    if args:
+        print(JcodeCli().handle(" ".join(args)))
+        return 0
+    return repl()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

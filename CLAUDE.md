@@ -47,6 +47,18 @@ pwsh scripts/serve.ps1        # boot the node pinned to gemma2:2b (Windows)
 bash scripts/serve.sh         # same, POSIX
 ```
 
+Try the Claude-Code-like CLI yourself (needs Ollama running with `gemma2:2b`):
+
+```
+pwsh scripts/jcode.ps1                 # interactive REPL (Windows; powershell -File also works)
+bash scripts/jcode.sh                  # interactive REPL (POSIX)
+python -m harness.cli /status          # or run one command and exit
+python -m harness.cli "fix foo.py"     # or one plain-language request (orchestrator routes it)
+```
+
+In the REPL, type `/help` for slash commands, or just type a plain request — the
+`orchestrator` agent (gemma2:2b) decides which agent/tool serves it. `/quit` exits.
+
 - Agents live in `.jaros-data/agents/`, tools in `.jaros-data/tools/`, model
   selection in `.jaros-data/config/llm.json` (mirrored by the serve scripts).
 - Submit work: `jaros submit <agent> --input '{...}'`; observe: `jaros watch`;
