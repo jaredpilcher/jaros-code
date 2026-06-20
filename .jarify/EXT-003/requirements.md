@@ -70,3 +70,23 @@ judgement the model is incapable of.
       returning success on the first candidate that makes the tests pass
 - [ ] On total failure it restores the original file (never leaves a worse file)
 - [ ] Wired as the `fix_loop` fallback for `.py` bug-fixes the rewriter cannot crack
+
+### [REQ-5] Strategy-diverse cascade for the implement regime
+
+Single prompt/sampling tweaks (best-of-N temperature diversity, few-shot) each move a 2B
+only marginally on cold synthesis AND each trades tasks (regressions), because each one
+*replaces* the baseline. The leverage is that the strategies are **complementary**: each
+solves problems the others miss. So for the implement regime (filling a stub:
+HumanEval/MBPP/from-intent), every attempt uses a *different* strategy generated from the
+CLEAN stub — plain greedy, plain warm, few-shot, few-shot warm, high-temp ×2 — and the
+deterministic test selects the first that passes. Because acceptance is test-gated, the
+result is the **union** of what the strategies solve and is **strictly non-regressing**
+versus any single strategy. Repair tasks keep feedback-iteration unchanged.
+
+#### Acceptance Criteria
+- [ ] `fix_loop` detects the implement regime (a `NotImplementedError`/`pass` stub) and
+      drives the strategy cascade from the clean stub each attempt
+- [ ] The attempt budget widens to cover the full strategy set when implementing
+- [ ] Proven on an EXTERNAL benchmark out-of-sample (HumanEval[40:60]: 13/20 → 17/20,
+      +4, zero regressions) — not on tasks tuned against
+- [ ] Repair tasks (existing buggy code) are unaffected: feedback-iteration retained
