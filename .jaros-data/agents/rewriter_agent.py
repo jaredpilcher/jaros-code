@@ -40,7 +40,10 @@ _FEEDBACK = (
 # Structure surfaced by the py.symbols tool (EXT-001) — the agent is wired to use it.
 _SYMBOLS = "\nFILE STRUCTURE (from the py.symbols tool): {symbols}\n"
 
-_FILE_RE = re.compile(r"<<<FILE\r?\n(.*?)\r?\nFILE>>>", re.S)
+# Accept the strict `FILE>>>` close AND a bare `>>>` (some models, e.g. gemma4 e2b,
+# mirror the opening `<<<`). Greedy so a `>>>` inside a docstring (common in HumanEval)
+# does not truncate the captured code at the wrong place.
+_FILE_RE = re.compile(r"<<<FILE\r?\n(.*)\r?\n(?:FILE)?>>>", re.S)
 _FENCE_RE = re.compile(r"```(?:[\w+-]*\r?\n)?(.*?)```", re.S)
 
 
