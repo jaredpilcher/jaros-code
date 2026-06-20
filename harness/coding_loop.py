@@ -371,9 +371,13 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
             mode, prefix, temperature = _CASCADE_STRATEGIES[(r - 1) % len(_CASCADE_STRATEGIES)]
             # "body" = fast body-only completer; "whole" = whole-file rewriter. From the clean stub.
             agent = body_completer if mode == "body" else editor
+            # Experiment toggle: feed the previous attempt's failure into later attempts so the
+            # cascade can CORRECT (not just re-roll). Off by default (independent attempts proven).
+            fb = (distill_failure(last_output)
+                  if (r > 1 and os.environ.get("JCODE_IMPLEMENT_FEEDBACK")) else "")
             [edit] = agent.decide({"path": str(target), "content": original_content,
                                    "instruction": prefix + instruction, "symbols": symbols,
-                                   "feedback": "", "temperature": temperature, "seed": r})
+                                   "feedback": fb, "temperature": temperature, "seed": r})
         else:
             temperature = 0.0 if r == 1 else min(0.8, 0.3 * (r - 1))
             gen_feedback = distill_failure(last_output) if r > 1 else ""
