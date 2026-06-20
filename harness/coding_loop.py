@@ -38,7 +38,14 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / ".jaros-data"
 AGENTS_DIR = DATA_DIR / "agents"
 TOOLS_DIR = DATA_DIR / "tools"
-MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+def _active_model_label() -> str:
+    """The model actually serving inference, for honest banners/reports (Tenet 3)."""
+    if os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower().startswith("llama"):
+        return os.environ.get("LLAMACPP_MODEL", "gemma-4-e2b")
+    return os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+
+
+MODEL = _active_model_label()
 # Unit tests finish in well under a second; a generated infinite loop must NOT burn the
 # shell.exec 120s default (12 attempts x 120s = ~24 min wasted on one bad problem). Cap
 # test runs short so the eval/repair loops stay fast and never hang on a bad generation.

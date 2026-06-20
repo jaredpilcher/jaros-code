@@ -88,7 +88,7 @@ class DeterministicLlamaCppClient:
 def health(host: str | None = None, timeout: float = 8.0) -> dict:
     """Probe a llama-server: returns {ok, status, models?} — used to verify the endpoint
     before we switch the harness onto it. /v1/models is the OpenAI-style discovery route."""
-    base = (host or os.environ.get("LLAMACPP_HOST", "http://localhost:8080")).rstrip("/")
+    base = (host or os.environ.get("LLAMACPP_HOST", "http://192.168.1.183:8000")).rstrip("/")
     try:
         with urllib.request.urlopen(f"{base}/v1/models", timeout=timeout) as r:
             body = json.loads(r.read().decode("utf-8"))

@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TASKS_DIR = ROOT / "evals" / "coding_tasks"
 ARTIFACTS = ROOT / ".jaros-data" / "artifacts" / "eval"
 HISTORY = ARTIFACTS / "history.jsonl"
-MODEL = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+from harness.coding_loop import _active_model_label
+MODEL = _active_model_label()  # the model actually serving inference (honest label)
 
 
 # #EXT-005-REQ-1 Start
