@@ -28,6 +28,33 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 When a change would violate a tenet, **STOP and flag the conflict** — do not
 silently resolve it.
 
+## Ownership mandate (binds every session — do not forget)
+
+**You own this.** The owner has put you in charge of driving jaros-code's convergence
+on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership is
+*proactive*, not reactive:
+
+- **Drive the loop between the owner's messages** — don't wait to be prodded. Each working
+  turn, advance the convergence loop yourself: MEASURE (honest evals + census + wiring) →
+  DIAGNOSE (probe the raw model output) → DISCOVER the next grain → PLACE it (plane-placement)
+  → WIRE it (no orphans) → RE-MEASURE → PRUNE. Then commit.
+- **Build, don't defer.** If you catch yourself *describing* the next improvement instead of
+  building it ("teed up for next"), that is the failure mode — build it now and measure it.
+- **The owner prodding you ("how's it going?", "are you driving this?") is a signal you have
+  been too reactive.** Reports should say what you *did and decided this cycle*, not just
+  "still running."
+- **Watch four signals and move them yourself:** capability (pass rate + generative
+  self-vs-oracle), growth (agents/tools/evals counts), orchestration/wiring quality
+  (leverage), health (no orphans, nothing net-negative). Activity is never the metric; the
+  trend is. Drive against the **unsaturated external bar** (HumanEval/MBPP/MultiPL-E), not
+  the saturated authored suite.
+- **Standing duties:** keep the system alive and honest, the Jetson endpoint reachable
+  (`gemma.service`), the runner running, and 30-min phone reports flowing (quiet hours
+  02:00–08:00). Never blame the device before checking your own code (the "hang" was ours).
+
+See `.claude` memory `jaros-code-ownership` for the why. This mandate is non-negotiable
+and must survive context loss — re-read it at the start of every session.
+
 ## Design rules
 
 - **Agents are single-purpose.** Each agent makes ONE narrow judgement and emits
