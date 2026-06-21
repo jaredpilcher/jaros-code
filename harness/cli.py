@@ -30,6 +30,7 @@ Commands (Claude-Code-style):
   /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
   /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
+  /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
 """
@@ -255,6 +256,26 @@ class JcodeCli:
             return f"no callers of {arg.strip()}"
         return f"{len(cs)} caller(s) of {arg.strip()}:" + "".join(
             f"\n  {c['file']}:{c['line']} in {c['caller']}()" for c in cs[:30])
+
+    def cmd_locate(self, arg: str) -> str:
+        """Fault localization (EXT-002, Agentless-style): run the tests and pinpoint the failure to
+        file:line:function, DEEPEST FRAME FIRST — so a fix can target the exact function, not the
+        whole file. Deterministic (the traceback names the function). Composes
+        harness/multi_file.localize_fault."""
+        import subprocess
+        from harness.multi_file import localize_fault
+        try:
+            r = subprocess.run("python -m pytest -q", cwd=".", shell=True,
+                               capture_output=True, text=True, timeout=60)
+        except Exception as e:
+            return f"locate: could not run tests: {e}"
+        if r.returncode == 0:
+            return "tests pass — nothing to localize"
+        frames = localize_fault(r.stdout + r.stderr)
+        if not frames:
+            return "tests failed but no traceback frames found"
+        return "fault localization (deepest frame first):" + "".join(
+            f"\n  {x['file']}:{x['line']} in {x['function']}()" for x in frames[:15])
 
     def cmd_defn(self, arg: str) -> str:
         """Go-to-definition (EXT-004): the def/class site(s) of a symbol (complement of /usages,

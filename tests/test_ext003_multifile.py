@@ -117,3 +117,20 @@ def test_multi_file_fix_resolves_two_file_fault(tmp_path, monkeypatch):
     from harness.multi_file import multi_file_fix
     r = multi_file_fix(str(tmp_path), "python -m pytest -q", "fix", str(tmp_path / "test_two.py"))
     assert r["solved"] and set(r["fixed"]) == {"amod.py", "bmod.py"}
+
+
+def test_localize_fault():
+    from harness.multi_file import localize_fault
+    tb = (
+        'Traceback (most recent call last):\n'
+        '  File "test_calc.py", line 5, in test_add\n'
+        '    assert add(2, 3) == 5\n'
+        '  File "calc.py", line 12, in add\n'
+        '    return a - b\n'
+        'AssertionError\n'
+    )
+    frames = localize_fault(tb)
+    # deepest frame first: the actual fault (add in calc.py) before the test frame
+    assert frames[0] == {"file": "calc.py", "line": 12, "function": "add"}
+    assert frames[1] == {"file": "test_calc.py", "line": 5, "function": "test_add"}
+    assert localize_fault("no traceback here") == []

@@ -14,6 +14,24 @@ from pathlib import Path
 
 _IMPORT_RE = re.compile(r"^\s*(?:from\s+([.\w]+)\s+import|import\s+([.\w]+))", re.M)
 _TRACE_FILE_RE = re.compile(r'File "([^"]+\.py)"|^([\w./\\-]+\.py):\d+', re.M)
+_TRACE_FRAME_RE = re.compile(r'File "([^"]+\.py)", line (\d+), in (\S+)')
+
+
+def localize_fault(test_output: str) -> list[dict]:
+    """Agentless-style fault localization: pull the (file, line, function) frames from a Python
+    traceback, DEEPEST FRAME FIRST (the most direct fault site). Deterministic — the traceback
+    already names the exact function, so no model is needed to localize. Python prints frames
+    outermost->innermost ('most recent call last'), so reversed() surfaces the deepest frame
+    first. De-duped on (file, function)."""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for f, ln, fn in reversed(_TRACE_FRAME_RE.findall(test_output)):
+        key = (f, fn)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"file": f, "line": int(ln), "function": fn})
+    return out
 
 
 def _imported_modules(src: str) -> list[str]:
