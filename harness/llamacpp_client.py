@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -67,6 +68,29 @@ class DeterministicLlamaCppClient:
         """Pull the assistant text out of an OpenAI-style chat completion response."""
         return (resp["choices"][0]["message"]["content"] or "").strip()
 
+    def _urlopen_hard(self, request) -> dict:
+        """POST with a HARD wall-clock timeout. urllib's socket timeout intermittently
+        fails to fire on a half-open connection (observed: a run blocked 29 min while a
+        fresh request succeeded in 1s), so we run it in a daemon thread and abandon it if
+        it overruns — guaranteeing a single call can never block the whole experiment."""
+        box: dict = {}
+
+        def _run():
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    box["resp"] = json.loads(response.read().decode("utf-8"))
+            except Exception as exc:  # noqa: BLE001 — surfaced to caller below
+                box["err"] = exc
+
+        th = threading.Thread(target=_run, daemon=True)
+        th.start()
+        th.join(self.timeout + 15)        # hard cap; daemon thread dies with the process
+        if th.is_alive():
+            raise TimeoutError(f"hard timeout >{self.timeout + 15}s (connection hung)")
+        if "err" in box:
+            raise box["err"]
+        return box["resp"]
+
     def complete(self, req: LlmRequest) -> LlmResponse:
         data = json.dumps(self.build_payload(req)).encode("utf-8")
         t0 = time.time()
@@ -79,11 +103,10 @@ class DeterministicLlamaCppClient:
                 f"{self.host}/v1/chat/completions",
                 data=data, headers={"Content-Type": "application/json"}, method="POST")
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    resp = json.loads(response.read().decode("utf-8"))
-                    text = self.parse_response(resp)
-                    _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
-                    return LlmResponse(text=text, model=self.model)
+                resp = self._urlopen_hard(request)   # hard wall-clock timeout (urllib's can hang)
+                text = self.parse_response(resp)
+                _record_call(self.model, time.time() - t0, len(req.prompt), len(text))
+                return LlmResponse(text=text, model=self.model)
             except urllib.error.URLError as exc:
                 # A read timeout (server too slow on THIS prompt) won't get better by
                 # retrying — fail fast. Only retry genuine connection drops (refused/reset).
