@@ -30,3 +30,53 @@ def test_candidate_files_ranks_traceback_first(tmp_path):
     out = f'File "{tmp_path / "mathutils.py"}", line 2, in scale'
     cands = candidate_files(str(tmp_path), out, str(tmp_path / "test_app.py"))
     assert cands and Path(cands[0]).name == "mathutils.py"  # the failure points here -> try first
+
+
+# --- multi_file_fix ORCHESTRATION (deterministic: mock the model fix, run the REAL test) ---
+
+class _R:
+    def __init__(self, success):
+        self.success, self.attempts = success, 1
+
+
+def test_multi_file_fix_locates_and_solves(tmp_path, monkeypatch):
+    (tmp_path / "buggy.py").write_text("def f(x):\n    return x - 1\n")  # fault
+    (tmp_path / "test_b.py").write_text("from buggy import f\n\ndef test_f():\n    assert f(3) == 4\n")
+    import harness.coding_loop as cl
+
+    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False):
+        if str(target).endswith("buggy.py"):                 # "fix" only the faulty file
+            Path(target).write_text("def f(x):\n    return x + 1\n")
+            return _R(True)
+        return _R(False)
+
+    monkeypatch.setattr(cl, "fix_loop", fake_fix_loop)
+    from harness.multi_file import multi_file_fix
+    r = multi_file_fix(str(tmp_path), "python -m pytest -q", "fix", str(tmp_path / "test_b.py"))
+    assert r["solved"] and Path(r["file"]).name == "buggy.py"
+
+
+def test_multi_file_fix_reverts_a_harmful_attempt(tmp_path, monkeypatch):
+    # ok.py is correct; buggy.py holds the fault. A model that MANGLES ok.py must be reverted,
+    # and the real fix on buggy.py must still land.
+    (tmp_path / "ok.py").write_text("def g(x):\n    return x * 10\n")
+    (tmp_path / "buggy.py").write_text("def f(x):\n    return x - 1\n")
+    # import ok FIRST so the locator tries (and mangles) ok.py before buggy.py — exercising revert
+    (tmp_path / "test_b.py").write_text(
+        "from ok import g\nfrom buggy import f\n\ndef test_f():\n    assert f(3) == 4\n    assert g(2) == 20\n")
+    import harness.coding_loop as cl
+
+    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False):
+        if str(target).endswith("ok.py"):
+            Path(target).write_text("def g(x):\n    return x  # MANGLED\n")  # breaks g
+            return _R(False)
+        if str(target).endswith("buggy.py"):
+            Path(target).write_text("def f(x):\n    return x + 1\n")
+            return _R(True)
+        return _R(False)
+
+    monkeypatch.setattr(cl, "fix_loop", fake_fix_loop)
+    from harness.multi_file import multi_file_fix
+    r = multi_file_fix(str(tmp_path), "python -m pytest -q", "fix", str(tmp_path / "test_b.py"))
+    assert r["solved"]
+    assert "return x * 10" in (tmp_path / "ok.py").read_text()  # harmful edit was reverted
