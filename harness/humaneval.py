@@ -71,10 +71,11 @@ def problem_to_task(p: dict) -> Task:
     )
 
 
-def run_humaneval(limit: int | None = 20, max_iters: int = 3, verbose: bool = False) -> dict:
+def run_humaneval(limit: int | None = 20, max_iters: int = 3, verbose: bool = False,
+                  workers: int = 1) -> dict:
     """Run the first ``limit`` HumanEval problems (or all) through the harness."""
     problems = _read_problems()
     if limit is not None:
         problems = problems[:limit]
     tasks = [problem_to_task(p) for p in problems]
-    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite="humaneval")
+    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite="humaneval", workers=workers)

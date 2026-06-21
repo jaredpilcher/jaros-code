@@ -61,35 +61,46 @@ def run_suite(max_iters: int = 3, verbose: bool = False) -> dict:
 
 
 def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = False,
-                  suite: str = "authored") -> dict:
-    """Run any task list through fix_loop in isolation; return a scorecard dict."""
+                  suite: str = "authored", workers: int = 1) -> dict:
+    """Run any task list through fix_loop in isolation; return a scorecard dict. `workers>1`
+    runs tasks CONCURRENTLY — each in its own temp dir, and the model calls (the slow part)
+    batch on the inference server's parallel slots (~1.8x throughput measured on the Jetson at
+    4-wide). Each task is independent, so there's no wasted compute; verbose is forced off under
+    concurrency so transcripts don't interleave."""
     from harness.coding_loop import fix_loop, reset_tool_usage, tool_usage, wiring_usage  # local: sets env first
     from harness.ollama_client import model_call_stats, reset_model_calls
 
     reset_tool_usage()
     reset_model_calls()
     started = time.time()
-    print(f"\n\033[1m jaros-code eval \033[0m  suite={suite}  {len(tasks)} tasks  model={MODEL}  max_iters={max_iters}")
+    print(f"\n\033[1m jaros-code eval \033[0m  suite={suite}  {len(tasks)} tasks  model={MODEL}  "
+          f"max_iters={max_iters}  workers={workers}")
     print("   " + "-" * 56)
 
-    per_task = []
-    for task in tasks:
+    def _run_one(task: Task) -> dict:
         with tempfile.TemporaryDirectory(prefix=f"jcode-{task.id}-") as tmp:
             workdir = Path(tmp)
             target = setup_task(task, workdir)
             t0 = time.time()
             try:
-                res = fix_loop(str(target), task.instruction, task.test_cmd,
-                               max_iters=max_iters, cwd=str(workdir), verbose=verbose)
+                res = fix_loop(str(target), task.instruction, task.test_cmd, max_iters=max_iters,
+                               cwd=str(workdir), verbose=verbose and workers == 1)
                 solved, attempts = res.success, res.attempts
             except Exception as exc:  # a single task failure never sinks the suite
                 solved, attempts = False, max_iters
-                print(f"    \033[31m{task.id}: runner error: {exc}\033[0m")
+                print(f"    \033[31m{task.id}: runner error: {exc}\033[0m", flush=True)
             secs = round(time.time() - t0, 1)
             mark = "\033[32mPASS\033[0m" if solved else "\033[31mFAIL\033[0m"
-            print(f"   {mark}  t{task.tier} {task.id:<18} attempts={attempts}  {secs}s")
-            per_task.append({"id": task.id, "tier": task.tier, "solved": solved,
-                             "attempts": attempts, "secs": secs})
+            print(f"   {mark}  t{task.tier} {task.id:<18} attempts={attempts}  {secs}s", flush=True)
+            return {"id": task.id, "tier": task.tier, "solved": solved,
+                    "attempts": attempts, "secs": secs}
+
+    if workers > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            per_task = list(ex.map(_run_one, tasks))   # order preserved; each task is isolated
+    else:
+        per_task = [_run_one(task) for task in tasks]
 
     solved_n = sum(1 for t in per_task if t["solved"])
     total = len(per_task)
