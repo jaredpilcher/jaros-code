@@ -324,6 +324,12 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     # feedback-iteration. The cascade needs its full strategy set, so widen the budget.
     implement = ("NotImplementedError" in original_content
                  or bool(re.search(r"^\s*pass\s*$", original_content, re.M)))
+    # GENERIC stub (e.g. MBPP's `def f(*args, **kwargs)`) carries NO real parameter names, so
+    # body-only splices a body onto the wrong signature and fails — the whole-file rewriter must
+    # regenerate the correct signature from the spec. Body-only's win is specific to RICH-signature
+    # stubs (HumanEval). So route generic stubs to "whole". (Fixes the MBPP regression from the
+    # all-body cascade: MBPP 73%->43% restored without losing the HumanEval speed win.)
+    generic_stub = bool(re.search(r"def\s+\w+\s*\([^)]*\*args", original_content))
     body_completer = None
     if implement:
         max_iters = max(max_iters, len(_CASCADE_STRATEGIES))
@@ -371,7 +377,10 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # temperature and feed the failure back so a wrong answer can be corrected.
         if implement:
             mode, prefix, temperature = _CASCADE_STRATEGIES[(r - 1) % len(_CASCADE_STRATEGIES)]
-            # All-body now (see _CASCADE_STRATEGIES); editor kept for the rare "whole" entry / repair.
+            # All-body for rich-signature stubs; generic (*args) stubs need the whole-file
+            # rewriter to produce the correct signature (see generic_stub above).
+            if generic_stub:
+                mode = "whole"
             agent = body_completer if mode == "body" else editor
             # Experiment toggle: feed the previous attempt's failure into later attempts so the
             # cascade can CORRECT (not just re-roll). Off by default (independent attempts proven).
