@@ -22,6 +22,7 @@ Commands (Claude-Code-style):
   /patch <file> :: <old> :: <new>   code.apply_patch tool (surgical edit)
   /run <task>                   commander agent -> shell.exec (gated)
   /fix <file> :: <instr> :: <testcmd>   run the edit->test->judge loop
+  /fixrepo <instr> :: <testcmd> [:: <testfile>]   multi-file: locate the faulty file & fix it
   /clear  /quit
 """
 
@@ -180,6 +181,21 @@ class JcodeCli:
         from harness.coding_loop import fix_loop
         res = fix_loop(bits[0], bits[1], bits[2], max_iters=3, verbose=True)
         return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
+
+    def cmd_fixrepo(self, arg: str) -> str:
+        """Multi-file fix: locate the faulty file (traceback + import graph) and fix it,
+        even when the failing test is in a different file. Wires harness/multi_file.py."""
+        bits = [b.strip() for b in arg.split("::")]
+        if len(bits) < 2:
+            return "usage: /fixrepo <instruction> :: <test command> [:: <test file>]"
+        import os
+        from harness.multi_file import multi_file_fix
+        instr, testcmd = bits[0], bits[1]
+        test_file = bits[2] if len(bits) > 2 else next(
+            (f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
+        r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True)
+        where = f" (fixed {r['file']})" if r.get("file") else ""
+        return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
 
     def _nl_fix(self, request: str, arg: str) -> str:
         """Natural-language fix: find a file token, use the request as the instruction."""

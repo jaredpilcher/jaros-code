@@ -107,3 +107,12 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
       pulls pass@1 down to ~58%, within-budget holds ~76%). The run also validated the
       shell.exec process-tree kill: it completed all 164 cleanly past HumanEval_115, which
       previously hung the eval via an orphaned infinite-loop pytest.
+- [ ] BREADTH — multi-file fix (`harness/multi_file.py`, wired as CLI `/fixrepo`): the
+      single-file `fix_loop` cannot fix a fault that lives in a different file than the one
+      under test (the Claude-Code-class case). `multi_file_fix` LOCATES candidate files
+      deterministically (traceback files + import graph reachable from the failing test —
+      a tool, not a model call), then tries `fix_loop` on each candidate on a clean snapshot,
+      reverting a non-helping attempt before the next, until the test passes. Verified end-to-
+      end: a bug in `mathutils.scale` (called via `main.apply`, tested in `test_app.py`) is
+      located and fixed though the failure surfaces in a different file. Locating-the-file is
+      the deterministic plane; only the fix is model work.
