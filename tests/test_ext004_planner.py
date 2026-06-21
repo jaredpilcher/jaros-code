@@ -30,3 +30,16 @@ def test_parse_plan_drops_unknown_verbs():
 def test_parse_plan_garbage_is_empty():
     assert planner.parse_plan("I cannot help with that") == []
     assert planner.parse_plan("") == []
+
+
+def test_is_multistep_routing():
+    from harness.cli import JcodeCli
+    ms = JcodeCli._is_multistep
+    # multi-action -> route to /plan
+    assert ms("fix the bug and run the tests")
+    assert ms("implement factorial then verify")
+    assert ms("find the bug, fix it and run the tests")
+    # single-action -> fall through to the orchestrator's one-action routing
+    assert not ms("fix foo.py")
+    assert not ms("find the login handler")
+    assert not ms("show me the status")

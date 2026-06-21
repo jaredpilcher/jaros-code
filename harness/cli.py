@@ -246,6 +246,22 @@ class JcodeCli:
         res = fix_loop(m.group(0), request, "python -m pytest -q", max_iters=3, verbose=True)
         return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
 
+    _ACTION_VERBS = {"fix", "find", "implement", "add", "create", "run",
+                     "refactor", "write", "debug", "build"}
+
+    @classmethod
+    def _is_multistep(cls, request: str) -> bool:
+        """DETERMINISTIC: does the plain request describe MULTIPLE actions? Two distinct
+        action verbs (e.g. 'fix the bug and run the tests'), or one verb sequenced with
+        then/after ('implement X then verify'). Conservative — single-action requests fall
+        through to the orchestrator's reliable one-action routing; /plan degrades to a 1-step
+        plan anyway if this over-triggers, so the cost of a false positive is just one extra
+        planner call."""
+        import re as _re
+        r = request.lower()
+        verbs = {v for v in cls._ACTION_VERBS if _re.search(rf"\b{v}\b", r)}
+        return len(verbs) >= 2 or (bool(verbs) and (" then " in r or " after " in r))
+
     def handle(self, line: str) -> str:
         """Top-level: slash commands run directly; plain language is ROUTED by the
         orchestrator agent, which decides which agent/tool serves the request."""
@@ -254,6 +270,8 @@ class JcodeCli:
             return ""
         if line.startswith("/"):
             return self.dispatch(line)
+        if self._is_multistep(line):   # clearly multi-action request -> the planner flow
+            return "\033[2m[multi-step plan]\033[0m\n" + self.cmd_plan(line)
         orch = self._load_agent("orchestrator_agent.py", self.llm)
         [d] = orch.decide({"request": line})
         action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
