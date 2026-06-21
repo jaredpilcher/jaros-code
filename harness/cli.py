@@ -28,6 +28,7 @@ Commands (Claude-Code-style):
   /rename <old> <new>           test-gated rename refactor (reverts if the suite goes red)
   /move <symbol> <from> <to>    test-gated move-symbol refactor (re-exports; reverts on red)
   /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
+  /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
 """
@@ -242,6 +243,18 @@ class JcodeCli:
         return f"{len(us)} usage(s) of {arg.strip()}:" + "".join(
             f"\n  {u['file']}:{u['line']} [{u['kind']}] {u['text'][:70]}" for u in us[:30])
 
+    def cmd_defn(self, arg: str) -> str:
+        """Go-to-definition (EXT-004): the def/class site(s) of a symbol (complement of /usages,
+        composes harness/navigate.py)."""
+        if not arg.strip():
+            return "usage: /defn <symbol>"
+        from harness.navigate import find_definition
+        ds = find_definition(".", arg.strip())
+        if not ds:
+            return f"no definition of {arg.strip()} found"
+        return f"{len(ds)} definition(s) of {arg.strip()}:" + "".join(
+            f"\n  {d['file']}:{d['line']} [{d['kind']}] {d['text'][:70]}" for d in ds)
+
     def cmd_deadcode(self, arg: str) -> str:
         """Dead-code candidates (EXT-004): public top-level functions/classes referenced NOWHERE
         in the repo (composes the find-usages pass). Run on the project ROOT for accuracy —
@@ -339,6 +352,12 @@ class JcodeCli:
         m = _re.search(r"\bwhere\s+(?:is|are)\s+(\w+)\s+(?:used|referenced|called)\b", rl)
         if m:
             return ("usages", m.group(1))
+        m = _re.search(r"\b(?:definition|defined)\s+(?:of|for)\s+(\w+)", rl)
+        if m:
+            return ("defn", m.group(1))
+        m = _re.search(r"\bwhere\s+(?:is|are)\s+(\w+)\s+defined\b", rl)
+        if m:
+            return ("defn", m.group(1))
         if _re.search(r"\b(?:dead code|unused (?:code|functions?|symbols?))\b", rl):
             return ("deadcode", "")
         if _re.search(r"\b(?:repo|repository|code)\s+map\b", rl):

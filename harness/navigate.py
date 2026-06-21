@@ -47,6 +47,12 @@ def find_usages(cwd: str, symbol: str) -> list[dict]:
     return out
 
 
+def find_definition(cwd: str, symbol: str) -> list[dict]:
+    """Where `symbol` is DEFINED — its def/class site(s). Go-to-definition (Claude Code's), the
+    complement of find_usages: composes the same AST pass, keeping only the definition nodes."""
+    return [u for u in find_usages(cwd, symbol) if u["kind"] in ("def", "class")]
+
+
 def find_dead_code(cwd: str) -> list[dict]:
     """Public top-level functions/classes referenced NOWHERE in the repo — dead-code candidates.
     One AST pass: collect every referenced name (Name/Attribute), then flag defs absent from it.

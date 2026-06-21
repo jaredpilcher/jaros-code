@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from harness.navigate import find_usages, find_dead_code
+from harness.navigate import find_usages, find_dead_code, find_definition
 
 
 def test_find_usages_finds_def_and_refs(tmp_path):
@@ -33,3 +33,13 @@ def test_find_dead_code(tmp_path):
     assert "used" not in dead      # called by run()
     assert "run" not in dead       # referenced by the test
     assert "test_run" not in dead  # test-file def excluded (pytest entry point)
+
+
+def test_find_definition(tmp_path):
+    (tmp_path / "m.py").write_text(
+        "def target():\n    return 1\n\nclass Thing:\n    pass\n\nx = target()\n")
+    defs = find_definition(str(tmp_path), "target")
+    assert len(defs) == 1 and defs[0]["kind"] == "def" and defs[0]["line"] == 1
+    cdefs = find_definition(str(tmp_path), "Thing")
+    assert len(cdefs) == 1 and cdefs[0]["kind"] == "class"
+    assert find_definition(str(tmp_path), "nonexistent") == []
