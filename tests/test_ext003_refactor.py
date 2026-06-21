@@ -41,3 +41,26 @@ def test_rename_requires_green_suite_first(tmp_path):
 def test_rename_rejects_non_identifiers(tmp_path):
     r = rename_symbol(str(tmp_path), "old", "2bad", _TEST_CMD)
     assert not r["renamed"] and "identifier" in r["note"]
+
+
+def test_move_symbol_keeps_suite_green(tmp_path):
+    (tmp_path / "a.py").write_text("def foo():\n    return 42\n")
+    (tmp_path / "b.py").write_text("# target module\n")
+    (tmp_path / "test_a.py").write_text("from a import foo\n\ndef test_foo():\n    assert foo() == 42\n")
+    from harness.refactor import move_symbol
+    r = move_symbol(str(tmp_path), "foo", "a.py", "b.py", _TEST_CMD)
+    assert r["moved"]
+    assert "def foo" in (tmp_path / "b.py").read_text()
+    assert "from b import foo" in (tmp_path / "a.py").read_text()   # re-export keeps importers working
+
+
+def test_move_symbol_reverts_when_dependency_left_behind(tmp_path):
+    # foo needs `import os` which stays in a.py; moved to b.py it NameErrors -> suite red -> revert
+    (tmp_path / "a.py").write_text("import os\n\ndef foo():\n    return os.sep\n")
+    (tmp_path / "b.py").write_text("# empty\n")
+    (tmp_path / "test_a.py").write_text("from a import foo\nimport os\n\ndef test_foo():\n    assert foo() == os.sep\n")
+    before = (tmp_path / "a.py").read_text()
+    from harness.refactor import move_symbol
+    r = move_symbol(str(tmp_path), "foo", "a.py", "b.py", _TEST_CMD)
+    assert not r["moved"] and "reverted" in r["note"]
+    assert (tmp_path / "a.py").read_text() == before    # fully restored

@@ -26,6 +26,7 @@ Commands (Claude-Code-style):
   /plan <request>               multi-step: planner -> deterministic find/read/fix/run flow
   /map [path]                   ranked repo map (top-level symbols per file, Aider-style)
   /rename <old> <new>           test-gated rename refactor (reverts if the suite goes red)
+  /move <symbol> <from> <to>    test-gated move-symbol refactor (re-exports; reverts on red)
   /clear  /quit
 """
 
@@ -216,6 +217,15 @@ class JcodeCli:
             return "usage: /rename <old> <new>"
         from harness.refactor import rename_symbol
         return rename_symbol(".", bits[0], bits[1])["note"]
+
+    def cmd_move(self, arg: str) -> str:
+        """Test-gated move refactor (EXT-003): move a top-level symbol to another module; the
+        source re-exports it so importers keep working, and it reverts if the suite goes red."""
+        bits = arg.split()
+        if len(bits) < 3:
+            return "usage: /move <symbol> <from_file> <to_file>"
+        from harness.refactor import move_symbol
+        return move_symbol(".", bits[0], bits[1], bits[2])["note"]
 
     def cmd_plan(self, arg: str) -> str:
         """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then

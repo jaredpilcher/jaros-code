@@ -11,6 +11,7 @@ scope; the gate keeps even the simple version honest.)
 """
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -48,3 +49,47 @@ def rename_symbol(cwd: str, old: str, new: str,
     _restore(snap)   # the rename broke something it shouldn't have — never ship a red suite
     return {"renamed": False, "occurrences": occ, "files": files,
             "note": f"rename {old}->{new} turned the suite red; reverted"}
+
+
+def move_symbol(cwd: str, symbol: str, from_file: str, to_file: str,
+                test_cmd: str = "python -m pytest -q") -> dict:
+    """Move a top-level function/class from one module to another, test-gated. The source
+    module RE-EXPORTS it (`from <to> import <symbol>`) so existing importers keep working;
+    if the move turns the suite red (e.g. the symbol needed imports left behind), REVERT.
+    Deterministic: ast finds the symbol's exact line span (decorators included)."""
+    root = Path(cwd)
+    src_p, dst_p = root / from_file, root / to_file
+    if not src_p.is_file():
+        return {"moved": False, "note": f"{from_file} not found"}
+    ok0, _ = _run(cwd, test_cmd)
+    if not ok0:
+        return {"moved": False, "note": "suite not green before move"}
+    src = src_p.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return {"moved": False, "note": f"{from_file} not parseable"}
+    node = next((n for n in tree.body
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                 and n.name == symbol), None)
+    if node is None:
+        return {"moved": False, "note": f"{symbol} is not a top-level def/class in {from_file}"}
+
+    start = min([d.lineno for d in node.decorator_list] + [node.lineno]) - 1   # 0-based, incl decorators
+    end = node.end_lineno                                                      # 1-based inclusive
+    lines = src.splitlines(keepends=True)
+    block = "".join(lines[start:end]).rstrip() + "\n"
+
+    snap = _snapshot(cwd)
+    to_mod = Path(to_file).stem
+    remaining = f"from {to_mod} import {symbol}\n" + "".join(lines[:start] + lines[end:])
+    src_p.write_text(remaining, encoding="utf-8", newline="\n")
+    dst_src = dst_p.read_text(encoding="utf-8") if dst_p.is_file() else ""
+    sep = "\n\n\n" if dst_src.strip() else ""
+    dst_p.write_text(dst_src.rstrip() + sep + block, encoding="utf-8", newline="\n")
+
+    ok1, _ = _run(cwd, test_cmd)
+    if ok1:
+        return {"moved": True, "note": f"moved {symbol} {from_file}->{to_file} (re-exported), suite green"}
+    _restore(snap)
+    return {"moved": False, "note": f"moving {symbol} turned the suite red; reverted"}
