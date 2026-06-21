@@ -91,6 +91,26 @@ SCENARIOS = [
                             "def test_shout():\n    assert shout('hi') == 'HI'\n"),
         },
     },
+    {   # buggy function among THREE in one file; an AttributeError names it in the traceback
+        "name": "multi_fn_attr",
+        "files": {
+            "strops.py": ("def upper_all(s):\n    return s.upper()\n\n"
+                          "def first_word(s):\n    return s.spliit(' ')[0]  # BUG: spliit -> split\n\n"
+                          "def length(s):\n    return len(s)\n"),
+            "app.py": "from strops import first_word\n\ndef headline(s):\n    return first_word(s)\n",
+            "test_app.py": "from app import headline\n\ndef test_headline():\n    assert headline('hello world') == 'hello'\n",
+        },
+    },
+    {   # buggy function among THREE; a NameError names it in the traceback
+        "name": "multi_fn_name",
+        "files": {
+            "ops.py": ("def double(xs):\n    return [x * 2 for x in xs]\n\n"
+                       "def shift(xs, k):\n    return [x + amt for x in xs]  # BUG: amt -> k\n\n"
+                       "def negate(xs):\n    return [-x for x in xs]\n"),
+            "pipe.py": "from ops import shift\n\ndef run(xs):\n    return shift(xs, 10)\n",
+            "test_pipe.py": "from pipe import run\n\ndef test_run():\n    assert run([1, 2, 3]) == [11, 12, 13]\n",
+        },
+    },
 ]
 
 
