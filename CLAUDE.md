@@ -57,6 +57,15 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   test-gated) into a concrete, eval-guarded build. The 2026-06-21 session did this at a plateau:
   research → Aider's repo map → built `harness/repo_map.py` + `/map`. "There's a lot out there
   that can inspire you" — use it. See `.claude` memory [[jaros-code-research-for-inspiration]].
+- **ADAPT, don't rut (owner directive, 2026-06-21):** "keep going, keep your options open on which
+  approach feels right, just avoid getting stuck in a rut of doing the same thing over and over and
+  FAILING. but if you continue to improve, go for it." When an approach is YIELDING committed wins
+  (e.g. the refactor/navigation family), double down. When it's REVERTING repeatedly (best-of-N and
+  cascade tuning hit the 2B ceiling — two reverts), STOP and switch AXES — don't grind the same
+  failing experiment. Vary the KIND of work (capability builds vs evals vs research) so the loop
+  never spins on one dead end. The single-function pass rate is near the 2B ceiling; the productive
+  axis is NEW capability classes (multi-file → multi-step → refactoring → navigation), each
+  deterministic + test-gated where possible. See memory [[jaros-code-autonomous-loop]].
 - **Watch four signals and move them yourself:** capability (pass rate + generative
   self-vs-oracle), growth (agents/tools/evals counts), orchestration/wiring quality
   (leverage), health (no orphans, nothing net-negative). Activity is never the metric; the
