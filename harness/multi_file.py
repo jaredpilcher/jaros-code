@@ -40,9 +40,11 @@ def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
         if p.is_file() and p.suffix == ".py" and p.name != test_name and str(p) not in ordered:
             ordered.append(str(p))
 
-    # 1) files named in the traceback (deterministic: the failure points at them)
-    for m in _TRACE_FILE_RE.findall(test_output or ""):
-        raw = m[0] or m[1]
+    # 1) files named in the traceback, DEEPEST FRAME FIRST. Python prints "most recent call
+    # last", so the exception origin is the bottom-most File line — try it before the shallower
+    # callers (fewer wasted fix attempts on a multi-frame traceback).
+    tb = [(m[0] or m[1]) for m in _TRACE_FILE_RE.findall(test_output or "")]
+    for raw in reversed(tb):
         if raw:
             cand = Path(raw)
             add(cand if cand.is_absolute() else root / cand.name)
