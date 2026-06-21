@@ -8,10 +8,31 @@ stays attributable (PRIME-001 Tenet 3). Output is bounded/truncated.
 
 from __future__ import annotations
 
+import os
 import re
+import signal
 import subprocess
+import sys
 
 from jaros.core.decision_gate import ValidationResult
+
+
+def _kill_tree(proc) -> None:
+    """Kill the process AND its descendants. subprocess's own timeout only kills the
+    immediate child (the shell), orphaning grandchildren — a model-generated infinite
+    loop under `python -m pytest` then runs forever and hangs the whole eval. On Windows
+    taskkill /T walks the tree; on POSIX we signal the process group."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True)
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 # #EXT-001-REQ-5 Start
 _DEFAULT_TIMEOUT_S = 120
@@ -75,30 +96,35 @@ class ShellExecTool:
         cwd = payload.get("cwd") or None
         timeout = int(payload.get("timeout_s", _DEFAULT_TIMEOUT_S))
         use_shell = isinstance(command, str)
+        # Popen (not subprocess.run) so we can kill the whole TREE on timeout — run() leaves
+        # orphaned grandchildren (e.g. pytest under the shell) running an infinite loop.
+        popen_kwargs = dict(cwd=cwd, shell=use_shell, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+        if sys.platform != "win32":
+            popen_kwargs["start_new_session"] = True  # own process group, so killpg reaches kids
+        proc = subprocess.Popen(command, **popen_kwargs)
         try:
-            proc = subprocess.run(
-                command,
-                cwd=cwd,
-                shell=use_shell,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            out, err = proc.communicate(timeout=timeout)
             return {
                 "tool": self.NAME,
                 "command": command,
                 "exitCode": proc.returncode,
-                "stdout": _truncate(proc.stdout or ""),
-                "stderr": _truncate(proc.stderr or ""),
+                "stdout": _truncate(out or ""),
+                "stderr": _truncate(err or ""),
                 "timedOut": False,
             }
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            try:
+                out, err = proc.communicate(timeout=5)
+            except Exception:
+                out, err = "", ""
             return {
                 "tool": self.NAME,
                 "command": command,
                 "exitCode": None,
-                "stdout": _truncate(exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")),
-                "stderr": _truncate(exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")),
+                "stdout": _truncate(out or ""),
+                "stderr": _truncate(err or ""),
                 "timedOut": True,
             }
 # #EXT-001-REQ-5 End
