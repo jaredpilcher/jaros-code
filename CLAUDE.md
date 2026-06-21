@@ -48,6 +48,15 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
 - **The owner prodding you ("how's it going?", "are you driving this?") is a signal you have
   been too reactive.** Reports should say what you *did and decided this cycle*, not just
   "still running."
+- **When you hit a PLATEAU, go get external inspiration — don't grind in place (owner directive,
+  2026-06-21).** If improvements stall or you're reduced to repetitive measurement, RESEARCH
+  (read-only `WebSearch`/`WebFetch` — the *agent* researching, NOT a harness network call):
+  study how Claude Code, Aider, SWE-agent/OpenHands, Cursor and other harnesses work, AND read
+  arXiv papers showing real promise (Agentless, repo maps, agentic-harness-engineering, etc.).
+  Then translate one idea that fits jaros-code's constraints (small local model, two-plane,
+  test-gated) into a concrete, eval-guarded build. The 2026-06-21 session did this at a plateau:
+  research → Aider's repo map → built `harness/repo_map.py` + `/map`. "There's a lot out there
+  that can inspire you" — use it. See `.claude` memory [[jaros-code-research-for-inspiration]].
 - **Watch four signals and move them yourself:** capability (pass rate + generative
   self-vs-oracle), growth (agents/tools/evals counts), orchestration/wiring quality
   (leverage), health (no orphans, nothing net-negative). Activity is never the metric; the
