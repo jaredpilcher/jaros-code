@@ -68,9 +68,10 @@ def problem_to_task(p: dict) -> Task | None:
                 tier=MBPP_TIER)
 
 
-def run_mbpp(limit: int | None = 20, max_iters: int = 3, verbose: bool = False) -> dict:
+def run_mbpp(limit: int | None = 20, max_iters: int = 3, verbose: bool = False,
+             workers: int = 1) -> dict:
     problems = _read_problems()
     if limit is not None:
         problems = problems[:limit]
     tasks = [t for t in (problem_to_task(p) for p in problems) if t is not None]
-    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite="mbpp")
+    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite="mbpp", workers=workers)

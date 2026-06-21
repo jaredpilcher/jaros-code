@@ -71,11 +71,11 @@ def problem_to_task(p: dict, lang: str) -> Task:
 
 
 def run_multipl_e(lang: str = "js", limit: int | None = 20, max_iters: int = 3,
-                  verbose: bool = False) -> dict:
+                  verbose: bool = False, workers: int = 1) -> dict:
     if lang not in _LANGS:
         raise ValueError(f"MultiPL-E lang {lang!r} not wired (have: {list(_LANGS)})")
     problems = _read_problems(lang)
     if limit is not None:
         problems = problems[:limit]
     tasks = [problem_to_task(p, lang) for p in problems]
-    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite=f"multipl-e-{lang}")
+    return run_task_list(tasks, max_iters=max_iters, verbose=verbose, suite=f"multipl-e-{lang}", workers=workers)
