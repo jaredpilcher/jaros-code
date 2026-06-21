@@ -65,7 +65,11 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   failing experiment. Vary the KIND of work (capability builds vs evals vs research) so the loop
   never spins on one dead end. The single-function pass rate is near the 2B ceiling; the productive
   axis is NEW capability classes (multi-file → multi-step → refactoring → navigation), each
-  deterministic + test-gated where possible. See memory [[jaros-code-autonomous-loop]].
+  deterministic + test-gated where possible. ALSO vary WHICH part of the system grows —
+  **agents, tools, evals, or orchestration/wiring** (the census growth axes), not the same one
+  every cycle — and pull fresh ideas from ONLINE research, not just internal iteration. (Owner,
+  2026-06-21: "vary whether you're building agents, evals, tools, or wiring orchestration ... and
+  take inspiration by looking online.") See memory [[jaros-code-autonomous-loop]].
 - **Watch four signals and move them yourself:** capability (pass rate + generative
   self-vs-oracle), growth (agents/tools/evals counts), orchestration/wiring quality
   (leverage), health (no orphans, nothing net-negative). Activity is never the metric; the
