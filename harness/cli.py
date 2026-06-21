@@ -28,6 +28,7 @@ Commands (Claude-Code-style):
   /rename <old> <new>           test-gated rename refactor (reverts if the suite goes red)
   /move <symbol> <from> <to>    test-gated move-symbol refactor (re-exports; reverts on red)
   /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
+  /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
 """
 
@@ -239,6 +240,17 @@ class JcodeCli:
             return f"no usages of {arg.strip()}"
         return f"{len(us)} usage(s) of {arg.strip()}:" + "".join(
             f"\n  {u['file']}:{u['line']} [{u['kind']}] {u['text'][:70]}" for u in us[:30])
+
+    def cmd_deadcode(self, arg: str) -> str:
+        """Dead-code candidates (EXT-004): public top-level functions/classes referenced NOWHERE
+        in the repo (composes the find-usages pass). Run on the project ROOT for accuracy —
+        scoping to a subdir flags symbols used from sibling dirs."""
+        from harness.navigate import find_dead_code
+        d = find_dead_code(arg.strip() or ".")
+        if not d:
+            return "no dead-code candidates"
+        return (f"{len(d)} dead-code candidate(s) (caveat: public API / entry points may appear):"
+                + "".join(f"\n  {x['file']}:{x['line']} {x['symbol']}" for x in d[:30]))
 
     def cmd_plan(self, arg: str) -> str:
         """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then

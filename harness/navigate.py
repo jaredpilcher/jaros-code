@@ -45,3 +45,38 @@ def find_usages(cwd: str, symbol: str) -> list[dict]:
                             "text": lines[ln - 1].strip() if 0 < ln <= len(lines) else ""})
     out.sort(key=lambda u: (u["file"], u["line"]))
     return out
+
+
+def find_dead_code(cwd: str) -> list[dict]:
+    """Public top-level functions/classes referenced NOWHERE in the repo — dead-code candidates.
+    One AST pass: collect every referenced name (Name/Attribute), then flag defs absent from it.
+    Conservative (a name appearing anywhere clears it) to avoid false positives. CAVEATS: public
+    API used by external code, entry points, and dynamic (getattr) use will look 'dead' too."""
+    root = Path(cwd)
+    referenced: set[str] = set()
+    defs: list[dict] = []
+    for p in root.rglob("*.py"):
+        if any(part in _SKIP for part in p.parts):
+            continue
+        try:
+            src = p.read_text(encoding="utf-8")
+            tree = ast.parse(src)
+        except (OSError, SyntaxError):
+            continue
+        try:
+            rel = p.relative_to(root).as_posix()
+        except ValueError:
+            rel = p.name
+        for node in ast.walk(tree):                 # references count from ALL files (incl. tests)
+            if isinstance(node, ast.Name):
+                referenced.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                referenced.add(node.attr)
+        is_test = p.name.startswith("test") or p.stem.endswith("_test")
+        if is_test:                                  # test funcs are pytest entry points, not dead
+            continue
+        for node in tree.body:
+            if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                    and not node.name.startswith("_")):
+                defs.append({"symbol": node.name, "file": rel, "line": node.lineno})
+    return [d for d in defs if d["symbol"] not in referenced]
