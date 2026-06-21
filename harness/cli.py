@@ -24,6 +24,7 @@ Commands (Claude-Code-style):
   /fix <file> :: <instr> :: <testcmd>   run the edit->test->judge loop
   /fixrepo <instr> :: <testcmd> [:: <testfile>]   multi-file: locate the faulty file & fix it
   /plan <request>               multi-step: planner -> deterministic find/read/fix/run flow
+  /map [path]                   ranked repo map (top-level symbols per file, Aider-style)
   /clear  /quit
 """
 
@@ -197,6 +198,13 @@ class JcodeCli:
         r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True)
         where = f" (fixed {r['file']})" if r.get("file") else ""
         return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
+
+    def cmd_map(self, arg: str) -> str:
+        """Repo map (EXT-004): a ranked overview of the codebase's public surface — top-level
+        functions/classes per file, most-referenced first (Aider-style). Deterministic; helps
+        you (and the model) understand cross-file structure without reading everything."""
+        from harness.repo_map import build_repo_map
+        return build_repo_map(arg.strip() or ".", max_files=30, max_syms=8) or "(no Python files)"
 
     def cmd_plan(self, arg: str) -> str:
         """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then
