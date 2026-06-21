@@ -97,12 +97,16 @@ def _fail_count(out: str) -> int:
 
 
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
-                   *, max_iters: int = 3, max_candidates: int = 8, verbose: bool = False) -> dict:
+                   *, max_iters: int = 3, verbose: bool = False) -> dict:
     """Fix a failing multi-file test. Locate candidate files, then fix them CUMULATIVELY: try
     each candidate with fix_loop(keep_partial=True) so its best partial edit survives; KEEP the
     edit only if it strictly REDUCES the failing-test count (and build the next fix on top),
     else revert it. Resolves faults that span several files, not just a single-file fault.
-    Caps the candidates tried (most-likely first) so a large repo can't blow up the cost."""
+
+    No candidate-count cap: the candidates are only files in the IMPORT CLOSURE reachable from
+    the failing test (naturally small for realistic tests), and a count cap can silently
+    EXCLUDE the culprit — for a logic bug the traceback doesn't name it, so its rank is just
+    import order. If pathological cost ever bites, bound it with a time budget, not a count."""
     from harness.coding_loop import fix_loop  # local import: avoid cycle at module load
 
     ok, out = _run(cwd, test_cmd)
@@ -110,7 +114,7 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
         return {"solved": True, "file": None, "tried": [], "fixed": [], "note": "already passing"}
 
     base = _fail_count(out)
-    cands = candidate_files(cwd, out, test_file)[:max_candidates]
+    cands = candidate_files(cwd, out, test_file)
     tried, kept = [], []
     for cand in cands:
         snap = _snapshot(cwd)
