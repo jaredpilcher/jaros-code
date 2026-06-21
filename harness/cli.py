@@ -25,6 +25,7 @@ Commands (Claude-Code-style):
   /fixrepo <instr> :: <testcmd> [:: <testfile>]   multi-file: locate the faulty file & fix it
   /plan <request>               multi-step: planner -> deterministic find/read/fix/run flow
   /map [path]                   ranked repo map (top-level symbols per file, Aider-style)
+  /rename <old> <new>           test-gated rename refactor (reverts if the suite goes red)
   /clear  /quit
 """
 
@@ -205,6 +206,16 @@ class JcodeCli:
         you (and the model) understand cross-file structure without reading everything."""
         from harness.repo_map import build_repo_map
         return build_repo_map(arg.strip() or ".", max_files=30, max_syms=8) or "(no Python files)"
+
+    def cmd_rename(self, arg: str) -> str:
+        """Test-gated rename refactoring (EXT-003): rename a symbol across the repo; the suite
+        (green before) must stay green after, else it reverts. Deterministic edit + test gate —
+        a refactor that can't silently break behavior. Wires harness/refactor.py."""
+        bits = arg.split()
+        if len(bits) < 2:
+            return "usage: /rename <old> <new>"
+        from harness.refactor import rename_symbol
+        return rename_symbol(".", bits[0], bits[1])["note"]
 
     def cmd_plan(self, arg: str) -> str:
         """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then
