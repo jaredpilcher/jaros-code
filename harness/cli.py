@@ -23,6 +23,7 @@ Commands (Claude-Code-style):
   /run <task>                   commander agent -> shell.exec (gated)
   /fix <file> :: <instr> :: <testcmd>   run the edit->test->judge loop
   /fixrepo <instr> :: <testcmd> [:: <testfile>]   multi-file: locate the faulty file & fix it
+  /plan <request>               multi-step: planner -> deterministic find/read/fix/run flow
   /clear  /quit
 """
 
@@ -196,6 +197,37 @@ class JcodeCli:
         r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True)
         where = f" (fixed {r['file']})" if r.get("file") else ""
         return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
+
+    def cmd_plan(self, arg: str) -> str:
+        """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then
+        each step runs deterministically — model PLANS, tools/agents ACT. `fix` -> multi_file_fix,
+        `run` -> the test suite, `find`/`read` -> the navigator/reader. Wires planner_agent.py."""
+        if not arg.strip():
+            return "usage: /plan <natural-language request>"
+        import os
+        [d] = self._load_agent("planner_agent.py", self.llm).decide({"request": arg})
+        plan = d.payload.get("plan", [])
+        if not plan:
+            return "planner: couldn't form a plan"
+        test_file = next((f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
+        out = ["plan: " + " -> ".join(s["action"] for s in plan)]
+        for i, s in enumerate(plan, 1):
+            act, a = s["action"], s.get("arg", "")
+            if act == "fix":
+                from harness.multi_file import multi_file_fix
+                r = multi_file_fix(".", "python -m pytest -q", a or arg, test_file, verbose=False)
+                out.append(f"  {i}. fix  -> " + (f"solved {r.get('fixed')}" if r["solved"] else "not solved"))
+            elif act == "run":
+                from harness.multi_file import _run
+                ok, res = _run(".", "python -m pytest -q")
+                tail = res.strip().splitlines()[-1] if res.strip() else ""
+                out.append(f"  {i}. run  -> {'PASS' if ok else 'FAIL'}  {tail}")
+            elif act == "find":
+                out.append(f"  {i}. find -> " + self.cmd_find(a).replace(chr(10), " | ")[:160])
+            elif act == "read":
+                m = re.search(r"[\w./\\-]+\.\w+", a)
+                out.append(f"  {i}. read -> " + (self.cmd_read(m.group(0))[:120] if m else "(no file named)"))
+        return "\n".join(out)
 
     def _nl_fix(self, request: str, arg: str) -> str:
         """Natural-language fix. If the request names a specific file, fix that file; if it

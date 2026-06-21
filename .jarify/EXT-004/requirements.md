@@ -60,3 +60,15 @@ custom commands) based on ongoing study of Claude Code.
 #### Acceptance Criteria
 - [ ] New Claude-Code CLI features are tracked and adopted where they fit the two planes
 - [ ] The transcript/status mirror Claude Code's look and feel
+
+### [REQ-5] Multi-step planning (toward "give it a request and it works")
+The `planner` agent (gemma-4-e2b) turns a natural-language request into an INERT ordered plan
+(JSON steps over a fixed verb set: find/read/fix/run); a deterministic executor (`/plan`) runs
+each step, grounding vague args — `fix` -> `multi_file_fix`, `run` -> the test suite,
+`find`/`read` -> navigator/reader. Two-plane: the model plans, tools/agents act.
+
+#### Acceptance Criteria
+- [ ] `planner_agent.parse_plan` keeps only well-formed steps with known verbs (4 unit tests).
+- [ ] Verified end-to-end on gemma-4-e2b: `/plan "the tests are failing, fix the bug and verify"`
+      on a repo with a cross-file bug planned read->find->fix->run, located + fixed calc.py via
+      the multi-file fixer, and the run step confirmed the suite passes. Suite 122 green.
