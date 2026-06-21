@@ -99,3 +99,11 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
       mode was later DROPPED: it truncates before its closing sentinel on long problems
       (wasting the attempt) and ran ~2x slower; all-body matches the mix exactly (31/41) at
       ~39s vs ~78s per problem. `editor`/rewriter retained for the repair regime.
+- [ ] DEFINITIVE full-suite number (all 164 HumanEval problems, gemma-4-e2b, all-body cascade,
+      2026-06-21): **pass@1 = 95/164 = 57.9%** (attempt 1, no test visibility — externally
+      comparable) and **within-budget = 124/164 = 75.6%** (attempts 2-6 leak the failing test,
+      so NOT comparable to published pass@1). Attempt distribution: {1:95, 2:5, 3:13, 4:4, 5:1,
+      6:6}. This is the honest headline (the 41-problem slices read 66%/76% — the full hard set
+      pulls pass@1 down to ~58%, within-budget holds ~76%). The run also validated the
+      shell.exec process-tree kill: it completed all 164 cleanly past HumanEval_115, which
+      previously hung the eval via an orphaned infinite-loop pytest.

@@ -15,7 +15,7 @@ OUT = ROOT / ".jaros-data" / "artifacts" / "eval" / "humaneval_full.json"
 
 t0 = time.time()
 sc = run_humaneval(limit=None, max_iters=3, verbose=True)
-results = sc.get("results", [])
+results = sc.get("perTask", [])   # eval_runner names the per-task list "perTask"
 n = len(results)
 within3 = sum(1 for r in results if r.get("solved"))
 pass1 = sum(1 for r in results if r.get("solved") and r.get("attempts") == 1)
