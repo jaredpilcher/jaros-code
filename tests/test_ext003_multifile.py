@@ -55,7 +55,7 @@ def test_multi_file_fix_locates_and_solves(tmp_path, monkeypatch):
     (tmp_path / "test_b.py").write_text("from buggy import f\n\ndef test_f():\n    assert f(3) == 4\n")
     import harness.coding_loop as cl
 
-    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False):
+    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False, keep_partial=False):
         if str(target).endswith("buggy.py"):                 # "fix" only the faulty file
             Path(target).write_text("def f(x):\n    return x + 1\n")
             return _R(True)
@@ -77,7 +77,7 @@ def test_multi_file_fix_reverts_a_harmful_attempt(tmp_path, monkeypatch):
         "from ok import g\nfrom buggy import f\n\ndef test_f():\n    assert f(3) == 4\n    assert g(2) == 20\n")
     import harness.coding_loop as cl
 
-    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False):
+    def fake_fix_loop(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False, keep_partial=False):
         if str(target).endswith("ok.py"):
             Path(target).write_text("def g(x):\n    return x  # MANGLED\n")  # breaks g
             return _R(False)
@@ -91,3 +91,29 @@ def test_multi_file_fix_reverts_a_harmful_attempt(tmp_path, monkeypatch):
     r = multi_file_fix(str(tmp_path), "python -m pytest -q", "fix", str(tmp_path / "test_b.py"))
     assert r["solved"]
     assert "return x * 10" in (tmp_path / "ok.py").read_text()  # harmful edit was reverted
+
+
+def test_multi_file_fix_resolves_two_file_fault(tmp_path, monkeypatch):
+    # A fault spanning TWO files: each fix reduces the failing-test count (2 -> 1 -> 0), so the
+    # cumulative keep-if-progress logic must retain both. Mock simulates fix_loop(keep_partial)
+    # leaving its partial edit even when the full test still fails.
+    (tmp_path / "amod.py").write_text("def sq(x):\n    return x + x\n")     # bug: should be x*x
+    (tmp_path / "bmod.py").write_text("def up(s):\n    return s.lower()\n")  # bug: should be upper
+    (tmp_path / "test_two.py").write_text(
+        "from amod import sq\nfrom bmod import up\n\n"
+        "def test_sq():\n    assert sq(3) == 9\n\ndef test_up():\n    assert up('a') == 'A'\n")
+    import harness.coding_loop as cl
+
+    def fake(target, instruction, test_cmd, *, max_iters=3, cwd=None, verbose=False, keep_partial=False):
+        if str(target).endswith("amod.py"):
+            Path(target).write_text("def sq(x):\n    return x * x\n")
+            return _R(False)        # full test still fails (bmod broken) -> partial edit kept
+        if str(target).endswith("bmod.py"):
+            Path(target).write_text("def up(s):\n    return s.upper()\n")
+            return _R(False)
+        return _R(False)
+
+    monkeypatch.setattr(cl, "fix_loop", fake)
+    from harness.multi_file import multi_file_fix
+    r = multi_file_fix(str(tmp_path), "python -m pytest -q", "fix", str(tmp_path / "test_two.py"))
+    assert r["solved"] and set(r["fixed"]) == {"amod.py", "bmod.py"}

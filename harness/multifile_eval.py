@@ -81,6 +81,16 @@ SCENARIOS = [
             "test_main.py": "from main import run\n\ndef test_run():\n    assert run(2) == 6\n",
         },
     },
+    {  # MULTI-FAULT: two independent bugs across two files — needs cumulative keep_partial
+        "name": "multi_fault",
+        "files": {
+            "mathmod.py": "def square(x):\n    return x + x  # BUG: should be x * x\n",
+            "strmod.py": "def shout(s):\n    return s.lower()  # BUG: should be s.upper()\n",
+            "test_all.py": ("from mathmod import square\nfrom strmod import shout\n\n"
+                            "def test_square():\n    assert square(3) == 9\n\n"
+                            "def test_shout():\n    assert shout('hi') == 'HI'\n"),
+        },
+    },
 ]
 
 

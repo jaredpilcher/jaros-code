@@ -91,24 +91,39 @@ def _restore(snap: dict[str, str]) -> None:
         Path(path).write_text(text, encoding="utf-8", newline="\n")
 
 
+def _fail_count(out: str) -> int:
+    nums = [int(m) for m in re.findall(r"(\d+)\s+(?:failed|error)", out or "")]
+    return sum(nums) if nums else 1
+
+
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
                    *, max_iters: int = 3, verbose: bool = False) -> dict:
-    """Fix a failing multi-file test. Locate candidate files, then try fixing each on a
-    clean snapshot (reverting a non-helping attempt before the next) until the test passes."""
+    """Fix a failing multi-file test. Locate candidate files, then fix them CUMULATIVELY: try
+    each candidate with fix_loop(keep_partial=True) so its best partial edit survives; KEEP the
+    edit only if it strictly REDUCES the failing-test count (and build the next fix on top),
+    else revert it. Resolves faults that span several files, not just a single-file fault."""
     from harness.coding_loop import fix_loop  # local import: avoid cycle at module load
 
     ok, out = _run(cwd, test_cmd)
     if ok:
-        return {"solved": True, "file": None, "tried": [], "note": "already passing"}
+        return {"solved": True, "file": None, "tried": [], "fixed": [], "note": "already passing"}
 
+    base = _fail_count(out)
     cands = candidate_files(cwd, out, test_file)
-    tried = []
+    tried, kept = [], []
     for cand in cands:
         snap = _snapshot(cwd)
         tried.append(Path(cand).name)
-        res = fix_loop(cand, instruction, test_cmd, max_iters=max_iters, cwd=cwd, verbose=verbose)
-        ok, _ = _run(cwd, test_cmd)
-        if res.success and ok:
-            return {"solved": True, "file": Path(cand).name, "tried": tried, "note": "fixed"}
-        _restore(snap)  # this candidate wasn't the fault (or fix_loop mangled it) — revert
-    return {"solved": False, "file": None, "tried": tried, "note": "no candidate fixed it"}
+        fix_loop(cand, instruction, test_cmd, max_iters=max_iters, cwd=cwd,
+                 verbose=verbose, keep_partial=True)
+        ok, out = _run(cwd, test_cmd)
+        if ok:
+            kept.append(Path(cand).name)
+            return {"solved": True, "file": kept[-1], "tried": tried, "fixed": kept, "note": "fixed"}
+        nf = _fail_count(out)
+        if nf < base:                 # strict progress — keep this partial, build on it
+            base = nf
+            kept.append(Path(cand).name)
+        else:                         # no progress (distractor / harmless rewrite) — revert
+            _restore(snap)
+    return {"solved": False, "file": None, "tried": tried, "fixed": kept, "note": "no candidate fixed it"}

@@ -172,6 +172,13 @@ def distill_failure(output: str) -> str:
     return distilled or output[-600:]
 
 
+def _count_test_failures(output: str) -> int:
+    """How many tests pytest reported failed/errored — the progress signal for keep_partial
+    multi-file fixing. A syntax/uncountable failure ranks worst (999) so a real partial wins."""
+    nums = [int(m) for m in re.findall(r"(\d+)\s+(?:failed|error)", output or "")]
+    return sum(nums) if nums else 999
+
+
 def python_syntax_error(src: str) -> str | None:
     """Return a short description if ``src`` is not valid Python, else None.
 
@@ -300,7 +307,8 @@ def mutation_repair_loop(target: str, test_cmd: str, *, cwd: str | None = None,
 # #EXT-003-REQ-2 Start
 def fix_loop(target: str, instruction: str, test_cmd: str, *,
              max_iters: int = 4, cwd: str | None = None,
-             editor_agent: str = "rewriter_agent.py", verbose: bool = True) -> LoopResult:
+             editor_agent: str = "rewriter_agent.py", verbose: bool = True,
+             keep_partial: bool = False) -> LoopResult:
     """Run the bounded edit->test->judge loop until tests pass or attempts run out.
 
     ``editor_agent`` selects the editing agent: ``rewriter_agent.py`` (whole-file,
@@ -341,6 +349,11 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
 
     _v(_banner, target, test_cmd, max_iters)
     last_output = ""
+    # keep_partial (opt-in, used by the multi-file fixer): remember the attempt with the FEWEST
+    # test failures so that on overall failure we leave it in place (a partial cross-file fix to
+    # build on) instead of restoring the original. Off by default -> single-file behavior is
+    # byte-identical (this stays None and the block below is skipped).
+    best_partial: tuple[int, str] | None = None
 
     for r in range(1, max_iters + 1):
         _v(_round_header, r, max_iters)
@@ -450,12 +463,19 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
             _v(print, f"\n  \033[32m[OK] solved in {r} attempt(s)\033[0m\n")
             return LoopResult(success=True, attempts=r, final_output=last_output)
 
+        if keep_partial and target_path.is_file():   # remember the least-failing attempt
+            fails = _count_test_failures(last_output)
+            if best_partial is None or fails < best_partial[0]:
+                best_partial = (fails, target_path.read_text(encoding="utf-8"))
+
     # Fallback (ant, not boulder): if the whole-file rewrite couldn't crack a .py BUG FIX
     # (existing buggy code, not a from-scratch stub), hand the real bug to the
     # DETERMINISTIC boundary-mutation repair — it tries each single-operator edit and
     # keeps the first that turns the suite green. Runs on a FRESH copy of the original
     # bug, so it never regresses what the rewriter already solves (only runs on failure).
-    if (str(target).endswith(".py") and original_content
+    # Single-file fallback only. Skipped when keep_partial is set: a multi-file fixer wants the
+    # partial edit kept, and single-operator mutations can't fix a fault that spans files.
+    if (not keep_partial and str(target).endswith(".py") and original_content
             and "NotImplementedError" not in original_content):
         _v(print, "\n  whole-file rewrite failed — trying deterministic boundary-mutation repair...")
         target_path.write_text(original_content, encoding="utf-8", newline="\n")  # restore the real bug
@@ -463,6 +483,9 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         if lr.success:
             _v(print, f"\n  \033[32m[OK] boundary-mutation repair solved it\033[0m\n")
             return lr
+
+    if keep_partial and best_partial is not None:   # leave the least-failing attempt to build on
+        target_path.write_text(best_partial[1], encoding="utf-8", newline="\n")
 
     _v(print, f"\n  \033[31m[X] not solved in {max_iters} attempts\033[0m\n")
     return LoopResult(success=False, attempts=max_iters, final_output=last_output)
