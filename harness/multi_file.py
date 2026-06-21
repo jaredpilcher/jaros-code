@@ -9,9 +9,7 @@ judgement; only the actual fix is model work (plane-placement: count/search -> d
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 _IMPORT_RE = re.compile(r"^\s*(?:from\s+([.\w]+)\s+import|import\s+([.\w]+))", re.M)
@@ -19,13 +17,24 @@ _TRACE_FILE_RE = re.compile(r'File "([^"]+\.py)"|^([\w./\\-]+\.py):\d+', re.M)
 
 
 def _imported_modules(src: str) -> list[str]:
-    """Top-level module names imported by ``src`` (first dotted component)."""
+    """Dotted module names imported by ``src`` (e.g. 'pkg.sub', 'mathutils') — full path kept
+    so subpackages resolve to pkg/sub.py rather than a non-existent pkg.py."""
     mods = []
     for a, b in _IMPORT_RE.findall(src):
-        name = (a or b).lstrip(".").split(".")[0]
+        name = (a or b).lstrip(".")
         if name:
             mods.append(name)
     return mods
+
+
+def _module_to_file(root: Path, dotted: str) -> Path | None:
+    """Resolve a dotted module name to an existing file in the repo: pkg/sub.py or the
+    package's pkg/sub/__init__.py. Returns None for stdlib/third-party (not in the repo)."""
+    rel = dotted.replace(".", "/")
+    for cand in (root / f"{rel}.py", root / rel / "__init__.py"):
+        if cand.is_file():
+            return cand
+    return None
 
 
 def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
@@ -58,8 +67,8 @@ def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
         except OSError:
             continue
         for mod in _imported_modules(src):
-            f = root / f"{mod}.py"
-            if f.is_file() and str(f) not in seen:
+            f = _module_to_file(root, mod)
+            if f is not None and str(f) not in seen:
                 seen.add(str(f))
                 add(f)
                 frontier.append(str(f))
@@ -69,6 +78,17 @@ def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
 def _run(cwd: str, test_cmd: str) -> tuple[bool, str]:
     proc = subprocess.run(test_cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=30)
     return proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
+
+
+def _snapshot(cwd: str) -> dict[str, str]:
+    """In-memory copy of every repo .py keyed by FULL path — so subdir/package files with the
+    same basename don't collide (the old flatten-by-name snapshot could corrupt them)."""
+    return {str(p): p.read_text(encoding="utf-8") for p in Path(cwd).rglob("*.py")}
+
+
+def _restore(snap: dict[str, str]) -> None:
+    for path, text in snap.items():
+        Path(path).write_text(text, encoding="utf-8", newline="\n")
 
 
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
@@ -84,19 +104,11 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
     cands = candidate_files(cwd, out, test_file)
     tried = []
     for cand in cands:
-        snap = tempfile.mkdtemp(prefix="mff-snap-")
-        files = [p for p in Path(cwd).rglob("*.py")]
-        for p in files:
-            shutil.copy2(p, Path(snap) / p.name)
+        snap = _snapshot(cwd)
         tried.append(Path(cand).name)
         res = fix_loop(cand, instruction, test_cmd, max_iters=max_iters, cwd=cwd, verbose=verbose)
         ok, _ = _run(cwd, test_cmd)
         if res.success and ok:
-            shutil.rmtree(snap, ignore_errors=True)
             return {"solved": True, "file": Path(cand).name, "tried": tried, "note": "fixed"}
-        for p in files:  # revert: this candidate wasn't the fault (or fix_loop mangled it)
-            sp = Path(snap) / p.name
-            if sp.is_file():
-                shutil.copy2(sp, p)
-        shutil.rmtree(snap, ignore_errors=True)
+        _restore(snap)  # this candidate wasn't the fault (or fix_loop mangled it) — revert
     return {"solved": False, "file": None, "tried": tried, "note": "no candidate fixed it"}

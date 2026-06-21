@@ -11,7 +11,18 @@ from harness.multi_file import _imported_modules, candidate_files
 def test_imported_modules():
     src = "from mathutils import scale\nimport os\nfrom pkg.sub import x\n"
     mods = _imported_modules(src)
-    assert "mathutils" in mods and "os" in mods and "pkg" in mods
+    # full dotted names kept so subpackages resolve to pkg/sub.py (not a bogus pkg.py)
+    assert "mathutils" in mods and "os" in mods and "pkg.sub" in mods
+
+
+def test_candidate_files_resolves_subpackage(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("")
+    (tmp_path / "pkg" / "sub.py").write_text("def helper(x):\n    return x\n")
+    (tmp_path / "main.py").write_text("from pkg.sub import helper\n\ndef run(x):\n    return helper(x)\n")
+    (tmp_path / "test_main.py").write_text("from main import run\n\ndef test():\n    assert run(1) == 1\n")
+    cands = candidate_files(str(tmp_path), "", str(tmp_path / "test_main.py"))
+    assert any(Path(c).name == "sub.py" for c in cands)  # pkg.sub resolved to pkg/sub.py
 
 
 def test_candidate_files_walks_import_graph(tmp_path):

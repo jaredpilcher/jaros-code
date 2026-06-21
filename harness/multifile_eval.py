@@ -72,6 +72,15 @@ SCENARIOS = [
             "test_main.py": "from main import run\n\ndef test_run():\n    assert run(5) == 10\n",
         },
     },
+    {  # fault inside a SUBPACKAGE (pkg/calc.py) — exercises dotted-import resolution
+        "name": "subpackage",
+        "files": {
+            "pkg/__init__.py": "",
+            "pkg/calc.py": "def triple(x):\n    return x * 2  # BUG: should be x * 3\n",
+            "main.py": "from pkg.calc import triple\n\ndef run(x):\n    return triple(x)\n",
+            "test_main.py": "from main import run\n\ndef test_run():\n    assert run(2) == 6\n",
+        },
+    },
 ]
 
 
@@ -82,7 +91,9 @@ def run_multifile_eval(verbose: bool = False) -> dict:
     for sc in SCENARIOS:
         with tempfile.TemporaryDirectory() as d:
             for n, b in sc["files"].items():
-                (Path(d) / n).write_text(b, encoding="utf-8", newline="\n")
+                fp = Path(d) / n
+                fp.parent.mkdir(parents=True, exist_ok=True)   # support pkg/sub.py layouts
+                fp.write_text(b, encoding="utf-8", newline="\n")
             test_file = next(n for n in sc["files"] if n.startswith("test"))
             r = multi_file_fix(d, "python -m pytest -q",
                                "Fix the failing test", str(Path(d) / test_file),
