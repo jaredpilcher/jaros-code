@@ -198,11 +198,18 @@ class JcodeCli:
         return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
 
     def _nl_fix(self, request: str, arg: str) -> str:
-        """Natural-language fix: find a file token, use the request as the instruction."""
+        """Natural-language fix. If the request names a specific file, fix that file; if it
+        names NONE (e.g. 'fix the failing tests'), fall back to the multi-file fixer, which
+        LOCATES the faulty file(s) across the repo. The branch is a deterministic file-token
+        check — no fragile single-vs-repo judgement by the model."""
         m = re.search(r"[\w./\\-]+\.\w+", arg) or re.search(r"[\w./\\-]+\.\w+", request)
-        if not m:
-            return ("orchestrator chose 'fix' but I couldn't spot a file. "
-                    "Try: /fix <file> :: <instruction> :: <test command>")
+        if not m:   # no file named -> locate it across the repo
+            import os
+            from harness.multi_file import multi_file_fix
+            test_file = next((f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
+            r = multi_file_fix(".", "python -m pytest -q", request, test_file, max_iters=3, verbose=True)
+            where = f" (fixed {', '.join(r['fixed'])})" if r.get("fixed") else ""
+            return f"{'solved' if r['solved'] else 'not solved'}{where} — multi-file"
         from harness.coding_loop import fix_loop
         res = fix_loop(m.group(0), request, "python -m pytest -q", max_iters=3, verbose=True)
         return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
