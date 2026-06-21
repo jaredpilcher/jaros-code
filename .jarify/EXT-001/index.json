@@ -1,11 +1,4 @@
 {
-  "REQ-1": [
-    {
-      "file": ".jaros-data/tools/fs_read_tool.py",
-      "startLine": 13,
-      "endLine": 45
-    }
-  ],
   "REQ-2": [
     {
       "file": ".jaros-data/tools/fs_list_tool.py",
@@ -34,6 +27,20 @@
       "endLine": 76
     }
   ],
+  "REQ-6": [
+    {
+      "file": ".jaros-data/tools/write_file_tool.py",
+      "startLine": 22,
+      "endLine": 58
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 37,
+      "endLine": 130
+    }
+  ],
   "REQ-9": [
     {
       "file": ".jaros-data/tools/py_symbols_tool.py",
@@ -55,18 +62,11 @@
       "endLine": 41
     }
   ],
-  "REQ-6": [
+  "REQ-1": [
     {
-      "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 22,
-      "endLine": 58
-    }
-  ],
-  "REQ-5": [
-    {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 37,
-      "endLine": 130
+      "file": ".jaros-data/tools/fs_read_tool.py",
+      "startLine": 13,
+      "endLine": 45
     }
   ]
 }
