@@ -22,21 +22,29 @@ AGENTS_DIR = ROOT / ".jaros-data" / "agents"
 TOOLS_DIR = ROOT / ".jaros-data" / "tools"
 EVALS_DIR = ROOT / "evals" / "coding_tasks"
 SPECS_DIR = ROOT / ".jarify"
+HARNESS_DIR = ROOT / "harness"
 
 # The swarm goal (PRIME-001): hundreds -> thousands -> tens of thousands.
 SWARM_GOAL = 10000
 
 
 def census() -> dict:
-    """Count the system's agents, tools, eval tasks, and specs. Success is visible
-    only as these COUNTS rising (toward the swarm goal) with improving quality."""
+    """Count the system's agents, tools, eval tasks, specs — AND harness-layer growth
+    (user-facing CLI capabilities + custom eval suites), so the metric honestly reflects ALL
+    expansion, not just the Jaros .jaros-data entities. Success is visible only as these COUNTS
+    rising (toward the swarm goal) with improving quality."""
     def count_py(d: Path) -> int:
         return len([p for p in d.glob("*.py") if not p.name.startswith("_")]) if d.exists() else 0
+    import re
+    cli = HARNESS_DIR / "cli.py"
+    capabilities = len(set(re.findall(r"def cmd_(\w+)\b", cli.read_text(encoding="utf-8")))) if cli.exists() else 0
     return {
         "agents": count_py(AGENTS_DIR),
         "tools": count_py(TOOLS_DIR),
         "evals": len(list(EVALS_DIR.glob("*.json"))) if EVALS_DIR.exists() else 0,
         "specs": len([p for p in SPECS_DIR.glob("EXT-*") if p.is_dir()]) if SPECS_DIR.exists() else 0,
+        "capabilities": capabilities,                                       # CLI slash commands
+        "harnessEvals": len(list(HARNESS_DIR.glob("*_eval.py"))) if HARNESS_DIR.exists() else 0,
     }
 
 

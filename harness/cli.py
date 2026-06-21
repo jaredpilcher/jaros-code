@@ -71,7 +71,8 @@ class JcodeCli:
         c = census()
         return (f"model: {self.model} (ollama, local)\n"
                 f"latest: {rep.get('headline','(no eval yet)')}\n"
-                f"census: agents={c['agents']} tools={c['tools']} evals={c['evals']} specs={c['specs']}")
+                f"census: agents={c['agents']} tools={c['tools']} capabilities={c['capabilities']} "
+                f"evals={c['evals']}+{c['harnessEvals']} specs={c['specs']}")
 
     def cmd_agents(self, _arg: str) -> str:
         d = ROOT / ".jaros-data" / "agents"
