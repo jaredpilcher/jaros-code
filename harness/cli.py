@@ -27,6 +27,7 @@ Commands (Claude-Code-style):
   /map [path]                   ranked repo map (top-level symbols per file, Aider-style)
   /rename <old> <new>           test-gated rename refactor (reverts if the suite goes red)
   /move <symbol> <from> <to>    test-gated move-symbol refactor (re-exports; reverts on red)
+  /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
   /clear  /quit
 """
 
@@ -226,6 +227,18 @@ class JcodeCli:
             return "usage: /move <symbol> <from_file> <to_file>"
         from harness.refactor import move_symbol
         return move_symbol(".", bits[0], bits[1], bits[2])["note"]
+
+    def cmd_usages(self, arg: str) -> str:
+        """AST find-usages (EXT-004): every reference/definition of a symbol across the repo,
+        ignoring strings/comments (precise, unlike grep). Wires harness/navigate.py."""
+        if not arg.strip():
+            return "usage: /usages <symbol>"
+        from harness.navigate import find_usages
+        us = find_usages(".", arg.strip())
+        if not us:
+            return f"no usages of {arg.strip()}"
+        return f"{len(us)} usage(s) of {arg.strip()}:" + "".join(
+            f"\n  {u['file']}:{u['line']} [{u['kind']}] {u['text'][:70]}" for u in us[:30])
 
     def cmd_plan(self, arg: str) -> str:
         """Multi-step (EXT-004): the `planner` agent turns a request into an ordered plan, then
