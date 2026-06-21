@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from harness.navigate import find_usages, find_dead_code, find_definition
+from harness.navigate import find_usages, find_dead_code, find_definition, find_callers
 
 
 def test_find_usages_finds_def_and_refs(tmp_path):
@@ -43,3 +43,12 @@ def test_find_definition(tmp_path):
     cdefs = find_definition(str(tmp_path), "Thing")
     assert len(cdefs) == 1 and cdefs[0]["kind"] == "class"
     assert find_definition(str(tmp_path), "nonexistent") == []
+
+
+def test_find_callers(tmp_path):
+    (tmp_path / "m.py").write_text(
+        "def target():\n    return 1\n\ndef outer():\n    return target()\n\nz = target()\n")
+    cs = find_callers(str(tmp_path), "target")
+    assert sorted(c["caller"] for c in cs) == ["<module>", "outer"]
+    assert all(c["file"] == "m.py" for c in cs)
+    assert find_callers(str(tmp_path), "nonexistent") == []

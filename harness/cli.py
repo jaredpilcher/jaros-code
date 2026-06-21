@@ -29,6 +29,7 @@ Commands (Claude-Code-style):
   /move <symbol> <from> <to>    test-gated move-symbol refactor (re-exports; reverts on red)
   /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
   /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
+  /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
 """
@@ -243,6 +244,18 @@ class JcodeCli:
         return f"{len(us)} usage(s) of {arg.strip()}:" + "".join(
             f"\n  {u['file']}:{u['line']} [{u['kind']}] {u['text'][:70]}" for u in us[:30])
 
+    def cmd_callers(self, arg: str) -> str:
+        """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
+        enclosing function (distinct from /usages' all-references). Composes harness/navigate.py."""
+        if not arg.strip():
+            return "usage: /callers <symbol>"
+        from harness.navigate import find_callers
+        cs = find_callers(".", arg.strip())
+        if not cs:
+            return f"no callers of {arg.strip()}"
+        return f"{len(cs)} caller(s) of {arg.strip()}:" + "".join(
+            f"\n  {c['file']}:{c['line']} in {c['caller']}()" for c in cs[:30])
+
     def cmd_defn(self, arg: str) -> str:
         """Go-to-definition (EXT-004): the def/class site(s) of a symbol (complement of /usages,
         composes harness/navigate.py)."""
@@ -346,7 +359,10 @@ class JcodeCli:
         m = _re.search(r"\bmove\s+(\w+)\s+from\s+(\S+)\s+to\s+(\S+)", r, _re.I)
         if m:
             return ("move", f"{m.group(1)} {m.group(2)} {m.group(3)}")
-        m = _re.search(r"\b(?:usages|references|callers)\s+(?:of|to|for)\s+(\w+)", rl)
+        m = _re.search(r"\b(?:callers\s+(?:of|for)|what\s+calls)\s+(\w+)", rl)
+        if m:
+            return ("callers", m.group(1))
+        m = _re.search(r"\b(?:usages|references)\s+(?:of|to|for)\s+(\w+)", rl)
         if m:
             return ("usages", m.group(1))
         m = _re.search(r"\bwhere\s+(?:is|are)\s+(\w+)\s+(?:used|referenced|called)\b", rl)

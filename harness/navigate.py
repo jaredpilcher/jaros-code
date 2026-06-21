@@ -47,6 +47,51 @@ def find_usages(cwd: str, symbol: str) -> list[dict]:
     return out
 
 
+class _CallerVisitor(ast.NodeVisitor):
+    """Attributes each call of `symbol` to its INNERMOST enclosing function (or <module>)."""
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+        self.stack = ["<module>"]
+        self.hits: list[tuple[int, str]] = []
+
+    def visit_FunctionDef(self, node):
+        self.stack.append(node.name)
+        self.generic_visit(node)
+        self.stack.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Call(self, node):
+        f = node.func
+        called = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+        if called == self.symbol:
+            self.hits.append((node.lineno, self.stack[-1]))
+        self.generic_visit(node)
+
+
+def find_callers(cwd: str, symbol: str) -> list[dict]:
+    """Functions that CALL `symbol` (call hierarchy) — distinct from find_usages (all references):
+    only call sites, each attributed to its enclosing function. Returns [{file, line, caller}]."""
+    root = Path(cwd)
+    out: list[dict] = []
+    for p in root.rglob("*.py"):
+        if any(part in _SKIP for part in p.parts):
+            continue
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        try:
+            rel = p.relative_to(root).as_posix()
+        except ValueError:
+            rel = p.name
+        v = _CallerVisitor(symbol)
+        v.visit(tree)
+        out.extend({"file": rel, "line": ln, "caller": caller} for ln, caller in v.hits)
+    out.sort(key=lambda c: (c["file"], c["line"]))
+    return out
+
+
 def find_definition(cwd: str, symbol: str) -> list[dict]:
     """Where `symbol` is DEFINED — its def/class site(s). Go-to-definition (Claude Code's), the
     complement of find_usages: composes the same AST pass, keeping only the definition nodes."""

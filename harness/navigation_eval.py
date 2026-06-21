@@ -8,7 +8,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from harness.navigate import find_usages, find_definition, find_dead_code
+from harness.navigate import find_usages, find_definition, find_dead_code, find_callers
 
 SCENARIOS = [
     {   # AST must ignore the symbol inside a string and a comment (grep would find 4)
@@ -40,6 +40,14 @@ SCENARIOS = [
         },
         "check": lambda d: sorted(x["symbol"] for x in find_dead_code(d)),
         "expect": ["orphan"],
+    },
+    {   # call hierarchy attributes each call to its enclosing function (not a bare def-ref)
+        "name": "callers_attributed_to_enclosing_fn",
+        "files": {"m.py": ("def target():\n    return 1\n\n"
+                           "def outer():\n    return target()\n\n"
+                           "z = target()\n")},  # called in outer() and at module level
+        "check": lambda d: sorted((c["caller"] for c in find_callers(d, "target"))),
+        "expect": ["<module>", "outer"],
     },
     {   # a reference counts across multiple files (the two calls, not the import aliases)
         "name": "usages_across_multiple_files",
