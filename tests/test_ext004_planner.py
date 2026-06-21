@@ -43,3 +43,22 @@ def test_is_multistep_routing():
     assert not ms("fix foo.py")
     assert not ms("find the login handler")
     assert not ms("show me the status")
+
+
+def test_route_intent():
+    from harness.cli import JcodeCli
+    ri = JcodeCli._route_intent
+    # deterministic refactor/nav fast-path (no 2B call)
+    assert ri("rename foo to bar") == ("rename", "foo bar")
+    assert ri("rename oldName into newName") == ("rename", "oldName newName")
+    assert ri("move helper from a.py to b.py") == ("move", "helper a.py b.py")
+    assert ri("find usages of build_repo_map") == ("usages", "build_repo_map")
+    assert ri("references to parse_plan") == ("usages", "parse_plan")
+    assert ri("where is fix_loop used") == ("usages", "fix_loop")
+    assert ri("find dead code") == ("deadcode", "")
+    assert ri("any unused functions?") == ("deadcode", "")
+    assert ri("show the repo map") == ("map", "")
+    # unrelated requests fall through (None) -> orchestrator routes them
+    assert ri("fix foo.py") is None
+    assert ri("implement a factorial function") is None
+    assert ri("what is the status") is None

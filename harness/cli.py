@@ -317,9 +317,37 @@ class JcodeCli:
         verbs = {v for v in cls._ACTION_VERBS if _re.search(rf"\b{v}\b", r)}
         return len(verbs) >= 2 or (bool(verbs) and (" then " in r or " after " in r))
 
+    @classmethod
+    def _route_intent(cls, request: str):
+        """DETERMINISTIC fast-path: map unambiguous refactor/navigation phrasings straight to
+        their command, skipping the orchestrator (2B) call. Returns (action, arg) or None to
+        fall through. Reliable for these exact patterns; everything else still routes via the
+        orchestrator. This WIRES the nav/refactor commands into plain NL (Claude-Code-like:
+        'rename X to Y', 'where is X used') without a model call or a slash prefix."""
+        import re as _re
+        r = request.strip()
+        rl = r.lower()
+        m = _re.search(r"\brename\s+(\w+)\s+(?:to|->|→|into)\s+(\w+)", r, _re.I)
+        if m:
+            return ("rename", f"{m.group(1)} {m.group(2)}")
+        m = _re.search(r"\bmove\s+(\w+)\s+from\s+(\S+)\s+to\s+(\S+)", r, _re.I)
+        if m:
+            return ("move", f"{m.group(1)} {m.group(2)} {m.group(3)}")
+        m = _re.search(r"\b(?:usages|references|callers)\s+(?:of|to|for)\s+(\w+)", rl)
+        if m:
+            return ("usages", m.group(1))
+        m = _re.search(r"\bwhere\s+(?:is|are)\s+(\w+)\s+(?:used|referenced|called)\b", rl)
+        if m:
+            return ("usages", m.group(1))
+        if _re.search(r"\b(?:dead code|unused (?:code|functions?|symbols?))\b", rl):
+            return ("deadcode", "")
+        if _re.search(r"\b(?:repo|repository|code)\s+map\b", rl):
+            return ("map", "")
+        return None
+
     def handle(self, line: str) -> str:
-        """Top-level: slash commands run directly; plain language is ROUTED by the
-        orchestrator agent, which decides which agent/tool serves the request."""
+        """Top-level: slash commands run directly; plain language is ROUTED — first a
+        deterministic intent fast-path (refactor/nav phrasings), then the orchestrator agent."""
         line = line.strip()
         if not line:
             return ""
@@ -327,6 +355,10 @@ class JcodeCli:
             return self.dispatch(line)
         if self._is_multistep(line):   # clearly multi-action request -> the planner flow
             return "\033[2m[multi-step plan]\033[0m\n" + self.cmd_plan(line)
+        intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
+        if intent:
+            action, arg = intent
+            return f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
         orch = self._load_agent("orchestrator_agent.py", self.llm)
         [d] = orch.decide({"request": line})
         action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
