@@ -60,6 +60,18 @@ SCENARIOS = [
             "test_grader.py": "from grader import passing\n\ndef test_passing():\n    assert passing(60) is True\n    assert passing(59) is False\n",
         },
     },
+    {  # only ONE of several imported modules is faulty — distractors must not be broken
+        "name": "distractors",
+        "files": {
+            "core.py": "def compute(x):\n    return x * 3  # BUG: should be x * 2\n",
+            "helper_a.py": "def greet(n):\n    return 'hi ' + n\n",
+            "helper_b.py": "def square(x):\n    return x * x\n",
+            "main.py": ("from core import compute\nfrom helper_a import greet\nfrom helper_b import square\n\n"
+                        "def run(x):\n    return compute(x)\n\ndef hello(n):\n    return greet(n)\n\n"
+                        "def sq(x):\n    return square(x)\n"),
+            "test_main.py": "from main import run\n\ndef test_run():\n    assert run(5) == 10\n",
+        },
+    },
 ]
 
 
