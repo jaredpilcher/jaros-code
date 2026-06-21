@@ -46,6 +46,20 @@ SCENARIOS = [
             "test_runner.py": "from runner import total\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n",
         },
     },
+    {  # off-by-one in a range, in a separate module
+        "name": "off_by_one",
+        "files": {
+            "rangesum.py": "def upto(n):\n    return sum(range(n))  # BUG: should include n -> range(n + 1)\n",
+            "test_rangesum.py": "from rangesum import upto\n\ndef test_upto():\n    assert upto(5) == 15\n",
+        },
+    },
+    {  # boundary comparison (> vs >=) in a separate module
+        "name": "bad_compare",
+        "files": {
+            "grader.py": "def passing(score):\n    return score > 60  # BUG: 60 should pass -> >=\n",
+            "test_grader.py": "from grader import passing\n\ndef test_passing():\n    assert passing(60) is True\n    assert passing(59) is False\n",
+        },
+    },
 ]
 
 

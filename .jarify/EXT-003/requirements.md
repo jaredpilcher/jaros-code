@@ -116,5 +116,8 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
       end: a bug in `mathutils.scale` (called via `main.apply`, tested in `test_app.py`) is
       located and fixed though the failure surfaces in a different file. Locating-the-file is
       the deterministic plane; only the fix is model work. Now exercised by a tracked eval
-      (`harness/multifile_eval.py`, 4 scenarios: import-graph, 3-level deep chain, exception/
-      traceback, cross-file operator bug) — **4/4 = 100%** on gemma-4-e2b (2026-06-21).
+      (`harness/multifile_eval.py`, 6 scenarios: import-graph, 3-level deep chain, exception/
+      traceback, cross-file operator bug, off-by-one range, boundary comparison) — **6/6 =
+      100%** on gemma-4-e2b (2026-06-21). KNOWN LIMIT: a fault spanning 2+ files isn't fixed
+      yet — fix_loop reverts its edit when the full test can't pass, so partial cross-file
+      progress can't accumulate; the next build is fix_loop partial-progress retention.
