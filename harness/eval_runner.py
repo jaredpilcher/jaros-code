@@ -97,8 +97,16 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
 
     if workers > 1:
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            per_task = list(ex.map(_run_one, tasks))   # order preserved; each task is isolated
+        # Batched requests run ~workers x slower per-call, so the per-request model timeout must
+        # scale up or long generations (e.g. MBPP whole-file) spuriously time out. Raise it for
+        # the duration of the concurrent run, then restore.
+        base_to = os.environ.get("LLAMACPP_TIMEOUT_S", "90")
+        os.environ["LLAMACPP_TIMEOUT_S"] = str(int(float(base_to) * workers))
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                per_task = list(ex.map(_run_one, tasks))   # order preserved; each task is isolated
+        finally:
+            os.environ["LLAMACPP_TIMEOUT_S"] = base_to
     else:
         per_task = [_run_one(task) for task in tasks]
 
