@@ -65,13 +65,15 @@ _FEWSHOT = (
     "        m = n if m is None else max(m, n)\n        out.append(m)\n    return out\n\n"
     "Work carefully and handle edge cases. Now the REAL task:\n"
 )
-# (mode, instruction_prefix, temperature) per attempt. mode "body" = body-completer
-# (~62% faster, solves different problems); "whole" = whole-file rewriter. Mixing both
-# widens the test-gated union AND front-loads the fast body-only attempts. (EXT-003/REQ-5;
-# whole-file-only cascade proven +4/0 out-of-sample on HumanEval[40:60].)
+# (mode, instruction_prefix, temperature) per attempt — ALL body-only. The whole-file
+# rewriter wastes its token budget re-copying the docstring and TRUNCATES before the closing
+# sentinel on long problems, so its attempts contributed nothing to the union AND ran ~2x
+# slower. Confirmed apples-to-apples on HumanEval[::4]: all-body == mixed (31/41 = 76%, same
+# problems) at ~39s vs ~78s per problem. So every attempt uses the fast, complete body mode,
+# diversified by temperature + few-shot. (EXT-003/REQ-5.)
 _CASCADE_STRATEGIES = [
-    ("body", "", 0.0), ("whole", "", 0.0), ("body", _FEWSHOT, 0.4),
-    ("whole", _FEWSHOT, 0.4), ("body", "", 0.9), ("whole", "", 0.9),
+    ("body", "", 0.0), ("body", "", 0.4), ("body", _FEWSHOT, 0.2),
+    ("body", _FEWSHOT, 0.6), ("body", "", 0.9), ("body", "", 1.1),
 ]
 
 
@@ -369,7 +371,7 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         # temperature and feed the failure back so a wrong answer can be corrected.
         if implement:
             mode, prefix, temperature = _CASCADE_STRATEGIES[(r - 1) % len(_CASCADE_STRATEGIES)]
-            # "body" = fast body-only completer; "whole" = whole-file rewriter. From the clean stub.
+            # All-body now (see _CASCADE_STRATEGIES); editor kept for the rare "whole" entry / repair.
             agent = body_completer if mode == "body" else editor
             # Experiment toggle: feed the previous attempt's failure into later attempts so the
             # cascade can CORRECT (not just re-roll). Off by default (independent attempts proven).

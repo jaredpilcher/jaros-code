@@ -90,10 +90,12 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
 - [ ] Proven on an EXTERNAL benchmark out-of-sample (HumanEval[40:60]: 13/20 → 17/20,
       +4, zero regressions) — not on tasks tuned against
 - [ ] Repair tasks (existing buggy code) are unaffected: feedback-iteration retained
-- [ ] Cascade attempts mix two generation MODES: `whole` (whole-file rewriter) and `body`
-      (body-completer — outputs only the function body, spliced after the given
-      signature+docstring). The model wastes most tokens regenerating the docstring;
-      body-only avoids that, so it is faster AND much more accurate on the first try.
-      CONFIRMED apples-to-apples (same HumanEval[::4], 41 problems, gemma-4-e2b):
-      whole-file pass@1 37% / within-budget 59% → body-enhanced pass@1 66% / within-budget
-      76% (the largest confirmed external-bar gain to date), and faster per problem
+- [ ] All cascade attempts use the `body` mode (body-completer — outputs only the function
+      body, spliced after the given signature+docstring), diversified by temperature/few-shot.
+      The model wastes most tokens regenerating the docstring; body-only avoids that, so it is
+      faster AND much more accurate on the first try. CONFIRMED apples-to-apples (same
+      HumanEval[::4], 41 problems, gemma-4-e2b): whole-file cascade pass@1 37% / within 59% →
+      body cascade pass@1 66% / within 76% (largest external-bar gain to date). The whole-file
+      mode was later DROPPED: it truncates before its closing sentinel on long problems
+      (wasting the attempt) and ran ~2x slower; all-body matches the mix exactly (31/41) at
+      ~39s vs ~78s per problem. `editor`/rewriter retained for the repair regime.
