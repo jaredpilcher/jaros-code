@@ -1,16 +1,21 @@
 {
+  "REQ-6": [
+    {
+      "file": "harness/build_eval.py",
+      "startLine": 20,
+      "endLine": 93
+    },
+    {
+      "file": "harness/agentic_eval.py",
+      "startLine": 29,
+      "endLine": 220
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/agent_loop.py",
       "startLine": 79,
       "endLine": 156
-    }
-  ],
-  "REQ-6": [
-    {
-      "file": "harness/agentic_eval.py",
-      "startLine": 29,
-      "endLine": 220
     }
   ]
 }
