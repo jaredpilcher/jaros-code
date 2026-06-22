@@ -76,8 +76,19 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   trend is. Drive against the **unsaturated external bar** (HumanEval/MBPP/MultiPL-E), not
   the saturated authored suite.
 - **Standing duties:** keep the system alive and honest, the Jetson endpoint reachable
-  (`gemma.service`), the runner running, and 30-min phone reports flowing (quiet hours
-  02:00–08:00). Never blame the device before checking your own code (the "hang" was ours).
+  (`gemma.service`), the runner running. Never blame the device before checking your own code
+  (the "hang" was ours).
+- **PHONE NOTIFICATIONS — PUSH ON SIGNIFICANT EVENTS (owner directive, non-negotiable, 2026-06-21):**
+  send a `PushNotification` whenever something SIGNIFICANT happens — a committed improvement and
+  what it moved, a regression, an external-benchmark milestone, an unfixable breakage, or a
+  should-have-but-didn't (chain stalled/unrevivable, no net-positive in ~3-4 active hours).
+  **Do NOT gate on whether the owner "seems engaged"** — the tool is auto-suppressed while the
+  terminal has focus, so it only reaches the phone when they're away; pushing is harmless when
+  present. Err toward not sending only for ROUTINE progress. **QUIET HOURS: send NO push between
+  02:00 and 08:00 local (America/Denver)** — instead append `- HH:MM <event>` to
+  `.jaros-data/artifacts/overnight_events.md`, and at the first watch with local hour ≥ 8 send ONE
+  digest push of the night's events, then reset that file. Mirrored in memory
+  [[jaros-code-autonomous-loop]] — never forget this again.
 
 See `.claude` memory `jaros-code-ownership` for the why. This mandate is non-negotiable
 and must survive context loss — re-read it at the start of every session.
