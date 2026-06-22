@@ -102,11 +102,13 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
     # multi-requirement: one module, a stub + a test per requirement (with the REAL signature),
-    # implement against all.
+    # implement against all. The stubs use *args so fix_loop routes to the WHOLE-FILE rewriter
+    # (which implements ALL functions); the test-writer gets the real signature so the tests — and
+    # therefore the rewrite — use the correct params (the 0/3 lesson: concrete stubs broke routing).
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     module = "solution"
     (Path(cwd) / f"{module}.py").write_text(
-        "".join(f"def {n}({p}):\n    raise NotImplementedError\n\n" for n, p in reqs),
+        "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n" for n, _ in reqs),
         encoding="utf-8", newline="\n")
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
     for func, params in reqs:
