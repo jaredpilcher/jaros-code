@@ -21,3 +21,4 @@ __pycache__/
 evals/benchmarks/*.jsonl
 evals/benchmarks/**/*.parquet
 evals/benchmarks/*.json
+.jcode/

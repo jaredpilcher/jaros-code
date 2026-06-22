@@ -34,6 +34,8 @@ Commands (Claude-Code-style):
   /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
+  /remember <note>              save a convention/learning to project memory (.jcode/memory.md)
+  /memory                       show the project memory
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
@@ -320,6 +322,20 @@ class JcodeCli:
         status = "SOLVED" if r["solved"] else "unsolved"
         note = f" — {r['note']}" if r.get("note") else ""
         return f"agent [{r['flow']} flow]: {status}{note}\n  (/undo to revert this run)"
+
+    def cmd_remember(self, arg: str) -> str:
+        """Project memory (EXT-009 REQ-3): append a note/convention to .jcode/memory.md — persists
+        across runs (Claude Code's CLAUDE.md analog, for jcode). Wires harness/project_memory.py."""
+        if not arg.strip():
+            return "usage: /remember <note or convention>"
+        from harness.project_memory import append_memory
+        return f"remembered -> {append_memory('.', arg)}"
+
+    def cmd_memory(self, _arg: str) -> str:
+        """Show the project memory (.jcode/memory.md)."""
+        from harness.project_memory import read_memory
+        m = read_memory(".")
+        return m.rstrip() if m.strip() else "(no project memory yet — add one with /remember <note>)"
 
     def cmd_undo(self, _arg: str) -> str:
         """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —
