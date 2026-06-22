@@ -104,11 +104,25 @@ class JcodeCli:
         fulls = [r for r in rows if r.get("total", 0) >= 10][-12:]
         if not fulls:
             return "(no full-suite runs yet)"
-        out = ["pass-rate trend (toward 100% = Claude-Code/Opus-4.8):"]
+        out = ["pass-rate trend (suite labeled — runs are not all the same benchmark):"]
         for r in fulls:
             pct = round(r["passRate"] * 100)
             bar = "#" * (pct // 5) + "." * (20 - pct // 5)
-            out.append(f"  {r['timestamp'][:16]}  [{bar}] {r['solved']:>2}/{r['total']:<2} {pct}%")
+            out.append(f"  {r['timestamp'][:16]} {str(r.get('suite', '?'))[:11]:11} "
+                       f"[{bar}] {r['solved']:>2}/{r['total']:<3} {pct}%")
+        # Breadth (census) trend — MOVES even when pass@1 is pinned at the 2B ceiling, so it's the
+        # honest day-to-day progress signal. Current counts + growth since the first recorded run.
+        cens = [r["census"] for r in fulls if r.get("census")]
+        if cens:
+            first, last = cens[0], cens[-1]
+            out.append("\nbreadth (census) — grows even while pass@1 is ceiling-bound:")
+            for k in ("capabilities", "agents", "tools", "evals", "harnessEvals", "specs"):
+                lv = last.get(k)
+                if not isinstance(lv, int):
+                    continue
+                fv = first.get(k)
+                d = lv - fv if isinstance(fv, int) else 0
+                out.append(f"  {k:13} {lv}" + (f"  (+{d} over last {len(cens)} runs)" if d > 0 else ""))
         return "\n".join(out)
 
     def cmd_find(self, arg: str) -> str:
