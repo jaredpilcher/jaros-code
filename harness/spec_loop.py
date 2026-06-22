@@ -49,6 +49,30 @@ def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     return _decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose)
 
 
+def plan_preview(intent: str, cwd: str) -> str:
+    """Plan-mode (EXT-009 REQ-4): describe what `spec_driven_loop` WOULD do, with NO file side
+    effects — so a human can review before `/agent` acts (Claude Code's plan mode + the jarify
+    'show the plan first' discipline)."""
+    green, _ = _run(cwd, _TEST_CMD)
+    if green:
+        return "tests already pass — nothing to do"
+    if _find_test(cwd):
+        return ("FIX flow:\n  1. run the tests (requirement = the suite passes)\n"
+                "  2. localize the fault + fix the code (multi_file_fix)\n"
+                "  3. re-verify the suite")
+    sigs = _extract_signatures(intent)
+    reqs = sigs if len(sigs) >= 2 else [(n, "") for n, _ in _decompose(intent)]
+    if len(reqs) <= 1:
+        only = reqs[0][0] if reqs else "solution"
+        return f"BUILD flow (single function): write tests for `{only}` from intent, then implement"
+    funcs = "\n".join(f"     - {n}({p})" for n, p in reqs)
+    return (f"BUILD flow (decomposed into {len(reqs)} requirements):\n"
+            f"  1. functions:\n{funcs}\n"
+            "  2. write a test per requirement (test-writer)\n"
+            "  3. implement solution.py against all tests\n"
+            "  4. verify pytest green")
+
+
 def _decompose(intent: str, max_reqs: int = 5) -> list[tuple[str, str]]:
     """jarify-flow: ONE constrained model call -> a list of (func_name, behavior) requirements.
     The 2B only does this bounded sub-task (list functions), never open-ended planning."""

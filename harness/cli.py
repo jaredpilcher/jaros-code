@@ -304,11 +304,16 @@ class JcodeCli:
         deterministic tools step by step, OBSERVES each result, and REPLANS on failure — the
         Claude-Code 'nO' loop + TodoWrite working-memory on the local model. The agent that wields
         the tools so a human doesn't run them by hand. Wires harness/agent_loop.py."""
-        if not arg.strip():
-            return "usage: /agent <natural-language request>"
+        a = arg.strip()
+        if not a:
+            return "usage: /agent <request>   |   /agent --plan <request>  (preview, no changes)"
+        from harness.spec_loop import spec_driven_loop, plan_preview
+        if a.startswith("--plan"):                   # plan mode (EXT-009 REQ-4): dry-run, no changes
+            intent = a[len("--plan"):].strip()
+            return ("[plan mode — no changes made]\n" + plan_preview(intent, ".")) if intent \
+                else "usage: /agent --plan <request>"
         # Default to the STRUCTURED jarify-flow loop — it beat the free-form agent loop 3/3 vs 2/3
         # on the agentic eval (the 2B is unreliable at choosing steps; a fixed flow isn't).
-        from harness.spec_loop import spec_driven_loop
         from harness.multi_file import _snapshot
         self._agent_snapshot = _snapshot(".")        # whole-run checkpoint (EXT-009 REQ-7)
         r = spec_driven_loop(arg, ".")

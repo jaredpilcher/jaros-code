@@ -30,3 +30,17 @@ def test_extract_signatures():
     assert sigs == [("largest", "xs"), ("smallest", "xs"), ("total", "xs")]  # no spurious list_module
     sigs2 = _extract_signatures("add(a, b) that adds and subtract(a, b) that subtracts")
     assert sigs2 == [("add", "a, b"), ("subtract", "a, b")]
+
+
+def test_plan_preview_build(tmp_path):
+    from harness.spec_loop import plan_preview
+    out = plan_preview("a module with add(a, b) and subtract(a, b)", str(tmp_path))
+    assert "BUILD" in out and "add(a, b)" in out and "subtract(a, b)" in out
+
+
+def test_plan_preview_fix(tmp_path):
+    (tmp_path / "m.py").write_text("def f():\n    return 0\n", encoding="utf-8")
+    (tmp_path / "test_m.py").write_text(
+        "from m import f\n\ndef test_f():\n    assert f() == 1\n", encoding="utf-8")
+    from harness.spec_loop import plan_preview
+    assert "FIX flow" in plan_preview("fix it", str(tmp_path))
