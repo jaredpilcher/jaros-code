@@ -8,3 +8,16 @@ def test_spec_driven_already_green(tmp_path):
     from harness.spec_loop import spec_driven_loop
     r = spec_driven_loop("make sure it works", str(tmp_path))
     assert r["solved"] is True and r["flow"] == "already-green"
+
+
+def test_parse_reqs():
+    from harness.spec_loop import _parse_reqs
+    reply = ("add: adds two numbers\n"
+             "- subtract: subtracts the second from the first\n"
+             "1. multiply(a, b): multiplies two numbers\n"
+             "this line is prose, no colon-name\n")
+    reqs = _parse_reqs(reply)
+    names = [n for n, _ in reqs]
+    assert names == ["add", "subtract", "multiply"]      # bullet/number/paren stripped to identifiers
+    assert ("add", "adds two numbers") in reqs
+    assert all(n.isidentifier() for n in names)
