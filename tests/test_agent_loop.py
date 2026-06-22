@@ -55,3 +55,14 @@ def test_agent_checkpoint_undo(tmp_path, monkeypatch):
     assert "restored" in out.lower()
     assert f.read_text(encoding="utf-8") == "original\n"
     assert "nothing to undo" in cli.cmd_undo("").lower()
+
+
+def test_repo_files_grounding(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.py").write_text("y = 2\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("hi\n", encoding="utf-8")
+    from harness.agent_loop import repo_files
+    files = repo_files(str(tmp_path))
+    assert "a.py" in files and "sub/b.py" in files
+    assert "notes.txt" not in files  # .py only

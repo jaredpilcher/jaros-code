@@ -44,6 +44,31 @@ def _editor_for(fname: str) -> str:
     return "editor_agent.py"
 
 
+_SKIP = {".git", "__pycache__", ".venv", "node_modules", ".jaros-data", "datasets"}
+
+
+def repo_files(cwd: str, limit: int = 40) -> list[str]:
+    """The repo's .py files, relative — GROUNDING for the planner so it references files that
+    actually EXIST instead of hallucinating names (the agentic-eval finding). Claude Code's
+    planner sees the repo; this is the small-model analogue."""
+    root = Path(cwd)
+    out = []
+    for p in root.rglob("*.py"):
+        if any(s in p.parts for s in _SKIP):
+            continue
+        try:
+            out.append(p.relative_to(root).as_posix())
+        except ValueError:
+            out.append(p.name)
+    return sorted(out)[:limit]
+
+
+def _ground(request: str, cwd: str) -> str:
+    """Prefix the request with the real file list so the planner's read/find/edit args are real."""
+    files = repo_files(cwd)
+    return (f"Files in the repo: {', '.join(files)}\n\n{request}") if files else request
+
+
 def _default_planner(request: str) -> list[Step]:
     """Plan via the gemma planner_agent (inert plan over the verb set); empty on failure."""
     from harness.coding_loop import build_llm, _load_agent
@@ -107,7 +132,7 @@ def agent_loop(request: str, cwd: str, *, planner: Callable[[str], list[Step]] |
     steps_run}. On a failed step, REPLAN the remaining work given progress so far (the observe->
     replan cycle that the one-shot /plan lacks). max_steps bounds total tool calls."""
     plan = planner or _default_planner
-    todo: list[Step] = plan(request)
+    todo: list[Step] = plan(_ground(request, cwd))
     if not todo:
         return {"todo": [], "done": False, "steps_run": 0, "note": "planner produced no plan"}
     steps_run = 0
@@ -124,8 +149,8 @@ def agent_loop(request: str, cwd: str, *, planner: Callable[[str], list[Step]] |
         if not ok and steps_run < max_steps:                 # OBSERVE -> REPLAN the rest
             progress = "; ".join(f"{s.action} {s.arg}: {s.observation}"
                                  for s in todo if s.status != "pending")
-            todo.extend(plan(f"{request}\nProgress: {progress}\nThe last step failed; "
-                             f"plan the remaining steps to finish the request."))
+            todo.extend(plan(_ground(f"{request}\nProgress: {progress}\nThe last step failed; "
+                                     f"plan the remaining steps to finish the request.", cwd)))
     return {"todo": [asdict(s) for s in todo],
             "done": all(s.status == "done" for s in todo), "steps_run": steps_run}
 # #EXT-009-REQ-1 End
