@@ -32,6 +32,7 @@ Commands (Claude-Code-style):
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
+  /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
@@ -296,6 +297,24 @@ class JcodeCli:
         from harness.intent_loop import build_in_dir
         r = build_in_dir(".", intent, f"{func}.py", func)
         return f"[build {'OK' if r['self_pass'] else 'partial'}] {r['note']}\n  files: {', '.join(r['files'])}"
+
+    def cmd_agent(self, arg: str) -> str:
+        """Agentic master loop (EXT-009): give ONE plain request; the system plans a TODO, runs the
+        deterministic tools step by step, OBSERVES each result, and REPLANS on failure — the
+        Claude-Code 'nO' loop + TodoWrite working-memory on the local model. The agent that wields
+        the tools so a human doesn't run them by hand. Wires harness/agent_loop.py."""
+        if not arg.strip():
+            return "usage: /agent <natural-language request>"
+        from harness.agent_loop import agent_loop
+        r = agent_loop(arg, ".", verbose=False)
+        if not r["todo"]:
+            return f"agent: {r.get('note', 'no plan')}"
+        mark = {"done": "OK", "failed": "XX", "pending": ".."}
+        lines = [f"agent: {'DONE' if r['done'] else 'incomplete'} ({r['steps_run']} steps)"]
+        for s in r["todo"]:
+            obs = f"  -> {s['observation']}" if s["observation"] else ""
+            lines.append(f"  [{mark.get(s['status'], '?')}] {s['action']} {s['arg']}{obs}")
+        return "\n".join(lines)
 
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
