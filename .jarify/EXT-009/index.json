@@ -2,8 +2,8 @@
   "REQ-1": [
     {
       "file": "harness/agent_loop.py",
-      "startLine": 54,
-      "endLine": 131
+      "startLine": 79,
+      "endLine": 156
     }
   ],
   "REQ-6": [
