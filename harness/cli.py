@@ -31,6 +31,7 @@ Commands (Claude-Code-style):
   /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
+  /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
@@ -268,6 +269,19 @@ class JcodeCli:
         if dead:
             out.append("  ! flagged as a dead-code candidate (no references found)")
         return "\n".join(out)
+
+    def cmd_build(self, arg: str) -> str:
+        """Generative build (EXT-008): turn an intent into a working function + its OWN tests in
+        the current dir — the system writes tests from the intent, then implements against them
+        (test-writer grain + fix_loop). The generative counterpart to /fix. Wires the EXT-008
+        spine (build_from_intent) into the CLI. Usage: /build <func_name> <intent>."""
+        bits = arg.strip().split(None, 1)
+        if len(bits) < 2 or not bits[0].isidentifier():
+            return "usage: /build <func_name> <intent>   e.g. /build is_prime check if a number is prime"
+        func, intent = bits[0], bits[1]
+        from harness.intent_loop import build_in_dir
+        r = build_in_dir(".", intent, f"{func}.py", func)
+        return f"[build {'OK' if r['self_pass'] else 'partial'}] {r['note']}\n  files: {', '.join(r['files'])}"
 
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its

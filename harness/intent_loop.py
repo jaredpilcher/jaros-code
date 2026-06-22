@@ -81,6 +81,32 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False) 
                         ("self-only (misread intent)" if self_pass else "unsolved"))
 
 
+def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
+                 signature: str | None = None, *, max_iters: int = 3, verbose: bool = False) -> dict:
+    """CLI-facing generative build (EXT-008): turn an intent into a working function + its tests,
+    written into a REAL directory (no hidden oracle, unlike build_from_intent). Reuses the same
+    grains: the test-writer writes tests from the intent, then fix_loop implements against them.
+    Returns {self_pass, files, note}. The generative spine exposed for interactive use."""
+    module = Path(target).stem
+    func = func or module
+    signature = signature or ""        # empty -> _stub emits a valid `def f(*args, **kwargs)` stub
+    test_cmd = "python -m pytest -q"
+    tp = Path(cwd) / target
+    if not tp.exists():
+        tp.write_text(_stub(signature, func), encoding="utf-8", newline="\n")
+    rt = Runtime()
+    writer = _load_agent("test_writer_agent.py", build_llm())
+    test_name = f"test_{module}.py"
+    [tw] = writer.decide({"intent": intent, "module": module, "func": func,
+                          "signature": signature, "test_path": str(Path(cwd) / test_name), "seed": 1})
+    if tw.type != "code.write_file":
+        return {"self_pass": False, "files": [], "note": "test-writer produced no tests"}
+    rt.apply(tw)
+    res = fix_loop(str(tp), intent, test_cmd, max_iters=max_iters, cwd=cwd, verbose=verbose)
+    return {"self_pass": res.success, "files": [target, test_name],
+            "note": "built (passes its own tests)" if res.success else "tests written; implementation did not pass"}
+
+
 def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd: str) -> bool:
     with tempfile.TemporaryDirectory() as od:
         odp = Path(od)
