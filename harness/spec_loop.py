@@ -175,7 +175,9 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
         try:
             tree = ast.parse(src)
         except SyntaxError:
-            defs.append(src)
+            # a malformed per-function build must NOT break the whole module — stub it, keep the
+            # rest importable (graceful partial build) instead of appending unparseable source.
+            defs.append(f"def {func}({params}):\n    raise NotImplementedError\n")
             continue
         for node in tree.body:
             seg = ast.get_source_segment(src, node)
