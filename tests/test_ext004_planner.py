@@ -35,7 +35,7 @@ def test_parse_plan_garbage_is_empty():
 def test_is_multistep_routing():
     from harness.cli import JcodeCli
     ms = JcodeCli._is_multistep
-    # multi-action -> route to /plan
+    # multi-action -> route to the structured agent (REQ-7)
     assert ms("fix the bug and run the tests")
     assert ms("implement factorial then verify")
     assert ms("find the bug, fix it and run the tests")
@@ -43,6 +43,28 @@ def test_is_multistep_routing():
     assert not ms("fix foo.py")
     assert not ms("find the login handler")
     assert not ms("show me the status")
+
+
+def test_multistep_routes_to_structured_agent():
+    """EXT-009 REQ-7: a multi-action plain request routes to the STRUCTURED agent (spec_driven_loop
+    via cmd_agent — which also checkpoints for /undo), NOT the old free-form planner (cmd_plan)."""
+    from harness.cli import JcodeCli
+    calls = []
+
+    class Stub:
+        _is_multistep = JcodeCli._is_multistep
+
+        def cmd_agent(self, line):
+            calls.append(("agent", line))
+            return "ok"
+
+        def cmd_plan(self, line):
+            calls.append(("plan", line))
+            return "ok"
+
+    out = JcodeCli.handle(Stub(), "fix the bug and run the tests")
+    assert calls == [("agent", "fix the bug and run the tests")]   # structured agent, not the planner
+    assert "structured flow" in out
 
 
 def test_route_intent():

@@ -515,8 +515,9 @@ class JcodeCli:
             return ""
         if line.startswith("/"):
             return self.dispatch(line)
-        if self._is_multistep(line):   # clearly multi-action request -> the planner flow
-            return "\033[2m[multi-step plan]\033[0m\n" + self.cmd_plan(line)
+        if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
+            # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
+            return "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
         intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
         if intent:
             action, arg = intent
