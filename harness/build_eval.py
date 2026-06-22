@@ -90,6 +90,64 @@ SCENARIOS = [
     },
 ]
 
+# HARDER, UNSATURATED tier (find the real ceiling past the saturated easy 7/7): conditional/None
+# handling, multi-branch + string conversion, real algorithms (Euclid), composition, parsing.
+HARD_SCENARIOS = [
+    {
+        "name": "safe_math",
+        "intent": "a math module with safe_divide(a, b) returning a / b but None when b is 0, and "
+                  "percent(part, whole) returning part / whole * 100 but 0 when whole is 0",
+        "oracle": ("from solution import safe_divide, percent\n\n"
+                   "def test_all():\n"
+                   "    assert safe_divide(6, 2) == 3\n"
+                   "    assert safe_divide(1, 0) is None\n"
+                   "    assert percent(1, 4) == 25\n"
+                   "    assert percent(1, 0) == 0\n"),
+    },
+    {
+        "name": "fizzbuzz_leap",
+        "intent": "a module with fizzbuzz(n) returning 'Fizz' if n is divisible by 3, 'Buzz' if by 5, "
+                  "'FizzBuzz' if divisible by both, otherwise the number as a string; and "
+                  "is_leap(year) returning True for leap years",
+        "oracle": ("from solution import fizzbuzz, is_leap\n\n"
+                   "def test_all():\n"
+                   "    assert fizzbuzz(3) == 'Fizz'\n"
+                   "    assert fizzbuzz(5) == 'Buzz'\n"
+                   "    assert fizzbuzz(15) == 'FizzBuzz'\n"
+                   "    assert fizzbuzz(7) == '7'\n"
+                   "    assert is_leap(2020) is True and is_leap(1900) is False\n"),
+    },
+    {
+        "name": "gcd_lcm",
+        "intent": "a math module with gcd(a, b) returning the greatest common divisor and "
+                  "lcm(a, b) returning the least common multiple of a and b",
+        "oracle": ("from solution import gcd, lcm\n\n"
+                   "def test_all():\n"
+                   "    assert gcd(12, 8) == 4\n"
+                   "    assert gcd(7, 13) == 1\n"
+                   "    assert lcm(4, 6) == 12\n"),
+    },
+    {
+        "name": "stats",
+        "intent": "a stats module with mean(xs) returning the average, median(xs) returning the "
+                  "middle value of the sorted list, and mode(xs) returning the most common value",
+        "oracle": ("from solution import mean, median, mode\n\n"
+                   "def test_all():\n"
+                   "    assert mean([1, 2, 3]) == 2\n"
+                   "    assert median([3, 1, 2]) == 2\n"
+                   "    assert mode([1, 1, 2]) == 1\n"),
+    },
+    {
+        "name": "stringparse",
+        "intent": "a text module with initials(name) returning the uppercase initials of each word, "
+                  "and slugify(s) returning the string lowercased with spaces replaced by dashes",
+        "oracle": ("from solution import initials, slugify\n\n"
+                   "def test_all():\n"
+                   "    assert initials('john doe') == 'JD'\n"
+                   "    assert slugify('Hello World') == 'hello-world'\n"),
+    },
+]
+
 
 def _oracle_pass(solution_code: str, oracle_test: str) -> bool:
     """Score in a FRESH dir (the system never saw the oracle) — un-gameable intent check."""
@@ -105,12 +163,14 @@ def _oracle_pass(solution_code: str, oracle_test: str) -> bool:
             return False
 
 
-def run_build_eval(verbose: bool = False, persist: bool = True) -> dict:
+def run_build_eval(verbose: bool = False, persist: bool = True,
+                   scenarios: list | None = None, suite: str = "build") -> dict:
     """Run the decompose BUILD flow on each multi-function intent; score against the hidden oracle."""
     from harness.spec_loop import spec_driven_loop
+    scenarios = SCENARIOS if scenarios is None else scenarios
     started = time.time()
     results = []
-    for sc in SCENARIOS:
+    for sc in scenarios:
         with tempfile.TemporaryDirectory() as d:
             spec_driven_loop(sc["intent"], d, verbose=verbose)
             sol = Path(d) / "solution.py"
@@ -118,10 +178,10 @@ def run_build_eval(verbose: bool = False, persist: bool = True) -> dict:
             results.append({"name": sc["name"], "solved": ok})
             print(f"  {'PASS' if ok else 'FAIL'} {sc['name']}", flush=True)
     solved, total = sum(1 for r in results if r["solved"]), len(results)
-    print(f"\n=== build eval (oracle-scored): {solved}/{total} = {solved / total * 100:.0f}% ===")
+    print(f"\n=== {suite} eval (oracle-scored): {solved}/{total} = {solved / total * 100:.0f}% ===")
     scorecard = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "suite": "build", "model": MODEL,
+        "suite": suite, "model": MODEL,
         "passRate": round(solved / total, 4) if total else 0.0,
         "solved": solved, "total": total, "elapsedSec": round(time.time() - started, 1),
         "census": census(), "perTask": results,
@@ -129,8 +189,17 @@ def run_build_eval(verbose: bool = False, persist: bool = True) -> dict:
     if persist:
         _persist(scorecard)
     return scorecard
+
+
+def run_build_eval_hard(verbose: bool = False, persist: bool = True) -> dict:
+    """The HARDER, unsaturated tier (suite='build-hard'): error/None handling, multi-branch + string
+    conversion, real algorithms (Euclid), composition, parsing — find the build flow's real ceiling
+    past the saturated easy 7/7. Drive improvement against THIS, not the maxed easy tier."""
+    return run_build_eval(verbose=verbose, persist=persist,
+                          scenarios=HARD_SCENARIOS, suite="build-hard")
 # #EXT-009-REQ-6 End
 
 
 if __name__ == "__main__":
-    run_build_eval(verbose=True)
+    import sys
+    (run_build_eval_hard if "--hard" in sys.argv else run_build_eval)(verbose=True)
