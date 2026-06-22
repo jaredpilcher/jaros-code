@@ -121,7 +121,9 @@ def _extract_signatures(intent: str) -> list[tuple[str, str]]:
 
 def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False) -> dict:
     sigs = _extract_signatures(intent)                  # deterministic signatures beat 2B params
-    reqs = sigs if len(sigs) >= 2 else [(n, "") for n, _ in _decompose(intent)]
+    if len(sigs) >= 2:                                   # TASK-9: per-function concrete-sig build
+        return _build_per_function(intent, cwd, sigs, max_iters=max_iters, verbose=verbose)
+    reqs = [(n, "") for n, _ in _decompose(intent)]
     from harness.intent_loop import build_in_dir
     if len(reqs) <= 1:                                   # single-function: the existing spine
         func = reqs[0][0] if reqs else next(
@@ -129,19 +131,15 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters, verbose=verbose)
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
-    # multi-requirement: one module, a stub + a test per requirement (with the REAL signature),
-    # implement against all. The stubs use *args so fix_loop routes to the WHOLE-FILE rewriter
-    # (which implements ALL functions); the test-writer gets the real signature so the tests — and
-    # therefore the rewrite — use the correct params (the 0/3 lesson: concrete stubs broke routing).
+    # FALLBACK (no explicit signatures): one module, *args stubs -> whole-file rewriter implements all.
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     module = "solution"
     (Path(cwd) / f"{module}.py").write_text(
         "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n" for n, _ in reqs),
         encoding="utf-8", newline="\n")
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
-    for func, params in reqs:
-        [tw] = writer.decide({"intent": intent, "module": module, "func": func,
-                              "signature": f"def {func}({params})",
+    for func, _ in reqs:
+        [tw] = writer.decide({"intent": intent, "module": module, "func": func, "signature": "",
                               "test_path": str(Path(cwd) / f"test_{func}.py"), "seed": 1})
         if tw.type == "code.write_file":
             rt.apply(tw)
@@ -150,3 +148,45 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     green, _ = _run(cwd, _TEST_CMD)
     return {"solved": green, "flow": "build-decomposed", "requirements": len(reqs),
             "note": f"{len(reqs)} requirements"}
+
+
+def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,
+                        verbose: bool = False) -> dict:
+    """TASK-9: build each function in ITS OWN module with a CONCRETE single-function stub, so
+    fix_loop routes to the body-completer (which keeps the real signature and implements correctly,
+    incl. list-aggregation — the whole-file rewriter kept *args and did max(args)). Then EXTRACT
+    each implemented function (+ its imports) via AST and combine into a self-contained solution.py."""
+    import ast
+    from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
+    from harness.intent_loop import _stub
+    rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
+    imports: list[str] = []
+    defs: list[str] = []
+    for func, params in sigs:
+        fp = Path(cwd) / f"{func}.py"
+        fp.write_text(_stub(f"def {func}({params})", func), encoding="utf-8", newline="\n")
+        [tw] = writer.decide({"intent": intent, "module": func, "func": func,
+                              "signature": f"def {func}({params})",
+                              "test_path": str(Path(cwd) / f"test_{func}.py"), "seed": 1})
+        if tw.type == "code.write_file":
+            rt.apply(tw)
+        fix_loop(str(fp), intent, _TEST_CMD, max_iters=max_iters, cwd=cwd, verbose=verbose)
+        src = fp.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            defs.append(src)
+            continue
+        for node in tree.body:
+            seg = ast.get_source_segment(src, node)
+            if not seg:
+                continue
+            if isinstance(node, (ast.Import, ast.ImportFrom)) and seg not in imports:
+                imports.append(seg)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+                defs.append(seg)
+    body = ("\n".join(imports) + "\n\n" if imports else "") + "\n\n".join(defs) + "\n"
+    (Path(cwd) / "solution.py").write_text(body, encoding="utf-8", newline="\n")
+    green, _ = _run(cwd, _TEST_CMD)
+    return {"solved": green, "flow": "build-per-function", "requirements": len(sigs),
+            "note": f"{len(sigs)} functions (per-function)"}
