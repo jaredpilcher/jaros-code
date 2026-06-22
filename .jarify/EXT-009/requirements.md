@@ -4,10 +4,11 @@ title: Agentic master loop (the agent that wields the tools) + working/long-term
 status: partial
 priority: high
 implementation:
-  - file: harness/agent_loop.py
-    ranges:
-      - - 1
-        - 110
+  - file: harness/agent_loop.py     # REQ-1 master loop
+  - file: harness/spec_loop.py      # the jarify-flow (default) + plan-mode + memory anchoring
+  - file: harness/project_memory.py # REQ-3 long-term memory
+  - file: harness/agentic_eval.py   # REQ-6 multi-step eval
+  - file: harness/build_eval.py     # REQ-6 build eval
 ---
 
 This spec serves **Tenets 1, 4 & 5** of PRIME-001. EXT-002/003/004/008 gave the system
@@ -50,7 +51,7 @@ the todo + recent tool output after every step so the model never loses the thre
 - [ ] observations from completed steps fed into the planner on each replan
 - [ ] the loop surfaces the live TODO as it runs (progress visibility)
 
-### [REQ-3] Long-term memory: the harness reads/writes its own project memory  (TODO)
+### [REQ-3] Long-term memory: the harness reads/writes its own project memory  (DONE)
 
 Claude Code anchors on `CLAUDE.md` every session. jaros-code's harness has no memory of
 its own — each invocation is stateless. Add a persistent, harness-owned memory (e.g.
@@ -63,7 +64,7 @@ plane, never silent I/O).
 - [ ] append a learning entry on a notable outcome, through `code.write_file`
 - [ ] absent file is a no-op (graceful)
 
-### [REQ-4] Plan mode: show the plan (with tests per phase) before acting  (TODO)
+### [REQ-4] Plan mode: show the plan (with tests per phase) before acting  (DONE)
 
 Claude Code's plan mode proposes phases before execution. Add a dry-run that renders the
 TODO without executing, so a human can approve/edit before the agent touches anything.
@@ -82,7 +83,7 @@ ones) before each planner call. Claude Code's `/compact`, scoped to our tiny con
 - [ ] planner input stays within a bounded token budget regardless of step count
 - [ ] compaction is deterministic (drop/summarize oldest observations first)
 
-### [REQ-6] Multi-step eval: measure the agentic capability  (TODO)
+### [REQ-6] Multi-step eval: measure the agentic capability  (DONE)
 
 HumanEval (single-function) cannot measure planning. Add a `locate → fix → test`
 multi-step eval: seed a repo with a fault, give `agent_loop` the high-level request, and
@@ -92,7 +93,7 @@ score whether the loop drives the tools to green. This is the honest metric for 
 - [ ] ≥3 multi-step scenarios scored end-to-end through `agent_loop`
 - [ ] recorded to the trend history so `/trend` shows agentic progress separately
 
-### [REQ-7] `/agent` as the default NL entry; checkpoint the whole run  (TODO)
+### [REQ-7] `/agent` as the default NL entry; checkpoint the whole run  (PARTIAL: checkpoint+/undo done; default-routing TODO)
 
 Make a plain request route to `agent_loop` (not just single-action orchestration), and
 snapshot the repo before the run so the user can undo the agent's *entire* run (Claude
