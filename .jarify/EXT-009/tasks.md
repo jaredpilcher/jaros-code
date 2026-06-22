@@ -65,3 +65,28 @@ The honest metric for the agentic layer — HumanEval (single-function) cannot m
 #### Implements
 - [REQ-4] Plan mode: show the plan before acting
 - [REQ-7] `/agent` as the default NL entry; checkpoint the whole run
+
+### [TASK-7] Requirements-decomposition BUILD flow (the richer jarify-flow)
+
+The spec-driven loop beat the free-form loop 3/3 vs 2/3 on FIX scenarios. Extend its BUILD flow
+from single-function to MULTI-requirement: decompose an intent into several checkable requirements,
+write a test per requirement, implement against all, verify — where structured decomposition
+should pull further ahead of free-form on a 2B.
+
+#### Steps
+1. Add `_decompose(intent)` in `harness/spec_loop.py`: one constrained model call that returns a list of `(func_name, behavior)` requirements (parse `name: behavior` lines; keep valid identifiers).
+2. Replace the single-function BUILD branch with: stub each `func_name` in `<module>.py`, call the `test_writer` agent per requirement to write `test_<func>.py`, then `fix_loop` the module against all tests, then verify pytest green.
+3. Keep the single-function path as the fallback when `_decompose` yields one requirement.
+
+#### Implements
+- [REQ-3] Working memory / structured decomposition (requirements as the checkable artifact)
+
+### [TASK-8] Multi-requirement BUILD eval (measure decomposition's advantage)
+
+#### Steps
+1. Create `harness/build_eval.py`: >=3 multi-function build intents (e.g. a calculator with add/subtract/multiply), each with a HIDDEN ORACLE test exercising ALL functions (reuse the EXT-008 oracle pattern).
+2. Score `spec_driven_loop` (decomposition BUILD flow) vs the free-form `agent_loop` on each; record `suite="build"` to history.
+3. CI wrapper test asserting scenarios are well-formed (model-free).
+
+#### Implements
+- [REQ-6] Multi-step eval: measure the agentic capability (build variant)
