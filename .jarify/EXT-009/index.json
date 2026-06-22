@@ -2,13 +2,13 @@
   "REQ-1": [
     {
       "file": "harness/agent_loop.py",
-      "startLine": 1,
-      "endLine": 110
+      "startLine": 60,
+      "endLine": 132
     },
     {
       "file": "tests/test_agent_loop.py",
       "startLine": 1,
-      "endLine": 40
+      "endLine": 42
     }
   ],
   "REQ-2": [

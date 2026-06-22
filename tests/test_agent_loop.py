@@ -31,3 +31,12 @@ def test_agent_loop_replans_on_failure(tmp_path):
     assert calls["n"] >= 2  # the failed step triggered a replan
     assert any(s["action"] == "read" and s["arg"] == "m.py" and s["status"] == "done"
                for s in r["todo"])
+
+
+def test_editor_for_routing():
+    from harness.agent_loop import _editor_for
+    assert _editor_for("README.md") == "markdown_editor_agent.py"
+    assert _editor_for("Dockerfile") == "dockerfile_editor_agent.py"
+    assert _editor_for("settings.yaml") == "config_editor_agent.py"
+    assert _editor_for("conf.ini") == "config_editor_agent.py"
+    assert _editor_for("app.py") == "editor_agent.py"

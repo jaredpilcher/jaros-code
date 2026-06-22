@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
-_KNOWN = {"find", "read", "run", "fix"}
+_KNOWN = {"find", "read", "run", "fix", "edit", "build"}
 
 
 @dataclass
@@ -30,6 +30,20 @@ class Step:
     observation: str = ""
 
 
+def _editor_for(fname: str) -> str:
+    """Map a file to the right Jaros specialist editor agent — so the loop WIELDS the agent swarm
+    (EXT-002 specialists) rather than one generic editor."""
+    name = Path(fname).name
+    if name == "Dockerfile" or name.endswith(".dockerfile"):
+        return "dockerfile_editor_agent.py"
+    ext = Path(fname).suffix.lower()
+    if ext == ".md":
+        return "markdown_editor_agent.py"
+    if ext in (".yaml", ".yml", ".ini", ".cfg", ".toml"):
+        return "config_editor_agent.py"
+    return "editor_agent.py"
+
+
 def _default_planner(request: str) -> list[Step]:
     """Plan via the gemma planner_agent (inert plan over the verb set); empty on failure."""
     from harness.coding_loop import build_llm, _load_agent
@@ -37,9 +51,34 @@ def _default_planner(request: str) -> list[Step]:
     return [Step(s.get("action", ""), s.get("arg", "")) for s in d.payload.get("plan", [])]
 
 
+# #EXT-009-REQ-1 Start
 def execute_step(step: Step, cwd: str) -> tuple[bool, str]:
-    """Run one step's DETERMINISTIC tool, returning (ok, observation). The model never runs here."""
+    """Run one step's tool, returning (ok, observation). Side effects go through the tool plane
+    (deterministic tools) or a specialist agent's gated code.write_file — never raw model output."""
     a, arg = step.action, (step.arg or "").strip()
+    if a == "edit":                                  # route file-edits to the right SPECIALIST
+        if ":" not in arg:
+            return (False, "edit needs '<file>: <instruction>'")
+        from harness.coding_loop import Runtime, build_llm, _load_agent
+        fname, _, instr = arg.partition(":")
+        fname, instr = fname.strip(), instr.strip()
+        p = Path(cwd) / fname
+        content = p.read_text(encoding="utf-8") if p.is_file() else ""
+        agent_file = _editor_for(fname)
+        [d] = _load_agent(agent_file, build_llm()).decide(
+            {"path": str(p), "content": content, "instruction": instr, "feedback": ""})
+        if d.type != "code.write_file":
+            return (False, f"{agent_file.replace('_agent.py', '')} produced no edit")
+        Runtime().apply(d)                           # two-plane: the tool performs the write
+        return (True, f"edited {fname} via {agent_file.replace('_agent.py', '')}")
+    if a == "build":                                 # generative spine
+        from harness.intent_loop import build_in_dir
+        parts = arg.split(None, 1)
+        if len(parts) < 2:
+            return (False, "build needs '<func> <intent>'")
+        func, intent = parts[0].rstrip(":"), parts[1]
+        r = build_in_dir(cwd, intent, f"{func}.py", func)
+        return (bool(r["self_pass"]), r["note"])
     if a == "find":
         from harness.navigate import find_usages
         us = find_usages(cwd, arg)
@@ -89,3 +128,4 @@ def agent_loop(request: str, cwd: str, *, planner: Callable[[str], list[Step]] |
                              f"plan the remaining steps to finish the request."))
     return {"todo": [asdict(s) for s in todo],
             "done": all(s.status == "done" for s in todo), "steps_run": steps_run}
+# #EXT-009-REQ-1 End
