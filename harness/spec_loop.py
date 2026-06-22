@@ -15,6 +15,7 @@ Two flows, chosen deterministically (not by the model):
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from harness.multi_file import _run, multi_file_fix
@@ -73,8 +74,26 @@ def _parse_reqs(reply: str, max_reqs: int = 5) -> list[tuple[str, str]]:
     return reqs[:max_reqs]
 
 
+_SIG_RE = re.compile(r"\b([a-z_][a-z0-9_]*)\s*\(([^)]*)\)")
+_SIG_STOP = {"a", "an", "the", "module", "function", "def", "list", "str", "int"}
+
+
+def _extract_signatures(intent: str) -> list[tuple[str, str]]:
+    """DETERMINISTIC: pull explicit `name(params)` function signatures from the intent. Reliable
+    (no 2B naming/param errors) when the intent names functions, which is the common case; the
+    2B `_decompose` is only the fallback. De-duped, order-preserving."""
+    out, seen = [], set()
+    for m in _SIG_RE.finditer(intent):
+        name, params = m.group(1), m.group(2).strip()
+        if name.isidentifier() and name not in _SIG_STOP and not name.startswith("_") and name not in seen:
+            seen.add(name)
+            out.append((name, params))
+    return out
+
+
 def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False) -> dict:
-    reqs = _decompose(intent)
+    sigs = _extract_signatures(intent)                  # deterministic signatures beat 2B params
+    reqs = sigs if len(sigs) >= 2 else [(n, "") for n, _ in _decompose(intent)]
     from harness.intent_loop import build_in_dir
     if len(reqs) <= 1:                                   # single-function: the existing spine
         func = reqs[0][0] if reqs else next(
@@ -82,15 +101,17 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters, verbose=verbose)
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
-    # multi-requirement: one module, a stub + a test per requirement, implement against all
+    # multi-requirement: one module, a stub + a test per requirement (with the REAL signature),
+    # implement against all.
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
-    from harness.intent_loop import _stub
     module = "solution"
-    (Path(cwd) / f"{module}.py").write_text("".join(_stub("", f) for f, _ in reqs),
-                                            encoding="utf-8", newline="\n")
+    (Path(cwd) / f"{module}.py").write_text(
+        "".join(f"def {n}({p}):\n    raise NotImplementedError\n\n" for n, p in reqs),
+        encoding="utf-8", newline="\n")
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
-    for func, beh in reqs:
-        [tw] = writer.decide({"intent": beh, "module": module, "func": func, "signature": "",
+    for func, params in reqs:
+        [tw] = writer.decide({"intent": intent, "module": module, "func": func,
+                              "signature": f"def {func}({params})",
                               "test_path": str(Path(cwd) / f"test_{func}.py"), "seed": 1})
         if tw.type == "code.write_file":
             rt.apply(tw)

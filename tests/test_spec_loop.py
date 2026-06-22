@@ -21,3 +21,12 @@ def test_parse_reqs():
     assert names == ["add", "subtract", "multiply"]      # bullet/number/paren stripped to identifiers
     assert ("add", "adds two numbers") in reqs
     assert all(n.isidentifier() for n in names)
+
+
+def test_extract_signatures():
+    from harness.spec_loop import _extract_signatures
+    sigs = _extract_signatures("a list module with largest(xs) returning the max, "
+                               "smallest(xs) returning the min, and total(xs) returning the sum")
+    assert sigs == [("largest", "xs"), ("smallest", "xs"), ("total", "xs")]  # no spurious list_module
+    sigs2 = _extract_signatures("add(a, b) that adds and subtract(a, b) that subtracts")
+    assert sigs2 == [("add", "a, b"), ("subtract", "a, b")]
