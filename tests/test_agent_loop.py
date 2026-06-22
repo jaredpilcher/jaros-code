@@ -40,3 +40,18 @@ def test_editor_for_routing():
     assert _editor_for("settings.yaml") == "config_editor_agent.py"
     assert _editor_for("conf.ini") == "config_editor_agent.py"
     assert _editor_for("app.py") == "editor_agent.py"
+
+
+def test_agent_checkpoint_undo(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "x.py"
+    f.write_text("original\n", encoding="utf-8")
+    from harness.cli import JcodeCli
+    from harness.multi_file import _snapshot
+    cli = JcodeCli()
+    cli._agent_snapshot = _snapshot(".")          # simulate /agent's pre-run checkpoint
+    f.write_text("MODIFIED\n", encoding="utf-8")   # simulate the agent editing the file
+    out = cli.cmd_undo("")
+    assert "restored" in out.lower()
+    assert f.read_text(encoding="utf-8") == "original\n"
+    assert "nothing to undo" in cli.cmd_undo("").lower()

@@ -33,6 +33,7 @@ Commands (Claude-Code-style):
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
+  /undo                         revert the last /agent run (restore the pre-run checkpoint)
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
@@ -306,6 +307,8 @@ class JcodeCli:
         if not arg.strip():
             return "usage: /agent <natural-language request>"
         from harness.agent_loop import agent_loop
+        from harness.multi_file import _snapshot
+        self._agent_snapshot = _snapshot(".")        # whole-run checkpoint (EXT-009 REQ-7)
         r = agent_loop(arg, ".", verbose=False)
         if not r["todo"]:
             return f"agent: {r.get('note', 'no plan')}"
@@ -314,7 +317,19 @@ class JcodeCli:
         for s in r["todo"]:
             obs = f"  -> {s['observation']}" if s["observation"] else ""
             lines.append(f"  [{mark.get(s['status'], '?')}] {s['action']} {s['arg']}{obs}")
+        lines.append("  (/undo to revert this run)")
         return "\n".join(lines)
+
+    def cmd_undo(self, _arg: str) -> str:
+        """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —
+        Claude Code's checkpoints. Session-scoped (the most recent /agent run)."""
+        snap = getattr(self, "_agent_snapshot", None)
+        if not snap:
+            return "nothing to undo (no /agent run this session)"
+        from harness.multi_file import _restore
+        _restore(snap)
+        self._agent_snapshot = None
+        return f"reverted the last agent run ({len(snap)} files restored)"
 
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
