@@ -73,11 +73,13 @@ TODO without executing, so a human can approve/edit before the agent touches any
 - [x] `/agent --plan` renders the structured-flow plan without side effects
 - [ ] each "fix"/"build" phase names the test that will gate it
 
-### [REQ-5] Context compaction for long loops  (TODO)
+### [REQ-5] Context compaction for long loops  (DEFERRED — not needed for current bounded flows)
 
 Long agentic runs overflow the 2B's small context. Deterministically compact the
-working memory (keep the request + the TODO + the last N observations; summarize older
-ones) before each planner call. Claude Code's `/compact`, scoped to our tiny context.
+working memory before each planner call (Claude Code's `/compact`, scoped to our tiny context).
+DEFERRED: not needed today — the structured `spec_driven_loop` (default) carries no growing
+planner history, and the free-form `agent_loop` (fallback) is bounded by `max_steps` (~8 short
+observations). Revisit only if the free-form loop's step budget grows large.
 
 #### Acceptance Criteria
 - [ ] planner input stays within a bounded token budget regardless of step count
