@@ -160,7 +160,12 @@ def run_agentic_eval(verbose: bool = False, planner=None, persist: bool = True) 
                 print(f"  FAIL {sc['name']:25} (scenario error: pre-run was green)", flush=True)
                 continue
 
-            loop_result = agent_loop(sc["request"], tmp, planner=planner, max_steps=8, verbose=verbose)
+            if planner is not None:                  # CI test: scripted planner -> free-form mechanics
+                loop_result = agent_loop(sc["request"], tmp, planner=planner, max_steps=8, verbose=verbose)
+            else:                                     # model run: measure the DEFAULT repair flow (/agent)
+                from harness.spec_loop import spec_driven_loop
+                r = spec_driven_loop(sc["request"], tmp, verbose=verbose)
+                loop_result = {"steps_run": "-", "done": bool(r.get("solved"))}
             solved = _pytest_passes(tmp)
             results.append({
                 "name": sc["name"],
