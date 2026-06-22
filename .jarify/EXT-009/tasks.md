@@ -90,3 +90,21 @@ should pull further ahead of free-form on a 2B.
 
 #### Implements
 - [REQ-6] Multi-step eval: measure the agentic capability (build variant)
+
+### [TASK-9] Per-function build to close the list-aggregation gap (build eval 5/7 -> 7/7)
+
+DIAGNOSED: the build eval's only failures (listops, minmax) are LIST-AGGREGATION functions
+(`largest(xs)`, `maximum(xs)` — max/min/sum over a list passed as one arg). Root cause: the
+multi-function build stubs with `*args` so fix_loop routes to the WHOLE-FILE rewriter, which KEEPS
+`*args` and implements `max(args)` (wrong for `largest([1,5,2])`). Concrete-signature stubs route
+to the single-function BODY-COMPLETER, which implements correctly but can't do multi-function (the
+0/3 regression). So neither single regime handles multi-function + correct signatures.
+
+#### Steps
+1. In `_decompose_build`, for the multi-requirement case, build EACH function in ISOLATION: a temp module with the CONCRETE stub `def name(params): raise NotImplementedError` + its test, run `fix_loop` (concrete signature -> body-completer implements correctly, including list-aggregation).
+2. Extract each implemented function from its isolated build and concatenate them into `solution.py`.
+3. Verify the combined suite (all per-function tests) goes green.
+4. Eval-gate against `build_eval` (must reach >5/7, no regression) BEFORE commit+push.
+
+#### Implements
+- [REQ-6] Multi-step eval: measure the agentic capability (push the build rate past list-aggregation)
