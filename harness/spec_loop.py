@@ -40,7 +40,11 @@ def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     test_file = _find_test(cwd)
     if test_file:
         # FIX flow — the failing test IS the requirement; run the structured repair pipeline.
-        res = multi_file_fix(cwd, _TEST_CMD, intent, test_file, max_iters=max_iters, verbose=verbose)
+        # Anchor on long-term project memory (REQ-3) when present; absent -> unchanged (no-op).
+        from harness.project_memory import read_memory
+        mem = read_memory(cwd).strip()
+        instr = f"Project conventions:\n{mem}\n\n{intent}" if mem else intent
+        res = multi_file_fix(cwd, _TEST_CMD, instr, test_file, max_iters=max_iters, verbose=verbose)
         green, _ = _run(cwd, _TEST_CMD)
         return {"solved": green, "flow": "fix", "note": res.get("note", "")}
 
