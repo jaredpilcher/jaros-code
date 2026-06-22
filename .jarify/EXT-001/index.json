@@ -1,4 +1,18 @@
 {
+  "REQ-1": [
+    {
+      "file": ".jaros-data/tools/fs_read_tool.py",
+      "startLine": 13,
+      "endLine": 45
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/fs_list_tool.py",
+      "startLine": 13,
+      "endLine": 41
+    }
+  ],
   "REQ-3": [
     {
       "file": ".jaros-data/tools/fs_grep_tool.py",
@@ -52,20 +66,6 @@
     {
       "file": ".jaros-data/tools/json_check_tool.py",
       "startLine": 15,
-      "endLine": 41
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": ".jaros-data/tools/fs_read_tool.py",
-      "startLine": 13,
-      "endLine": 45
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": ".jaros-data/tools/fs_list_tool.py",
-      "startLine": 13,
       "endLine": 41
     }
   ]

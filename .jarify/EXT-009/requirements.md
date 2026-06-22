@@ -60,9 +60,9 @@ conventions/commands, and append durable learnings (only via the deterministic t
 plane, never silent I/O).
 
 #### Acceptance Criteria
-- [ ] read a project memory file at the start of an agentic run and feed it to the planner
-- [ ] append a learning entry on a notable outcome, through `code.write_file`
-- [ ] absent file is a no-op (graceful)
+- [x] read a project memory file at the start of an agentic run and feed it to the fix model
+- [x] append a learning entry on a notable outcome (append_memory + /remember)
+- [x] absent file is a no-op (graceful)
 
 ### [REQ-4] Plan mode: show the plan (with tests per phase) before acting  (DONE)
 
@@ -70,7 +70,7 @@ Claude Code's plan mode proposes phases before execution. Add a dry-run that ren
 TODO without executing, so a human can approve/edit before the agent touches anything.
 
 #### Acceptance Criteria
-- [ ] `/agent --plan` (or `/plan` reuse) renders the TODO without side effects
+- [x] `/agent --plan` renders the structured-flow plan without side effects
 - [ ] each "fix"/"build" phase names the test that will gate it
 
 ### [REQ-5] Context compaction for long loops  (TODO)
@@ -90,8 +90,8 @@ multi-step eval: seed a repo with a fault, give `agent_loop` the high-level requ
 score whether the loop drives the tools to green. This is the honest metric for EXT-009.
 
 #### Acceptance Criteria
-- [ ] ≥3 multi-step scenarios scored end-to-end through `agent_loop`
-- [ ] recorded to the trend history so `/trend` shows agentic progress separately
+- [x] ≥3 multi-step scenarios scored end-to-end (agentic_eval 3, build_eval 7)
+- [x] recorded to the trend history (suite="agentic"/"build") so `/trend` shows them separately
 
 ### [REQ-7] `/agent` as the default NL entry; checkpoint the whole run  (PARTIAL: checkpoint+/undo done; default-routing TODO)
 
