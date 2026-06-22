@@ -306,19 +306,15 @@ class JcodeCli:
         the tools so a human doesn't run them by hand. Wires harness/agent_loop.py."""
         if not arg.strip():
             return "usage: /agent <natural-language request>"
-        from harness.agent_loop import agent_loop
+        # Default to the STRUCTURED jarify-flow loop — it beat the free-form agent loop 3/3 vs 2/3
+        # on the agentic eval (the 2B is unreliable at choosing steps; a fixed flow isn't).
+        from harness.spec_loop import spec_driven_loop
         from harness.multi_file import _snapshot
         self._agent_snapshot = _snapshot(".")        # whole-run checkpoint (EXT-009 REQ-7)
-        r = agent_loop(arg, ".", verbose=False)
-        if not r["todo"]:
-            return f"agent: {r.get('note', 'no plan')}"
-        mark = {"done": "OK", "failed": "XX", "pending": ".."}
-        lines = [f"agent: {'DONE' if r['done'] else 'incomplete'} ({r['steps_run']} steps)"]
-        for s in r["todo"]:
-            obs = f"  -> {s['observation']}" if s["observation"] else ""
-            lines.append(f"  [{mark.get(s['status'], '?')}] {s['action']} {s['arg']}{obs}")
-        lines.append("  (/undo to revert this run)")
-        return "\n".join(lines)
+        r = spec_driven_loop(arg, ".")
+        status = "SOLVED" if r["solved"] else "unsolved"
+        note = f" — {r['note']}" if r.get("note") else ""
+        return f"agent [{r['flow']} flow]: {status}{note}\n  (/undo to revert this run)"
 
     def cmd_undo(self, _arg: str) -> str:
         """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —

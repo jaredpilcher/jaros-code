@@ -30,6 +30,16 @@ flat). Breadth + the *agentic layer* — not pass@1 — is where jaros-code beco
 tool. The master loop turns a box of commands into "tell it what you want." Its honest
 metric is the multi-step eval (REQ-6), not HumanEval.
 
+## Structured flow beats free-form (measured — the jarify-flow result)
+Head-to-head on the REQ-6 agentic eval (same 3 scenarios, same 2B): the **spec-driven
+(jarify-flow) loop scored 3/3; the free-form `agent_loop` scored 2/3** (it skipped the fix step
+on the exception scenario). A 2B is unreliable at the open-ended "what steps?" judgement, but a
+DETERMINISTIC flow (verify requirement -> implement -> verify) where it only fills constrained
+sub-tasks is reliable. So **`spec_driven_loop` (harness/spec_loop.py) is the DEFAULT** that
+`/agent` uses; the free-form `agent_loop` is kept as a fallback for genuinely open-ended tasks.
+This is the decomposition principle at the WORKFLOW level — the same reason jaros-code works at
+all, applied to planning. (Owner's insight, confirmed 2026-06-21.)
+
 ## Testing
 The planner is injectable, so loop mechanics are tested deterministically (no model). The
 2B planner is the default; end-to-end agentic quality is measured by REQ-6's multi-step eval.
