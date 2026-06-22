@@ -49,6 +49,45 @@ SCENARIOS = [
                    "    assert smallest([3, 1, 2]) == 1\n"
                    "    assert total([1, 2, 3]) == 6\n"),
     },
+    {
+        "name": "boolchecks",
+        "intent": "a number module with is_even(n) returning True when n is even, is_odd(n) "
+                  "returning True when n is odd, and is_positive(n) returning True when n > 0",
+        "oracle": ("from solution import is_even, is_odd, is_positive\n\n"
+                   "def test_all():\n"
+                   "    assert is_even(4) is True and is_even(3) is False\n"
+                   "    assert is_odd(3) is True and is_odd(4) is False\n"
+                   "    assert is_positive(5) is True and is_positive(-1) is False\n"),
+    },
+    {
+        "name": "tempconvert",
+        "intent": "a temperature module with c_to_f(c) converting Celsius to Fahrenheit, and "
+                  "f_to_c(f) converting Fahrenheit to Celsius",
+        "oracle": ("from solution import c_to_f, f_to_c\n\n"
+                   "def test_all():\n"
+                   "    assert c_to_f(0) == 32\n"
+                   "    assert c_to_f(100) == 212\n"
+                   "    assert f_to_c(32) == 0\n"),
+    },
+    {
+        "name": "textstats",
+        "intent": "a text module with word_count(s) returning the number of words, char_count(s) "
+                  "returning the number of characters, and shout(s) returning s uppercased",
+        "oracle": ("from solution import word_count, char_count, shout\n\n"
+                   "def test_all():\n"
+                   "    assert word_count('a b c') == 3\n"
+                   "    assert char_count('abc') == 3\n"
+                   "    assert shout('hi') == 'HI'\n"),
+    },
+    {
+        "name": "minmax",
+        "intent": "a module with maximum(xs) returning the largest item in a list and minimum(xs) "
+                  "returning the smallest item in a list",
+        "oracle": ("from solution import maximum, minimum\n\n"
+                   "def test_all():\n"
+                   "    assert maximum([1, 5, 2]) == 5\n"
+                   "    assert minimum([3, 1, 2]) == 1\n"),
+    },
 ]
 
 
