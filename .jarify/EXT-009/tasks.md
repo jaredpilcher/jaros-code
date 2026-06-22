@@ -108,3 +108,17 @@ to the single-function BODY-COMPLETER, which implements correctly but can't do m
 
 #### Implements
 - [REQ-6] Multi-step eval: measure the agentic capability (push the build rate past list-aggregation)
+
+### [TASK-10] Hybrid build: *args fallback when a per-function build fails (recover boolchecks -> 7/7)
+
+DIAGNOSED (build eval, 2 runs + dogfool, 3/3 obs): TASK-9's per-function build fixed list-aggregation
+SYSTEMATICALLY but CONSISTENTLY fails boolchecks — the body-completer botches `is_odd`'s indentation
+in isolation, where the *args whole-file rewriter built it fine. Net +1 (5/7->6/7), a real trade.
+
+#### Steps
+1. In `_build_per_function`, after combining `solution.py`, detect any function still a stub (its body raises `NotImplementedError`) — i.e. its per-function build failed.
+2. If >=1 function failed, RETRY the whole scenario via the existing `*args` whole-file build path (which builds those functions, e.g. is_odd, correctly) and keep whichever solution.py has more functions implemented / passes more tests.
+3. Eval-gate against `build_eval` (target 7/7, NO regression on the list-aggregation cases) BEFORE commit+push.
+
+#### Implements
+- [REQ-6] Multi-step eval: measure the agentic capability (close the boolchecks trade)

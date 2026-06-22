@@ -155,7 +155,13 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     """TASK-9: build each function in ITS OWN module with a CONCRETE single-function stub, so
     fix_loop routes to the body-completer (which keeps the real signature and implements correctly,
     incl. list-aggregation — the whole-file rewriter kept *args and did max(args)). Then EXTRACT
-    each implemented function (+ its imports) via AST and combine into a self-contained solution.py."""
+    each implemented function (+ its imports) via AST and combine into a self-contained solution.py.
+
+    HONEST TRADE (build eval, 2 runs + a dogfool): this fixes list-aggregation (listops, minmax)
+    SYSTEMATICALLY but CONSISTENTLY fails the boolchecks scenario — the body-completer reliably
+    botches `is_odd`'s indentation in isolation, where the old *args whole-file rewriter built it
+    fine. So per-function is net +1 (5/7 -> 6/7), NOT pure gain. TASK-10 (hybrid: fall back to the
+    *args whole-file build when a per-function build leaves a stub) would recover boolchecks."""
     import ast
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     from harness.intent_loop import _stub
