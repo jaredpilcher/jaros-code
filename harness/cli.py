@@ -30,6 +30,7 @@ Commands (Claude-Code-style):
   /usages <symbol>              AST find-usages across the repo (precise; ignores strings/comments)
   /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
+  /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /clear  /quit
@@ -245,6 +246,29 @@ class JcodeCli:
         return f"{len(us)} usage(s) of {arg.strip()}:" + "".join(
             f"\n  {u['file']}:{u['line']} [{u['kind']}] {u['text'][:70]}" for u in us[:30])
 
+    def cmd_about(self, arg: str) -> str:
+        """Symbol summary (EXT-004): ONE view of a symbol — where it's defined, who calls it, how
+        many references, and whether it looks dead. Composes the whole navigation suite
+        (find_definition + find_callers + find_usages + find_dead_code) into a Claude-Code-like
+        'tell me about X'. Max leverage of the nav layer, zero new primitives."""
+        sym = arg.strip()
+        if not sym:
+            return "usage: /about <symbol>"
+        from harness.navigate import find_definition, find_callers, find_usages, find_dead_code
+        defs = find_definition(".", sym)
+        callers = find_callers(".", sym)
+        refs = [u for u in find_usages(".", sym) if u["kind"] == "ref"]
+        dead = any(d["symbol"] == sym for d in find_dead_code("."))
+        out = [f"about `{sym}`:"]
+        out.append("  defined: " + (", ".join(f"{d['file']}:{d['line']} [{d['kind']}]"
+                                              for d in defs[:3]) if defs else "(no top-level def/class found)"))
+        out.append(f"  references: {len(refs)}   callers: {len(callers)}")
+        if callers:
+            out.append("  called by: " + ", ".join(sorted({c['caller'] for c in callers})[:8]))
+        if dead:
+            out.append("  ! flagged as a dead-code candidate (no references found)")
+        return "\n".join(out)
+
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
         enclosing function (distinct from /usages' all-references). Composes harness/navigate.py."""
@@ -380,6 +404,9 @@ class JcodeCli:
         m = _re.search(r"\bmove\s+(\w+)\s+from\s+(\S+)\s+to\s+(\S+)", r, _re.I)
         if m:
             return ("move", f"{m.group(1)} {m.group(2)} {m.group(3)}")
+        m = _re.search(r"\btell me about\s+(\w+)", rl)
+        if m:
+            return ("about", m.group(1))
         m = _re.search(r"\b(?:callers\s+(?:of|for)|what\s+calls)\s+(\w+)", rl)
         if m:
             return ("callers", m.group(1))

@@ -55,6 +55,7 @@ def test_route_intent():
     assert ri("find usages of build_repo_map") == ("usages", "build_repo_map")
     assert ri("references to parse_plan") == ("usages", "parse_plan")
     assert ri("where is fix_loop used") == ("usages", "fix_loop")
+    assert ri("tell me about fix_loop") == ("about", "fix_loop")
     assert ri("callers of fix_loop") == ("callers", "fix_loop")
     assert ri("what calls build_repo_map") == ("callers", "build_repo_map")
     assert ri("definition of build_repo_map") == ("defn", "build_repo_map")
