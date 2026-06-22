@@ -33,7 +33,7 @@ code, all on a Jetson at zero cost" is a real tool.
 |---|---|---|
 | Single-function synthesis | HumanEval pass@1 | ~58% (the 2B ceiling; ~76% within the retry budget) |
 | Multi-step repair (locate→fix→test) | agentic eval | 3/3 |
-| Multi-function generation (build me X) | build eval, hidden-oracle scored | 6/7 |
+| Multi-function generation (build me X) | build eval, hidden-oracle scored | 7/7 |
 | Code intelligence / refactoring | deterministic | 100% reliable (it's AST/git, not the model) |
 
 The honest progress signal is **breadth + the agentic evals**, not HumanEval pass@1 — that's pinned

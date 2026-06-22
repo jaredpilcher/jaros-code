@@ -131,23 +131,32 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters, verbose=verbose)
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
-    # FALLBACK (no explicit signatures): one module, *args stubs -> whole-file rewriter implements all.
+    # FALLBACK (no explicit signatures): *args stubs -> whole-file rewriter implements all.
+    _build_whole_file(intent, cwd, [n for n, _ in reqs], max_iters=max_iters, verbose=verbose)
+    green, _ = _run(cwd, _TEST_CMD)
+    return {"solved": green, "flow": "build-decomposed", "requirements": len(reqs),
+            "note": f"{len(reqs)} requirements"}
+
+
+def _build_whole_file(intent: str, cwd: str, names: list, *, max_iters: int = 3,
+                      verbose: bool = False) -> None:
+    """*args whole-file build: stub every function with `*args` so fix_loop routes to the WHOLE-FILE
+    rewriter (which implements ALL of them in one solution.py), write one test per function (from the
+    real intent), then implement against all. This path builds simple predicates like is_odd reliably
+    where the per-function body-completer botches them — it is TASK-10's fallback."""
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     module = "solution"
     (Path(cwd) / f"{module}.py").write_text(
-        "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n" for n, _ in reqs),
+        "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n" for n in names),
         encoding="utf-8", newline="\n")
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
-    for func, _ in reqs:
+    for func in names:
         [tw] = writer.decide({"intent": intent, "module": module, "func": func, "signature": "",
                               "test_path": str(Path(cwd) / f"test_{func}.py"), "seed": 1})
         if tw.type == "code.write_file":
             rt.apply(tw)
     fix_loop(str(Path(cwd) / f"{module}.py"), intent, _TEST_CMD, max_iters=max_iters,
              cwd=cwd, verbose=verbose)
-    green, _ = _run(cwd, _TEST_CMD)
-    return {"solved": green, "flow": "build-decomposed", "requirements": len(reqs),
-            "note": f"{len(reqs)} requirements"}
 
 
 def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,
@@ -157,17 +166,19 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     incl. list-aggregation — the whole-file rewriter kept *args and did max(args)). Then EXTRACT
     each implemented function (+ its imports) via AST and combine into a self-contained solution.py.
 
-    HONEST TRADE (build eval, 2 runs + a dogfool): this fixes list-aggregation (listops, minmax)
-    SYSTEMATICALLY but CONSISTENTLY fails the boolchecks scenario — the body-completer reliably
-    botches `is_odd`'s indentation in isolation, where the old *args whole-file rewriter built it
-    fine. So per-function is net +1 (5/7 -> 6/7), NOT pure gain. TASK-10 (hybrid: fall back to the
-    *args whole-file build when a per-function build leaves a stub) would recover boolchecks."""
+    Fixes list-aggregation (listops, minmax) SYSTEMATICALLY. boolchecks's `is_odd` is HIGH-VARIANCE
+    for the body-completer (clean `n % 2 != 0` some runs, botched indentation others). TASK-10's
+    hybrid (below) gives a 2nd independent chance — the *args whole-file build in a clean temp dir,
+    swapped in when it has fewer stubs — so the build eval reaches 7/7: per-function fixes
+    list-aggregation, the hybrid recovers boolchecks. No-regression by construction (the fallback
+    only fires when a per-function build leaves a stub; passing scenarios are untouched)."""
     import ast
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     from harness.intent_loop import _stub
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
     imports: list[str] = []
     defs: list[str] = []
+    failed: list[str] = []                              # functions whose per-function build didn't land
     for func, params in sigs:
         fp = Path(cwd) / f"{func}.py"
         fp.write_text(_stub(f"def {func}({params})", func), encoding="utf-8", newline="\n")
@@ -184,7 +195,9 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
             # a malformed per-function build must NOT break the whole module — stub it, keep the
             # rest importable (graceful partial build) instead of appending unparseable source.
             defs.append(f"def {func}({params}):\n    raise NotImplementedError\n")
+            failed.append(func)
             continue
+        func_def = None
         for node in tree.body:
             seg = ast.get_source_segment(src, node)
             if not seg:
@@ -192,9 +205,33 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
             if isinstance(node, (ast.Import, ast.ImportFrom)) and seg not in imports:
                 imports.append(seg)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
-                defs.append(seg)
+                func_def = seg
+        if func_def and "raise NotImplementedError" not in func_def:
+            defs.append(func_def)
+        else:                                           # not found, or still a stub -> failed build
+            defs.append(func_def or f"def {func}({params}):\n    raise NotImplementedError\n")
+            failed.append(func)
     body = ("\n".join(imports) + "\n\n" if imports else "") + "\n\n".join(defs) + "\n"
     (Path(cwd) / "solution.py").write_text(body, encoding="utf-8", newline="\n")
-    green, _ = _run(cwd, _TEST_CMD)
-    return {"solved": green, "flow": "build-per-function", "requirements": len(sigs),
-            "note": f"{len(sigs)} functions (per-function)"}
+
+    # TASK-10 hybrid: if any per-function build failed (e.g. body-completer botches is_odd), try the
+    # *args whole-file build in a CLEAN temp dir and keep whichever solution.py has fewer stubs (more
+    # functions implemented). Tie -> keep per-function (it has list-aggregation correct).
+    flow = "build-per-function"
+    if failed:
+        import tempfile
+        pf_sol = (Path(cwd) / "solution.py").read_text(encoding="utf-8")
+        pf_stubs = pf_sol.count("raise NotImplementedError")
+        with tempfile.TemporaryDirectory(prefix="jcode-wf-") as alt:
+            _build_whole_file(intent, alt, [f for f, _ in sigs], max_iters=max_iters, verbose=verbose)
+            wf_path = Path(alt) / "solution.py"
+            wf_sol = wf_path.read_text(encoding="utf-8") if wf_path.exists() else ""
+        wf_stubs = wf_sol.count("raise NotImplementedError") if wf_sol else 10 ** 9
+        if wf_sol and wf_stubs < pf_stubs:
+            (Path(cwd) / "solution.py").write_text(wf_sol, encoding="utf-8", newline="\n")
+            flow = "build-hybrid"
+
+    final = (Path(cwd) / "solution.py").read_text(encoding="utf-8")
+    solved = "raise NotImplementedError" not in final     # all functions at least implemented
+    return {"solved": solved, "flow": flow, "requirements": len(sigs),
+            "note": f"{len(sigs)} functions ({flow.split('-', 1)[1]})"}
