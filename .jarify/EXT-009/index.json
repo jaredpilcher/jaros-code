@@ -1,0 +1,21 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 1,
+      "endLine": 110
+    },
+    {
+      "file": "tests/test_agent_loop.py",
+      "startLine": 1,
+      "endLine": 40
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 30,
+      "endLine": 36
+    }
+  ]
+}
