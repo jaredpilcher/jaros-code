@@ -3,7 +3,7 @@
     {
       "file": "harness/build_eval.py",
       "startLine": 20,
-      "endLine": 93
+      "endLine": 132
     },
     {
       "file": "harness/agentic_eval.py",
