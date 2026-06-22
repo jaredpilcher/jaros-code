@@ -1,39 +1,4 @@
 {
-  "REQ-3": [
-    {
-      "file": ".jaros-data/tools/fs_grep_tool.py",
-      "startLine": 14,
-      "endLine": 73
-    }
-  ],
-  "REQ-10": [
-    {
-      "file": ".jaros-data/tools/fs_find_tool.py",
-      "startLine": 14,
-      "endLine": 49
-    }
-  ],
-  "REQ-4": [
-    {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 23,
-      "endLine": 76
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": ".jaros-data/tools/py_symbols_tool.py",
-      "startLine": 14,
-      "endLine": 46
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": ".jaros-data/tools/py_check_tool.py",
-      "startLine": 14,
-      "endLine": 41
-    }
-  ],
   "REQ-12": [
     {
       "file": ".jaros-data/tools/json_check_tool.py",
@@ -55,11 +20,25 @@
       "endLine": 41
     }
   ],
-  "REQ-6": [
+  "REQ-3": [
     {
-      "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 22,
-      "endLine": 58
+      "file": ".jaros-data/tools/fs_grep_tool.py",
+      "startLine": 14,
+      "endLine": 73
+    }
+  ],
+  "REQ-10": [
+    {
+      "file": ".jaros-data/tools/fs_find_tool.py",
+      "startLine": 14,
+      "endLine": 49
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 23,
+      "endLine": 76
     }
   ],
   "REQ-5": [
@@ -67,6 +46,27 @@
       "file": ".jaros-data/tools/shell_exec_tool.py",
       "startLine": 37,
       "endLine": 130
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": ".jaros-data/tools/py_symbols_tool.py",
+      "startLine": 14,
+      "endLine": 46
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": ".jaros-data/tools/py_check_tool.py",
+      "startLine": 14,
+      "endLine": 41
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": ".jaros-data/tools/write_file_tool.py",
+      "startLine": 22,
+      "endLine": 58
     }
   ]
 }
