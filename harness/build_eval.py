@@ -252,6 +252,50 @@ CLASS_SCENARIOS = [
                    "    assert r.area() == 12\n"
                    "    assert r.perimeter() == 14\n"),
     },
+    {   # FIFO (vs Stack's LIFO)
+        "name": "queue",
+        "intent": "a Queue class with enqueue(x) to add an item, dequeue() returning and removing "
+                  "the FIRST item added, and size() returning how many items are queued",
+        "oracle": ("from solution import Queue\n\n"
+                   "def test_all():\n"
+                   "    q = Queue()\n"
+                   "    q.enqueue(1); q.enqueue(2)\n"
+                   "    assert q.dequeue() == 1\n"
+                   "    assert q.size() == 1\n"),
+    },
+    {   # running aggregation state
+        "name": "accumulator",
+        "intent": "an Accumulator class with add(x) to add a number to a running total, total() "
+                  "returning the sum so far, and count() returning how many numbers were added",
+        "oracle": ("from solution import Accumulator\n\n"
+                   "def test_all():\n"
+                   "    a = Accumulator()\n"
+                   "    a.add(5); a.add(3)\n"
+                   "    assert a.total() == 8\n"
+                   "    assert a.count() == 2\n"),
+    },
+    {   # constructor arg + conversion + predicate
+        "name": "temperature",
+        "intent": "a Temperature class created with a celsius value, with to_fahrenheit() returning "
+                  "the Fahrenheit value and freezing() returning True when celsius is 0 or below",
+        "oracle": ("from solution import Temperature\n\n"
+                   "def test_all():\n"
+                   "    assert Temperature(0).to_fahrenheit() == 32\n"
+                   "    assert Temperature(100).to_fahrenheit() == 212\n"
+                   "    assert Temperature(0).freezing() is True\n"
+                   "    assert Temperature(10).freezing() is False\n"),
+    },
+    {   # dict-backed counting state
+        "name": "wordbag",
+        "intent": "a WordBag class with add(word) to record a word, count(word) returning how many "
+                  "times that word was added, and unique() returning the number of distinct words",
+        "oracle": ("from solution import WordBag\n\n"
+                   "def test_all():\n"
+                   "    w = WordBag()\n"
+                   "    w.add('a'); w.add('a'); w.add('b')\n"
+                   "    assert w.count('a') == 2\n"
+                   "    assert w.unique() == 2\n"),
+    },
 ]
 
 
