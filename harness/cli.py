@@ -33,6 +33,7 @@ Commands (Claude-Code-style):
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
+  /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
   /remember <note>              save a convention/learning to project memory (.jcode/memory.md)
   /memory                       show the project memory
@@ -357,6 +358,28 @@ class JcodeCli:
         _restore(snap)
         self._agent_snapshot = None
         return f"reverted the last agent run ({len(snap)} files restored)"
+
+    def cmd_diff(self, _arg: str) -> str:
+        """Show what the last /agent run CHANGED vs its checkpoint (Claude Code's diff view) — review
+        before keeping it or running /undo. Session-scoped to the most recent /agent run; pairs with
+        /undo (the same snapshot)."""
+        snap = getattr(self, "_agent_snapshot", None)
+        if not snap:
+            return "nothing to diff (run /agent first; /diff shows its changes vs the checkpoint)"
+        import difflib
+        from pathlib import Path
+        files = set(snap) | {str(p) for p in Path(".").rglob("*.py")}
+        out: list[str] = []
+        for path in sorted(files):
+            before = snap.get(path, "")
+            after = Path(path).read_text(encoding="utf-8") if Path(path).is_file() else ""
+            if before == after:
+                continue
+            out.extend(difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                            fromfile=path, tofile=path, lineterm=""))
+        if not out:
+            return "no changes since the last /agent checkpoint"
+        return "\n".join(out[:200]) + ("\n... (diff truncated)" if len(out) > 200 else "")
 
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
