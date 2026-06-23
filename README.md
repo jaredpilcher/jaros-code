@@ -31,8 +31,9 @@ code, all on a Jetson at zero cost" is a real tool.
 
 | Capability | How it's measured | Result |
 |---|---|---|
-| Single-function synthesis | HumanEval pass@1 | ~58% (the 2B ceiling; ~76% within the retry budget) |
-| Multi-step repair (locate→fix→test) | agentic eval | 3/3 |
+| Single-function synthesis | HumanEval · MBPP (within max_iters=3) | HumanEval ~88%, MBPP ~64% (latest 40/25-task runs); ~58% raw pass@1 = the 2B ceiling, lifted by the harness's retry |
+| Cross-language synthesis | MultiPL-E (JavaScript) | 19/20 = 95% within-budget — works beyond Python |
+| Multi-step repair (locate→fix→test) | agentic eval | 3/3 (easy) + 3/3 (hard: off-by-one, boundary, helper-localization) |
 | Multi-function builds (functions) | build eval, hidden-oracle scored | 7/7 easy · ~4–5/5 harder (algorithms, error-handling, parsing; one case varies) |
 | Class / OOP builds | build-class eval, hidden-oracle | 8/8 (validated across two runs) |
 | Code intelligence / refactoring | deterministic | 100% reliable (it's AST/git, not the model) |
