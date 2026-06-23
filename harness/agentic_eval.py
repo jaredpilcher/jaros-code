@@ -106,6 +106,61 @@ SCENARIOS = [
     },
 ]
 
+# HARDER repair tier (suite='agentic-hard'): subtle LOGIC bugs (no traceback hint), a boundary
+# condition, and a bug hidden in a HELPER the tested function calls — localization + reasoning.
+HARD_SCENARIOS = [
+    {   # subtle off-by-one in a slice (logic only, no exception)
+        "name": "off_by_one",
+        "request": "first_half returns too many characters. Find and fix the bug.",
+        "files": {
+            "textops.py": (
+                "def first_half(s):\n"
+                "    return s[:len(s) // 2 + 1]  # one char too many\n"
+            ),
+            "test_textops.py": (
+                "from textops import first_half\n\n"
+                "def test_first_half():\n"
+                "    assert first_half('abcd') == 'ab'\n"
+                "    assert first_half('abcdef') == 'abc'\n"
+            ),
+        },
+    },
+    {   # boundary condition: > should be >=
+        "name": "boundary",
+        "request": "Eligibility at exactly the threshold is wrong. Fix the bug.",
+        "files": {
+            "eligibility.py": (
+                "def can_vote(age):\n"
+                "    return age > 18  # exactly 18 must be allowed\n"
+            ),
+            "test_eligibility.py": (
+                "from eligibility import can_vote\n\n"
+                "def test_can_vote():\n"
+                "    assert can_vote(18) is True\n"
+                "    assert can_vote(17) is False\n"
+            ),
+        },
+    },
+    {   # the bug is in a HELPER, not the tested function (root-cause localization)
+        "name": "helper_localization",
+        "request": "total_value is off. Locate the root cause and fix it.",
+        "files": {
+            "pricing.py": (
+                "def _line_total(item):\n"
+                "    return item['qty'] * item['cost'] + 1  # stray +1\n\n"
+                "def total_value(items):\n"
+                "    return sum(_line_total(i) for i in items)\n"
+            ),
+            "test_pricing.py": (
+                "from pricing import total_value\n\n"
+                "def test_total_value():\n"
+                "    assert total_value([{'qty': 2, 'cost': 3}]) == 6\n"
+                "    assert total_value([{'qty': 1, 'cost': 5}, {'qty': 3, 'cost': 2}]) == 11\n"
+            ),
+        },
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -135,19 +190,20 @@ def _seed_repo(files: dict[str, str], tmp_dir: str) -> None:
 # Main eval runner
 # ---------------------------------------------------------------------------
 
-def run_agentic_eval(verbose: bool = False, planner=None, persist: bool = True) -> dict:
-    """Run all SCENARIOS end-to-end through agent_loop; return a scorecard dict.
+def run_agentic_eval(verbose: bool = False, planner=None, persist: bool = True,
+                     scenarios=None, suite: str = "agentic") -> dict:
+    """Run all SCENARIOS end-to-end through the default flow; return a scorecard dict.
 
     Uses the REAL model (gemma via llama.cpp) by default. `planner` is injectable so the CI test
     can drive the loop deterministically (model-free); `persist=False` skips the history write so
-    tests don't pollute the trend.
+    tests don't pollute the trend. `scenarios`/`suite` let a harder tier reuse this runner.
     """
     from harness.agent_loop import agent_loop
 
     results = []
     started = time.time()
 
-    for sc in SCENARIOS:
+    for sc in (scenarios or SCENARIOS):
         with tempfile.TemporaryDirectory(prefix=f"jcode-agentic-{sc['name']}-") as tmp:
             _seed_repo(sc["files"], tmp)
 
@@ -183,23 +239,31 @@ def run_agentic_eval(verbose: bool = False, planner=None, persist: bool = True) 
     print(f"\n=== agentic eval: {solved_n}/{total} = {solved_n / total * 100:.0f}% ===")
 
     scorecard = {
-        "suite": "agentic",
+        "suite": suite,
         "solved": solved_n,
         "total": total,
         "perTask": results,
     }
 
     if persist:
-        _append_history(solved_n, total, elapsed)
+        _append_history(solved_n, total, elapsed, suite)
     return scorecard
+
+
+def run_agentic_eval_hard(verbose: bool = False, persist: bool = True) -> dict:
+    """The HARDER repair tier (suite='agentic-hard'): subtle off-by-one, a boundary condition, and a
+    bug hidden in a HELPER (not the tested function) — localization + reasoning, not typos. Drives
+    the unsaturated bar past the easy 3/3."""
+    return run_agentic_eval(verbose=verbose, persist=persist,
+                            scenarios=HARD_SCENARIOS, suite="agentic-hard")
 
 
 # ---------------------------------------------------------------------------
 # Trend history append
 # ---------------------------------------------------------------------------
 
-def _append_history(solved: int, total: int, elapsed_sec: float) -> None:
-    """Append one trend line to history.jsonl with suite='agentic'.
+def _append_history(solved: int, total: int, elapsed_sec: float, suite: str = "agentic") -> None:
+    """Append one trend line to history.jsonl with the given suite.
 
     The format mirrors ``eval_runner._persist``'s summary rows exactly so
     ``/trend`` renders agentic progress alongside the other suite results.
@@ -211,7 +275,7 @@ def _append_history(solved: int, total: int, elapsed_sec: float) -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     summary = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "suite": "agentic",
+        "suite": suite,
         "model": _active_model_label(),
         "passRate": round(solved / total, 4) if total else 0.0,
         "solved": solved,
