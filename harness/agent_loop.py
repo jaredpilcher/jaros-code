@@ -114,8 +114,11 @@ def execute_step(step: Step, cwd: str) -> tuple[bool, str]:
             return (False, f"{arg}: not found")
         return (True, f"read {arg} ({len(p.read_text(encoding='utf-8').splitlines())} lines)")
     if a == "run":
-        r = subprocess.run(arg or "python -m pytest -q", cwd=cwd, shell=True,
-                           capture_output=True, text=True, timeout=60)
+        try:
+            r = subprocess.run(arg or "python -m pytest -q", cwd=cwd, shell=True,
+                               capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            return (False, "tests fail (timed out after 60s)")   # slow suite -> non-green, not a crash
         return (r.returncode == 0, "tests pass" if r.returncode == 0 else "tests fail")
     if a == "fix":
         from harness.multi_file import multi_file_fix

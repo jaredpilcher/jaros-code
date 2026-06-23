@@ -167,14 +167,17 @@ HARD_SCENARIOS = [
 # ---------------------------------------------------------------------------
 
 def _pytest_passes(repo_dir: str) -> bool:
-    """Return True iff ``pytest -q`` exits 0 in repo_dir."""
-    r = subprocess.run(
-        ["python", "-m", "pytest", "-q", "--tb=short"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    """Return True iff ``pytest -q`` exits 0 in repo_dir. A timeout is non-passing, not a crash."""
+    try:
+        r = subprocess.run(
+            ["python", "-m", "pytest", "-q", "--tb=short"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return r.returncode == 0
 
 

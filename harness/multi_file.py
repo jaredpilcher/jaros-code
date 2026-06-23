@@ -94,7 +94,11 @@ def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
 
 
 def _run(cwd: str, test_cmd: str) -> tuple[bool, str]:
-    proc = subprocess.run(test_cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=30)
+    try:
+        proc = subprocess.run(test_cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        # a slow/large real-world suite must NOT crash the harness — a timeout is a non-green run
+        return False, f"test command timed out after 30s (treated as not-passing): {test_cmd}"
     return proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
 
 
