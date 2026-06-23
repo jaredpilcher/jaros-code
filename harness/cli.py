@@ -35,6 +35,7 @@ Commands (Claude-Code-style):
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
+  /explain <function|file>      plain-English summary of what code does
   /remember <note>              save a convention/learning to project memory (.jcode/memory.md)
   /memory                       show the project memory
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
@@ -380,6 +381,39 @@ class JcodeCli:
         if not out:
             return "no changes since the last /agent checkpoint"
         return "\n".join(out[:200]) + ("\n... (diff truncated)" if len(out) > 200 else "")
+
+    def cmd_explain(self, arg: str) -> str:
+        """Explain a function or file in plain English — Claude-Code's 'what does this do'. For a
+        symbol, finds its definition and extracts the function/class; for a file path, reads it;
+        then the model summarizes. Generative (the 2B explains code well), not a hard guarantee."""
+        a = arg.strip()
+        if not a:
+            return "usage: /explain <function|file>"
+        import ast
+        from pathlib import Path
+        from jaros.llm import LlmRequest
+        if Path(a).is_file():
+            code, target = Path(a).read_text(encoding="utf-8"), a
+        else:
+            from harness.navigate import find_definition
+            ds = find_definition(".", a)
+            if not ds:
+                return f"no definition of {a} found (pass a file path to explain a whole file)"
+            src = Path(ds[0]["file"]).read_text(encoding="utf-8")
+            seg = None
+            try:
+                for node in ast.walk(ast.parse(src)):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) \
+                            and node.name == a:
+                        seg = ast.get_source_segment(src, node)
+                        break
+            except SyntaxError:
+                pass
+            code, target = (seg or src), f"{a} ({ds[0]['file']})"
+        prompt = ("Explain in plain English what this Python code does (2-3 sentences, no code):\n\n"
+                  + code[:2500] + "\n\nExplanation:")
+        out = self.llm.complete(LlmRequest(prompt=prompt, params={"max_tokens": 180})).text
+        return f"explain {target}:\n  {out.strip()}"
 
     def cmd_callers(self, arg: str) -> str:
         """Call hierarchy (EXT-004): functions that CALL a symbol — only call sites, each with its
