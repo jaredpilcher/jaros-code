@@ -24,9 +24,22 @@ the bar to flatter the system; when it masters a level, the level gets harder. I
 home-grown evals are not good enough, hardening them — and pulling in tougher real
 benchmarks — is itself required work, not optional.
 
-The wager behind this system: *small models have not been useful for development
-because their harnesses are thin, not because the models are incapable.* A
-deterministic, reproducible, capability-safe harness that decomposes development
+The wager behind this system — and, as of 2026-06-23, its explicit, non-negotiable
+**founding assumption**: *small models have not been useful for development because
+their harnesses are thin, not because the models are incapable.* We assume there is
+**NO model-capability ceiling.** Despite the industry's belief that small models top
+out at some pass rate, **100% on HumanEval (and MBPP, SWE-bench, and the rest) is
+reachable — by harness engineering alone.** Every eval failure is therefore a **harness
+failure to diagnose and fix**, never a model limit to accept: the harness did not
+decompose, scaffold, retrieve, verify, or iterate enough to extract the capability the
+model already has. *"The 2B can't"* and *"the model ceiling"* are **forbidden
+conclusions**; the only question a failure poses is *what generic scaffolding is
+missing.* The pursuit of 100% must be **generic** — general mechanisms that lift
+problem-solving across the board, proven on held-out evals — and never overfitting or
+special-casing benchmark items, which would prove nothing and violate honest
+measurement (commitment 3).
+
+A deterministic, reproducible, capability-safe harness that decomposes development
 into many small, single-purpose, well-scoped agent decisions — each backed by a
 deterministic tool — can close the gap that a single large prompt to a single
 large model cannot.

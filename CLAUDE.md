@@ -28,6 +28,27 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 When a change would violate a tenet, **STOP and flag the conflict** — do not
 silently resolve it.
 
+## Founding assumption — THERE IS NO 2B CEILING (owner directive, 2026-06-23, non-negotiable)
+
+**We build on the explicit assumption that the model has NO hard capability ceiling. Despite what
+the industry believes about small models, every eval failure is a HARNESS failure — not a model
+limit.** If the 2B gets a HumanEval/MBPP/SWE-bench problem wrong, the harness did not decompose,
+scaffold, retrieve, verify, or iterate enough to extract the capability the model already has. The
+goal is **100% on HumanEval and the other benchmarks**, reached in a **true generic way** — general
+harness mechanisms that lift problem-solving across the board, NEVER overfitting or special-casing
+benchmark items (that would violate Tenet 3 and prove nothing).
+
+- **"The 2B can't" / "near the 2B ceiling" / "the model ceiling" are FORBIDDEN conclusions.** The
+  only question is: *what scaffolding is the harness missing?* When you catch yourself reaching for
+  "ceiling," STOP — that is the drift; probe the failure as a harness gap instead.
+- This is just PRIME-001's founding wager taken to its logical end ("small models are unuseful
+  because their harnesses are thin, not because the models are incapable"). The pass rate is a
+  statement about *our harness*, not about the model. Drive it to 100% generically.
+- Concretely: diagnose WHY each failure happens (raw-probe the model), then build the GENERIC
+  mechanism that fixes that class — better decomposition, self-verification/repair loops, richer
+  test-feedback, retrieval, planning, ensembling-by-mechanism — and prove it lifts a HELD-OUT eval,
+  not just the one you tuned on.
+
 ## Ownership mandate (binds every session — do not forget)
 
 **You own this.** The owner has put you in charge of driving jaros-code's convergence
@@ -61,10 +82,12 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   approach feels right, just avoid getting stuck in a rut of doing the same thing over and over and
   FAILING. but if you continue to improve, go for it." When an approach is YIELDING committed wins
   (e.g. the refactor/navigation family), double down. When it's REVERTING repeatedly (best-of-N and
-  cascade tuning hit the 2B ceiling — two reverts), STOP and switch AXES — don't grind the same
-  failing experiment. Vary the KIND of work (capability builds vs evals vs research) so the loop
-  never spins on one dead end. The single-function pass rate is near the 2B ceiling; the productive
-  axis is NEW capability classes (multi-file → multi-step → refactoring → navigation), each
+  cascade tuning reverted twice), STOP and switch AXES — but understand WHY: those specific
+  approaches were the wrong scaffolding, NOT evidence of a model ceiling (see Founding Assumption —
+  "ceiling" is a forbidden conclusion). Vary the KIND of work (capability builds vs evals vs research)
+  so the loop never spins on one dead end. The single-function pass rate reflects what the CURRENT
+  harness extracts; richer scaffolding lifts it toward 100%. Productive axes include NEW capability
+  classes (multi-file → multi-step → refactoring → navigation) AND deeper generic extraction, each
   deterministic + test-gated where possible. ALSO vary WHICH part of the system grows —
   **agents, tools, evals, or orchestration/wiring** (the census growth axes), not the same one
   every cycle — and pull fresh ideas from ONLINE research, not just internal iteration. (Owner,
