@@ -1,0 +1,18 @@
+{
+  "REQ-1": [
+    { "file": "harness/multi_file.py", "startLine": 96, "endLine": 108 },
+    { "file": "harness/agent_loop.py", "startLine": 116, "endLine": 122 },
+    { "file": "harness/agentic_eval.py", "startLine": 169, "endLine": 181 },
+    { "file": "harness/cli.py", "startLine": 556, "endLine": 592 }
+  ],
+  "REQ-2": [
+    { "file": "harness/multi_file.py", "startLine": 96, "endLine": 108 }
+  ],
+  "REQ-3": [
+    { "file": "harness/cli.py", "startLine": 145, "endLine": 178 }
+  ],
+  "REQ-4": [
+    { "file": "harness/mbpp.py", "startLine": 45, "endLine": 72 },
+    { "file": "harness/humaneval.py", "startLine": 60, "endLine": 72 }
+  ]
+}
