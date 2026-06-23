@@ -229,6 +229,9 @@ CLASS_SCENARIOS = [
                    "    assert c.value() == 0\n"),
     },
     {
+        # Known-hard (build-class 3/4): the 2B names the attribute `self.balance` AND the method
+        # `balance()` the same -> the instance attribute shadows the method -> `a.balance()` calls an
+        # int (TypeError). A genuine model-judgement gotcha (not an artifact), kept as the honest 4th.
         "name": "bankaccount",
         "intent": "a BankAccount class starting at balance 0 with deposit(amount), withdraw(amount), "
                   "and balance() returning the current balance",
