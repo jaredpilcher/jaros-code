@@ -173,7 +173,10 @@ class JcodeCli:
         parts = arg.split()
         if not parts:
             return "usage: /files <pattern> [path]"
-        out = self._tool("fs.find", {"pattern": parts[0], "path": parts[1] if len(parts) > 1 else "."})
+        pattern, path = parts[0], parts[1] if len(parts) > 1 else "."
+        if len(parts) == 1 and "/" in pattern:   # natural path-glob 'harness/*.py' -> split dir + glob
+            path, pattern = pattern.rsplit("/", 1)
+        out = self._tool("fs.find", {"pattern": pattern, "path": path or "."})
         ms = out.get("matches", []) if isinstance(out, dict) else []
         return f"{len(ms)} file(s):" + "".join(f"\n  {m}" for m in ms[:25])
 
