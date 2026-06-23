@@ -38,6 +38,17 @@ goal is **100% on HumanEval and the other benchmarks**, reached in a **true gene
 harness mechanisms that lift problem-solving across the board, NEVER overfitting or special-casing
 benchmark items (that would violate Tenet 3 and prove nothing).
 
+**The 100% must itself be 100% HONEST (Tenet 3 — this binds the whole pursuit).** The number only
+counts if it reflects GENUINE generic solving, measured honestly: on **held-out** problems the
+mechanism was never tuned on, from the **visible spec** (pass@1, or iteration against the given
+docstring examples) — NEVER by fitting to the eval's HIDDEN tests, detecting/branching on benchmark
+items, hardcoding or memorizing answers, relaxing an oracle, leaking expected outputs into the
+solving prompt, or any move that raises the score without real capability. **A dishonest 100% is
+worse than an honest 58%** — it proves nothing and corrupts the only signal we have. If a change
+makes the number go up by anything other than the model genuinely solving more, **STOP — that is a
+Tenet-3 violation**, not progress. Always keep a held-out set the harness has never been tuned
+against, and report pass@1 honestly alongside any within-budget figure (label which is which).
+
 - **"The 2B can't" / "near the 2B ceiling" / "the model ceiling" are FORBIDDEN conclusions.** The
   only question is: *what scaffolding is the harness missing?* When you catch yourself reaching for
   "ceiling," STOP — that is the drift; probe the failure as a harness gap instead.

@@ -39,6 +39,15 @@ problem-solving across the board, proven on held-out evals — and never overfit
 special-casing benchmark items, which would prove nothing and violate honest
 measurement (commitment 3).
 
+**And the 100% must itself be 100% honest** (commitment 3 binds the whole pursuit). The
+number counts only if it is GENUINE generic solving, measured on **held-out** problems
+the harness was never tuned on, from the **visible spec** (pass@1, or iteration against
+the given examples) — never by fitting to the eval's hidden tests, detecting benchmark
+items, hardcoding/memorizing answers, relaxing an oracle, or leaking expected outputs
+into the solving prompt. **A dishonest 100% is worse than an honest 58%**: it proves
+nothing and corrupts the only signal we have. If the number rises by anything other than
+the model genuinely solving more, that is a defect to STOP and flag, not progress.
+
 A deterministic, reproducible, capability-safe harness that decomposes development
 into many small, single-purpose, well-scoped agent decisions — each backed by a
 deterministic tool — can close the gap that a single large prompt to a single
