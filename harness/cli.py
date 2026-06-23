@@ -564,7 +564,10 @@ def repl() -> int:
         if line.strip() == "/clear":
             print("\033[2J\033[H", end="")
             continue
-        out = cli.handle(line)
+        try:
+            out = cli.handle(line)
+        except Exception as exc:            # one bad command must NOT kill the interactive session
+            out = f"\033[31merror:\033[0m {exc}"
         if out:
             print(out)
 
@@ -579,7 +582,11 @@ def main() -> int:
     import sys
     args = sys.argv[1:]
     if args:
-        print(JcodeCli().handle(" ".join(args)))
+        try:
+            print(JcodeCli().handle(" ".join(args)))
+        except Exception as exc:            # a one-shot must report cleanly, not dump a traceback
+            print(f"\033[31merror:\033[0m {exc}")
+            return 1
         return 0
     return repl()
 
