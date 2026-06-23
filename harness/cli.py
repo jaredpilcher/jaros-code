@@ -553,6 +553,9 @@ class JcodeCli:
         m = _re.search(r"\btell me about\s+(\w+)", rl)
         if m:
             return ("about", m.group(1))
+        m = _re.search(r"\b(?:explain|describe|what\s+does)\s+(?:the\s+|a\s+)?(\w+)", rl)
+        if m:
+            return ("explain", m.group(1))
         m = _re.search(r"\b(?:callers\s+(?:of|for)|what\s+calls)\s+(\w+)", rl)
         if m:
             return ("callers", m.group(1))
