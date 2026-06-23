@@ -65,7 +65,9 @@ def problem_to_task(p: dict) -> Task:
             "correct implementation."
         ),
         target="solution.py",
-        test_cmd="python -m pytest -q",
+        # Target our test explicitly: a `test_*` entry point would otherwise be collected by pytest
+        # via the test's `from solution import ...` and spuriously fail (see mbpp.py). Defensive.
+        test_cmd="python -m pytest -q test_solution.py::test_humaneval",
         files={"solution.py": solution, "test_solution.py": test_file},
         tier=HUMANEVAL_TIER,
     )

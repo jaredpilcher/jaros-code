@@ -62,8 +62,11 @@ def problem_to_task(p: dict) -> Task | None:
         + f"`{entry}` and pass these tests:\n"
         + "\n".join(p["test_list"])
     )
+    # Target the real test explicitly: when the entry point is named like `test_duplicate`, the
+    # test's `from solution import test_duplicate` makes pytest COLLECT that imported function as a
+    # test (called with no args -> error -> spurious suite failure). `::test_mbpp` runs only our test.
     return Task(id=f"mbpp_{p['task_id']}", instruction=instruction, target="solution.py",
-                test_cmd="python -m pytest -q",
+                test_cmd="python -m pytest -q test_solution.py::test_mbpp",
                 files={"solution.py": solution, "test_solution.py": test_file},
                 tier=MBPP_TIER)
 
