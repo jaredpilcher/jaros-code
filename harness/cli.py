@@ -143,10 +143,17 @@ class JcodeCli:
         return head + "".join(f"\n  {m['file']}:{m['line']}  {m['text']}" for m in ms[:15])
 
     def cmd_grep(self, arg: str) -> str:
+        import os
         parts = arg.split()
         if not parts:
             return "usage: /grep <pattern> [path]"
-        out = self._tool("fs.grep", {"pattern": parts[0], "path": parts[1] if len(parts) > 1 else "."})
+        # A multi-word pattern (e.g. 'def fix_loop') was mis-split into pattern='def' path='fix_loop'.
+        # Only peel off a trailing PATH arg if it actually exists; otherwise the whole input is the pattern.
+        if len(parts) > 1 and os.path.exists(parts[-1]):
+            pattern, path = " ".join(parts[:-1]), parts[-1]
+        else:
+            pattern, path = arg, "."
+        out = self._tool("fs.grep", {"pattern": pattern, "path": path})
         ms = out.get("matches", []) if isinstance(out, dict) else []
         return f"{len(ms)} match(es):" + "".join(f"\n  {m['file']}:{m['line']}  {m['text']}" for m in ms[:15])
 
