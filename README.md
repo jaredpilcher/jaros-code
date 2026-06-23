@@ -31,7 +31,7 @@ code, all on a Jetson at zero cost" is a real tool.
 
 | Capability | How it's measured | Result |
 |---|---|---|
-| Single-function synthesis | HumanEval · MBPP (within max_iters=3) | HumanEval ~88%, MBPP ~64% (latest 40/25-task runs); ~58% raw pass@1 = the 2B ceiling, lifted by the harness's retry |
+| Single-function synthesis | HumanEval · MBPP (within max_iters=3) | HumanEval ~88% (40), MBPP ~62% (40); ~58% raw pass@1 = the 2B ceiling, lifted by the harness's retry |
 | Cross-language synthesis | MultiPL-E (JavaScript) | 19/20 = 95% within-budget — works beyond Python |
 | Multi-step repair (locate→fix→test) | agentic eval | 3/3 (easy) + 3/3 (hard: off-by-one, boundary, helper-localization) |
 | Multi-function builds (functions) | build eval, hidden-oracle scored | 7/7 easy · ~4–5/5 harder (algorithms, error-handling, parsing; one case varies) |
