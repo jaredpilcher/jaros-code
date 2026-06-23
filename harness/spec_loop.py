@@ -119,7 +119,47 @@ def _extract_signatures(intent: str) -> list[tuple[str, str]]:
     return out
 
 
+def _detect_class(intent: str) -> str | None:
+    """Deterministic: is this a CLASS build? Return the ClassName (e.g. 'Stack' from 'a Stack class
+    with ...') or None. The per-function path builds methods as standalone functions (broken `self`),
+    so class intents must route to the whole-class build instead."""
+    import re
+    m = (re.search(r"\b([A-Z][A-Za-z0-9]*)\s+class\b", intent)
+         or re.search(r"\bclass\s+([A-Z][A-Za-z0-9]*)", intent))
+    return m.group(1) if m else None
+
+
+def _build_class(intent: str, cwd: str, class_name: str, methods: list, *, max_iters: int = 3,
+                 verbose: bool = False) -> dict:
+    """Build a CLASS (the OOP capability). Stub the class with `*args` methods so fix_loop routes to
+    the WHOLE-FILE rewriter (which writes a coherent class — the per-function body-completer can't,
+    it drops the `self`/class frame). The test-writer writes a behavioral test from the intent;
+    _sanitize_source strips the '>>>FILE'/fence artifacts the rewriter sometimes appends."""
+    from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
+    stub = f"class {class_name}:\n" + "".join(
+        f"    def {m}(self, *args, **kwargs):\n        raise NotImplementedError\n" for m, _ in methods
+    ) if methods else f"class {class_name}:\n    pass\n"
+    (Path(cwd) / "solution.py").write_text(stub, encoding="utf-8", newline="\n")
+    rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
+    [tw] = writer.decide({"intent": intent, "module": "solution", "func": class_name,
+                          "signature": f"class {class_name}",
+                          "test_path": str(Path(cwd) / "test_solution.py"), "seed": 1})
+    if tw.type == "code.write_file":
+        rt.apply(tw)
+    fix_loop(str(Path(cwd) / "solution.py"), intent, _TEST_CMD, max_iters=max_iters,
+             cwd=cwd, verbose=verbose)
+    sp = Path(cwd) / "solution.py"
+    sp.write_text(_sanitize_source(sp.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+    green, _ = _run(cwd, _TEST_CMD)
+    return {"solved": green, "flow": "build-class", "requirements": len(methods),
+            "note": f"class {class_name} ({len(methods)} methods)"}
+
+
 def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False) -> dict:
+    cls = _detect_class(intent)                         # class intents route to the whole-class build
+    if cls:
+        return _build_class(intent, cwd, cls, _extract_signatures(intent),
+                            max_iters=max_iters, verbose=verbose)
     sigs = _extract_signatures(intent)                  # deterministic signatures beat 2B params
     if len(sigs) >= 2:                                   # TASK-9: per-function concrete-sig build
         return _build_per_function(intent, cwd, sigs, max_iters=max_iters, verbose=verbose)
@@ -162,25 +202,31 @@ def _build_whole_file(intent: str, cwd: str, names: list, *, max_iters: int = 3,
 
 
 def _sanitize_source(text: str) -> str:
-    """Deterministic output-plane cleanup: strip trailing model artifacts (stray closing brackets
-    like `}}}`) that make an otherwise-CORRECT module fail to parse. No-op if it already parses.
-    Diagnosed on the build-hard tier — the 2B's logic was right (safe_divide's None-guard etc.), only
-    the surface was dirty; that's an execution-plane defect, not a reasoning limit."""
+    """Deterministic output-plane cleanup: repair an otherwise-CORRECT module that won't parse because
+    the model appended artifacts — stray closing brackets ('}}}'), markdown fences, or a REPL/delimiter
+    marker ('>>>FILE' followed by a duplicated body). No-op if it already parses. Diagnosed on the
+    build-hard tier (safe_divide's '}}}') and class builds (a correct class + a '>>>FILE' duplicate):
+    the 2B's logic was right, only the surface was dirty — an execution-plane defect, not a reasoning
+    limit. So OOP/class builds work once the artifacts are stripped."""
     import ast
-    try:
-        ast.parse(text)
-        return text
-    except SyntaxError:
-        pass
+
+    def _ok(t: str) -> bool:
+        try:
+            ast.parse(t)
+            return True
+        except SyntaxError:
+            return False
+
+    if _ok(text):
+        return text                                     # already valid — never touch good output
     lines = text.splitlines()
+    cut = next((i for i, ln in enumerate(lines) if ln.lstrip().startswith(">>>")), len(lines))
+    lines = lines[:cut]                                 # drop a '>>>FILE'/REPL marker and everything after
+    lines = [ln for ln in lines if not ln.strip().startswith("```")]   # drop markdown fences
     while lines and (not lines[-1].strip() or set(lines[-1].strip()) <= set("}])")):
         lines.pop()                                     # drop blank / stray-bracket trailing lines
     cleaned = "\n".join(lines) + "\n"
-    try:
-        ast.parse(cleaned)
-        return cleaned
-    except SyntaxError:
-        return text                                     # couldn't repair — leave it to fail honestly
+    return cleaned if _ok(cleaned) else text            # repaired, or leave it to fail honestly
 
 
 def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,

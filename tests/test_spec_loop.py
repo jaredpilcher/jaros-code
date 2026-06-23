@@ -57,3 +57,26 @@ def test_sanitize_source_strips_stray_brackets():
     assert "}}}" not in clean and "return x + 1" in clean
     ok = "def g():\n    return 1\n"
     assert _sanitize_source(ok) == ok      # untouched when already valid
+
+
+def test_sanitize_source_strips_repl_marker_and_duplicate():
+    """class-build finding: a CORRECT class followed by a '>>>FILE' marker + a duplicated body
+    failed to parse. _sanitize_source cuts at the first '>>>' artifact, keeping the valid prefix."""
+    from harness.spec_loop import _sanitize_source
+    import ast
+    dirty = ("class Stack:\n    def __init__(self):\n        self.items = []\n"
+             "    def push(self, x):\n        self.items.append(x)\n"
+             ">>>FILE\n>>>class Stack:\n    def __init__(self):\n        self.items = []\n")
+    clean = _sanitize_source(dirty)
+    ast.parse(clean)
+    assert ">>>" not in clean and "class Stack:" in clean and "def push" in clean
+
+
+def test_detect_class_routing():
+    """OOP: class intents route to the whole-class build; function intents do not (no regression)."""
+    from harness.spec_loop import _detect_class
+    assert _detect_class("a Stack class with push(x), pop()") == "Stack"
+    assert _detect_class("a BankAccount class starting at balance 0") == "BankAccount"
+    assert _detect_class("a Rectangle class created with width and height") == "Rectangle"
+    assert _detect_class("a math module with add(a, b) and subtract(a, b)") is None
+    assert _detect_class("largest(xs) returning the max, total(xs) the sum") is None

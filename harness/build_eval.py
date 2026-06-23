@@ -197,6 +197,66 @@ def run_build_eval_hard(verbose: bool = False, persist: bool = True) -> dict:
     past the saturated easy 7/7. Drive improvement against THIS, not the maxed easy tier."""
     return run_build_eval(verbose=verbose, persist=persist,
                           scenarios=HARD_SCENARIOS, suite="build-hard")
+
+
+# CLASS/OOP builds (suite='build-class') — a NEW capability CLASS beyond standalone functions.
+# Probe finding: the 2B writes classes fine and the flow's whole-file path already emits a correct
+# class; the win was stripping the '>>>FILE' output artifact (_sanitize_source).
+CLASS_SCENARIOS = [
+    {
+        "name": "stack",
+        "intent": "a Stack class with push(x) to add an item, pop() returning and removing the last "
+                  "item, and is_empty() returning True when empty",
+        "oracle": ("from solution import Stack\n\n"
+                   "def test_all():\n"
+                   "    s = Stack()\n"
+                   "    assert s.is_empty() is True\n"
+                   "    s.push(1); s.push(2)\n"
+                   "    assert s.pop() == 2\n"
+                   "    assert s.is_empty() is False\n"),
+    },
+    {
+        "name": "counter",
+        "intent": "a Counter class with increment() to add one, value() returning the current count "
+                  "starting at 0, and reset() setting it back to 0",
+        "oracle": ("from solution import Counter\n\n"
+                   "def test_all():\n"
+                   "    c = Counter()\n"
+                   "    assert c.value() == 0\n"
+                   "    c.increment(); c.increment()\n"
+                   "    assert c.value() == 2\n"
+                   "    c.reset()\n"
+                   "    assert c.value() == 0\n"),
+    },
+    {
+        "name": "bankaccount",
+        "intent": "a BankAccount class starting at balance 0 with deposit(amount), withdraw(amount), "
+                  "and balance() returning the current balance",
+        "oracle": ("from solution import BankAccount\n\n"
+                   "def test_all():\n"
+                   "    a = BankAccount()\n"
+                   "    a.deposit(100)\n"
+                   "    a.withdraw(30)\n"
+                   "    assert a.balance() == 70\n"),
+    },
+    {
+        "name": "rectangle",
+        "intent": "a Rectangle class created with width and height, with area() returning "
+                  "width * height and perimeter() returning 2 * (width + height)",
+        "oracle": ("from solution import Rectangle\n\n"
+                   "def test_all():\n"
+                   "    r = Rectangle(3, 4)\n"
+                   "    assert r.area() == 12\n"
+                   "    assert r.perimeter() == 14\n"),
+    },
+]
+
+
+def run_class_eval(verbose: bool = False, persist: bool = True) -> dict:
+    """Class/OOP builds (suite='build-class') — the NEW capability class: stateful objects with
+    methods, beyond standalone functions. Same hidden-oracle scoring (instantiate + exercise)."""
+    return run_build_eval(verbose=verbose, persist=persist,
+                          scenarios=CLASS_SCENARIOS, suite="build-class")
 # #EXT-009-REQ-6 End
 
 
