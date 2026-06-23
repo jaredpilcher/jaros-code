@@ -21,8 +21,18 @@ _PROMPT = (
     "Complete this Python function. Output ONLY the function body — the indented "
     "statements that go after the signature and docstring. NO signature, NO docstring, "
     "NO markdown fences, NO explanation. Indent every line under the function.\n\n"
-    "TASK: {instruction}\n{feedback}"
+    "{edge}TASK: {instruction}\n{feedback}"
     "FUNCTION (keep this exactly, write the body that follows):\n{sig_doc}\n"
+)
+
+# Generic edge-case scaffolding (no-ceiling pursuit, 2026-06-23): the diagnosed HumanEval failures
+# were ALL edge-case fall-throughs (function returns None on empty input). This is a generic coding
+# concern, not benchmark-specific. Gated for held-out A/B measurement; promoted to default only if it
+# lifts a held-out slice.
+_EDGECASE = (
+    "Handle EVERY input the docstring implies, including edge cases — empty string/list, zero, "
+    "negative, single-element, and boundary values. Make sure every code path returns the correct "
+    "value; never fall through to an implicit None.\n\n"
 )
 
 _STUB_LINE = re.compile(r"^\s*(pass|\.\.\.|raise\s+NotImplementedError.*)\s*$")
@@ -69,13 +79,16 @@ class BodyCompleterBoundary:
         instruction = ctx.get("instruction", "")
         feedback = ctx.get("feedback", "")
         fb = f"Your previous attempt failed:\n{feedback}\n" if feedback else ""
+        import os
+        # Default-ON (held-out A/B: HumanEval best-of-6 33/40 -> 37/40, +10%); disable with =0.
+        edge = "" if os.environ.get("JCODE_EDGECASE_PROMPT") == "0" else _EDGECASE
         params = {}
         if "temperature" in ctx:
             params["temperature"] = ctx["temperature"]
         if "seed" in ctx:
             params["seed"] = ctx["seed"]
         reply = self._llm.complete(LlmRequest(
-            prompt=_PROMPT.format(instruction=instruction, feedback=fb, sig_doc=sig_doc),
+            prompt=_PROMPT.format(edge=edge, instruction=instruction, feedback=fb, sig_doc=sig_doc),
             params=params)).text
         content = splice(sig_doc, reply)
         if not content:
