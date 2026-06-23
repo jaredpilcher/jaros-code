@@ -157,6 +157,30 @@ def _build_whole_file(intent: str, cwd: str, names: list, *, max_iters: int = 3,
             rt.apply(tw)
     fix_loop(str(Path(cwd) / f"{module}.py"), intent, _TEST_CMD, max_iters=max_iters,
              cwd=cwd, verbose=verbose)
+    sp = Path(cwd) / f"{module}.py"
+    sp.write_text(_sanitize_source(sp.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+
+
+def _sanitize_source(text: str) -> str:
+    """Deterministic output-plane cleanup: strip trailing model artifacts (stray closing brackets
+    like `}}}`) that make an otherwise-CORRECT module fail to parse. No-op if it already parses.
+    Diagnosed on the build-hard tier — the 2B's logic was right (safe_divide's None-guard etc.), only
+    the surface was dirty; that's an execution-plane defect, not a reasoning limit."""
+    import ast
+    try:
+        ast.parse(text)
+        return text
+    except SyntaxError:
+        pass
+    lines = text.splitlines()
+    while lines and (not lines[-1].strip() or set(lines[-1].strip()) <= set("}])")):
+        lines.pop()                                     # drop blank / stray-bracket trailing lines
+    cleaned = "\n".join(lines) + "\n"
+    try:
+        ast.parse(cleaned)
+        return cleaned
+    except SyntaxError:
+        return text                                     # couldn't repair — leave it to fail honestly
 
 
 def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,
@@ -231,7 +255,10 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
             (Path(cwd) / "solution.py").write_text(wf_sol, encoding="utf-8", newline="\n")
             flow = "build-hybrid"
 
-    final = (Path(cwd) / "solution.py").read_text(encoding="utf-8")
+    final_path = Path(cwd) / "solution.py"
+    final_path.write_text(_sanitize_source(final_path.read_text(encoding="utf-8")),
+                          encoding="utf-8", newline="\n")
+    final = final_path.read_text(encoding="utf-8")
     solved = "raise NotImplementedError" not in final     # all functions at least implemented
     return {"solved": solved, "flow": flow, "requirements": len(sigs),
             "note": f"{len(sigs)} functions ({flow.split('-', 1)[1]})"}

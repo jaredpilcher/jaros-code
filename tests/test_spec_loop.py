@@ -44,3 +44,16 @@ def test_plan_preview_fix(tmp_path):
         "from m import f\n\ndef test_f():\n    assert f() == 1\n", encoding="utf-8")
     from harness.spec_loop import plan_preview
     assert "FIX flow" in plan_preview("fix it", str(tmp_path))
+
+
+def test_sanitize_source_strips_stray_brackets():
+    """build-hard finding: a correct module + a trailing model artifact ('}}}') failed to parse.
+    _sanitize_source repairs it deterministically; no-op on already-valid source."""
+    from harness.spec_loop import _sanitize_source
+    import ast
+    dirty = "def f(x):\n    return x + 1\n}}}\n"
+    clean = _sanitize_source(dirty)
+    ast.parse(clean)                       # parses now (no exception)
+    assert "}}}" not in clean and "return x + 1" in clean
+    ok = "def g():\n    return 1\n"
+    assert _sanitize_source(ok) == ok      # untouched when already valid
