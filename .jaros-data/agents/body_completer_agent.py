@@ -96,8 +96,11 @@ def repair_indentation(llm, content: str, *, seed: int = 0) -> str:
     reply = llm.complete(LlmRequest(prompt=_REPAIR.format(code=content),
                                     params={"temperature": 0.0, "seed": seed})).text
     src = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
-    i = src.find("def ")
-    fixed = (src[i:] if i > 0 else src) + "\n"
+    # Drop any prose BEFORE the first code line, but KEEP leading imports/decorators/class — cutting
+    # to the first `def` would strip the stub's `from typing import List` / `import math` and cause a
+    # NameError (the dominant post-repair failure before this fix).
+    m = re.search(r"^\s*(?:from |import |@|class |def )", src, re.M)
+    fixed = (src[m.start():] if m else src).rstrip() + "\n"
     return fixed if _parses(fixed) else content
 
 
