@@ -80,10 +80,12 @@ class BodyCompleterBoundary:
         feedback = ctx.get("feedback", "")
         fb = f"Your previous attempt failed:\n{feedback}\n" if feedback else ""
         import os
-        # Default-ON. RELIABLE held-out A/B (80 probs, HumanEval 84-164, best-of-6): 51 -> 56 = +5 net
-        # (helped 9, hurt 4) ~ +6%. (An earlier 40-problem slice read +10% but that was noise; the
-        # 80-problem measurement is the honest figure.) Disable with JCODE_EDGECASE_PROMPT=0.
-        edge = "" if os.environ.get("JCODE_EDGECASE_PROMPT") == "0" else _EDGECASE
+        # TRIED + REVERTED (default OFF). It looked +6% on best-of-6, but that metric is NOISE
+        # (run-to-run swings of 35/40 vs 49/50). On DETERMINISTIC pass@1-greedy (the honest metric):
+        # baseline 34/50 -> edge 28/50 = -6 (helped 2, hurt 8) — the extra instruction distracts more
+        # than it helps. Kept gated for reference; enable only with JCODE_EDGECASE_PROMPT=1.
+        # LESSON: measure mechanism A/Bs on deterministic pass@1, never noisy best-of-6.
+        edge = _EDGECASE if os.environ.get("JCODE_EDGECASE_PROMPT") == "1" else ""
         params = {}
         if "temperature" in ctx:
             params["temperature"] = ctx["temperature"]
