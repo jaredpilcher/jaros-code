@@ -53,8 +53,12 @@ def splice(sig_doc: str, raw: str) -> str:
     re-emitting the whole function or dropping indentation."""
     raw = re.sub(r"```[\w+-]*", "", raw).replace("```", "")
     stripped = raw.strip("\n")
-    if stripped.lstrip().startswith("def "):   # model gave the whole function — use it
-        return stripped + "\n"
+    if stripped.lstrip().startswith("def "):   # model gave the whole function — use it, but KEEP
+        # any preceding imports/helpers from sig_doc; a re-emitted whole-fn that omits them otherwise
+        # causes NameError (dropped `from typing import List` / a helper like encode_cyclic).
+        idx = sig_doc.rfind("\ndef ")
+        preamble = sig_doc[:idx].rstrip() if idx > 0 else ""
+        return (preamble + "\n\n\n" if preamble else "") + stripped + "\n"
     body_lines = []
     for ln in raw.split("\n"):
         if ln.strip() == "":
