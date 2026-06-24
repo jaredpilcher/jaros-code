@@ -80,7 +80,9 @@ class BodyCompleterBoundary:
         feedback = ctx.get("feedback", "")
         fb = f"Your previous attempt failed:\n{feedback}\n" if feedback else ""
         import os
-        # Default-ON (held-out A/B: HumanEval best-of-6 33/40 -> 37/40, +10%); disable with =0.
+        # Default-ON. RELIABLE held-out A/B (80 probs, HumanEval 84-164, best-of-6): 51 -> 56 = +5 net
+        # (helped 9, hurt 4) ~ +6%. (An earlier 40-problem slice read +10% but that was noise; the
+        # 80-problem measurement is the honest figure.) Disable with JCODE_EDGECASE_PROMPT=0.
         edge = "" if os.environ.get("JCODE_EDGECASE_PROMPT") == "0" else _EDGECASE
         params = {}
         if "temperature" in ctx:
