@@ -43,7 +43,7 @@ def solve_pass1(task, *, edge: bool = False) -> str:
     edge_txt = _bc._EDGECASE if edge else ""
     prompt = _bc._PROMPT.format(edge=edge_txt, instruction=task.instruction, feedback="", sig_doc=sig_doc)
     reply = _llm().complete(LlmRequest(prompt=prompt, params={"temperature": 0.0})).text
-    return _bc.splice(sig_doc, reply)
+    return _bc.repair_indentation(_llm(), _bc.splice(sig_doc, reply))
 
 
 def run_pass1(tasks, *, edge: bool = False) -> tuple[int, list[str]]:
