@@ -10,8 +10,11 @@ minutes, not hours. Reusable for any stub Task (HumanEval, MBPP, ...).
 """
 from __future__ import annotations
 
+import ast
+import doctest
 import importlib.util
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -56,6 +59,100 @@ def run_pass1(tasks, *, edge: bool = False) -> tuple[int, list[str]]:
             try:
                 r = subprocess.run(t.test_cmd, cwd=d, shell=True, capture_output=True, text=True, timeout=60)
                 ok = r.returncode == 0
+            except subprocess.TimeoutExpired:
+                ok = False
+        passed += ok
+        if not ok:
+            fails.append(t.id)
+    return passed, fails
+
+
+# --- Self-gated reasoning ("thinking" only when needed) — owner's idea, 2026-06-25 -----------------
+# The 2B is not a thinking model; for the diffuse LOGIC failures (wrong reasoning, not malformed
+# output) a one-shot body is often wrong. Mechanism: solve direct; ONLY when direct fails the
+# function's OWN visible docstring examples (the model effectively self-detects it's wrong) spend a
+# reasoning pass (<think>..</think> then the body). CLEAN paired full-HumanEval verdict (direct
+# computed once, gate reuses it -> no re-run noise): 116 -> 119 deterministic pass@1 (+3; fixed
+# HumanEval 9/54/100; ZERO breakage; thought on only 9/164 ~5%). Honest (visible spec gates it,
+# hidden tests only score) and efficient. Was a clean win ONLY after removing two confounds: a flaky
+# gate (timeouts mis-firing) and best-of-6 / re-run non-determinism. See [[jaros-code-deterministic-pass1]].
+_THINK = (
+    "Solve this Python function. First, inside <think> </think>, reason about the algorithm: the "
+    "goal, the docstring examples, the exact steps and edge cases. Then AFTER </think> output ONLY "
+    "the function body (indented statements after the signature+docstring; no signature/docstring/"
+    "markdown).\n\nTASK: {instruction}\nFUNCTION:\n{sig_doc}\n<think>"
+)
+
+
+def _doctest_asserts(stub: str) -> list:
+    """(call, want) pairs from the LAST function's docstring >>> examples. Robust to malformed docs."""
+    try:
+        funcs = [n for n in ast.walk(ast.parse(stub)) if isinstance(n, ast.FunctionDef)]
+    except SyntaxError:
+        return []
+    if not funcs:
+        return []
+    doc = ast.get_docstring(funcs[-1]) or ""
+    try:
+        exs = doctest.DocTestParser().get_examples(doc)
+    except Exception:
+        return []
+    return [(e.source.strip(), e.want.strip()) for e in exs
+            if e.source.strip() and e.want.strip()
+            and e.source.split("(")[0].strip() not in ("import", "from", "print")]
+
+
+def _visible_ok(src: str, asserts: list) -> bool:
+    """True if src passes the docstring's own examples. Gate-think ONLY on a genuine AssertionError
+    (logic provably wrong); any other error/timeout -> True (don't think — the check is unreliable)."""
+    if not asserts:
+        return True
+    test = src + "\n" + "\n".join(f"assert ({s}) == ({w})" for s, w in asserts)
+    with tempfile.TemporaryDirectory() as d:
+        Path(d, "v.py").write_text(test, encoding="utf-8", newline="\n")
+        try:
+            r = subprocess.run([sys.executable, str(Path(d, "v.py"))],
+                               capture_output=True, text=True, timeout=30)
+        except Exception:
+            return True
+    return r.returncode == 0 or "AssertionError" not in (r.stderr or "")
+
+
+def solve_think(task) -> str:
+    """One reasoning pass then the body (deterministic, temp=0). For logic the one-shot body misses."""
+    with tempfile.TemporaryDirectory() as d:
+        stub = Path(setup_task(task, Path(d))).read_text(encoding="utf-8")
+    sig_doc = _bc.signature_and_docstring(stub)
+    reply = _llm().complete(LlmRequest(
+        prompt=_THINK.format(instruction=task.instruction, sig_doc=sig_doc),
+        params={"temperature": 0.0, "max_tokens": 512})).text
+    body = reply.rsplit("</think>", 1)[1] if "</think>" in reply else reply
+    return _bc.repair_indentation(_llm(), _bc.splice(sig_doc, body))
+
+
+def solve_gated(task) -> str:
+    """Direct solve; reason only when it fails the visible docstring examples (self-gated thinking)."""
+    direct = solve_pass1(task)
+    with tempfile.TemporaryDirectory() as d:
+        stub = Path(setup_task(task, Path(d))).read_text(encoding="utf-8")
+    if _visible_ok(direct, _doctest_asserts(stub)):
+        return direct
+    try:
+        return solve_think(task)
+    except Exception:
+        return direct
+
+
+def run_gated(tasks) -> tuple[int, list[str]]:
+    """Deterministic pass@1 with self-gated reasoning. Returns (passed, failing_ids)."""
+    passed, fails = 0, []
+    for t in tasks:
+        with tempfile.TemporaryDirectory() as d:
+            setup_task(t, Path(d))
+            Path(d, "solution.py").write_text(solve_gated(t), encoding="utf-8", newline="\n")
+            try:
+                ok = subprocess.run(t.test_cmd, cwd=d, shell=True, capture_output=True,
+                                    text=True, timeout=60).returncode == 0
             except subprocess.TimeoutExpired:
                 ok = False
         passed += ok
