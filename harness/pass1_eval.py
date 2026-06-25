@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import doctest
 import importlib.util
+import re
 import subprocess
 import sys
 import tempfile
@@ -37,11 +38,36 @@ def _llm():
     return _LLM
 
 
+def _is_generic_stub(stub: str) -> bool:
+    """MBPP-style stub: `def name(*args, **kwargs): raise NotImplementedError`. Body-only completion
+    keeps the useless *args signature, so the body's real params (n, s, ...) raise NameError. Such
+    stubs need WHOLE-function generation (the model writes the real signature)."""
+    return bool(re.search(r"def\s+\w+\(\s*\*args", stub))
+
+
+def _solve_whole(task, stub: str) -> str:
+    """Generate the COMPLETE function (real signature + body) for a generic *args stub. The contract
+    is in task.instruction (description + the asserts). Confirmed on MBPP: body-splice direct 15/60 ->
+    whole-function ~32/60 (the *args NameError fix; same idea as production's generic_stub -> rewriter)."""
+    m = re.search(r"def\s+(\w+)", stub)
+    name = m.group(1) if m else "solution"
+    prompt = (f"Write the complete Python function `{name}`. {task.instruction}\n\n"
+              "Output ONLY valid runnable Python: the full function definition (def ...:) with correct "
+              "indentation. No markdown, no explanation, no test or print calls.")
+    reply = _llm().complete(LlmRequest(prompt=prompt, params={"temperature": 0.0, "max_tokens": 512})).text
+    src = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+    i = src.find("def ")
+    src = (src[i:] if i > 0 else src) + "\n"
+    return _bc.repair_indentation(_llm(), src)
+
+
 def solve_pass1(task, *, edge: bool = False) -> str:
     """One greedy body completion for a stub Task -> the spliced solution source (deterministic)."""
     with tempfile.TemporaryDirectory() as d:
         target = setup_task(task, Path(d))
         stub = Path(target).read_text(encoding="utf-8")
+    if _is_generic_stub(stub):
+        return _solve_whole(task, stub)
     sig_doc = _bc.signature_and_docstring(stub)
     edge_txt = _bc._EDGECASE if edge else ""
     prompt = _bc._PROMPT.format(edge=edge_txt, instruction=task.instruction, feedback="", sig_doc=sig_doc)
@@ -135,9 +161,11 @@ def solve_gated(task) -> str:
     direct flounders most there and reasoning helps a lot (no-ex A/B: 58->73 = +15/95); or (b) direct
     fails the visible examples (self-detected wrong). Where examples EXIST and direct passes them, keep
     direct (reasoning just adds noise). The effect is heterogeneous, hence the gate."""
-    direct = solve_pass1(task)
     with tempfile.TemporaryDirectory() as d:
         stub = Path(setup_task(task, Path(d))).read_text(encoding="utf-8")
+    if _is_generic_stub(stub):          # MBPP-style *args stub -> whole-function (real signature)
+        return _solve_whole(task, stub)
+    direct = solve_pass1(task)
     asserts = _doctest_asserts(stub)
     if asserts and _visible_ok(direct, asserts):
         return direct
