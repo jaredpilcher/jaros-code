@@ -131,11 +131,15 @@ def solve_think(task) -> str:
 
 
 def solve_gated(task) -> str:
-    """Direct solve; reason only when it fails the visible docstring examples (self-gated thinking)."""
+    """Self-gated reasoning. Reason when EITHER (a) the docstring has NO examples to anchor on —
+    direct flounders most there and reasoning helps a lot (no-ex A/B: 58->73 = +15/95); or (b) direct
+    fails the visible examples (self-detected wrong). Where examples EXIST and direct passes them, keep
+    direct (reasoning just adds noise). The effect is heterogeneous, hence the gate."""
     direct = solve_pass1(task)
     with tempfile.TemporaryDirectory() as d:
         stub = Path(setup_task(task, Path(d))).read_text(encoding="utf-8")
-    if _visible_ok(direct, _doctest_asserts(stub)):
+    asserts = _doctest_asserts(stub)
+    if asserts and _visible_ok(direct, asserts):
         return direct
     try:
         return solve_think(task)
