@@ -299,9 +299,12 @@ def g_gherkin(subject: str, name: str, parent_src: str | None, context: str) -> 
     ctx = f"Module context:\n{context}\n" if context else ""
     out = _g_llm(
         f"You are changing a Python library function `{name}`.\nCOMMIT INTENT: {subject}\n{ctx}{cur}\n"
-        f"Write the behavior specification for `{name}` AFTER the change as 3-6 numbered Given/When/Then "
-        f"scenarios. Include BOTH the NEW behavior the intent requires AND existing behavior that must "
-        f"stay the same. Output ONLY the numbered scenarios.", 600)
+        f"STEP 1 — pin the exact case: in ONE line, name the SPECIFIC condition the COMMIT INTENT calls "
+        f"out and that the current code gets wrong (e.g. a particular input like NEGATIVE numbers / n<0, "
+        f"an empty case, a new parameter). Read the intent literally — do NOT broaden or substitute it.\n"
+        f"STEP 2 — write 3-6 numbered Given/When/Then scenarios for `{name}` AFTER the change. They MUST "
+        f"include a concrete scenario exercising EXACTLY the case from step 1, plus existing behavior that "
+        f"must stay the same. Output the one-line case from step 1, then the numbered scenarios.", 700)
     return out.strip()
 
 
