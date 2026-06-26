@@ -34,11 +34,11 @@ Executable tests are the HARD checkpoints; the 2B self-reviews are the soft ones
 ## The Gherkin index
 
 A separate file/files, one entry per code unit: the behavioral description + a POINTER to the code it
-describes. **Design decision (recommended, pending owner sign-off):** the 2B anchors each entry to a
-SYMBOL (qualified name + file); the deterministic tool plane resolves symbol→line-range via AST and
-re-resolves after every edit. The 2B owns behavioral CONTENT; the tool keeps POINTERS exact (raw line
-numbers drift and a 2B counting lines desyncs the index — Tenet-1 says deterministic bookkeeping is the
-tool plane's job). Alternative on the table: the 2B emits/maintains raw line numbers itself.
+describes. **Design decision — CONFIRMED by owner ("sync anchors", 2026-06-26):** the 2B anchors each
+entry to a SYMBOL (qualified name + file); the deterministic tool plane resolves symbol→line-range via
+AST and re-resolves after every edit ("sync anchors"). The 2B owns behavioral CONTENT; the tool keeps
+POINTERS exact (raw line numbers drift and a 2B counting lines desyncs the index — Tenet-1 keeps
+deterministic bookkeeping in the tool plane). This lands in Slice 2 (the persisted index).
 
 ## Honesty / eval (binds the whole thing)
 
