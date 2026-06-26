@@ -48,3 +48,61 @@ def behavioral_solve(intent: str, name: str, current_src: str | None, context: s
             break
         code = g_code(intent, name, current_src, context, gherkin, feedback)
     return {"code": code, "gherkin": gherkin, "tests": tests, "self_pass": self_pass}
+
+
+# --- Agentic variant: bootstrap, then the 2B JUDGES the revision layer at each failure -------------
+# Smoke finding: a free 2B-judge collapses to "code" — it won't even pick "run" among 2 options. So a
+# small model can't run the mechanical control flow. Ground it: bootstrap (spec->tests->code) and the
+# RUN are deterministic; the 2B's judgement goes where it adds value — when the self-tests FAIL,
+# diagnose WHICH layer is wrong and revise it (emergent revision path, any layer revisited).
+_REV = {"code": "the implementation has a LOGIC bug -> rewrite the code",
+        "gherkin": "the behavior spec MISUNDERSTOOD the intent -> rewrite the spec (and its tests)",
+        "repair": "the logic is right but the code has broken indentation/syntax",
+        "done": "stop — it cannot be fixed"}
+
+
+def _judge_revision(intent: str, name: str, fb: str, temp: float) -> str:
+    """The 2B as a judge AT THE FAILURE: diagnose which layer to revise. One short call."""
+    from harness.pass1_eval import _llm
+    from jaros.llm import LlmRequest
+    menu = "\n".join(f"  {a} = {d}" for a, d in _REV.items())
+    prompt = (f"You are building the Python function `{name}`.\nGOAL: {intent}\n"
+              f"Its self-tests FAILED with:\n{str(fb)[:400]}\n\n"
+              f"Diagnose the cause and pick the SINGLE next action:\n{menu}\nAnswer with ONLY one word.")
+    out = _llm().complete(LlmRequest(prompt=prompt,
+                                     params={"temperature": temp, "max_tokens": 8})).text.strip().lower()
+    return next((a for a in _REV if a in out), "code")
+
+
+def behavioral_solve_agentic(intent: str, name: str, current_src: str | None, context: str, pkg: str,
+                             run_tests: Callable[[str, str], tuple[bool, str]],
+                             max_rounds: int = 4, temp: float = 0.0) -> dict:
+    """Agentic behavioral solve: bootstrap (spec->tests->code), then auto-run + the 2B judges the
+    REVISION layer at each failure (code / gherkin / repair / done) — emergent, layers revisited.
+    temp>0 -> non-deterministic. Honest: self-tests scaffold; the hidden oracle scores (caller).
+    Returns {code, gherkin, tests, self_pass, trace}."""
+    from harness.commit_replay import g_gherkin as _gk, g_selftests as _gt, g_code as _gc
+    gherkin = _gk(intent, name, current_src, context)
+    tests = _gt(name, gherkin, pkg)
+    code = _gc(intent, name, current_src, context, gherkin)
+    trace = ["spec", "tests", "code"]
+    passed = False
+    for _ in range(max_rounds):
+        passed, fb = run_tests(code, tests)
+        trace.append("run")
+        if passed:
+            break
+        a = _judge_revision(intent, name, str(fb), temp)
+        trace.append(a)
+        if a == "done":
+            break
+        if a == "gherkin":                                   # spec was wrong -> re-spec, re-test, re-code
+            gherkin = _gk(intent, name, current_src, context)
+            tests = _gt(name, gherkin, pkg)
+            code = _gc(intent, name, current_src, context, gherkin, str(fb)[:400])
+        elif a == "repair":
+            from harness.pass1_eval import _bc, _llm
+            code = _bc.repair_indentation(_llm(), code)
+        else:                                                # "code": logic bug -> revise the code
+            code = _gc(intent, name, current_src, context, gherkin, str(fb)[:400])
+    return {"code": code, "gherkin": gherkin, "tests": tests, "self_pass": passed, "trace": trace}
