@@ -20,9 +20,16 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CODE_PREFIX = "more_itertools/"
-TEST_PREFIX = "tests/"
-DOCKER_IMG = "mi-test"
+# Per-repo config (multi-repo, kept indefinitely expandable). docker img can be shared across
+# pure-Python repos (python+pytest). code/test prefixes locate the change vs the tests.
+REGISTRY: dict[str, dict] = {
+    "more-itertools": {"code": "more_itertools/", "test": "tests/", "img": "mi-test"},
+    "toolz": {"code": "toolz/", "test": "toolz/tests/", "img": "mi-test"},
+}
+
+
+def _spec(repo: Path) -> dict:
+    return REGISTRY.get(repo.name, {"code": "", "test": "tests/", "img": "mi-test"})
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -58,9 +65,10 @@ def structural_filter(repo: Path, n: int = 400, skip: int = 0) -> tuple[list[Com
             ledger["merge"] += 1
             continue
         files = _files_changed(repo, sha)
-        code = [f for f in files if f.startswith(CODE_PREFIX) and f.endswith(".py")
+        sp = _spec(repo)
+        code = [f for f in files if f.startswith(sp["code"]) and f.endswith(".py")
                 and not f.endswith("__init__.py")]
-        tests = [f for f in files if f.startswith(TEST_PREFIX) and f.endswith(".py")]
+        tests = [f for f in files if f.startswith(sp["test"]) and f.endswith(".py")]
         if not code:
             ledger["no_code"] += 1
             continue
@@ -108,7 +116,7 @@ def _run_nodes(repo: Path, nodes: list[str], timeout: int = 180) -> set[str]:
     if not nodes:
         return set()
     cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
-           "-e", "PYTHONPATH=/repo", DOCKER_IMG, "python", "-m", "pytest", *nodes,
+           "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest", *nodes,
            "-v", "--tb=no", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
@@ -247,7 +255,7 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
 def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set[str], str]:
     """Like _run_nodes but also returns a short failure traceback (feedback for iteration)."""
     cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
-           "-e", "PYTHONPATH=/repo", DOCKER_IMG, "python", "-m", "pytest", *nodes,
+           "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest", *nodes,
            "-v", "--tb=short", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
