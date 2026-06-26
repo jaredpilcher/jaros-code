@@ -43,6 +43,26 @@ missing **deterministic, test-gated** tool/agent. Runtime stays **local-only**.
 the same class it never saw** — not just the one commit it was built for. If it only fixes its target,
 that's memorization → revert. This is capability vs. a lookup table.
 
+## Results so far (honest, gated — 2026-06-26)
+
+Foundation phase complete. The eval is built, reproducible, leakage-safe, scoped, and **multi-repo**.
+
+- **Headline (intent-only, test HIDDEN, single-function-localizable): combined 1/48 = 2.1%**
+  — more-itertools 1/37 = 2.7% [Wilson 0.5–13.8%], toolz 0/11 = 0% [0–25.9%]. Consistent across two
+  repos → the thin-harness frontier is a GENERAL gap, not repo-specific.
+- **TDD upper bound (test-as-spec + iter≤4, labeled, gameable-in-principle):** more-itertools
+  4/37 = 10.8%. The intent→TDD gap says the wall is comprehending the exact change from terse intent.
+- **Drop ledgers logged** (no silent truncation): mi last-400 → 135 merge/88 no-code/127 no-test/13
+  not-red → 37 valid; toolz last-400 → 86 candidates → 11 valid (44 not-green, cross-file/fixture).
+- **Diagnostics:** taxonomy — localization errors 0, leading class = localized-right-WRONG-impl 21,
+  out-of-reach-by-construction 15. SFL subset 1/22 = 4.5%.
+- **Jigs tried, both REJECTED by the held-out gate** (honest negatives): module-context (0→0),
+  reason-about-the-delta / think (dev 0→2 within noise, scored-37 1→1 even with budget fixed).
+
+Next phase = LIFT the frontier with real mechanisms (retrieval of similar transforms, few-shot,
+decomposition) for the wrong-implementation class — built on a dev window, gated on the untouched
+scored sets across BOTH repos, headline always intent-only, never gamed.
+
 ## Honesty constraints before any number goes public (a skeptic will hit both)
 
 1. **No visible-test leakage.** The HEADLINE number is **intent-only**: the model gets the commit
