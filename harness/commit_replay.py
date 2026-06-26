@@ -333,7 +333,14 @@ def g_code(subject: str, name: str, parent_src: str | None, context: str, gherki
         f"definition — valid Python, correct indentation, no markdown, no prose, no test code.", 800)
     s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
     i = s.find(f"def {name}")
-    return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
+    code = s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
+    if code:                                   # STACK the proven parse-gated syntax-repair (pass1 lineage,
+        try:                                   # +12% on HumanEval) — fires only if the code doesn't parse,
+            from harness.pass1_eval import _bc, _llm   # so behavioral-solve gens inherit ALL proven layers
+            code = _bc.repair_indentation(_llm(), code)   # in BOTH the /build product path and the eval.
+        except Exception:                      # noqa: BLE001 — repair is best-effort, never block the solve
+            pass
+    return code
 
 
 # --- Slice 1b: the 2B's alignment REVIEW loops (the heart of the owner's design) ------------------

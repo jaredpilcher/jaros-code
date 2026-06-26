@@ -82,8 +82,14 @@ every idea earns its place by measurement, then is INTEGRATED or PRUNED. The sys
 **Integrated layers (the default solve):** (1) multi-function localize — solve every changed function,
 target cap >4; (2) Gherkin behavior spec + COMPREHENSION step (pin the exact case the intent names,
 read literally — fixed the exactly_n intent-misread); (3) self-tests authored from the Gherkin;
-(4) code, fixed against the self-tests, KEEP-OR-IMPROVE (never degrade a working attempt). Result:
-held-out 6/37=16.2% vs 4/37 baseline (cross-repo combined 7/48 vs 5/48); comprehension step targeting 7/37.
+(4) code, fixed against the self-tests; (5) **parse-gated syntax-repair** (pass1 lineage, +12% HumanEval)
+on every code-gen. Result: held-out 6/37=16.2% vs 4/37 baseline (cross-repo combined 7/48 vs 5/48).
+
+**Both lineages now UNIFIED at one chokepoint (`g_code`):** the EXT-012 behavioral layers AND the
+pass1/body_completer repairs flow through the SAME code-gen, so EVERY generation — in BOTH the eval and
+the `/build` product path — inherits ALL proven layers. The eval therefore tests FORWARD across the full
+union (previous layers + each new layer), never a new layer against a bare baseline. (Owner correctness
+check 2026-06-26 — "test forward with all previous layers and the new layer.")
 
 **PRUNED (measured, did not help — stay out):** naive self-reviews (regressed 2/17->1/17); sign-off
 w/o the keep-or-improve guard; the baseline-ensemble (backwards — re-introduces the pre-loop solver;
