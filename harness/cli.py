@@ -31,7 +31,7 @@ Commands (Claude-Code-style):
   /defn <symbol>                go-to-definition: the def/class site(s) of a symbol
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
-  /build <func> <intent>        generative: write tests from intent, then implement (EXT-008)
+  /build <func> <intent>        behavioral solve: Gherkin(+comprehension)->self-tests->code (EXT-012 system)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
@@ -301,10 +301,11 @@ class JcodeCli:
         return "\n".join(out)
 
     def cmd_build(self, arg: str) -> str:
-        """Generative build (EXT-008): turn an intent into a working function + its OWN tests in
-        the current dir — the system writes tests from the intent, then implements against them
-        (test-writer grain + fix_loop). The generative counterpart to /fix. Wires the EXT-008
-        spine (build_from_intent) into the CLI. Usage: /build <func_name> <intent>."""
+        """Behavioral solve (EXT-012 system): turn an intent into a working function in the current
+        dir via the canonical solve — the 2B writes a Gherkin behavior spec (comprehension step pins
+        the exact case the intent names), derives its OWN tests, implements, and fixes against them.
+        The SAME system the eval proved on held-out real commits (6/37 vs 4/37 baseline), now wired as
+        the real product path via harness.behavioral_solve. Usage: /build <func_name> <intent>."""
         bits = arg.strip().split(None, 1)
         if len(bits) < 2 or not bits[0].isidentifier():
             return "usage: /build <func_name> <intent>   e.g. /build is_prime check if a number is prime"

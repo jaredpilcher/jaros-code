@@ -87,24 +87,35 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
     written into a REAL directory (no hidden oracle, unlike build_from_intent). Reuses the same
     grains: the test-writer writes tests from the intent, then fix_loop implements against them.
     Returns {self_pass, files, note}. The generative spine exposed for interactive use."""
+    # Powered by the canonical BEHAVIORAL SOLVE (EXT-012 system): the 2B writes a Gherkin behavior spec
+    # for the intent (comprehension step pins the exact case), derives its OWN tests, implements, and
+    # fixes against them — the same system proven on held-out real commits. The eval and this product
+    # path now share ONE solve; here the env adapter is local pytest.
+    import subprocess
+    from harness.behavioral_solve import behavioral_solve
     module = Path(target).stem
     func = func or module
-    signature = signature or ""        # empty -> _stub emits a valid `def f(*args, **kwargs)` stub
-    test_cmd = "python -m pytest -q"
     tp = Path(cwd) / target
-    if not tp.exists():
-        tp.write_text(_stub(signature, func), encoding="utf-8", newline="\n")
-    rt = Runtime()
-    writer = _load_agent("test_writer_agent.py", build_llm())
+    current = tp.read_text(encoding="utf-8") if tp.exists() else None
     test_name = f"test_{module}.py"
-    [tw] = writer.decide({"intent": intent, "module": module, "func": func,
-                          "signature": signature, "test_path": str(Path(cwd) / test_name), "seed": 1})
-    if tw.type != "code.write_file":
-        return {"self_pass": False, "files": [], "note": "test-writer produced no tests"}
-    rt.apply(tw)
-    res = fix_loop(str(tp), intent, test_cmd, max_iters=max_iters, cwd=cwd, verbose=verbose)
-    return {"self_pass": res.success, "files": [target, test_name],
-            "note": "built (passes its own tests)" if res.success else "tests written; implementation did not pass"}
+    testp = Path(cwd) / test_name
+
+    def run_tests(code: str, test_code: str) -> tuple[bool, str]:
+        tp.write_text(code, encoding="utf-8", newline="\n")
+        testp.write_text(test_code, encoding="utf-8", newline="\n")
+        try:
+            r = subprocess.run(f"python -m pytest -q {test_name}", cwd=cwd, shell=True,
+                               capture_output=True, text=True, timeout=60)
+            return r.returncode == 0, (r.stdout + r.stderr)[-700:]
+        except subprocess.TimeoutExpired:
+            return False, "timeout"
+
+    r = behavioral_solve(intent, func, current, "", module, run_tests, max_fix=max_iters)
+    tp.write_text(r["code"] or (current or _stub(signature or "", func)), encoding="utf-8", newline="\n")
+    testp.write_text(r["tests"], encoding="utf-8", newline="\n")
+    return {"self_pass": r["self_pass"], "files": [target, test_name],
+            "note": ("built via behavioral solve — passes its own Gherkin-derived tests" if r["self_pass"]
+                     else "implemented via behavioral solve; did not pass its self-tests")}
 
 
 def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd: str) -> bool:
