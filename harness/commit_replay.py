@@ -220,7 +220,7 @@ def _file_context(src: str, max_chars: int = 900) -> str:
 
 def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None,
                       feedback: str = "", intent_only: bool = False, context: str = "",
-                      think: bool = False) -> str:
+                      think: bool = False, fewshot: bool = False) -> str:
     """Local-2B single-function solve for a real repo function.
 
     intent_only=True (the STRONG, non-gameable, SWE-bench-style claim): the model gets ONLY the commit
@@ -239,7 +239,11 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
     think_instr = ("First, inside <think> </think>, reason about EXACTLY what the COMMIT INTENT requires "
                    "CHANGING in this function (a new parameter? new behavior? a bug fix?) — do NOT just "
                    "copy the current function. Then AFTER </think>, ") if think else ""
-    prompt = (f"You are changing a Python library so a failing test passes. Implement/repair the "
+    demo = ("EXAMPLE of the KIND of edit (note the output MODIFIES the function per the intent — it "
+            "does NOT just copy it):\nCURRENT:\ndef total(items):\n    return sum(items)\n"
+            "INTENT: allow summing from a starting value.\nCORRECT OUTPUT:\ndef total(items, start=0):\n"
+            "    return sum(items, start)\n\n") if fewshot else ""
+    prompt = (f"{demo}You are changing a Python library so a failing test passes. Implement/repair the "
               f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}{ctx_block}\n\n{ctx}{fb}\n"
               f"{think_instr}Output ONLY the complete `def {name}(...):` definition — valid Python, "
               f"correct indentation, no markdown, no prose, no test code.")
@@ -271,7 +275,7 @@ def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set
 
 def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
                  max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
-                 use_think: bool = False, timeout: int = 180) -> str:
+                 use_think: bool = False, use_fewshot: bool = False, timeout: int = 180) -> str:
     """Attempt one commit-replay task. intent_only=True -> message+code only, one-shot, no test
     shown/iterated (the strong non-gameable claim). Else -> failing test shown + iterated up to
     max_iter (TDD upper bound). use_context -> add the file's module preamble (the repo-context jig).
@@ -279,23 +283,30 @@ def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
     targets = _target_funcs(repo, task)
     if not targets:
         return "no_target"
-    cf, name, parent_src = targets[0]            # primary changed function
     test_src = "" if intent_only else _test_source(repo, task)
     iters = 1 if intent_only else max_iter
+    files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
         _git(repo, "checkout", task["sha"], "--", "tests/")
-        p = repo / cf
-        orig = p.read_text(encoding="utf-8")     # clean parent file; re-apply onto it each iter
-        context = _file_context(orig) if use_context else ""
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}  # clean parent per file
+        ctx = {cf: (_file_context(orig[cf]) if use_context else "") for cf in files}
         feedback = ""
         for _ in range(iters):
-            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only,
-                             context, use_think)
-            if not new_func:
+            edits: dict[str, list] = {}                       # solve EVERY changed function
+            for cf, name, parent_src in targets:
+                nf = solve(task["subject"], test_src, name, parent_src, feedback, intent_only,
+                           ctx[cf], use_think, use_fewshot)
+                if nf:
+                    edits.setdefault(cf, []).append((name, nf))
+            if not edits:
                 return "empty"
             try:
-                p.write_text(_apply_func(orig, name, new_func), encoding="utf-8", newline="\n")
+                for cf, funcs in edits.items():               # apply all of them, per file
+                    content = orig[cf]
+                    for name, nf in funcs:
+                        content = _apply_func(content, name, nf)
+                    (repo / cf).write_text(content, encoding="utf-8", newline="\n")
             except Exception:
                 return "apply_err"
             fails, feedback = _run_nodes_fb(repo, task["redgreen"], timeout)
@@ -319,20 +330,21 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b,
                  max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
-                 use_think: bool = False) -> dict:
+                 use_think: bool = False, use_fewshot: bool = False) -> dict:
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter,
-                             intent_only=intent_only, use_context=use_context, use_think=use_think)
+            r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter, intent_only=intent_only,
+                             use_context=use_context, use_think=use_think, use_fewshot=use_fewshot)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    ctx_tag = (" +ctx" if use_context else "") + (" +think" if use_think else "")
+    ctx_tag = (" +ctx" if use_context else "") + (" +think" if use_think else "") \
+        + (" +fewshot" if use_fewshot else "")
     label = ((f"intent-only / 1-shot / test HIDDEN (strong, non-gameable){ctx_tag}" if intent_only
               else f"test-as-spec / iter<={max_iter} (TDD upper bound){ctx_tag}"))
     print(f">>> RESULT [{label}]: {k}/{n} = {k/n*100:.1f}% red->green  "
@@ -353,12 +365,14 @@ if __name__ == "__main__":
         intent_only = "--intent-only" in sys.argv
         use_context = "--context" in sys.argv
         use_think = "--think" in sys.argv
+        use_fewshot = "--fewshot" in sys.argv
         max_iter = int(sys.argv[sys.argv.index("--iters") + 1]) if "--iters" in sys.argv else 1
         mode = ("INTENT-ONLY (test hidden)" if intent_only else f"test-as-spec iter<={max_iter}") \
-            + (" +context" if use_context else "") + (" +think" if use_think else "")
+            + (" +context" if use_context else "") + (" +think" if use_think else "") \
+            + (" +fewshot" if use_fewshot else "")
         print(f">>> {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
         run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only,
-                     use_context=use_context, use_think=use_think)
+                     use_context=use_context, use_think=use_think, use_fewshot=use_fewshot)
         sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 400
     skip = int(sys.argv[sys.argv.index("--skip") + 1]) if "--skip" in sys.argv else 0
