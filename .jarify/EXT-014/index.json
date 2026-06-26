@@ -52,6 +52,13 @@
         { "file": "harness/mbpp.py", "ranges": [[5, 5]] },
         { "file": "harness/report.py", "ranges": [[135, 135]] }
       ]
+    },
+    {
+      "req": "REQ-5",
+      "description": "Legacy Ollama path clearly marked, never default",
+      "files": [
+        { "file": "harness/ollama_client.py", "ranges": [[1, 21]] }
+      ]
     }
   ]
 }

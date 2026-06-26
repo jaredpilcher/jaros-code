@@ -1,4 +1,22 @@
+# #EXT-014-REQ-5 Start
+# LEGACY / BACK-COMPAT ONLY — NOT THE INTENDED MODEL PATH
+#
+# This module implements the legacy Ollama `gemma2:2b` backend, retained solely for
+# back-compatibility with environments that still run a local Ollama server.
+#
+# The EXCLUSIVE intended model is Gemma 4 2B (`e2b`) served by llama.cpp on the
+# Jetson Orin Nano (PRIME-001, EXT-014). Select it via:
+#   JCODE_LLM_BACKEND=llamacpp  (or leave unset — llama.cpp is the default)
+#   LLAMACPP_HOST=http://192.168.1.183:8000
+#
+# The Ollama path is selected ONLY when JCODE_LLM_BACKEND=ollama is set explicitly.
+# No serve script, config file, or code path may make Ollama the default (EXT-014 REQ-1).
+# #EXT-014-REQ-5 End
 """Deterministic local Ollama client (EXT-006).
+
+LEGACY back-compat module — see module header above. The active model is Gemma 4 2B
+(`e2b`) via llama.cpp (PRIME-001 / EXT-014); this client is retained only for
+environments that explicitly select `JCODE_LLM_BACKEND=ollama`.
 
 A standard-library `LlmClient` that calls local Ollama with greedy, seeded decoding
 (temperature 0, fixed seed) so gemma2:2b returns a stable, repeatable completion for
