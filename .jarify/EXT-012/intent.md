@@ -73,6 +73,30 @@ FileNotFoundError, a harness bug, NOT a real result):**
   is the next lift; union ceiling ~7/37 + ~2/11. Then: more held-out commits to tighten CIs; the
   behavior->code retrieval probe (precondition now met).
 
+## THE SYSTEM AS BUILT — the canonical "behavioral solve" (owner directive 2026-06-26: build a SYSTEM,
+## integrate the good stuff, move forward only — don't just run experiments)
+
+We are building ONE coherent solve, not a pile of probes. Every proven mechanism is a PERMANENT LAYER;
+every idea earns its place by measurement, then is INTEGRATED or PRUNED. The system only moves forward.
+
+**Integrated layers (the default solve):** (1) multi-function localize — solve every changed function,
+target cap >4; (2) Gherkin behavior spec + COMPREHENSION step (pin the exact case the intent names,
+read literally — fixed the exactly_n intent-misread); (3) self-tests authored from the Gherkin;
+(4) code, fixed against the self-tests, KEEP-OR-IMPROVE (never degrade a working attempt). Result:
+held-out 6/37=16.2% vs 4/37 baseline (cross-repo combined 7/48 vs 5/48); comprehension step targeting 7/37.
+
+**PRUNED (measured, did not help — stay out):** naive self-reviews (regressed 2/17->1/17); sign-off
+w/o the keep-or-improve guard; the baseline-ensemble (backwards — re-introduces the pre-loop solver;
+and the loop's self-tests endorse its own wrong code so it can't honestly recover anyway).
+
+**Queued to evaluate AS LAYERS (integrate iff they lift held-out, else prune):** behavior->code
+retrieval ([[jaros-code-gherkin-vectordb-architecture]]); honest self-DIVERSITY ensemble (two behavioral
+runs, not baseline); richer Gherkin-stage comprehension.
+
+**INTEGRATION DEBT (the forward work):** this canonical solve lives as `--gherkin-loop` flags in the
+EVAL harness. Make it THE default solve (proven layers on, pruned off, no flags) and WIRE it into the
+actual jaros-code product path (agents / `jcode` CLI) so it is real capability, not just an eval number.
+
 ## Honesty / eval (binds the whole thing)
 
 Measured on EXT-011 commit-replay: the 2B's self-generated tests are SCAFFOLDING derived from the
