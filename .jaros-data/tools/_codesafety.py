@@ -1,6 +1,6 @@
 """Shared generated-code safety scanner (EXT-001 / REQ-11).
 
-The agents generate code with gemma2:2b; that code is written to disk and then
+The agents generate code with Gemma 4 2B (`e2b`); that code is written to disk and then
 EXECUTED by the test command. So the model's output must be gated too — not just
 shell.exec. This deterministic scanner refuses code containing dangerous operations
 (network egress, process/shell execution, destructive filesystem ops, dynamic

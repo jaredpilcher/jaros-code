@@ -16,7 +16,7 @@ from jaros.llm import LlmRequest
 
 NAME = "editor"
 
-_MAX_CONTENT = 6000  # keep the prompt within gemma2:2b's reliable window
+_MAX_CONTENT = 6000  # keep the prompt within Gemma 4 2B (e2b)'s reliable window
 
 _PROMPT = (
     "You are a precise code-editing tool. You are given a FILE and an INSTRUCTION.\n"

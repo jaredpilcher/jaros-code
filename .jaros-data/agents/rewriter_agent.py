@@ -2,7 +2,7 @@
 
 Rewrites an ENTIRE (small) file with an instruction applied, emitting a
 ``code.write_file`` Decision. This is the 2B-reliable counterpart to ``editor``:
-gemma2:2b reproduces a whole small file with a fix far more reliably than it
+Gemma 4 2B (`e2b`) reproduces a whole small file with a fix far more reliably than it
 produces an exact OLD/NEW snippet pair. Inert data only.
 """
 
@@ -73,7 +73,7 @@ class RewriterBoundary:
         symbols = _SYMBOLS.format(symbols=symbols_text) if symbols_text.strip() else ""
 
         # Optional sampling controls: the loop escalates temperature on retries so a
-        # deterministically-wrong first answer can be escaped (still local gemma2:2b).
+        # deterministically-wrong first answer can be escaped (still local Gemma 4 2B (e2b)).
         params = {}
         if "temperature" in ctx:
             params["temperature"] = ctx["temperature"]

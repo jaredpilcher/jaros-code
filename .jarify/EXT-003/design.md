@@ -24,17 +24,17 @@ Jaros gate + executor + decision log — it does not call tools behind their bac
   ──────────────────────────────────────────────────
    round r = 1..max_iters:
      content   = fs.read(target)                         # operator read
-     d_edit    = editor.decide({target, content, instr}) # gemma2:2b — reasoning
+     d_edit    = editor.decide({target, content, instr}) # Gemma 4 2B (e2b) — reasoning
      Runtime.apply(d_edit)        → code.apply_patch      # deterministic tool edits file
      d_test    = shell.exec(test_cmd)                     # operator-issued command Decision
      out       = Runtime.apply(d_test)                    # deterministic tool runs tests
-     d_verdict = test-reader.decide({output: out})        # gemma2:2b — reasoning
+     d_verdict = test-reader.decide({output: out})        # Gemma 4 2B (e2b) — reasoning
      Runtime.apply(d_verdict)     → advance (DONE|FAILED)
      if verdict == PASS: stop(success)
    stop(exhausted)
 ```
 
-Reasoning steps (editor, test-reader) are the only `gemma2:2b` calls; everything
+Reasoning steps (editor, test-reader) are the only Gemma 4 2B (`e2b`) calls; everything
 else is deterministic. The model decides *what* edit and *whether* tests passed;
 the executor and tools decide *how*. The decision log records every step so
 `jaros replay` can reconstruct the run.

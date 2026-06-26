@@ -11,7 +11,7 @@ implementation:
 ---
 
 This spec serves the central, measurable promise of PRIME-001: the harness must
-become so good it overcomes gemma2:2b's limits and reaches Claude-Code-on-Opus-4.8
+become so good it overcomes Gemma 4 2B (`e2b`)'s limits and reaches Claude-Code-on-Opus-4.8
 quality — and we must *prove* convergence, run over run, not assert it. The
 evaluation harness is that proof. It is deliberately extensible: the task suite is
 expected to grow toward an extensive battery (and, later, to run existing public
@@ -35,7 +35,7 @@ A runner executes every task through the real `fix_loop` and reports the pass ra
 (tasks whose tests pass within the attempt budget) plus per-task attempts.
 
 #### Acceptance Criteria
-- [ ] Run each task via `fix_loop` in an isolated temp dir on gemma2:2b
+- [ ] Run each task via `fix_loop` in an isolated temp dir on Gemma 4 2B (`e2b`)
 - [ ] Record per-task `{id, solved, attempts}` and an overall `passRate`
 - [ ] Print a Claude-Code-like scorecard summary
 - [ ] Exit non-zero only on runner error, never merely on unsolved tasks

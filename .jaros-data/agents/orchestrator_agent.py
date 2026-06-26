@@ -4,7 +4,7 @@ The top-level router: given a user's natural-language request, it decides WHICH 
 (and thus which downstream agents/tools) should serve it, emitting an inert routing
 Decision. The model decides *what* the user wants; the deterministic CLI decides *how*
 to carry it out (dispatching to the matching specialist/tool). Tiny, fixed output —
-the regime where gemma2:2b is reliable.
+the regime where Gemma 4 2B (`e2b`) is reliable.
 """
 
 from __future__ import annotations

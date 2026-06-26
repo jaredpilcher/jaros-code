@@ -4,7 +4,7 @@ Mechanically catches the ways a self-improving system lies to itself, so the own
 "keep it absolutely honest" rule is enforced by code, not just judgement:
 
 - CRITICAL: a run that solved tasks with ZERO local-model calls (results not actually
-  produced by gemma2:2b — a bug or a shortcut).
+  produced by Gemma 4 2B (`e2b`) — a bug or a shortcut).
 - MISLEADING: reporting a tiny/non-representative suite (e.g. a 1-2 task verify run)
   as if it were the headline number.
 - STAGNATION: the full-suite pass rate is flat across recent runs — activity without
@@ -29,7 +29,7 @@ def audit(scorecard: dict, history: list[dict]) -> list[dict]:
     solved = scorecard.get("solved", 0)
     mc = scorecard.get("modelCalls") or {}
 
-    # CRITICAL: solved work with no model calls -> not really gemma2:2b.
+    # CRITICAL: solved work with no model calls -> not really Gemma 4 2B (e2b).
     if total > 0 and solved > 0 and not mc.get("count"):
         flags.append({"level": "CRITICAL", "code": "no-model-calls",
                       "message": f"{solved} solved but modelCalls.count=0 — results not produced by the local model"})

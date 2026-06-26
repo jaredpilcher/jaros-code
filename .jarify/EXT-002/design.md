@@ -1,7 +1,7 @@
 # EXT-002 — Single-Purpose Coding Agent Fleet
 
 Each agent is a `ReasoningBoundary` (`build(llm) -> obj` with `decide(context) ->
-[Decision]`). It calls `gemma2:2b` once with a tiny prompt and emits exactly one
+[Decision]`). It calls Gemma 4 2B (`e2b`) once with a tiny prompt and emits exactly one
 inert Decision targeting an EXT-001 tool. No agent holds a host handle.
 
 ```text

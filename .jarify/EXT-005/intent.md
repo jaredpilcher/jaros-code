@@ -1,7 +1,7 @@
 # Intent
 
 This spec exists to be the proof, not the assertion, of PRIME-001's central promise: that
-the harness becomes good enough to overcome gemma2:2b's limits and reach
+the harness becomes good enough to overcome Gemma 4 2B (`e2b`)'s limits and reach
 Claude-Code-on-Opus-4.8 quality. We do not get to claim we are near the bar; the
 evaluation harness must measure convergence honestly, run over run, on self-contained
 coding tasks and — crucially — on real, recognized public benchmarks (HumanEval first, then

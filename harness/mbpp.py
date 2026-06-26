@@ -2,7 +2,7 @@
 
 Mostly Basic Python Problems — 974 short tasks, each a natural-language description plus
 a few `assert` tests. Mapped to the same isolated, exit-code-honest pytest Task the rest
-of the harness uses, then run through the real fix_loop on gemma2:2b.
+of the harness uses, then run through the real fix_loop on Gemma 4 2B (`e2b`).
 
 Dataset is NOT vendored. Place the official `mbpp.jsonl` at `evals/benchmarks/mbpp.jsonl`
 (from https://github.com/google-research/google-research, `mbpp/mbpp.jsonl`). Absent →

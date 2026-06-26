@@ -21,7 +21,7 @@ coding tasks, and records the pass rate as the convergence signal.
 ## Why this is the right signal
 
 - It exercises the **whole stack** the user cares about: agents + tools + loop +
-  the real model — not a unit mock. A pass means gemma2:2b, inside this harness,
+  the real model — not a unit mock. A pass means Gemma 4 2B (`e2b`), inside this harness,
   actually produced working code.
 - It is **honest** (Tenet 3): a task counts as solved only when its tests truly
   pass (exit 0); the runner never massages the number.

@@ -2,8 +2,9 @@
 
 A software-development harness built on **Jaros** that aims to reach Claude-Code-on-
 Opus-4.8 quality while every reasoning call is served by a single small local model —
-**Ollama `gemma2:2b`** — at zero inference cost. The wager: *small models underperform
-because their harnesses are thin, not because the models are incapable.*
+**Gemma 4 2B (`e2b`)** via llama.cpp on the Jetson Orin Nano — at zero inference cost.
+(Legacy Ollama `gemma2:2b` path remains selectable for back-compat.)
+The wager: *small models underperform because their harnesses are thin, not because the models are incapable.*
 
 This document is the written-up, honest picture of the whole system. It is governed by
 `.jarify/PRIME-001` (the prime directive) and the `EXT-00x` specs.
@@ -11,7 +12,7 @@ This document is the written-up, honest picture of the whole system. It is gover
 ## 1. The two planes (Jaros)
 
 ```text
-  REASONING PLANE  — single-purpose gemma2:2b agents emit inert Decision data only
+  REASONING PLANE  — single-purpose Gemma 4 2B (e2b) agents emit inert Decision data only
         │  Decision (JSON: id, source, type, payload)
         ▼
   DECISION GATE    — deterministic validate() per tool (+ safety gates)
@@ -98,9 +99,8 @@ So both the *commands* and the *code the model writes* are gated.
   with quality; orphans pruned).
 - **Wiring telemetry:** which agent→tool edges actually fire — used to find and remove
   orphans (agents/tools that never fire).
-- **Model-call telemetry:** every gemma2:2b call is counted and logged to
-  `model_calls.log` — undeniable proof the local model does the work (it runs on CPU,
-  `size_vram=0`).
+- **Model-call telemetry:** every Gemma 4 2B (`e2b`) call is counted and logged to
+  `model_calls.log` — undeniable proof the local model does the work.
 - **Honesty audit (EXT-007/REQ-5):** mechanically flags CRITICAL (0 model calls),
   MISLEADING (tiny suite as headline), STAGNATION (flat pass rate), UNUSED (orphans). The
   supervisor must act on flags — capability (pass rate) is the metric, activity is not.
@@ -121,7 +121,7 @@ go to the owner's phone every 30 min outside 02:00–08:00.
 
 ## 7. Current honest state
 
-- Full suite: **20/24 = 83%** on `gemma2:2b` (95% CI 64–93%); was 67% before the
+- Full suite: **20/24 = 83%** on Gemma 4 2B (`e2b`) / llama.cpp (95% CI 64–93%); was 67% before the
   retry-budget fix.
 - Census: ~6 agents, ~10 tools, ~25 evals, 7 EXT specs; orphans being wired-in or pruned.
 - ~80+ deterministic unit tests pass.

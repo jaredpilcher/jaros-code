@@ -13,7 +13,7 @@ Three scenario classes are covered:
   3. Cross-module import chain — the failing test imports through an intermediate module;
      the model must locate the root cause in the leaf file.
 
-``run_agentic_eval`` uses the real model (gemma via llama.cpp / Ollama). The CI test
+``run_agentic_eval`` uses the real model (Gemma 4 2B (`e2b`) via llama.cpp; legacy Ollama back-compat). The CI test
 (``tests/test_agentic_eval.py``) injects a scripted planner so it is deterministic
 and model-free.
 """

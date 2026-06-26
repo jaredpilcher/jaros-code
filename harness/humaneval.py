@@ -1,7 +1,7 @@
 """Real public benchmark adapter: HumanEval (EXT-005 / REQ-5).
 
 Converts each HumanEval problem into the same isolated, exit-code-honest task the
-authored suite uses, then runs it through the real fix_loop on gemma2:2b. This makes
+authored suite uses, then runs it through the real fix_loop on Gemma 4 2B (`e2b`). This makes
 our yardstick an external, recognized one — the bar the Prime Directive demands.
 
 The dataset is NOT vendored. Place the official `HumanEval.jsonl` at

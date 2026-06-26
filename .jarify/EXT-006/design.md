@@ -1,7 +1,7 @@
 # EXT-006 — Deterministic Local Inference
 
 ```text
-   stock OllamaAdapter                 DeterministicOllamaClient (harness)
+   stock OllamaAdapter                 DeterministicOllamaClient (harness, legacy back-compat)
    ───────────────────────            ─────────────────────────────────────
    POST /api/generate                 POST /api/generate
      model, prompt, stream=false        model, prompt, stream=false,
@@ -9,7 +9,8 @@
    → sampled (temp ~0.8)              → greedy, repeatable
 ```
 
-Same endpoint, same model (`gemma2:2b`), same two-plane discipline — only the
+Same endpoint, same legacy Ollama `gemma2:2b` model (back-compat path; the INTENDED
+model is Gemma 4 2B (`e2b`) served by llama.cpp — see REQ-4), same two-plane discipline — only the
 sampling changes. Greedy decoding removes a noise source that was making solvable
 tasks fail intermittently, and makes a run's reasoning repeatable, which tightens
 the replay guarantee (PRIME-001 Tenet 3) for the model step itself.

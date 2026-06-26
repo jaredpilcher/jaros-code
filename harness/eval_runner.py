@@ -1,6 +1,6 @@
 """Convergence evaluation harness (EXT-005).
 
-Runs the real fix_loop over a suite of isolated coding tasks on gemma2:2b, scores
+Runs the real fix_loop over a suite of isolated coding tasks on Gemma 4 2B (`e2b`) via llama.cpp, scores
 the pass rate, and appends the result to a durable trend history. The pass-rate
 trend is the explicit convergence signal toward Claude-Code-on-Opus-4.8 (PRIME-001).
 """

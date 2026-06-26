@@ -16,8 +16,9 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 
 1. **Two-plane discipline** — the model emits only inert `Decision` data; a
    deterministic execution plane (tools) performs every side effect.
-2. **Small-model-only** — all reasoning is local `gemma2:2b` via Ollama. No paid
+2. **Small-model-only** — all reasoning is local **Gemma 4 2B (`e2b`)** via llama.cpp on the Jetson. No paid
    or cloud model, ever, not even as a fallback. Decompose instead of escalating.
+   (Legacy Ollama `gemma2:2b` path selectable via `JCODE_LLM_BACKEND=ollama` for back-compat.)
 3. **Reproducible & honest** — hash-chain logged, byte-identically replayable;
    never hide or fabricate a result.
 4. **Spec-first** — code traces to `.jarify` requirements; spec + code change in
@@ -135,7 +136,7 @@ and must survive context loss — re-read it at the start of every session.
 - **Tools are deterministic.** Every host effect (read, write, shell, patch) is a
   Jaros custom tool with `validate()` + `execute()`. Agents never touch the host.
 - **Plane-placement triage.** For each grain ask: is its core a judgement
-  `gemma2:2b` can reliably make? If yes (classify, pick, transform-by-example, read a
+  Gemma 4 2B (`e2b`) can reliably make? If yes (classify, pick, transform-by-example, read a
   result) → a tiny agent. If no (count, arithmetic, operator semantics, exhaustive
   search) → a deterministic tool, usually generate-and-test. When a model-side
   pipeline keeps failing, run a raw single-call probe to see what the 2B actually
@@ -146,11 +147,11 @@ and must survive context loss — re-read it at the start of every session.
 ## Running
 
 ```
-pwsh scripts/serve.ps1        # boot the node pinned to gemma2:2b (Windows)
+pwsh scripts/serve.ps1        # boot the llama.cpp node (Gemma 4 2B e2b) (Windows)
 bash scripts/serve.sh         # same, POSIX
 ```
 
-Try the Claude-Code-like CLI yourself (needs Ollama running with `gemma2:2b`):
+Try the Claude-Code-like CLI yourself (needs the Jetson llama.cpp server running):
 
 ```
 pwsh scripts/jcode.ps1                 # interactive REPL (Windows; powershell -File also works)
@@ -160,7 +161,7 @@ python -m harness.cli "fix foo.py"     # or one plain-language request (orchestr
 ```
 
 In the REPL, type `/help` for slash commands, or just type a plain request — the
-`orchestrator` agent (gemma2:2b) decides which agent/tool serves it. `/quit` exits.
+`orchestrator` agent (Gemma 4 2B (`e2b`)) decides which agent/tool serves it. `/quit` exits.
 
 - Agents live in `.jaros-data/agents/`, tools in `.jaros-data/tools/`, model
   selection in `.jaros-data/config/llm.json` (mirrored by the serve scripts).

@@ -87,7 +87,7 @@ bash scripts/serve.sh      # POSIX
 ```
 
 Inference defaults to the Jetson llama.cpp endpoint (`JCODE_LLM_BACKEND=llamacpp` +
-`LLAMACPP_HOST`); a local Ollama `gemma2:2b` path remains selectable.
+`LLAMACPP_HOST`); a local Ollama `gemma2:2b` path remains selectable (legacy back-compat).
 
 ---
 

@@ -54,7 +54,7 @@ tool's real result, so the operator sees exactly what the harness is doing.
 
 Some bugs turn on a single operator a 2B model cannot reason about (`<` vs `<=`).
 Empirically, every *model-side* decomposition of such a fix (locate the line, fix the
-line, quote the snippet) bottoms out on that same judgement gemma2:2b cannot make. So
+line, quote the snippet) bottoms out on that same judgement Gemma 4 2B (`e2b`) cannot make. So
 for the boundary/off-by-one bug class the fix moves into the **deterministic plane**:
 when the whole-file rewrite (REQ-2) fails on an existing `.py` bug, try each
 single-operator mutation (`<`↔`<=`, `>`↔`>=`, `±1`) via the `code.write_file` tool, run

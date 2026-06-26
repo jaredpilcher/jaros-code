@@ -129,7 +129,7 @@ back for correction — a sharp verb that helps a 2B model recover from syntax s
 
 ### [REQ-11] Generated-code safety gate (unattended-safe)
 
-The agents generate code (via gemma2:2b) that is written to disk and then EXECUTED by
+The agents generate code (via Gemma 4 2B (`e2b`)/llama.cpp) that is written to disk and then EXECUTED by
 the test command, so the model's output must be gated too. `code.write_file` and
 `code.apply_patch` deterministically REFUSE content containing dangerous operations:
 process/shell execution, network egress, destructive filesystem ops, and dynamic

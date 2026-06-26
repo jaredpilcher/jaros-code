@@ -20,7 +20,7 @@
   agents into specialists (REQ-6) and crack the remaining frontier fails.
 - **2026-06-19 HONEST caveat — run-to-run VARIANCE:** the trend is noisy
   (83%/24 → 80%/25 → 69%/26) and the solved COUNT dropped (20→18). Debugged: `clamp`
-  (trivial) PASSES standalone but FAILED in a full run — so gemma2:2b on CPU is NOT
+  (trivial) PASSES standalone but FAILED in a full run — so the 2B model on CPU is NOT
   fully reproducible across separate runs even at temp=0+seed (CPU float/thread
   nondeterminism). The single-run pass rate is a noisy ~70-80% sample; borderline
   tasks flip. The CONSISTENT fails are the true frontier: greet_format, binary_search,
@@ -41,7 +41,7 @@
   binary_search, fizzbuzz, roman_numerals FAIL even at 6. Conclusion: more attempts cracks
   greet_format only -> raised runner default max_iters 3→4 (measured win, modest cost).
   The remaining HARD CORE = binary_search, fizzbuzz, roman_numerals: more shots do NOT
-  help — these are at gemma2:2b's one/few-shot ceiling in this harness. Next: a `planner`
+  help — these are at the 2B model's one/few-shot harness limit. Next: a `planner`
   agent (decompose: e.g. for binary_search "the bug is the loop condition < vs <=") and
   MEASURE; if a 2B planner can't crack them either, honestly accept them as the model's
   limit and pivot effort to breadth (more specialists, real benchmarks, CLI parity).

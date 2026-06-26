@@ -132,7 +132,7 @@ def build_report() -> dict:
     mc = sc.get("modelCalls") or {}
     if mc.get("count"):
         avg = round(mc["totalLatencySec"] / mc["count"], 2) if mc["count"] else 0
-        lines.append(f"\n## Local model calls (proof gemma2:2b is doing the work)")
+        lines.append(f"\n## Local model calls (proof Gemma 4 2B (e2b) is doing the work)")
         lines.append(f"- **{mc['model']} calls this run: {mc['count']}**  (avg {avg}s/call, last {mc.get('lastCall')})")
         lines.append(f"- Tail `.jaros-data/artifacts/eval/model_calls.log` to watch calls stream live.")
 

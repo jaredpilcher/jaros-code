@@ -5,7 +5,7 @@ multi-step coding loop, routing every Decision through the real Jaros gate +
 executor + decision log so each step is validated, executed, and recorded (replay
 faithful). The transcript mirrors Claude Code's look and feel.
 
-Only `editor` and `test-reader` call gemma2:2b (the reasoning steps). Everything
+Only `editor` and `test-reader` call Gemma 4 2B (`e2b`) (the reasoning steps). Everything
 else is deterministic: the model decides *what*, the executor and tools decide *how*.
 """
 
@@ -195,8 +195,8 @@ def python_syntax_error(src: str) -> str | None:
 def build_llm():
     """Return the deterministic local reasoning client (EXT-006): greedy + seeded so the
     model is repeatable. Backend selected by JCODE_LLM_BACKEND:
-      'ollama'   (default) -> DeterministicOllamaClient  (local Ollama, /api/generate)
-      'llamacpp'           -> DeterministicLlamaCppClient (llama-server /v1/chat, e.g. Jetson)
+      'llamacpp' (default) -> DeterministicLlamaCppClient (Gemma 4 2B (`e2b`) on Jetson, /v1/chat)
+      'ollama'   (legacy)  -> DeterministicOllamaClient   (local Ollama, /api/generate, back-compat)
     Either way it is a LOCAL model only (Tenet 2)."""
     backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
     if backend in ("llamacpp", "llama.cpp", "llama_cpp", "llama-cpp"):
@@ -241,7 +241,7 @@ def _step(label: str, detail: str) -> None:
 # Off-by-one / boundary operator mutations. The hardest bug class for a 2B model is
 # the one that turns on a single operator it cannot reason about (`<` vs `<=`). We
 # learned the honest lesson empirically: every *model-side* decomposition (locate the
-# line, fix the line, quote the snippet) bottoms out on that same judgement gemma2:2b
+# line, fix the line, quote the snippet) bottoms out on that same judgement Gemma 4 2B (e2b)
 # cannot make. So we move the fix into the DETERMINISTIC plane — try each candidate
 # single-operator edit, keep the first that turns the test suite green. No model call,
 # so it is 100% reproducible (Tenet 3). This is classic automated program repair,
@@ -358,7 +358,7 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     for r in range(1, max_iters + 1):
         _v(_round_header, r, max_iters)
 
-        # 1) reasoning: editor proposes one exact edit (gemma2:2b). On retries it
+        # 1) reasoning: editor proposes one exact edit (Gemma 4 2B (e2b)). On retries it
         # gets the previous failure output as feedback, so it can correct itself
         # (greedy decoding alone would just repeat the same mistake).
         # Wire the fs.read TOOL: the agent's content comes through a recorded tool
@@ -451,7 +451,7 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
         exit_code = result.get("exitCode") if isinstance(result, dict) else None
         _v(_step, "shell.exec", f"exit={exit_code}  {last_output.strip().splitlines()[-1] if last_output.strip() else ''}")
 
-        # 3) reasoning: test-reader judges PASS/FAIL (gemma2:2b) — recorded as the
+        # 3) reasoning: test-reader judges PASS/FAIL (Gemma 4 2B (e2b)) — recorded as the
         # advance verdict. Ground-truth success, however, is the deterministic exit
         # code (Tenet 3): a hallucinated PASS must never count as solved.
         [verdict] = test_reader.decide({"output": last_output})

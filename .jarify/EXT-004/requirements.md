@@ -25,7 +25,7 @@ and prints results, with a status line naming the local model.
 #### Acceptance Criteria
 - [ ] No-arg `jcode` launches the REPL; `/quit` exits; `/clear` clears the screen
 - [ ] `/help` lists commands; unknown commands and non-slash input are handled gracefully
-- [ ] A banner/status line names the model (gemma2:2b, local)
+- [ ] A banner/status line names the model (Gemma 4 2B (`e2b`), local/llama.cpp)
 
 ### [REQ-2] Commands that wire the fleet
 
@@ -47,7 +47,7 @@ the user wants; the deterministic CLI decides *how* — the user never has to kn
 agent/tool to invoke.
 
 #### Acceptance Criteria
-- [ ] Non-slash input is routed by the `orchestrator` agent (gemma2:2b) to one action
+- [ ] Non-slash input is routed by the `orchestrator` agent (Gemma 4 2B (`e2b`)) to one action
 - [ ] The chosen action dispatches to the matching command (fix/find/run/read/list/symbols)
 - [ ] A safe default (help) is used when the request is unclear
 - [ ] The routing decision is shown to the user ("[orchestrator → …]") for transparency

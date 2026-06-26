@@ -19,7 +19,7 @@ implementation:
 ---
 
 This spec serves **Tenets 1 & 2** of PRIME-001: capability comes from many small,
-single-purpose `gemma2:2b` reasoning boundaries, each making ONE narrow judgement
+single-purpose Gemma 4 2B (`e2b`) reasoning boundaries, each making ONE narrow judgement
 and emitting only inert `Decision` data that a deterministic EXT-001 tool executes.
 Each agent has a tiny prompt and a tiny output contract — the regime where a 2B
 model is reliable — and never escalates to a larger model.

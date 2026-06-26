@@ -6,7 +6,7 @@ Code makes when it writes a test before code. It does NOT implement anything; it
 turns intent into checkable assertions, then hands a ``code.write_file`` Decision to the
 deterministic tool plane to persist them.
 
-Plane placement (proven the hard way): asking gemma2:2b to COMPUTE the expected output
+Plane placement (proven the hard way): asking Gemma 4 2B (`e2b`) to COMPUTE the expected output
 of an example fails the same way the off-by-one did — it got `running_total([2,3])`
 "== [1,3,6]", arithmetic it cannot do, producing impossible tests. So ground-truth
 values are NOT computed by the model. ``extract_examples`` deterministically pulls the

@@ -9,7 +9,7 @@ own homework.
   build_from_intent(task)            task = {intent, target, signature, oracle_test(hidden)}
   ─────────────────────────────────────────────────────────────────────────────────────
    stub      = signature -> `raise NotImplementedError`         (deterministic seed)
-   d_tests   = test-writer.decide({intent, signature})          gemma2:2b — GENERATIVE
+   d_tests   = test-writer.decide({intent, signature})          Gemma 4 2B (e2b) — GENERATIVE
    Runtime.apply(d_tests) -> code.write_file(test_module)        deterministic tool writes
    res       = fix_loop(target, intent, pytest)                 EXT-003 implements vs SELF tests
    self_pass = res.success
@@ -41,6 +41,6 @@ not just repair.
 
 Generative ≠ all-model. The seed stub, the file writes, the test runs, and the oracle
 scoring are deterministic (Tenets 1 & 3); only the test-writing and the implementation
-edits are `gemma2:2b`. As grains fail, plane-placement triage applies as everywhere:
+edits are Gemma 4 2B (`e2b`). As grains fail, plane-placement triage applies as everywhere:
 push what the 2B cannot do (e.g. enumerating edge cases mechanically) into tools, keep
 what it can (phrasing an assertion, choosing a structure) as tiny agents.

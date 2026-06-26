@@ -9,8 +9,8 @@ we improve it*.
 **jaros-code** is a software-development harness built on the **Jaros** runtime. The
 goal: **match or exceed Claude Code (as run on Claude Opus 4.8) at real coding work,
 while every reasoning call is served by a single small LOCAL model at zero paid
-inference.** Today that model is `gemma2:2b` (1.6 GB, via Ollama); a migration to a small
-Gemma 4 (`gemma4:e2b-it-qat`) on a Jetson Orin Nano via **llama.cpp** is in flight.
+inference.** The model is **Gemma 4 2B (`e2b`)** served by **llama.cpp** on a Jetson Orin Nano.
+(Legacy Ollama `gemma2:2b` path remains selectable via `JCODE_LLM_BACKEND=ollama` for back-compat.)
 
 The wager: small models haven't been useful for dev work because their *harnesses* are
 thin, not because the models are incapable. A deterministic, reproducible harness that
@@ -96,9 +96,8 @@ model does the work), an **honesty audit** (flags CRITICAL/STAGNATION/MISLEADING
 an **orchestration/wiring-quality** block (see §6). Phone reports via `PushNotification` on a
 30-min schedule (quiet hours 02:00–08:00).
 
-**Pluggable backend (`JCODE_LLM_BACKEND`)**: `ollama` (default, `/api/generate`) or
-`llamacpp` (`harness/llamacpp_client.py`, OpenAI-compatible `/v1/chat/completions`). Both
-local. Switch via `LLAMACPP_HOST`.
+**Pluggable backend (`JCODE_LLM_BACKEND`)**: `llamacpp` (default/intended — Gemma 4 2B (`e2b`) on Jetson, `/v1/chat/completions`) or
+`ollama` (legacy back-compat, `/api/generate`). Both local. Switch via `LLAMACPP_HOST`.
 
 **Safety**: `shell.exec` denylist (no network egress / destructive / privilege-escalation),
 `_codesafety` denylist on generated code (no `os.system`/`subprocess`/`eval`/etc.), and a 15s
@@ -150,7 +149,7 @@ MEASURE → DIAGNOSE → DISCOVER → PLACE → WIRE → RE-MEASURE → PRUNE   
 
 ## 7. Honest current state & limitations
 
-- Authored suite: ~94–97% on 35 tasks (gemma2:2b) — but small, noisy, and near-saturated even
+- Authored suite: ~94–97% on 35 tasks (Gemma 4 2B (`e2b`)/llama.cpp) — but small, noisy, and near-saturated even
   after hardening. The real bar is external.
 - HumanEval: cascade beats baseline on an easy out-of-sample slice; the *hard* problems still
   fail and the full-164 number (which will be far lower) hasn't been run end-to-end yet.
@@ -160,21 +159,15 @@ MEASURE → DIAGNOSE → DISCOVER → PLACE → WIRE → RE-MEASURE → PRUNE   
 - **Known metric flaw:** `leverage = solved/agents` is sensitive to suite size (more tasks →
   higher leverage even without better wiring). Needs normalizing (e.g. pass-rate-per-agent).
 
-## 8. In flight — model migration to the Jetson
+## 8. Model: Gemma 4 2B (e2b) on the Jetson via llama.cpp (COMPLETE)
 
-Switching from `gemma2:2b` (slow on the dev box's CPU) to small **Gemma 4** (`gemma4:e2b-it-qat`,
-instruction-tuned, ~4.3 GB) on a **Jetson Orin Nano** (aarch64, GPU) served by **llama.cpp**.
-- Ollama on the dev box was upgraded 0.24→0.30.9; the e2b model pulled and smoke-tested locally
-  (clean direct output, ~27s/call on CPU — the Jetson GPU should be much faster).
-- A parser fix was needed: gemma4 closes the file sentinel with `>>>` not `FILE>>>`; the rewriter
-  now accepts both (and is greedy so a `>>>` in a docstring doesn't truncate).
-- **llama.cpp client is built and tested** (no server needed yet). Handoff is one step once the
-  Jetson `llama-server` is up: `JCODE_LLM_BACKEND=llamacpp` and
-  `LLAMACPP_HOST=http://192.168.1.183:<port>`. A `health()` probe verifies the endpoint first.
-- SSH to the Jetson is set up key-only (`ssh jetson`); the password is no longer needed.
-- **Next:** stand up llama-server on the Jetson (bind `--host 0.0.0.0`, `-it` gguf, chat
-  endpoint), `health()` it, run a speed+correctness smoke test, then switch the runner and
-  **re-baseline** (history keeps a `model` field so old gemma2 runs stay distinguishable).
+The migration from legacy `gemma2:2b` (Ollama, slow on dev-box CPU) to **Gemma 4 2B (`e2b`)**
+(`gemma4:e2b-it-qat`, ~4.3 GB) on a **Jetson Orin Nano** (aarch64, GPU) served by **llama.cpp** is done.
+- The llama.cpp client (`harness/llamacpp_client.py`) is built, tested, and is the default backend.
+- SSH to the Jetson is set up key-only (`ssh jetson`); endpoint: `http://192.168.1.183:8000`.
+- A parser fix was made: gemma4 closes the file sentinel with `>>>` not `FILE>>>`; the rewriter accepts both.
+- History keeps a `model` field so legacy gemma2:2b runs remain distinguishable in the trend.
+- The legacy Ollama path remains selectable via `JCODE_LLM_BACKEND=ollama` for back-compat.
 
 ## 9. Suggested next moves (priority order)
 

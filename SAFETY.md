@@ -6,8 +6,8 @@ the model only proposes; deterministic gates/tools decide).
 
 ## What is guaranteed
 
-1. **No internet writes / no exfiltration.** All inference is **local** — Ollama
-   `gemma2:2b` on `localhost:11434`. No cloud model, no paid API. The `shell.exec`
+1. **No internet writes / no exfiltration.** All inference is **local** — Gemma 4 2B (`e2b`)
+   via llama.cpp on the Jetson Orin Nano (legacy: Ollama `gemma2:2b` on `localhost:11434`). No cloud model, no paid API. The `shell.exec`
    tool's gate (EXT-001 / REQ-7) **refuses** any network command: `curl`, `wget`,
    `ssh`/`scp`, `git push/pull/clone/fetch`, `pip/npm/conda/apt install`, raw
    `http(s)://`, `Invoke-WebRequest`, etc. A refused command never executes.
