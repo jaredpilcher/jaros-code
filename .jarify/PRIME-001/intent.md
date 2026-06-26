@@ -4,9 +4,11 @@
 match or exceed Claude Code at real coding work **while every reasoning call is
 served by a single small local model — Ollama `gemma2:2b` — at zero inference cost.**
 
-**The bar is explicit and high: the system must become so good that it overcomes
-the model limitations of `gemma2:2b` and reaches the quality of Claude Code running
-on Claude Opus 4.8.** The harness — not the model — closes that gap. We do not get
+**The bar is explicit and high — it is the very North Star: the system must become so
+good that it overcomes the model limitations of `gemma2:2b` and is AS GOOD OR BETTER,
+in ALL ways, than the Claude Code CLI running on Claude Opus 4.8 at its max.** Matching
+is the floor; exceeding it — on capability, reliability, transparency, and developer
+experience alike — is the aim. The harness — not the model — closes that gap. We do not get
 to claim we are near the bar; we have to *prove* it. So this system is built
 together with a growing suite of **tests and evaluations** that measure, run over
 run, whether we are getting closer to Claude-Code-on-Opus-4.8 parity on real coding
@@ -163,6 +165,17 @@ we approach forever and are never satisfied to have merely neared. **And all of 
 Jaros** — every orchestration decision and every tool effect flows through the Jaros runtime (gate →
 execute → hash-chain log → replay). Running on Jaros is non-negotiable: it is how the two-plane
 discipline is *enforced* rather than merely intended, not an implementation detail.
+
+**The judge-orchestrator is a key piece of the system's success — and it is only ever as strong as the
+deterministic plane that empowers it.** A 2B has far less reasoning than Opus, so the
+right-decision-every-time bar is reached NOT by trusting the model more, but by **building out an
+extensive library of deterministic Jaros tools and validations for the orchestrator to wield** — each
+one carrying a piece of the load the small model cannot bear: computing, searching, validating a
+candidate, constraining the next choice to only safe/valid moves, generate-and-test. The deterministic
+plane is what turns a narrow, fallible model judgement into a correct decision. Empowering the weak
+orchestrator this way — relentlessly growing the tools and the validations that catch its mistakes,
+narrow its options, and verify its work — is first-class, required work, never a support afterthought;
+it is the primary lever by which a small model reaches and exceeds the Opus-4.8 bar.
 
 **The convergence loop is a standing, supervised discipline — never finished.**
 Reaching the bar is not a one-time build; it is a loop run continuously and owned by a
