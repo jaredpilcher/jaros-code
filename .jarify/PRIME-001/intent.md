@@ -2,10 +2,10 @@
 
 **jaros-code** is a software-development harness built on Jaros whose purpose is to
 match or exceed Claude Code at real coding work **while every reasoning call is
-served by a single small local model — Ollama `gemma2:2b` — at zero inference cost.**
+served by a single small local model — **Gemma 4 2B (`e2b`)**, run locally via llama.cpp — at zero inference cost.**
 
 **The bar is explicit and high — it is the very North Star: the system must become so
-good that it overcomes the model limitations of `gemma2:2b` and is AS GOOD OR BETTER,
+good that it overcomes the model limitations of Gemma 4 2B (`e2b`) and is AS GOOD OR BETTER,
 in ALL ways, than the Claude Code CLI running on Claude Opus 4.8 at its max.** Matching
 is the floor; exceeding it — on capability, reliability, transparency, and developer
 experience alike — is the aim. The harness — not the model — closes that gap. We do not get
@@ -68,7 +68,10 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    is a deterministic tool the clerk runs.
 
 2. **Small-model-only, zero paid inference.**
-   Every reasoning call goes to local `gemma2:2b` via Ollama. No cloud model, no
+   Every reasoning call goes to the local **Gemma 4 2B (`e2b`)** model, served by
+   **llama.cpp** on the Jetson Orin Nano. **Gemma 4 2B (`e2b`) is the EXCLUSIVE model —
+   the only model the system ever calls.** (The earlier Ollama `gemma2:2b` path is legacy,
+   not the intended model.) No cloud model, no
    paid API, ever — not as a fallback, not "just for the hard parts." If a
    capability appears to require a larger model, that is a signal to **decompose
    the work into smaller agent steps and stronger deterministic tools**, never to
@@ -130,7 +133,7 @@ prompt, or a bigger model. Build the fleet wide and the tools sharp.
 
 **Plane-placement is the core craft.** Composition alone is not enough; each grain
 must be routed to the plane that can actually do it. For every grain ask: *is its core
-a judgement `gemma2:2b` can reliably make?* If yes (classify a bug class, pick a file,
+a judgement Gemma 4 2B (`e2b`) can reliably make?* If yes (classify a bug class, pick a file,
 transform-by-example, read a test result) → a tiny **agent**. If no (counting,
 arithmetic, operator semantics, exhaustive search) → a deterministic **tool**, usually
 generate-and-test. Agents and tools therefore grow *together*; the skill that closes
