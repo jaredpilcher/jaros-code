@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/gherkin_agent.py",
+      "startLine": 15,
+      "endLine": 60
+    },
+    {
+      "file": ".jaros-data/agents/code_agent.py",
+      "startLine": 16,
+      "endLine": 106
+    }
+  ]
+}
