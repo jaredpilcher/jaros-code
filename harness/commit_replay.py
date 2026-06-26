@@ -211,7 +211,8 @@ def _file_context(src: str, max_chars: int = 900) -> str:
 
 
 def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None,
-                      feedback: str = "", intent_only: bool = False, context: str = "") -> str:
+                      feedback: str = "", intent_only: bool = False, context: str = "",
+                      think: bool = False) -> str:
     """Local-2B single-function solve for a real repo function.
 
     intent_only=True (the STRONG, non-gameable, SWE-bench-style claim): the model gets ONLY the commit
@@ -227,12 +228,17 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
     ctx_block = f"\nMODULE CONTEXT (imports + module-level names available):\n{context}\n" if context else ""
     fb = "" if intent_only else (
         f"\nYour previous attempt FAILED with:\n{feedback[:600]}\nFix the cause.\n" if feedback else "")
+    think_instr = ("First, inside <think> </think>, reason about EXACTLY what the COMMIT INTENT requires "
+                   "CHANGING in this function (a new parameter? new behavior? a bug fix?) — do NOT just "
+                   "copy the current function. Then AFTER </think>, ") if think else ""
     prompt = (f"You are changing a Python library so a failing test passes. Implement/repair the "
-              f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}{ctx_block}\n\n{ctx}{fb}\nOutput "
-              f"ONLY the complete `def {name}(...):` definition — valid Python, correct indentation, no "
-              f"markdown, no prose, no test code.")
+              f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}{ctx_block}\n\n{ctx}{fb}\n"
+              f"{think_instr}Output ONLY the complete `def {name}(...):` definition — valid Python, "
+              f"correct indentation, no markdown, no prose, no test code.")
     reply = _llm().complete(LlmRequest(prompt=prompt,
-                                       params={"temperature": 0.0, "max_tokens": 700})).text
+                                       params={"temperature": 0.0, "max_tokens": 900 if think else 700})).text
+    if think and "</think>" in reply:
+        reply = reply.rsplit("</think>", 1)[1]
     s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
     i = s.find(f"def {name}")
     return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
@@ -257,7 +263,7 @@ def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set
 
 def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
                  max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
-                 timeout: int = 180) -> str:
+                 use_think: bool = False, timeout: int = 180) -> str:
     """Attempt one commit-replay task. intent_only=True -> message+code only, one-shot, no test
     shown/iterated (the strong non-gameable claim). Else -> failing test shown + iterated up to
     max_iter (TDD upper bound). use_context -> add the file's module preamble (the repo-context jig).
@@ -276,7 +282,8 @@ def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
         context = _file_context(orig) if use_context else ""
         feedback = ""
         for _ in range(iters):
-            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only, context)
+            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only,
+                             context, use_think)
             if not new_func:
                 return "empty"
             try:
@@ -303,20 +310,21 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b,
-                 max_iter: int = 1, intent_only: bool = False, use_context: bool = False) -> dict:
+                 max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
+                 use_think: bool = False) -> dict:
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
             r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter,
-                             intent_only=intent_only, use_context=use_context)
+                             intent_only=intent_only, use_context=use_context, use_think=use_think)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    ctx_tag = " +ctx" if use_context else ""
+    ctx_tag = (" +ctx" if use_context else "") + (" +think" if use_think else "")
     label = ((f"intent-only / 1-shot / test HIDDEN (strong, non-gameable){ctx_tag}" if intent_only
               else f"test-as-spec / iter<={max_iter} (TDD upper bound){ctx_tag}"))
     print(f">>> RESULT [{label}]: {k}/{n} = {k/n*100:.1f}% red->green  "
@@ -336,11 +344,13 @@ if __name__ == "__main__":
         tasks = json.loads(tj.read_text(encoding="utf-8"))
         intent_only = "--intent-only" in sys.argv
         use_context = "--context" in sys.argv
+        use_think = "--think" in sys.argv
         max_iter = int(sys.argv[sys.argv.index("--iters") + 1]) if "--iters" in sys.argv else 1
         mode = ("INTENT-ONLY (test hidden)" if intent_only else f"test-as-spec iter<={max_iter}") \
-            + (" +context" if use_context else "")
+            + (" +context" if use_context else "") + (" +think" if use_think else "")
         print(f">>> {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
-        run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only, use_context=use_context)
+        run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only,
+                     use_context=use_context, use_think=use_think)
         sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 400
     skip = int(sys.argv[sys.argv.index("--skip") + 1]) if "--skip" in sys.argv else 0
