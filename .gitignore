@@ -22,3 +22,7 @@ evals/benchmarks/*.jsonl
 evals/benchmarks/**/*.parquet
 evals/benchmarks/*.json
 .jcode/
+
+# Claude Code runtime state (keep vendored skills/agents, ignore runtime locks)
+.claude/scheduled_tasks.lock
+.claude/*.lock
