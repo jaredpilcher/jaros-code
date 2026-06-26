@@ -60,3 +60,15 @@ honestly with Wilson CI.
 
 Anti-rut rule (owner, 2026-06-26): rank by impact×tractability, structural/by-construction first, max
 1-2 attempts per sub-lever then re-rank; the taxonomy is the worklist.
+
+## Performance / parallelism (owner note 2026-06-26 — "parallelize what we can" in upcoming changes)
+
+Measured cost of Slice 1a: ~3-4 min PER FUNCTION (6 LLM calls: Gherkin, self-tests, 3x code; + 4 Docker
+runs: 3x self-test, 1x oracle). Multi-target commits multiply it (the 6-target "Add dft/idft" took
+~10 min). HARD FLOOR: the single Jetson GPU serializes ALL LLM calls (llama.cpp serves one at a time) —
+so "parallel" LLM calls mostly just queue; the run is LLM-bound. Genuine wins: (1) overlap CPU (Docker
+tests) with GPU (LLM gen) in a pipeline; (2) run independent Docker tests concurrently across CPU
+cores; (3) across-task parallelism via git WORKTREES (one per worker, no checkout conflict) — LLM still
+queues on the one Jetson. BIGGER lever than parallelism = FEWER LLM calls: merge Gherkin+self-tests into
+one call, cap fix iters, CAP TARGET COUNT (skip/limit huge multi-target commits the 2B can't nail
+anyway). A second inference device is the other throughput axis. Do this AFTER Slice 1a's verdict.
