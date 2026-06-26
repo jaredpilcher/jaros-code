@@ -169,13 +169,18 @@ discipline is *enforced* rather than merely intended, not an implementation deta
 **The judge-orchestrator is a key piece of the system's success — and it is only ever as strong as the
 deterministic plane that empowers it.** A 2B has far less reasoning than Opus, so the
 right-decision-every-time bar is reached NOT by trusting the model more, but by **building out an
-extensive library of deterministic Jaros tools and validations for the orchestrator to wield** — each
-one carrying a piece of the load the small model cannot bear: computing, searching, validating a
-candidate, constraining the next choice to only safe/valid moves, generate-and-test. The deterministic
-plane is what turns a narrow, fallible model judgement into a correct decision. Empowering the weak
-orchestrator this way — relentlessly growing the tools and the validations that catch its mistakes,
-narrow its options, and verify its work — is first-class, required work, never a support afterthought;
-it is the primary lever by which a small model reaches and exceeds the Opus-4.8 bar.
+extensive library of deterministic Jaros tools — and the deterministic CHECKS that fire WHEN each tool
+is called — for the orchestrator to wield.** Validation here means exactly that: every tool's
+`validate()` gate runs a **deterministic check** before its `execute()`, verifying inputs,
+preconditions, and whether the candidate is actually correct, so a wrong or unsafe model decision is
+CAUGHT deterministically before it ever takes effect — this gate IS the clerk of commitment 1. Each tool
+carries load the small model cannot bear (computing, searching, generate-and-test, constraining the next
+choice to only safe/valid moves); each per-call check is the deterministic safety net under the model's
+fallible judgement; the **evals** are the standing proof the net holds. The deterministic plane is what
+turns a narrow model judgement into a correct decision. Relentlessly growing this library — the tools
+AND the per-call deterministic checks that catch the orchestrator's mistakes, narrow its options, and
+verify its work — is first-class, required work, the primary lever by which a small model reaches and
+exceeds the Opus-4.8 bar.
 
 **The convergence loop is a standing, supervised discipline — never finished.**
 Reaching the bar is not a one-time build; it is a loop run continuously and owned by a
