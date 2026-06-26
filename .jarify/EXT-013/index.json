@@ -1,4 +1,21 @@
 {
+  "REQ-2": [
+    {
+      "file": "tests/test_ext013_jaros_ops.py",
+      "startLine": 18,
+      "endLine": 298
+    },
+    {
+      "file": "harness/jaros_solve_ops.py",
+      "startLine": 34,
+      "endLine": 114
+    },
+    {
+      "file": ".jaros-data/tools/repair_tool.py",
+      "startLine": 36,
+      "endLine": 125
+    }
+  ],
   "REQ-1": [
     {
       "file": ".jaros-data/agents/gherkin_agent.py",
@@ -11,21 +28,16 @@
       "endLine": 106
     }
   ],
-  "REQ-2": [
+  "REQ-3": [
     {
-      "file": ".jaros-data/tools/repair_tool.py",
-      "startLine": 36,
-      "endLine": 125
+      "file": ".jaros-data/agents/orchestrator_judge_agent.py",
+      "startLine": 30,
+      "endLine": 118
     },
     {
-      "file": "harness/jaros_solve_ops.py",
-      "startLine": 34,
-      "endLine": 114
-    },
-    {
-      "file": "tests/test_ext013_jaros_ops.py",
-      "startLine": 18,
-      "endLine": 298
+      "file": "tests/test_ext013_orchestrator_judge.py",
+      "startLine": 15,
+      "endLine": 251
     }
   ]
 }
