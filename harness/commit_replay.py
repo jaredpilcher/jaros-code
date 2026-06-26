@@ -374,7 +374,7 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
                     if c2:
                         content = _apply_func(content, n2, c2)
                 (repo / cf).write_text(content, encoding="utf-8", newline="\n")
-                ok, fb = _run_selftests(repo, tests, timeout)
+                ok, fb = _run_selftests(repo, tests, 25)   # 2B unit tests are ~instant; a hang = bad test, fail fast
                 if ok:
                     break
                 code = g_code(task["subject"], name, parent_src, ctx[cf], gk, fb)
