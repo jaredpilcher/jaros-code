@@ -299,13 +299,10 @@ def g_gherkin(subject: str, name: str, parent_src: str | None, context: str) -> 
     ctx = f"Module context:\n{context}\n" if context else ""
     out = _g_llm(
         f"You are changing a Python library function `{name}`.\nCOMMIT INTENT: {subject}\n{ctx}{cur}\n"
-        f"STEP 1 — pin the exact case: in ONE line, name the SPECIFIC condition the COMMIT INTENT calls "
-        f"out and that the current code gets wrong (e.g. a particular input like NEGATIVE numbers / n<0, "
-        f"an empty case, a new parameter). Read the intent literally — do NOT broaden or substitute it.\n"
-        f"STEP 2 — write 3-6 numbered Given/When/Then scenarios for `{name}` AFTER the change. They MUST "
-        f"include a concrete scenario exercising EXACTLY the case from step 1, plus existing behavior that "
-        f"must stay the same. Output the one-line case from step 1, then the numbered scenarios.", 700)
-    return out.strip()
+        f"Write the behavior specification for `{name}` AFTER the change as 3-6 numbered Given/When/Then "
+        f"scenarios. Include BOTH the NEW behavior the intent requires AND existing behavior that must "
+        f"stay the same. Output ONLY the numbered scenarios.", 600)   # comprehension step PRUNED (regressed
+    return out.strip()                                                # held-out 37: lost Reject-by-ID, exactly_n still failed)
 
 
 def g_selftests(name: str, gherkin: str, pkg: str) -> str:
@@ -393,7 +390,7 @@ def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool
 
 
 def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2,
-                    reviews: bool = False, ensemble: bool = False) -> str:
+                    reviews: bool = False, ensemble: bool = False, agentic: bool = False) -> str:
     """EXT-012: per changed function the 2B authors Gherkin -> self-tests -> code, then fixes the code
     against its OWN tests; the final code is scored on the HIDDEN oracle (red->green). reviews=True adds
     Slice 1b: the 2B's self-review of the Gherkin, the test<->Gherkin review, and the code<->Gherkin
@@ -412,6 +409,19 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
         final: dict[str, dict] = {}
         for cf, name, parent_src in targets:
             pkg = cf.split("/")[0]
+            if agentic:                                  # ORCHESTRATOR: the 2B judges which tool to use
+                from harness.behavioral_solve import behavioral_solve_agentic
+
+                def _rt(code: str, test_code: str, _cf=cf, _name=name) -> tuple[bool, str]:
+                    content = orig[_cf]
+                    for n2, c2 in {**final.get(_cf, {}), _name: code}.items():
+                        if c2:
+                            content = _apply_func(content, n2, c2)
+                    (repo / _cf).write_text(content, encoding="utf-8", newline="\n")
+                    return _run_selftests(repo, test_code, 25)
+                res = behavioral_solve_agentic(task["subject"], name, parent_src, ctx[cf], pkg, _rt)
+                final.setdefault(cf, {})[name] = res["code"] or ""
+                continue
             gk = g_gherkin(task["subject"], name, parent_src, ctx[cf])
             if reviews:                                  # 1b: self-review the behavior spec
                 gk = g_review_gherkin(task["subject"], name, parent_src, gk)
@@ -477,21 +487,22 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
 
 
 def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False,
-                ensemble: bool = False) -> dict:
+                ensemble: bool = False, agentic: bool = False) -> dict:
     """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b;
-    ensemble -> baseline+gherkin selected by self-tests."""
+    ensemble -> baseline+gherkin selected by self-tests; agentic -> 2B-orchestrated tool use."""
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_gherkin(repo, t, branch, reviews=reviews, ensemble=ensemble)
+            r = attempt_gherkin(repo, t, branch, reviews=reviews, ensemble=ensemble, agentic=agentic)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    slice_tag = ("ENSEMBLE (gherkin+baseline by self-tests)" if ensemble
+    slice_tag = ("AGENTIC (2B orchestrates the tools)" if agentic
+                 else "ENSEMBLE (gherkin+baseline by self-tests)" if ensemble
                  else "Slice 1b (+reviews)" if reviews else "Slice 1a (core loop)")
     print(f">>> RESULT [EXT-012 gherkin-loop {slice_tag} / intent-only / test HIDDEN]: {k}/{n} = "
           f"{k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n>>> breakdown: {dict(res)}",
@@ -592,10 +603,10 @@ if __name__ == "__main__":
         tasks = json.loads(tj.read_text(encoding="utf-8"))
         reviews = "--reviews" in sys.argv
         ensemble = "--ensemble" in sys.argv
-        mode = "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
-        print(f">>> EXT-012 GHERKIN-LOOP {mode} (2B authors Gherkin->tests->code) on {len(tasks)} "
-              f"{tag} tasks of {repo.name}", flush=True)
-        run_gherkin(repo, branch, tasks, reviews=reviews, ensemble=ensemble)
+        agentic = "--agentic" in sys.argv
+        mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
+        print(f">>> EXT-012 GHERKIN-LOOP {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+        run_gherkin(repo, branch, tasks, reviews=reviews, ensemble=ensemble, agentic=agentic)
         sys.exit(0)
 
     if "--baseline" in sys.argv:
