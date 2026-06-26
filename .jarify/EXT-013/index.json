@@ -10,5 +10,22 @@
       "startLine": 16,
       "endLine": 106
     }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/repair_tool.py",
+      "startLine": 36,
+      "endLine": 125
+    },
+    {
+      "file": "harness/jaros_solve_ops.py",
+      "startLine": 34,
+      "endLine": 114
+    },
+    {
+      "file": "tests/test_ext013_jaros_ops.py",
+      "startLine": 18,
+      "endLine": 298
+    }
   ]
 }
