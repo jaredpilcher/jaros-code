@@ -1,64 +1,65 @@
 {
-  "spec": "EXT-014",
-  "title": "Gemma 4 2B (e2b) exclusive model — migrate all references",
-  "links": [
+  "REQ-1": [
     {
-      "req": "REQ-2",
-      "description": "All Jarify spec docs reference Gemma 4 2B (e2b)",
-      "files": [
-        { "file": ".jarify/EXT-001/requirements.md", "ranges": [[132, 132]] },
-        { "file": ".jarify/EXT-002/intent.md", "ranges": [[5, 5]] },
-        { "file": ".jarify/EXT-002/design.md", "ranges": [[4, 4]] },
-        { "file": ".jarify/EXT-002/requirements.md", "ranges": [[22, 22]] },
-        { "file": ".jarify/EXT-003/design.md", "ranges": [[27, 31], [37, 37]] },
-        { "file": ".jarify/EXT-003/requirements.md", "ranges": [[57, 57]] },
-        { "file": ".jarify/EXT-004/requirements.md", "ranges": [[28, 28], [50, 50]] },
-        { "file": ".jarify/EXT-005/intent.md", "ranges": [[4, 4]] },
-        { "file": ".jarify/EXT-005/design.md", "ranges": [[24, 24]] },
-        { "file": ".jarify/EXT-005/requirements.md", "ranges": [[14, 14], [38, 38]] },
-        { "file": ".jarify/EXT-006/design.md", "ranges": [[4, 12]] },
-        { "file": ".jarify/EXT-006/intent.md", "ranges": [[9, 10]] },
-        { "file": ".jarify/EXT-006/requirements.md", "ranges": [[14, 14], [20, 30], [34, 34], [42, 42], [52, 52], [65, 65]] },
-        { "file": ".jarify/EXT-007/tasks.md", "ranges": [[23, 23], [44, 44]] },
-        { "file": ".jarify/EXT-008/design.md", "ranges": [[12, 12], [44, 44]] }
-      ]
+      "file": "scripts/serve.ps1",
+      "startLine": 6,
+      "endLine": 21
     },
     {
-      "req": "REQ-3",
-      "description": "All project docs reference Gemma 4 2B (e2b)/llama.cpp",
-      "files": [
-        { "file": "README.md", "ranges": [[89, 91]] },
-        { "file": "CLAUDE.md", "ranges": [[19, 21], [139, 139], [150, 154], [164, 164]] },
-        { "file": "SAFETY.md", "ranges": [[9, 10]] },
-        { "file": "docs/ARCHITECTURE.md", "ranges": [[4, 7], [14, 14], [101, 103], [124, 125]] },
-        { "file": "docs/CATALOG.md", "ranges": [[6, 6]] },
-        { "file": "docs/HANDOFF.md", "ranges": [[11, 15], [99, 101], [152, 152], [162, 170]] }
-      ]
+      "file": "scripts/serve.sh",
+      "startLine": 8,
+      "endLine": 23
     },
     {
-      "req": "REQ-4",
-      "description": "Agent/tool/harness docstrings + comments updated (docstring-only)",
-      "files": [
-        { "file": ".jaros-data/agents/editor_agent.py", "ranges": [[19, 19]] },
-        { "file": ".jaros-data/agents/orchestrator_agent.py", "ranges": [[7, 7]] },
-        { "file": ".jaros-data/agents/rewriter_agent.py", "ranges": [[5, 5], [76, 76]] },
-        { "file": ".jaros-data/agents/test_writer_agent.py", "ranges": [[9, 9]] },
-        { "file": ".jaros-data/tools/_codesafety.py", "ranges": [[3, 3]] },
-        { "file": "harness/agentic_eval.py", "ranges": [[16, 16]] },
-        { "file": "harness/coding_loop.py", "ranges": [[8, 9], [197, 200], [244, 244], [361, 361], [454, 454]] },
-        { "file": "harness/eval_runner.py", "ranges": [[3, 4]] },
-        { "file": "harness/honesty.py", "ranges": [[6, 7], [32, 32]] },
-        { "file": "harness/humaneval.py", "ranges": [[4, 4]] },
-        { "file": "harness/mbpp.py", "ranges": [[5, 5]] },
-        { "file": "harness/report.py", "ranges": [[135, 135]] }
-      ]
-    },
+      "file": ".jaros-data/config/llm.json",
+      "startLine": 1,
+      "endLine": 8
+    }
+  ],
+  "REQ-2": [
+    { "file": ".jarify/EXT-001/requirements.md", "startLine": 132, "endLine": 132 },
+    { "file": ".jarify/EXT-002/intent.md", "startLine": 5, "endLine": 5 },
+    { "file": ".jarify/EXT-002/design.md", "startLine": 4, "endLine": 4 },
+    { "file": ".jarify/EXT-002/requirements.md", "startLine": 22, "endLine": 22 },
+    { "file": ".jarify/EXT-003/design.md", "startLine": 27, "endLine": 37 },
+    { "file": ".jarify/EXT-003/requirements.md", "startLine": 57, "endLine": 57 },
+    { "file": ".jarify/EXT-004/requirements.md", "startLine": 28, "endLine": 50 },
+    { "file": ".jarify/EXT-005/intent.md", "startLine": 4, "endLine": 4 },
+    { "file": ".jarify/EXT-005/design.md", "startLine": 24, "endLine": 24 },
+    { "file": ".jarify/EXT-005/requirements.md", "startLine": 14, "endLine": 38 },
+    { "file": ".jarify/EXT-006/design.md", "startLine": 4, "endLine": 12 },
+    { "file": ".jarify/EXT-006/intent.md", "startLine": 9, "endLine": 10 },
+    { "file": ".jarify/EXT-006/requirements.md", "startLine": 14, "endLine": 65 },
+    { "file": ".jarify/EXT-007/tasks.md", "startLine": 23, "endLine": 44 },
+    { "file": ".jarify/EXT-008/design.md", "startLine": 12, "endLine": 44 }
+  ],
+  "REQ-3": [
+    { "file": "README.md", "startLine": 89, "endLine": 91 },
+    { "file": "CLAUDE.md", "startLine": 19, "endLine": 21 },
+    { "file": "SAFETY.md", "startLine": 9, "endLine": 10 },
+    { "file": "docs/ARCHITECTURE.md", "startLine": 4, "endLine": 125 },
+    { "file": "docs/CATALOG.md", "startLine": 6, "endLine": 6 },
+    { "file": "docs/HANDOFF.md", "startLine": 11, "endLine": 170 }
+  ],
+  "REQ-4": [
+    { "file": ".jaros-data/agents/editor_agent.py", "startLine": 19, "endLine": 19 },
+    { "file": ".jaros-data/agents/orchestrator_agent.py", "startLine": 7, "endLine": 7 },
+    { "file": ".jaros-data/agents/rewriter_agent.py", "startLine": 5, "endLine": 76 },
+    { "file": ".jaros-data/agents/test_writer_agent.py", "startLine": 9, "endLine": 9 },
+    { "file": ".jaros-data/tools/_codesafety.py", "startLine": 3, "endLine": 3 },
+    { "file": "harness/agentic_eval.py", "startLine": 16, "endLine": 16 },
+    { "file": "harness/coding_loop.py", "startLine": 8, "endLine": 9 },
+    { "file": "harness/eval_runner.py", "startLine": 3, "endLine": 4 },
+    { "file": "harness/honesty.py", "startLine": 6, "endLine": 32 },
+    { "file": "harness/humaneval.py", "startLine": 4, "endLine": 4 },
+    { "file": "harness/mbpp.py", "startLine": 5, "endLine": 5 },
+    { "file": "harness/report.py", "startLine": 135, "endLine": 135 }
+  ],
+  "REQ-5": [
     {
-      "req": "REQ-5",
-      "description": "Legacy Ollama path clearly marked, never default",
-      "files": [
-        { "file": "harness/ollama_client.py", "ranges": [[1, 21]] }
-      ]
+      "file": "harness/ollama_client.py",
+      "startLine": 1,
+      "endLine": 14
     }
   ]
 }
