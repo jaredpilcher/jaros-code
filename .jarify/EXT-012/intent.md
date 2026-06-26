@@ -54,6 +54,17 @@ deterministic bookkeeping in the tool plane). This lands in Slice 2 (the persist
 - **Decision: Slice 1a (no reviews) is the best variant -> taken to the held-out 37 gate** (vs the
   4/37 multi-function baseline). Target cap (>4 functions) committed to keep it tractable.
 
+**HELD-OUT 37 GATE RESULT (2026-06-26) — the behavioral loop GENERALIZES and BEATS the baseline:**
+- **Slice 1a (Gherkin -> self-tests -> code -> fix): 6/37 = 16.2% [Wilson 7.7-31.1%]** vs
+  multi-function baseline **4/37 = 10.8%**. +2 passes; same direction as dev (2/17 vs 1/17). Honest
+  intent-only (self-tests derived from the intent, hidden oracle alone scores; no leakage).
+- **Pass-set DIFF (the real story = COMPLEMENTARY solvers):** common 3 (last, running_median,
+  subfactorial); 1a-UNIQUE 3 (Reject by ID, Issue 900, Revert pairwise) — solved commits the baseline
+  COULDN'T; baseline-unique 1 (exactly_n). **Union = 7/37 = 18.9%** — the ceiling of an honest ensemble.
+- CIs overlap at n=37 (directional, not yet statistically conclusive) — needs the toolz cross-repo gate
+  + more commits to firm up. NEXT: (a) toolz held-out gherkin gate (cross-repo); (b) honest ensemble
+  (baseline + gherkin-loop, select via the gherkin loop's SELF-tests not the oracle) to capture ~7/37.
+
 ## Honesty / eval (binds the whole thing)
 
 Measured on EXT-011 commit-replay: the 2B's self-generated tests are SCAFFOLDING derived from the
