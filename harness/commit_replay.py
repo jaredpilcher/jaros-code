@@ -369,10 +369,11 @@ def g_signoff(name: str, gherkin: str, code: str) -> tuple[bool, str]:
 def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool, str]:
     """Run the 2B's OWN tests (scaffolding) in the Docker env. (all_passed, short_feedback).
     returncode 0 == tests ran and all passed (pytest returns 5 for no-tests, 1 for failures)."""
-    (repo / "tests" / "test_gherkin_self.py").write_text(test_code, encoding="utf-8", newline="\n")
+    tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"   # repo's real test dir (toolz/tests, tests, ...)
+    (repo / tnode).write_text(test_code, encoding="utf-8", newline="\n")
     cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
            "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest",
-           "tests/test_gherkin_self.py", "--tb=short", "-q", "-p", "no:cacheprovider"]
+           tnode, "--tb=short", "-q", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=timeout)
@@ -441,7 +442,7 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
                 if c2:
                     content = _apply_func(content, n2, c2)
             (repo / cf).write_text(content, encoding="utf-8", newline="\n")
-        st = repo / "tests" / "test_gherkin_self.py"    # remove scaffolding before the oracle
+        st = repo / (_spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py")   # remove scaffolding before the oracle
         if st.exists():
             st.unlink()
         return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
