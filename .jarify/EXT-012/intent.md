@@ -61,9 +61,17 @@ deterministic bookkeeping in the tool plane). This lands in Slice 2 (the persist
 - **Pass-set DIFF (the real story = COMPLEMENTARY solvers):** common 3 (last, running_median,
   subfactorial); 1a-UNIQUE 3 (Reject by ID, Issue 900, Revert pairwise) — solved commits the baseline
   COULDN'T; baseline-unique 1 (exactly_n). **Union = 7/37 = 18.9%** — the ceiling of an honest ensemble.
-- CIs overlap at n=37 (directional, not yet statistically conclusive) — needs the toolz cross-repo gate
-  + more commits to firm up. NEXT: (a) toolz held-out gherkin gate (cross-repo); (b) honest ensemble
-  (baseline + gherkin-loop, select via the gherkin loop's SELF-tests not the oracle) to capture ~7/37.
+- CIs overlap at n=37 (directional, not yet statistically conclusive).
+
+**CROSS-REPO (toolz gate, clean after fixing the self-test-path bug — the first 0/11 was all
+FileNotFoundError, a harness bug, NOT a real result):**
+- toolz: gherkin **1/11 = 9.1%** = baseline 1/11 — MATCHED (complementary commit: gherkin got the
+  compatibility-import test, baseline got the rename; renames don't fit the per-function Gherkin shape).
+- **COMBINED both repos: gherkin 7/48 = 14.6% vs multi-function baseline 5/48 = 10.4%** — a real OVERALL
+  lift, driven by the more-itertools win, holding (matching) on toolz. Complementary pass profiles on
+  BOTH repos -> the honest ensemble (baseline + gherkin, select via gherkin SELF-tests not the oracle)
+  is the next lift; union ceiling ~7/37 + ~2/11. Then: more held-out commits to tighten CIs; the
+  behavior->code retrieval probe (precondition now met).
 
 ## Honesty / eval (binds the whole thing)
 
