@@ -421,8 +421,17 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
             if reviews and code:                         # 1b: final code<->Gherkin sign-off
                 signed, reason = g_signoff(name, gk, code)
                 if not signed:
-                    code = g_code(task["subject"], name, parent_src, ctx[cf], gk,
-                                  f"sign-off found a gap: {reason}") or code
+                    revised = g_code(task["subject"], name, parent_src, ctx[cf], gk,
+                                     f"sign-off found a gap: {reason}")
+                    if revised:                          # KEEP-OR-IMPROVE GUARD: accept the sign-off
+                        content = orig[cf]               # revision ONLY if it still passes the self-tests
+                        for n2, c2 in {**final.get(cf, {}), name: revised}.items():
+                            if c2:
+                                content = _apply_func(content, n2, c2)
+                        (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+                        ok2, _ = _run_selftests(repo, tests, 25)
+                        if ok2:                          # else keep the pre-sign-off code (never degrade)
+                            code = revised
             final.setdefault(cf, {})[name] = code or ""
         for cf in files:                                # consolidate all settled functions per file
             content = orig[cf]
