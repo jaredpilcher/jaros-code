@@ -40,6 +40,20 @@ AST and re-resolves after every edit ("sync anchors"). The 2B owns behavioral CO
 POINTERS exact (raw line numbers drift and a 2B counting lines desyncs the index — Tenet-1 keeps
 deterministic bookkeeping in the tool plane). This lands in Slice 2 (the persisted index).
 
+## Results so far (dev, honest — 2026-06-26)
+
+- **Slice 1a (core loop: Gherkin -> self-tests -> code -> fix, NO reviews): dev 2/17 vs baseline 1/17.**
+  The behavioral loop HELPS — matched the baseline's 1 (factor recipe) AND added a new pass (Reduce
+  groupby in all_equal). Small-n, overlapping CIs; a directional dev signal, not a verdict.
+- **Slice 1b (+ the self-review loops): dev 1/17 — REGRESSED.** The Gherkin/test self-review rewrote a
+  spec that was already right and broke task 14 (factor recipe) that 1a passed. Naive review HURTS.
+- **keep-or-improve guard on the sign-off: did NOT recover it (still 1/14).** Diagnosis: the damage is
+  UPSTREAM (the Gherkin/test review changes the spec before code-gen), so guarding only the sign-off
+  can't undo it. To salvage reviews, the Gherkin/test review output must itself be gated (keep the
+  pre-review version unless the new one yields code that still passes) — deferred.
+- **Decision: Slice 1a (no reviews) is the best variant -> taken to the held-out 37 gate** (vs the
+  4/37 multi-function baseline). Target cap (>4 functions) committed to keep it tractable.
+
 ## Honesty / eval (binds the whole thing)
 
 Measured on EXT-011 commit-replay: the 2B's self-generated tests are SCAFFOLDING derived from the
