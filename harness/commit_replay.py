@@ -195,16 +195,26 @@ def _apply_func(src: str, name: str, new_func: str) -> str:
     return src.rstrip() + "\n\n\n" + new_func + "\n"
 
 
-def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None) -> str:
-    """Existing local-2B single-function solve, repurposed for a real repo function (the baseline)."""
+def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None,
+                      feedback: str = "", intent_only: bool = False) -> str:
+    """Local-2B single-function solve for a real repo function.
+
+    intent_only=True (the STRONG, non-gameable, SWE-bench-style claim): the model gets ONLY the commit
+    message + the parent code — NOT the test it is scored on. No leakage, no iteration (feedback from
+    the scored test would leak the expected values).
+    intent_only=False (TDD framing, gameable-in-principle, label it): the failing test is shown as the
+    spec and `feedback` enables fix_loop-style iteration against it. Report this only as an upper bound."""
     from jaros.llm import LlmRequest
     from harness.pass1_eval import _llm
     ctx = (f"The function currently is:\n\n{parent_src}\n" if parent_src
            else f"There is no `{name}` yet — write it.\n")
+    test_block = "" if intent_only else f"\n\nFAILING TEST (it must pass):\n{test_src[:1600]}"
+    fb = "" if intent_only else (
+        f"\nYour previous attempt FAILED with:\n{feedback[:600]}\nFix the cause.\n" if feedback else "")
     prompt = (f"You are changing a Python library so a failing test passes. Implement/repair the "
-              f"function `{name}`.\nCOMMIT INTENT: {subject}\n\nFAILING TEST (it must pass):\n"
-              f"{test_src[:1600]}\n\n{ctx}\nOutput ONLY the complete `def {name}(...):` definition — "
-              f"valid Python, correct indentation, no markdown, no prose, no test code.")
+              f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}\n\n{ctx}{fb}\nOutput ONLY the "
+              f"complete `def {name}(...):` definition — valid Python, correct indentation, no markdown, "
+              f"no prose, no test code.")
     reply = _llm().complete(LlmRequest(prompt=prompt,
                                        params={"temperature": 0.0, "max_tokens": 700})).text
     s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
@@ -212,28 +222,54 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
     return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
 
 
-def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b, timeout: int = 180) -> str:
-    """Attempt one commit-replay task. Returns 'pass'/'fail'/'no_target'/'empty'/'apply_err'."""
+def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set[str], str]:
+    """Like _run_nodes but also returns a short failure traceback (feedback for iteration)."""
+    cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+           "-e", "PYTHONPATH=/repo", DOCKER_IMG, "python", "-m", "pytest", *nodes,
+           "-v", "--tb=short", "-p", "no:cacheprovider"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+        text = r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        return set(nodes), "timeout"
+    passed = set(re.findall(r"^(\S+) PASSED", text, re.M))
+    fails = set(nodes) - passed
+    err = text[-700:] if fails else ""
+    return fails, err
+
+
+def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
+                 max_iter: int = 1, intent_only: bool = False, timeout: int = 180) -> str:
+    """Attempt one commit-replay task. intent_only=True -> message+code only, one-shot, no test
+    shown/iterated (the strong non-gameable claim). Else -> failing test shown + iterated up to
+    max_iter (TDD upper bound). Returns 'pass'/'fail'/'no_target'/'empty'/'apply_err'."""
     targets = _target_funcs(repo, task)
     if not targets:
         return "no_target"
     cf, name, parent_src = targets[0]            # primary changed function
-    new_func = solve(task["subject"], _test_source(repo, task), name, parent_src)
-    if not new_func:
-        return "empty"
+    test_src = "" if intent_only else _test_source(repo, task)
+    iters = 1 if intent_only else max_iter
     try:
         _git(repo, "checkout", "-f", task["parent"])
         _git(repo, "checkout", task["sha"], "--", "tests/")
         p = repo / cf
-        try:
-            p.write_text(_apply_func(p.read_text(encoding="utf-8"), name, new_func),
-                         encoding="utf-8", newline="\n")
-        except Exception:
-            return "apply_err"
-        fails = _run_nodes(repo, task["redgreen"], timeout)
+        orig = p.read_text(encoding="utf-8")     # clean parent file; re-apply onto it each iter
+        feedback = ""
+        for _ in range(iters):
+            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only)
+            if not new_func:
+                return "empty"
+            try:
+                p.write_text(_apply_func(orig, name, new_func), encoding="utf-8", newline="\n")
+            except Exception:
+                return "apply_err"
+            fails, feedback = _run_nodes_fb(repo, task["redgreen"], timeout)
+            if not fails:
+                return "pass"
     finally:
         _reset(repo, branch)
-    return "pass" if not fails else "fail"
+    return "fail"
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -247,19 +283,22 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b) -> dict:
+def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b,
+                 max_iter: int = 1, intent_only: bool = False) -> dict:
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_task(repo, t, branch, solve=solve)
+            r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter, intent_only=intent_only)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    print(f">>> BASELINE (no jigs): {k}/{n} = {k/n*100:.1f}% red->green  "
+    label = ("intent-only / 1-shot / test HIDDEN (strong, non-gameable)" if intent_only
+             else f"test-as-spec / iter<={max_iter} (TDD upper bound, gameable-in-principle)")
+    print(f">>> RESULT [{label}]: {k}/{n} = {k/n*100:.1f}% red->green  "
           f"[Wilson95 {lo*100:.1f}-{hi*100:.1f}%]", flush=True)
     print(f">>> breakdown: {dict(res)}", flush=True)
     return {"pass": k, "n": n, "wilson": (lo, hi), "breakdown": dict(res)}
@@ -273,8 +312,11 @@ if __name__ == "__main__":
         branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
         tj = repo.parent.parent / "artifacts" / f"{repo.name}_valid_tasks.json"
         tasks = json.loads(tj.read_text(encoding="utf-8"))
-        print(f">>> BASELINE on {len(tasks)} validated red->green tasks of {repo.name} (no jigs)", flush=True)
-        run_baseline(repo, branch, tasks)
+        intent_only = "--intent-only" in sys.argv
+        max_iter = int(sys.argv[sys.argv.index("--iters") + 1]) if "--iters" in sys.argv else 1
+        mode = "INTENT-ONLY (test hidden)" if intent_only else f"test-as-spec iter<={max_iter}"
+        print(f">>> {mode} on {len(tasks)} validated red->green tasks of {repo.name}", flush=True)
+        run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only)
         sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 400
     cands, ledger = structural_filter(repo, n)

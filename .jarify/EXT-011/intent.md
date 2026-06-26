@@ -42,3 +42,17 @@ missing **deterministic, test-gated** tool/agent. Runtime stays **local-only**.
 **Generalization gate (non-negotiable):** any new jig must lift the pass rate on **held-out commits of
 the same class it never saw** — not just the one commit it was built for. If it only fixes its target,
 that's memorization → revert. This is capability vs. a lookup table.
+
+## Honesty constraints before any number goes public (a skeptic will hit both)
+
+1. **No visible-test leakage.** The HEADLINE number is **intent-only**: the model gets the commit
+   message + parent code, NOT the test it is scored on (true SWE-bench style — not gameable, the 2B
+   cannot hardcode assertions it never sees). A `test-as-spec` number (failing test shown + iterated
+   against) may be reported ONLY as a clearly-labeled **TDD upper bound**, never as the headline; and
+   any test-shown solution's overfitting must be measured (does it still pass when the visible asserts
+   are held out / does it regress the rest of the file). Do not publish until this is satisfied.
+2. **Honest scope.** This is the **single-function-localizable** subset only — the localizer targets a
+   changed top-level function, so multi-function / cross-file / class-method commits are out of reach
+   BY CONSTRUCTION and counted as failures (not hidden). Always state n and the Wilson CI (n is small,
+   CI wide). The number is per-repo until the **multi-repo expansion lands** — never generalize from
+   one repo. Framing must literally say "single-function-localizable commits, one repo, n=…".
