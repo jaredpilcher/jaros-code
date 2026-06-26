@@ -44,10 +44,12 @@ def _files_changed(repo: Path, sha: str) -> list[str]:
     return [f for f in out.splitlines() if f.strip()]
 
 
-def structural_filter(repo: Path, n: int = 400) -> tuple[list[CommitInfo], dict]:
-    """Categorize the last n commits. KEEP only non-merge commits that touch CODE and TESTS.
-    Returns (candidates oldest->newest, drop_ledger {reason: count})."""
-    shas = _git(repo, "rev-list", "-n", str(n), "HEAD").split()
+def structural_filter(repo: Path, n: int = 400, skip: int = 0) -> tuple[list[CommitInfo], dict]:
+    """Categorize n commits (optionally skipping the newest `skip`). KEEP only non-merge commits that
+    touch CODE and TESTS. Returns (candidates oldest->newest, drop_ledger {reason: count}). `skip`
+    carves a DEV window disjoint from the scored set (never tune on the scored commits)."""
+    args = ["rev-list", "--skip", str(skip), "-n", str(n), "HEAD"] if skip else ["rev-list", "-n", str(n), "HEAD"]
+    shas = _git(repo, *args).split()
     ledger: dict[str, int] = {"merge": 0, "no_code": 0, "no_test": 0, "kept_candidate": 0}
     candidates: list[CommitInfo] = []
     for sha in shas:
@@ -195,8 +197,21 @@ def _apply_func(src: str, name: str, new_func: str) -> str:
     return src.rstrip() + "\n\n\n" + new_func + "\n"
 
 
+def _file_context(src: str, max_chars: int = 900) -> str:
+    """Module preamble the 2B is currently blind to: imports + module-level definitions (sentinels,
+    constants, __all__) before the first def/class. The 'repo context' the diagnostic points at."""
+    keep: list[str] = []
+    for line in src.splitlines():
+        s = line.strip()
+        if s.startswith(("def ", "class ", "@", "async def ")) and keep:
+            break
+        keep.append(line)
+    pre = "\n".join(keep).strip()
+    return pre[:max_chars]
+
+
 def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None,
-                      feedback: str = "", intent_only: bool = False) -> str:
+                      feedback: str = "", intent_only: bool = False, context: str = "") -> str:
     """Local-2B single-function solve for a real repo function.
 
     intent_only=True (the STRONG, non-gameable, SWE-bench-style claim): the model gets ONLY the commit
@@ -209,12 +224,13 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
     ctx = (f"The function currently is:\n\n{parent_src}\n" if parent_src
            else f"There is no `{name}` yet — write it.\n")
     test_block = "" if intent_only else f"\n\nFAILING TEST (it must pass):\n{test_src[:1600]}"
+    ctx_block = f"\nMODULE CONTEXT (imports + module-level names available):\n{context}\n" if context else ""
     fb = "" if intent_only else (
         f"\nYour previous attempt FAILED with:\n{feedback[:600]}\nFix the cause.\n" if feedback else "")
     prompt = (f"You are changing a Python library so a failing test passes. Implement/repair the "
-              f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}\n\n{ctx}{fb}\nOutput ONLY the "
-              f"complete `def {name}(...):` definition — valid Python, correct indentation, no markdown, "
-              f"no prose, no test code.")
+              f"function `{name}`.\nCOMMIT INTENT: {subject}{test_block}{ctx_block}\n\n{ctx}{fb}\nOutput "
+              f"ONLY the complete `def {name}(...):` definition — valid Python, correct indentation, no "
+              f"markdown, no prose, no test code.")
     reply = _llm().complete(LlmRequest(prompt=prompt,
                                        params={"temperature": 0.0, "max_tokens": 700})).text
     s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
@@ -240,10 +256,12 @@ def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set
 
 
 def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
-                 max_iter: int = 1, intent_only: bool = False, timeout: int = 180) -> str:
+                 max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
+                 timeout: int = 180) -> str:
     """Attempt one commit-replay task. intent_only=True -> message+code only, one-shot, no test
     shown/iterated (the strong non-gameable claim). Else -> failing test shown + iterated up to
-    max_iter (TDD upper bound). Returns 'pass'/'fail'/'no_target'/'empty'/'apply_err'."""
+    max_iter (TDD upper bound). use_context -> add the file's module preamble (the repo-context jig).
+    Returns 'pass'/'fail'/'no_target'/'empty'/'apply_err'."""
     targets = _target_funcs(repo, task)
     if not targets:
         return "no_target"
@@ -255,9 +273,10 @@ def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
         _git(repo, "checkout", task["sha"], "--", "tests/")
         p = repo / cf
         orig = p.read_text(encoding="utf-8")     # clean parent file; re-apply onto it each iter
+        context = _file_context(orig) if use_context else ""
         feedback = ""
         for _ in range(iters):
-            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only)
+            new_func = solve(task["subject"], test_src, name, parent_src, feedback, intent_only, context)
             if not new_func:
                 return "empty"
             try:
@@ -284,20 +303,22 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b,
-                 max_iter: int = 1, intent_only: bool = False) -> dict:
+                 max_iter: int = 1, intent_only: bool = False, use_context: bool = False) -> dict:
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter, intent_only=intent_only)
+            r = attempt_task(repo, t, branch, solve=solve, max_iter=max_iter,
+                             intent_only=intent_only, use_context=use_context)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    label = ("intent-only / 1-shot / test HIDDEN (strong, non-gameable)" if intent_only
-             else f"test-as-spec / iter<={max_iter} (TDD upper bound, gameable-in-principle)")
+    ctx_tag = " +ctx" if use_context else ""
+    label = ((f"intent-only / 1-shot / test HIDDEN (strong, non-gameable){ctx_tag}" if intent_only
+              else f"test-as-spec / iter<={max_iter} (TDD upper bound){ctx_tag}"))
     print(f">>> RESULT [{label}]: {k}/{n} = {k/n*100:.1f}% red->green  "
           f"[Wilson95 {lo*100:.1f}-{hi*100:.1f}%]", flush=True)
     print(f">>> breakdown: {dict(res)}", flush=True)
@@ -310,17 +331,22 @@ if __name__ == "__main__":
     repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".jaros-data/repos/more-itertools")
     if "--baseline" in sys.argv:
         branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
-        tj = repo.parent.parent / "artifacts" / f"{repo.name}_valid_tasks.json"
+        tag = "dev" if "--dev" in sys.argv else "valid"
+        tj = repo.parent.parent / "artifacts" / f"{repo.name}_{tag}_tasks.json"
         tasks = json.loads(tj.read_text(encoding="utf-8"))
         intent_only = "--intent-only" in sys.argv
+        use_context = "--context" in sys.argv
         max_iter = int(sys.argv[sys.argv.index("--iters") + 1]) if "--iters" in sys.argv else 1
-        mode = "INTENT-ONLY (test hidden)" if intent_only else f"test-as-spec iter<={max_iter}"
-        print(f">>> {mode} on {len(tasks)} validated red->green tasks of {repo.name}", flush=True)
-        run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only)
+        mode = ("INTENT-ONLY (test hidden)" if intent_only else f"test-as-spec iter<={max_iter}") \
+            + (" +context" if use_context else "")
+        print(f">>> {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+        run_baseline(repo, branch, tasks, max_iter=max_iter, intent_only=intent_only, use_context=use_context)
         sys.exit(0)
-    n = int(sys.argv[2]) if len(sys.argv) > 2 else 400
-    cands, ledger = structural_filter(repo, n)
-    print(f">>> structural filter on last {n} commits of {repo.name}", flush=True)
+    n = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 400
+    skip = int(sys.argv[sys.argv.index("--skip") + 1]) if "--skip" in sys.argv else 0
+    cands, ledger = structural_filter(repo, n, skip=skip)
+    tag = "dev" if skip else "valid"
+    print(f">>> structural filter on {n} commits (skip {skip}) of {repo.name}", flush=True)
     print(f">>> drop ledger: {json.dumps(ledger)}", flush=True)
     print(f">>> structural candidates (touch code+tests, non-merge): {len(cands)}", flush=True)
     if "--validate" in sys.argv:
@@ -339,7 +365,7 @@ if __name__ == "__main__":
             print(f"  {i+1}/{len(cands)} {c.sha[:8]} [{status}] rg={len(rg)} | {c.subject[:42]}", flush=True)
         print(f">>> VALIDATION: {json.dumps(counts)}", flush=True)
         print(f">>> VALID red->green tasks: {len(valid)}", flush=True)
-        out = repo.parent.parent / "artifacts" / f"{repo.name}_valid_tasks.json"
+        out = repo.parent.parent / "artifacts" / f"{repo.name}_{tag}_tasks.json"
         out.write_text(json.dumps(valid, indent=1), encoding="utf-8")
         print(f">>> saved -> {out}", flush=True)
     else:
