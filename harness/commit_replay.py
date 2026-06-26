@@ -383,7 +383,7 @@ def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool
 
 
 def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2,
-                    reviews: bool = False) -> str:
+                    reviews: bool = False, ensemble: bool = False) -> str:
     """EXT-012: per changed function the 2B authors Gherkin -> self-tests -> code, then fixes the code
     against its OWN tests; the final code is scored on the HIDDEN oracle (red->green). reviews=True adds
     Slice 1b: the 2B's self-review of the Gherkin, the test<->Gherkin review, and the code<->Gherkin
@@ -435,6 +435,20 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
                         ok2, _ = _run_selftests(repo, tests, 25)
                         if ok2:                          # else keep the pre-sign-off code (never degrade)
                             code = revised
+            if ensemble:                                 # HONEST ENSEMBLE: also try the plain baseline solve;
+                def _passes_selftests(c: str) -> bool:   # pick whichever satisfies the gherkin SELF-tests
+                    if not c:
+                        return False
+                    content = orig[cf]
+                    for n2, c2 in {**final.get(cf, {}), name: c}.items():
+                        if c2:
+                            content = _apply_func(content, n2, c2)
+                    (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+                    return _run_selftests(repo, tests, 25)[0]
+                code_b = baseline_solve_2b(task["subject"], "", name, parent_src,
+                                           intent_only=True, context=ctx[cf])
+                if not _passes_selftests(code) and _passes_selftests(code_b):
+                    code = code_b                        # baseline meets the spec where gherkin couldn't
             final.setdefault(cf, {})[name] = code or ""
         for cf in files:                                # consolidate all settled functions per file
             content = orig[cf]
@@ -452,20 +466,23 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
         _reset(repo, branch)
 
 
-def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False) -> dict:
-    """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b."""
+def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False,
+                ensemble: bool = False) -> dict:
+    """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b;
+    ensemble -> baseline+gherkin selected by self-tests."""
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_gherkin(repo, t, branch, reviews=reviews)
+            r = attempt_gherkin(repo, t, branch, reviews=reviews, ensemble=ensemble)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    slice_tag = "Slice 1b (+reviews)" if reviews else "Slice 1a (core loop)"
+    slice_tag = ("ENSEMBLE (gherkin+baseline by self-tests)" if ensemble
+                 else "Slice 1b (+reviews)" if reviews else "Slice 1a (core loop)")
     print(f">>> RESULT [EXT-012 gherkin-loop {slice_tag} / intent-only / test HIDDEN]: {k}/{n} = "
           f"{k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n>>> breakdown: {dict(res)}",
           flush=True)
@@ -564,9 +581,11 @@ if __name__ == "__main__":
         tj = repo.parent.parent / "artifacts" / f"{repo.name}_{tag}_tasks.json"
         tasks = json.loads(tj.read_text(encoding="utf-8"))
         reviews = "--reviews" in sys.argv
-        print(f">>> EXT-012 GHERKIN-LOOP {'1b(+reviews)' if reviews else '1a'} (2B authors Gherkin->"
-              f"tests->code) on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
-        run_gherkin(repo, branch, tasks, reviews=reviews)
+        ensemble = "--ensemble" in sys.argv
+        mode = "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
+        print(f">>> EXT-012 GHERKIN-LOOP {mode} (2B authors Gherkin->tests->code) on {len(tasks)} "
+              f"{tag} tasks of {repo.name}", flush=True)
+        run_gherkin(repo, branch, tasks, reviews=reviews, ensemble=ensemble)
         sys.exit(0)
 
     if "--baseline" in sys.argv:
