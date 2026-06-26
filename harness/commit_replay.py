@@ -282,6 +282,137 @@ def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set
     return fails, err
 
 
+# --- EXT-012 Slice 1: full 2B-authored behavioral loop (Gherkin -> self-tests -> code -> fix) -------
+# The 2B authors EVERY layer. Self-tests are SCAFFOLDING derived from the intent; the model never sees
+# the hidden oracle (task["redgreen"]), which alone scores. No leakage.
+def _g_llm(prompt: str, max_tokens: int) -> str:
+    from jaros.llm import LlmRequest
+    from harness.pass1_eval import _llm
+    return _llm().complete(LlmRequest(prompt=prompt, params={
+        "temperature": 0.0, "max_tokens": max_tokens})).text
+
+
+def g_gherkin(subject: str, name: str, parent_src: str | None, context: str) -> str:
+    """STEP: the 2B authors the behavior spec for `name` AFTER the change — new behavior the intent
+    requires PLUS existing behavior that must be preserved."""
+    cur = f"It currently is:\n{parent_src}\n" if parent_src else f"`{name}` does not exist yet.\n"
+    ctx = f"Module context:\n{context}\n" if context else ""
+    out = _g_llm(
+        f"You are changing a Python library function `{name}`.\nCOMMIT INTENT: {subject}\n{ctx}{cur}\n"
+        f"Write the behavior specification for `{name}` AFTER the change as 3-6 numbered Given/When/Then "
+        f"scenarios. Include BOTH the NEW behavior the intent requires AND existing behavior that must "
+        f"stay the same. Output ONLY the numbered scenarios.", 600)
+    return out.strip()
+
+
+def g_selftests(name: str, gherkin: str, pkg: str) -> str:
+    """STEP: the 2B writes pytest tests matching every scenario (its OWN alignment tests, from the
+    spec — NEVER the hidden oracle)."""
+    reply = _g_llm(
+        f"Behavior scenarios for `{name}`:\n{gherkin}\n\n"
+        f"Write pytest tests checking EACH scenario for `{name}`. Begin with `from {pkg} import {name}`. "
+        f"Use plain `def test_...():` functions with assert statements (use `import pytest` + "
+        f"`pytest.raises` where a scenario expects an error). Output ONLY runnable Python test code, "
+        f"no markdown, no prose.", 700)
+    return re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+
+
+def g_code(subject: str, name: str, parent_src: str | None, context: str, gherkin: str,
+           feedback: str = "") -> str:
+    """STEP: the 2B writes/modifies code to satisfy the scenarios (and fix its own failing tests)."""
+    cur = f"Current version:\n{parent_src}\n" if parent_src else ""
+    ctx = f"Module context:\n{context}\n" if context else ""
+    fb = (f"\nYour previous code FAILED its own tests:\n{feedback[:600]}\nFix the cause.\n"
+          if feedback else "")
+    reply = _g_llm(
+        f"Implement the Python function `{name}` to satisfy these behavior scenarios:\n{gherkin}\n\n"
+        f"{ctx}{cur}COMMIT INTENT: {subject}\n{fb}\nOutput ONLY the complete `def {name}(...):` "
+        f"definition — valid Python, correct indentation, no markdown, no prose, no test code.", 800)
+    s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+    i = s.find(f"def {name}")
+    return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
+
+
+def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool, str]:
+    """Run the 2B's OWN tests (scaffolding) in the Docker env. (all_passed, short_feedback).
+    returncode 0 == tests ran and all passed (pytest returns 5 for no-tests, 1 for failures)."""
+    (repo / "tests" / "test_gherkin_self.py").write_text(test_code, encoding="utf-8", newline="\n")
+    cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+           "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest",
+           "tests/test_gherkin_self.py", "--tb=short", "-q", "-p", "no:cacheprovider"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr)[-700:]
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+
+
+def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2) -> str:
+    """EXT-012 Slice 1: per changed function the 2B authors Gherkin -> self-tests -> code, then fixes
+    the code against its OWN tests; the final code is scored on the HIDDEN oracle (red->green)."""
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    files = sorted({cf for cf, _, _ in targets})
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        ctx = {cf: _file_context(orig[cf]) for cf in files}
+        final: dict[str, dict] = {}
+        for cf, name, parent_src in targets:
+            pkg = cf.split("/")[0]
+            gk = g_gherkin(task["subject"], name, parent_src, ctx[cf])
+            tests = g_selftests(name, gk, pkg)
+            code = g_code(task["subject"], name, parent_src, ctx[cf], gk)
+            for _ in range(max_fix + 1):
+                if not code:
+                    break
+                content = orig[cf]                      # clean parent + funcs settled so far + this one
+                for n2, c2 in {**final.get(cf, {}), name: code}.items():
+                    if c2:
+                        content = _apply_func(content, n2, c2)
+                (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+                ok, fb = _run_selftests(repo, tests, timeout)
+                if ok:
+                    break
+                code = g_code(task["subject"], name, parent_src, ctx[cf], gk, fb)
+            final.setdefault(cf, {})[name] = code or ""
+        for cf in files:                                # consolidate all settled functions per file
+            content = orig[cf]
+            for n2, c2 in final.get(cf, {}).items():
+                if c2:
+                    content = _apply_func(content, n2, c2)
+            (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+        st = repo / "tests" / "test_gherkin_self.py"    # remove scaffolding before the oracle
+        if st.exists():
+            st.unlink()
+        return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
+    except Exception as e:  # noqa: BLE001
+        return f"err:{type(e).__name__}"
+    finally:
+        _reset(repo, branch)
+
+
+def run_gherkin(repo: Path, branch: str, tasks: list[dict]) -> dict:
+    """EXT-012 Slice 1 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI."""
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_gherkin(repo, t, branch)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-012 gherkin-loop / intent-only / test HIDDEN]: {k}/{n} = {k/n*100:.1f}% "
+          f"red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n>>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+
+
 def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
                  max_iter: int = 1, intent_only: bool = False, use_context: bool = False,
                  use_think: bool = False, use_fewshot: bool = False, use_gherkin: bool = False,
@@ -368,6 +499,16 @@ if __name__ == "__main__":
     import json
     import sys
     repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".jaros-data/repos/more-itertools")
+    if "--gherkin-loop" in sys.argv:
+        branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        tag = "dev" if "--dev" in sys.argv else "valid"
+        tj = repo.parent.parent / "artifacts" / f"{repo.name}_{tag}_tasks.json"
+        tasks = json.loads(tj.read_text(encoding="utf-8"))
+        print(f">>> EXT-012 GHERKIN-LOOP (2B authors Gherkin->tests->code) on {len(tasks)} {tag} "
+              f"tasks of {repo.name}", flush=True)
+        run_gherkin(repo, branch, tasks)
+        sys.exit(0)
+
     if "--baseline" in sys.argv:
         branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
         tag = "dev" if "--dev" in sys.argv else "valid"
