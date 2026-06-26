@@ -148,6 +148,22 @@ agents compose) and an **extensive suite of evaluations** (the proof we are
 converging on the bar). More capability is always answered by *more, smaller* agents,
 *sharper* tools, and *more* evals — never by a bigger model.
 
+**The composition is EMERGENT and NON-DETERMINISTIC — orchestrated by the model itself.** The swarm is
+not one fixed pipeline. At solve-time the 2B acts as an **orchestrator** that judges which agents and
+tools to apply next, in what order, and when the work is done — composing the proven grains emergently,
+revisiting any of them as needed, and exploring **non-deterministically** rather than following one
+hard-coded path. That choice is itself a `Decision` on the reasoning plane (commitment 1): the model
+only *recommends* the next grain; the deterministic clerk runs it; and the run remains hash-chain logged
+and byte-replayable (commitment 3) — non-deterministic *exploration*, fully *reproducible* once logged.
+**The ultimate aim — and this is a most-important piece — is that this orchestrator makes the RIGHT
+decision every single time.** Perfect next-step judgement is the asymptote we march toward and never
+stop short of: every wrong orchestration choice is a harness gap to close, never a model limit to accept
+(the founding assumption), until the system chooses correctly on every step of every real task — a bar
+we approach forever and are never satisfied to have merely neared. **And all of it MUST run native on
+Jaros** — every orchestration decision and every tool effect flows through the Jaros runtime (gate →
+execute → hash-chain log → replay). Running on Jaros is non-negotiable: it is how the two-plane
+discipline is *enforced* rather than merely intended, not an implementation detail.
+
 **The convergence loop is a standing, supervised discipline — never finished.**
 Reaching the bar is not a one-time build; it is a loop run continuously and owned by a
 named supervisor whose job is to *keep the system converging on the ultimate intent:
