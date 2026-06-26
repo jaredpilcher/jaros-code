@@ -14,6 +14,7 @@ Build-time only uses git/docker on the host (supervisor). Runtime solving stays 
 from __future__ import annotations
 
 import ast
+import math
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -147,10 +148,134 @@ def validate_redgreen(repo: Path, c: CommitInfo, branch: str, timeout: int = 180
     return ("valid", redgreen)
 
 
+# --- Baseline attempt (REQ-4): the existing local 2B harness tries each commit, scored red->green ---
+
+def _code_funcs(src: str) -> dict[str, str]:
+    """{name -> source} for module-level functions."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return {}
+    return {n.name: (ast.get_source_segment(src, n) or "")
+            for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _target_funcs(repo: Path, task: dict) -> list[tuple[str, str, str | None]]:
+    """(code_file, func_name, parent_source_or_None) for functions ADDED/CHANGED by the commit."""
+    out = []
+    for cf in task["code_files"]:
+        c_f = _code_funcs(_git(repo, "show", f"{task['sha']}:{cf}"))
+        p_f = _code_funcs(_git(repo, "show", f"{task['parent']}:{cf}"))
+        for name, csrc in c_f.items():
+            if p_f.get(name) != csrc:
+                out.append((cf, name, p_f.get(name)))
+    return out
+
+
+def _test_source(repo: Path, task: dict) -> str:
+    """Source of the red->green test nodes (the visible spec for the change)."""
+    srcs = []
+    for tf in task["test_files"]:
+        nodes = _test_nodes(_git(repo, "show", f"{task['sha']}:{tf}"))
+        for node_id in task["redgreen"]:
+            key = node_id.split("::", 1)[1] if "::" in node_id else node_id
+            if key in nodes:
+                srcs.append(nodes[key])
+    return "\n\n".join(srcs)
+
+
+def _apply_func(src: str, name: str, new_func: str) -> str:
+    """Replace function `name` in src with new_func; if new, append it and add to __all__."""
+    funcs = _code_funcs(src)
+    if funcs.get(name):
+        return src.replace(funcs[name], new_func, 1)
+    m = re.search(r"__all__\s*=\s*\[", src)
+    if m:
+        src = src[:m.end()] + f"\n    '{name}'," + src[m.end():]
+    return src.rstrip() + "\n\n\n" + new_func + "\n"
+
+
+def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | None) -> str:
+    """Existing local-2B single-function solve, repurposed for a real repo function (the baseline)."""
+    from jaros.llm import LlmRequest
+    from harness.pass1_eval import _llm
+    ctx = (f"The function currently is:\n\n{parent_src}\n" if parent_src
+           else f"There is no `{name}` yet — write it.\n")
+    prompt = (f"You are changing a Python library so a failing test passes. Implement/repair the "
+              f"function `{name}`.\nCOMMIT INTENT: {subject}\n\nFAILING TEST (it must pass):\n"
+              f"{test_src[:1600]}\n\n{ctx}\nOutput ONLY the complete `def {name}(...):` definition — "
+              f"valid Python, correct indentation, no markdown, no prose, no test code.")
+    reply = _llm().complete(LlmRequest(prompt=prompt,
+                                       params={"temperature": 0.0, "max_tokens": 700})).text
+    s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+    i = s.find(f"def {name}")
+    return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
+
+
+def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b, timeout: int = 180) -> str:
+    """Attempt one commit-replay task. Returns 'pass'/'fail'/'no_target'/'empty'/'apply_err'."""
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    cf, name, parent_src = targets[0]            # primary changed function
+    new_func = solve(task["subject"], _test_source(repo, task), name, parent_src)
+    if not new_func:
+        return "empty"
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        p = repo / cf
+        try:
+            p.write_text(_apply_func(p.read_text(encoding="utf-8"), name, new_func),
+                         encoding="utf-8", newline="\n")
+        except Exception:
+            return "apply_err"
+        fails = _run_nodes(repo, task["redgreen"], timeout)
+    finally:
+        _reset(repo, branch)
+    return "pass" if not fails else "fail"
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score 95% CI for a proportion (honest small-n interval)."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = (z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b) -> dict:
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_task(repo, t, branch, solve=solve)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> BASELINE (no jigs): {k}/{n} = {k/n*100:.1f}% red->green  "
+          f"[Wilson95 {lo*100:.1f}-{hi*100:.1f}%]", flush=True)
+    print(f">>> breakdown: {dict(res)}", flush=True)
+    return {"pass": k, "n": n, "wilson": (lo, hi), "breakdown": dict(res)}
+
+
 if __name__ == "__main__":
     import json
     import sys
     repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".jaros-data/repos/more-itertools")
+    if "--baseline" in sys.argv:
+        branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        tj = repo.parent.parent / "artifacts" / f"{repo.name}_valid_tasks.json"
+        tasks = json.loads(tj.read_text(encoding="utf-8"))
+        print(f">>> BASELINE on {len(tasks)} validated red->green tasks of {repo.name} (no jigs)", flush=True)
+        run_baseline(repo, branch, tasks)
+        sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 400
     cands, ledger = structural_filter(repo, n)
     print(f">>> structural filter on last {n} commits of {repo.name}", flush=True)
