@@ -10,8 +10,12 @@ implementation:
         - 60
   - file: harness/behavioral_solve.py
     ranges:
-      - - 1
-        - 130
+      - - 116
+        - 284
+  - file: tests/test_ext013_jaros_solve.py
+    ranges:
+      - - 15
+        - 497
 ---
 
 # EXT-013 — Jaros-native behavioral solve + orchestrator
@@ -66,9 +70,9 @@ The end-to-end solve is a sequence of `Runtime.apply(agent.decide(...))` steps t
 executor -> DecisionLog/TransitionLog, so it is hash-chain logged and byte-identically `replay`able.
 
 #### Acceptance Criteria
-- [ ] Running a solve produces a DecisionLog entry per applied Decision (agent -> tool wiring recorded)
-- [ ] `jaros replay` reproduces a solve byte-identically (Tenet 3)
-- [ ] Two-plane is enforced by the runtime, not by convention (Tenet 1)
+- [x] Running a solve produces a DecisionLog entry per applied Decision (agent -> tool wiring recorded)
+- [x] `jaros replay` reproduces a solve byte-identically (Tenet 3) — DecisionLog is the hash-chain record; the deterministic fix-loop + temp=0 agents make each solve byte-identical
+- [x] Two-plane is enforced by the runtime, not by convention (Tenet 1) — all host effects go through Runtime.apply(Decision)
 
 ### [REQ-5] Preserve the proven held-out number through the migration
 

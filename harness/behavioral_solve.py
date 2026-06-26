@@ -14,6 +14,11 @@ It is ENVIRONMENT-AGNOSTIC: `run_tests(code, test_code) -> (passed, feedback)` a
 (Docker on a repo checkout) or the product (`jcode` -> local pytest), so the evaluation harness and the
 real product share exactly ONE solve. New mechanisms (retrieval, etc.) enter here as layers, measured
 then kept or pruned — the system only moves forward.
+
+EXT-013 / REQ-4 adds `behavioral_solve_jaros`: the same deterministic fix-loop, but every host effect
+is performed via Runtime.apply(Decision) — gate -> executor -> DecisionLog — so each solve is
+hash-chain logged and byte-identically replayable (Tenet 3), and the two-plane discipline (Tenet 1)
+is enforced by the runtime rather than by convention.
 """
 from __future__ import annotations
 
@@ -106,3 +111,174 @@ def behavioral_solve_agentic(intent: str, name: str, current_src: str | None, co
         else:                                                # "code": logic bug -> revise the code
             code = _gc(intent, name, current_src, context, gherkin, str(fb)[:400])
     return {"code": code, "gherkin": gherkin, "tests": tests, "self_pass": passed, "trace": trace}
+
+
+# #EXT-013-REQ-4 Start
+# ---- Jaros-native behavioral solve (EXT-013 / REQ-4) --------------------------------
+#
+# Attribution (EXT-012/design.md): deterministic fix-loop 7/37 >= agentic 2B-judge 6/37.
+# The judge-agent is available (EXT-013/TASK-4) but NOT the driver here.  Every host
+# effect is performed via Runtime.apply(Decision) so the full gate->executor->DecisionLog
+# chain is enforced by the runtime — two-plane discipline by construction (Tenet 1) and
+# hash-chain logged for byte-identical replay (Tenet 3).
+#
+# Flow: gherkin-agent -> test-writer-agent -> code-writer-agent -> run_tests (shell.exec)
+#       -> on fail: code-writer-agent (feedback) -> run_tests ... (bounded by max_fix)
+# All decisions are applied through Runtime.apply; the solver is the DETERMINISTIC
+# fix-loop (not the orchestrator judge-agent).
+
+
+def _load_agent_from_file(filepath: str, llm):
+    """Load a Jaros agent from an absolute file path and call build(llm)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_agent_mod", filepath)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module.build(llm)
+
+
+def behavioral_solve_jaros(
+    intent: str,
+    name: str,
+    current_src: str | None,
+    context: str,
+    pkg: str,
+    runtime,
+    *,
+    llm=None,
+    spec_path: str | None = None,
+    test_path: str | None = None,
+    code_path: str | None = None,
+    test_command: str | None = None,
+    test_cwd: str | None = None,
+    max_fix: int = 2,
+) -> dict:
+    """Jaros-native behavioral solve: same deterministic fix-loop as ``behavioral_solve``
+    but every host effect routes through ``Runtime.apply(Decision)`` — gate -> executor ->
+    DecisionLog — so the solve is hash-chain logged and byte-identically replayable.
+
+    The driver is the **deterministic fix-loop** (NOT the orchestrator judge-agent), per
+    the EXT-012/design.md attribution: deterministic 7/37 >= agentic 6/37.
+
+    Parameters
+    ----------
+    intent        : commit message / user request describing the change.
+    name          : Python function name to write/repair.
+    current_src   : existing function source, or None if new.
+    context       : module preamble (imports/sentinels) visible to the model.
+    pkg           : import package for self-tests (``from <pkg> import <name>``).
+    runtime       : a ``harness.coding_loop.Runtime`` instance (or compatible stub).
+                    ALL host effects go through ``runtime.apply(Decision)``.
+    llm           : LLM client; if None, ``harness.coding_loop.build_llm()`` is called.
+    spec_path     : where to write the Gherkin spec (default ``.jcode/<name>.gherkin``).
+    test_path     : where to write self-tests (default ``test_<name>.py``).
+    code_path     : where to write the implementation (default ``.jcode/<name>.py``).
+    test_command  : shell command to run self-tests (default ``python -m pytest <test_path>``).
+    test_cwd      : working dir for the test command (default: None -> current dir).
+    max_fix       : max repair iterations after the first attempt (default 2).
+
+    Returns
+    -------
+    dict with keys: code, gherkin, tests, self_pass, applied_decisions
+        ``applied_decisions`` is the list of Decision types applied via Runtime.apply
+        in order (useful for test assertions on the wiring sequence).
+    """
+    import os
+    from pathlib import Path
+    from harness import jaros_solve_ops as _ops
+
+    # Resolve default artifact paths
+    _sp = spec_path or f".jcode/{name}.gherkin"
+    _tp = test_path or f"test_{name}.py"
+    _cp = code_path or f".jcode/{name}.py"
+    _tc = test_command or f"python -m pytest {_tp} -x -q"
+
+    # Resolve LLM (lazy — avoid Jetson connection in tests that inject llm=stub)
+    if llm is None:
+        from harness.coding_loop import build_llm
+        llm = build_llm()
+
+    # Locate agents dir relative to this file (harness/../.jaros-data/agents/)
+    _agents_dir = Path(__file__).resolve().parents[1] / ".jaros-data" / "agents"
+
+    applied_decisions: list[str] = []          # ordered record of decision types applied
+
+    def _apply(decision) -> dict:
+        """Apply a Decision through the Runtime and record its type."""
+        result = runtime.apply(decision)
+        applied_decisions.append(decision.type)
+        return result
+
+    # --- Grain 1: Gherkin spec via GherkinWriterBoundary ---------------------------
+    gherkin_agent = _load_agent_from_file(str(_agents_dir / "gherkin_agent.py"), llm)
+    [gk_decision] = gherkin_agent.decide({
+        "intent": intent, "name": name, "func": name,
+        "current_src": current_src, "context": context,
+        "spec_path": _sp,
+    })
+    _apply(gk_decision)
+    # Extract the spec text from the decision payload (the agent embeds it there)
+    gherkin: str = gk_decision.payload.get("content", "")
+
+    # --- Grain 2: Self-tests via TestWriterBoundary --------------------------------
+    test_agent = _load_agent_from_file(str(_agents_dir / "test_writer_agent.py"), llm)
+    [tw_decision] = test_agent.decide({
+        "intent": f"{intent}\n\nBehavior scenarios:\n{gherkin}",
+        "module": pkg, "func": name,
+        "signature": f"def {name}(...)",
+        "test_path": _tp,
+    })
+    _apply(tw_decision)
+    tests: str = tw_decision.payload.get("content", "")
+
+    # --- Grain 3: First code implementation via CodeWriterBoundary -----------------
+    code_agent = _load_agent_from_file(str(_agents_dir / "code_agent.py"), llm)
+    [cw_decision] = code_agent.decide({
+        "intent": intent, "name": name, "func": name,
+        "current_src": current_src, "context": context,
+        "gherkin": gherkin, "feedback": "",
+        "code_path": _cp,
+    })
+    _apply(cw_decision)
+    code: str = cw_decision.payload.get("content", "")
+
+    # --- Deterministic fix-loop: run self-tests, repair/regen on failure -----------
+    # Default driver: deterministic fix-loop (NOT the judge-agent).
+    # EXT-012/design.md: deterministic 7/37 >= agentic 6/37; judge is available but
+    # not the driver here — the bottleneck is generation, not orchestration.
+    self_pass = False
+    for _attempt in range(max_fix + 1):
+        if not code:
+            break
+        # Run self-tests via shell.exec Decision (through Runtime, logged)
+        run_result = _ops.run_tests(runtime, _tc, cwd=test_cwd, source="behavioral-solve-jaros")
+        applied_decisions.append("shell.exec")
+        exit_code = run_result.get("exitCode") if isinstance(run_result, dict) else None
+        self_pass = exit_code == 0
+        if self_pass:
+            break
+        if _attempt >= max_fix:
+            break
+        # Build feedback from the test output for the next code attempt
+        stdout = run_result.get("stdout", "") if isinstance(run_result, dict) else ""
+        stderr = run_result.get("stderr", "") if isinstance(run_result, dict) else ""
+        feedback = (stdout + stderr)[:600]
+
+        # Revise code via CodeWriterBoundary with feedback
+        [cw_dec2] = code_agent.decide({
+            "intent": intent, "name": name, "func": name,
+            "current_src": current_src, "context": context,
+            "gherkin": gherkin, "feedback": feedback,
+            "code_path": _cp,
+        })
+        _apply(cw_dec2)
+        code = cw_dec2.payload.get("content", "")
+
+    return {
+        "code": code,
+        "gherkin": gherkin,
+        "tests": tests,
+        "self_pass": self_pass,
+        "applied_decisions": applied_decisions,
+    }
+# #EXT-013-REQ-4 End
