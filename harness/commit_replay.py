@@ -236,7 +236,7 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
               f"{think_instr}Output ONLY the complete `def {name}(...):` definition — valid Python, "
               f"correct indentation, no markdown, no prose, no test code.")
     reply = _llm().complete(LlmRequest(prompt=prompt,
-                                       params={"temperature": 0.0, "max_tokens": 900 if think else 700})).text
+                                       params={"temperature": 0.0, "max_tokens": 1500 if think else 700})).text
     if think and "</think>" in reply:
         reply = reply.rsplit("</think>", 1)[1]
     s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
