@@ -1,0 +1,17 @@
+{
+  "spec_id": "EXT-011",
+  "links": [
+    {
+      "req_id": "REQ-7",
+      "file": "harness/commit_replay.py",
+      "ranges": [[377, 419]],
+      "comment": "_docker_force_remove helper + bulletproof _run_selftests with named container + try/finally cleanup"
+    },
+    {
+      "req_id": "REQ-7",
+      "file": "tests/test_ext011_container_lifecycle.py",
+      "ranges": [[1, 113]],
+      "comment": "Isolation tests: force-remove kills running container, no-op on nonexistent, timeout leaves no orphan"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import ast
 import math
 import re
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -373,12 +374,32 @@ def g_signoff(name: str, gherkin: str, code: str) -> tuple[bool, str]:
     return out.upper().startswith("YES"), out
 
 
+# #EXT-011-REQ-7 Start
+def _docker_force_remove(name: str) -> None:
+    """Best-effort force-kill + remove a named Docker container. Never raises."""
+    try:
+        subprocess.run(["docker", "kill", name], capture_output=True, timeout=10)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=10)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool, str]:
     """Run the 2B's OWN tests (scaffolding) in the Docker env. (all_passed, short_feedback).
-    returncode 0 == tests ran and all passed (pytest returns 5 for no-tests, 1 for failures)."""
+    returncode 0 == tests ran and all passed (pytest returns 5 for no-tests, 1 for failures).
+
+    Container lifecycle is BULLETPROOF: every container gets a unique --name and is
+    force-removed in a try/finally block regardless of success, timeout, or exception.
+    --rm is kept as a belt-and-suspenders defense, but the real guarantee is the
+    explicit `docker rm -f <name>` in the finally clause."""
     tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"   # repo's real test dir (toolz/tests, tests, ...)
     (repo / tnode).write_text(test_code, encoding="utf-8", newline="\n")
-    cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+    cname = f"jaros_selftest_{uuid.uuid4().hex[:12]}"
+    cmd = ["docker", "run", "--rm", "--name", cname, "--stop-timeout", "5",
+           "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
            "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest",
            tnode, "--tb=short", "-q", "-p", "no:cacheprovider"]
     try:
@@ -386,7 +407,16 @@ def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool
                            errors="replace", timeout=timeout)
         return r.returncode == 0, (r.stdout + r.stderr)[-700:]
     except subprocess.TimeoutExpired:
+        _docker_force_remove(cname)
         return False, "timeout"
+    except Exception:  # noqa: BLE001
+        _docker_force_remove(cname)
+        raise
+    finally:
+        # Belt-and-suspenders: runs even if the process already exited cleanly
+        # (docker rm -f on a nonexistent container is a no-op exit 1, which we ignore).
+        _docker_force_remove(cname)
+# #EXT-011-REQ-7 End
 
 
 def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2,

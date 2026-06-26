@@ -1,13 +1,17 @@
 ---
 id: EXT-011
 title: Commit-Replay Evaluation
-status: covered
+status: partial
 priority: high
 implementation:
-  - file: harness/commit_replay_eval.py
+  - file: harness/commit_replay.py
+    ranges:
+      - - 377
+        - 419
+  - file: tests/test_ext011_container_lifecycle.py
     ranges:
       - - 1
-        - 1
+        - 113
 ---
 
 ### [REQ-1] Reproducible environment (the hard part)
@@ -78,3 +82,29 @@ leaking.
 - [ ] Order surviving commits by a difficulty proxy (lines/files touched, hunks) so primitives come first
 - [ ] Split commits into a dev (jig-building) set and a held-out (generalization-gating) set
 - [ ] Partition by commit so no commit leaks between the dev and held-out sets
+
+### [REQ-7] Robust self-test execution — per-test timeout + guaranteed container cleanup
+
+The self-test runner (`_run_selftests`) that executes the 2B's Gherkin-derived scaffolding tests
+in Docker MUST guarantee container cleanup under all exit conditions — normal exit, subprocess
+timeout, and any unhandled exception. Orphaned containers (burning CPU for hours, blocking the
+whole eval) are a defect.
+
+#### Acceptance Criteria
+- [x] Each `_run_selftests` invocation launches its container with an explicit unique `--name`
+      (derived from `uuid4`) so it can be targeted for cleanup regardless of host-process state
+- [x] On `subprocess.TimeoutExpired`, explicitly call `docker kill <name>` then `docker rm -f <name>`
+      BEFORE returning `(False, "timeout")` — do not rely on `--rm` alone (which does not fire when
+      the host `docker run` process is killed mid-run)
+- [x] A `finally` block unconditionally calls `docker rm -f <name>` for belt-and-suspenders cleanup
+      on every exit path (normal, timeout, exception)
+- [x] The helper never raises: `_docker_force_remove` swallows all errors (container already gone
+      is a no-op)
+- [x] `--stop-timeout 5` is passed to Docker so the container's stop grace period is bounded
+- [x] Wall-clock timeout (~25–120 s) is maintained on every call-site; a timed-out self-test
+      = fail, eval continues (behavior unchanged)
+- [x] Isolation test verifies: a deliberately-hanging container (`sleep 600`) started with the
+      same image is killed and fully removed by `_docker_force_remove` within 10 s; `docker ps -a`
+      shows no trace of it afterwards
+- [x] Isolation test verifies: `_run_selftests` with a 3 s timeout against a hanging test returns
+      `(False, "timeout")` and leaves zero `jaros_selftest_*` containers in `docker ps -a`
