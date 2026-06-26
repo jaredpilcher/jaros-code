@@ -390,6 +390,8 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
     targets = _target_funcs(repo, task)
     if not targets:
         return "no_target"
+    if len(targets) > 4:               # the 2B can't nail >4 functions in one pass; ~25min to inevitably
+        return "capped"                # fail. Cap fail-fast (still counts as not-solved, reported separately).
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
