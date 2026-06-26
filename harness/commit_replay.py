@@ -333,6 +333,39 @@ def g_code(subject: str, name: str, parent_src: str | None, context: str, gherki
     return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
 
 
+# --- Slice 1b: the 2B's alignment REVIEW loops (the heart of the owner's design) ------------------
+def g_review_gherkin(subject: str, name: str, parent_src: str | None, gherkin: str) -> str:
+    """SELF-REVIEW: the 2B judges its OWN scenarios — do they fully satisfy the intent AND preserve
+    existing behavior? Returns the (possibly revised) scenarios."""
+    cur = f"Current function:\n{parent_src}\n" if parent_src else ""
+    out = _g_llm(
+        f"COMMIT INTENT: {subject}\n{cur}Proposed behavior scenarios for `{name}`:\n{gherkin}\n\n"
+        f"Review them: do they FULLY capture the new behavior the intent requires AND preserve existing "
+        f"behavior that must not change? If complete and correct, output them unchanged; otherwise output "
+        f"corrected/expanded numbered scenarios. Output ONLY the numbered scenarios.", 600)
+    return out.strip() or gherkin
+
+
+def g_review_tests(name: str, gherkin: str, tests: str, pkg: str) -> str:
+    """SELF-REVIEW: the 2B checks test<->Gherkin alignment — every scenario tested, each test correct."""
+    reply = _g_llm(
+        f"Behavior scenarios for `{name}`:\n{gherkin}\n\nProposed pytest tests:\n{tests}\n\n"
+        f"Review: does each scenario have a matching, correct test? If aligned, output the tests "
+        f"unchanged; otherwise output corrected tests. Begin with `from {pkg} import {name}`. Output ONLY "
+        f"runnable Python test code, no markdown.", 700)
+    out = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+    return out or tests
+
+
+def g_signoff(name: str, gherkin: str, code: str) -> tuple[bool, str]:
+    """SIGN-OFF: final code<->Gherkin review. (signed_off, reason). NO -> one more code revision."""
+    out = _g_llm(
+        f"Behavior scenarios for `{name}`:\n{gherkin}\n\nImplementation:\n{code}\n\n"
+        f"Does the implementation correctly satisfy EVERY scenario? Answer ONLY 'YES' or 'NO: <reason>'.",
+        200).strip()
+    return out.upper().startswith("YES"), out
+
+
 def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool, str]:
     """Run the 2B's OWN tests (scaffolding) in the Docker env. (all_passed, short_feedback).
     returncode 0 == tests ran and all passed (pytest returns 5 for no-tests, 1 for failures)."""
@@ -348,9 +381,12 @@ def _run_selftests(repo: Path, test_code: str, timeout: int = 120) -> tuple[bool
         return False, "timeout"
 
 
-def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2) -> str:
-    """EXT-012 Slice 1: per changed function the 2B authors Gherkin -> self-tests -> code, then fixes
-    the code against its OWN tests; the final code is scored on the HIDDEN oracle (red->green)."""
+def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max_fix: int = 2,
+                    reviews: bool = False) -> str:
+    """EXT-012: per changed function the 2B authors Gherkin -> self-tests -> code, then fixes the code
+    against its OWN tests; the final code is scored on the HIDDEN oracle (red->green). reviews=True adds
+    Slice 1b: the 2B's self-review of the Gherkin, the test<->Gherkin review, and the code<->Gherkin
+    sign-off (the alignment heart)."""
     targets = _target_funcs(repo, task)
     if not targets:
         return "no_target"
@@ -364,7 +400,11 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
         for cf, name, parent_src in targets:
             pkg = cf.split("/")[0]
             gk = g_gherkin(task["subject"], name, parent_src, ctx[cf])
+            if reviews:                                  # 1b: self-review the behavior spec
+                gk = g_review_gherkin(task["subject"], name, parent_src, gk)
             tests = g_selftests(name, gk, pkg)
+            if reviews:                                  # 1b: test<->Gherkin alignment review
+                tests = g_review_tests(name, gk, tests, pkg)
             code = g_code(task["subject"], name, parent_src, ctx[cf], gk)
             for _ in range(max_fix + 1):
                 if not code:
@@ -378,6 +418,11 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
                 if ok:
                     break
                 code = g_code(task["subject"], name, parent_src, ctx[cf], gk, fb)
+            if reviews and code:                         # 1b: final code<->Gherkin sign-off
+                signed, reason = g_signoff(name, gk, code)
+                if not signed:
+                    code = g_code(task["subject"], name, parent_src, ctx[cf], gk,
+                                  f"sign-off found a gap: {reason}") or code
             final.setdefault(cf, {})[name] = code or ""
         for cf in files:                                # consolidate all settled functions per file
             content = orig[cf]
@@ -395,21 +440,23 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
         _reset(repo, branch)
 
 
-def run_gherkin(repo: Path, branch: str, tasks: list[dict]) -> dict:
-    """EXT-012 Slice 1 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI."""
+def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False) -> dict:
+    """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b."""
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_gherkin(repo, t, branch)
+            r = attempt_gherkin(repo, t, branch, reviews=reviews)
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    print(f">>> RESULT [EXT-012 gherkin-loop / intent-only / test HIDDEN]: {k}/{n} = {k/n*100:.1f}% "
-          f"red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n>>> breakdown: {dict(res)}", flush=True)
+    slice_tag = "Slice 1b (+reviews)" if reviews else "Slice 1a (core loop)"
+    print(f">>> RESULT [EXT-012 gherkin-loop {slice_tag} / intent-only / test HIDDEN]: {k}/{n} = "
+          f"{k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n>>> breakdown: {dict(res)}",
+          flush=True)
     return dict(res)
 
 
@@ -504,9 +551,10 @@ if __name__ == "__main__":
         tag = "dev" if "--dev" in sys.argv else "valid"
         tj = repo.parent.parent / "artifacts" / f"{repo.name}_{tag}_tasks.json"
         tasks = json.loads(tj.read_text(encoding="utf-8"))
-        print(f">>> EXT-012 GHERKIN-LOOP (2B authors Gherkin->tests->code) on {len(tasks)} {tag} "
-              f"tasks of {repo.name}", flush=True)
-        run_gherkin(repo, branch, tasks)
+        reviews = "--reviews" in sys.argv
+        print(f">>> EXT-012 GHERKIN-LOOP {'1b(+reviews)' if reviews else '1a'} (2B authors Gherkin->"
+              f"tests->code) on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+        run_gherkin(repo, branch, tasks, reviews=reviews)
         sys.exit(0)
 
     if "--baseline" in sys.argv:
