@@ -88,3 +88,6 @@ python -m harness.commit_replay <repo> --gherkin-loop --jaros --plan --n 37
 
 Compare the two Wilson CI bands to determine whether plan-then-code lifts the score on the
 held-out 37-task eval.  HONEST: both use intent-only (hidden oracle never seen during solve).
+
+## PLAN-then-code verdict (2026-06-27)
+plan_37.txt = **5/37 = 13.5%** [Wilson 5.9-28.0] vs default [7,5]/37 (mean 6). PARITY-or-below — the 4th honest non-win (best-of-N 5, gen-and-test 5, augmenter [8,9,6]~parity, plan-then-code 5) on the NOISY 37-task commit-replay bar. KEY REFRAME: pass1_eval.py already has a LOW-NOISE bar (HumanEval pass@1, single-shot temp=0, run_pass1) AND a proven mechanism on it — solve_gated lifted HumanEval 116->119 (+3, honest, deterministic). Capability work should move to THAT clean bar (where +3 was real), not the noisy 37.
