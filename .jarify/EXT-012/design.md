@@ -47,6 +47,18 @@ Held-out more-itertools, intent-only (test HIDDEN), identical tools (proven gher
 | 2B-judge **orchestrator** (agentic) | 6/37 = 16.2% | 7.7–31.1% |
 | Deterministic **fix-loop** (fixed)  | 7/37 = 18.9% | 9.5–34.2% |
 | **Jaros-native** fix-loop via Runtime (EXT-013) | 7/37 = 18.9% | 9.5–34.2% |
+| generate-and-test N=4 by self-tests (#12 — **PRUNED**) | 5/37 = 13.5% | 5.9–28.0% |
+
+**#12 generate-and-test PRUNED (2026-06-26, held-out gen4_37.txt):** best-of-N (N=4) selecting by the
+model's OWN self-tests scored **5/37 — a REGRESSION** below the single-shot 7/37 (and the 6/37 agentic).
+It dropped `exactly_n` and `gray_product` that single-shot solved. **Root cause:** the model's
+spec-derived self-tests are WEAK/incomplete oracles, so selecting the candidate that passes the most
+self-tests picks **self-test false-positives** (a wrong candidate that passes the flaky self-tests) over
+a more-correct candidate that happened to fail one. With weak oracles, *more candidates + self-test
+selection makes it worse, not better.* **Lesson for #12:** the lever is **STRONGER ORACLES** (better
+self-tests / deterministic property + edge-case + docstring-example checks that discriminate real
+correctness), NOT more candidates. Best-of-N pruned again — but this time with a mechanism, not a noisy
+number. The mechanism is kept (additive, behind the gate) but never wired into the default solve.
 
 **Parity confirmed (2026-06-26):** the Jaros-native solve (EXT-013 — agents emit inert Decisions, every
 host effect through `Runtime.apply`, DecisionLog-logged + replayable) scores **7/37 = 18.9%, EXACTLY the
