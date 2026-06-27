@@ -153,6 +153,7 @@ def behavioral_solve_jaros(
     test_cwd: str | None = None,
     max_fix: int = 2,
     pre_test_hook: "Callable[[str, str], None] | None" = None,
+    plan: bool = False,
 ) -> dict:
     """Jaros-native behavioral solve: same deterministic fix-loop as ``behavioral_solve``
     but every host effect routes through ``Runtime.apply(Decision)`` — gate -> executor ->
@@ -184,6 +185,10 @@ def behavioral_solve_jaros(
                     strings; any side effects (writing the file, staging test artefacts) are
                     the hook's responsibility.  The Runtime still issues the ``shell.exec``
                     Decision for the actual test run.
+    plan          : when True, run plan_agent -> strategy_filter BEFORE code generation and
+                    include the filtered strategy in the code-writer's prompt.  When False
+                    (default), behavior is byte-identical to the existing path — no strategy
+                    is generated and the code prompt is unchanged.  See EXT-015.
 
     Returns
     -------
@@ -239,10 +244,46 @@ def behavioral_solve_jaros(
     _apply(tw_decision)
     tests: str = tw_decision.payload.get("content", "")
 
+    # #EXT-015-REQ-3 Start
+    # --- Grain 2b (opt-in): plan_agent -> strategy_filter -> enrich code prompt --
+    # When plan=True, the 2B authors a numbered strategy list BEFORE code generation
+    # and a deterministic filter (execution plane) cleans it.  The filtered strategy
+    # is appended to the intent seen by the code-writer so it generates FROM the plan.
+    # When plan=False (default), this block is skipped entirely — byte-identical path.
+    filtered_strategy: str = ""
+    if plan:
+        _plan_path = f".jcode/{name}.plan"
+        plan_agent = _load_agent_from_file(str(_agents_dir / "plan_agent.py"), llm)
+        [pl_decision] = plan_agent.decide({
+            "intent": intent, "name": name, "func": name,
+            "current_src": current_src, "context": context,
+            "plan_path": _plan_path,
+        })
+        _apply(pl_decision)
+        raw_strategy: str = pl_decision.payload.get("content", "")
+        if raw_strategy:
+            # Run the deterministic strategy filter in the execution plane.
+            import importlib.util as _ilu
+            _tools_dir = Path(__file__).resolve().parents[1] / ".jaros-data" / "tools"
+            _sf_spec = _ilu.spec_from_file_location(
+                "_strategy_filter_tool",
+                str(_tools_dir / "strategy_filter_tool.py"),
+            )
+            _sf_mod = _ilu.module_from_spec(_sf_spec)   # type: ignore[arg-type]
+            _sf_spec.loader.exec_module(_sf_mod)         # type: ignore[union-attr]
+            filtered_strategy = _sf_mod.filter_strategy(raw_strategy)
+    # #EXT-015-REQ-3 End
+
     # --- Grain 3: First code implementation via CodeWriterBoundary -----------------
+    # When plan=True, the filtered strategy is appended to intent so the code-writer
+    # generates from the plan.  When plan=False, intent is unchanged (default path).
+    _code_intent = (
+        f"{intent}\n\nIMPLEMENTATION STRATEGY:\n{filtered_strategy}"
+        if filtered_strategy else intent
+    )
     code_agent = _load_agent_from_file(str(_agents_dir / "code_agent.py"), llm)
     [cw_decision] = code_agent.decide({
-        "intent": intent, "name": name, "func": name,
+        "intent": _code_intent, "name": name, "func": name,
         "current_src": current_src, "context": context,
         "gherkin": gherkin, "feedback": "",
         "code_path": _cp,
@@ -278,8 +319,9 @@ def behavioral_solve_jaros(
         feedback = (stdout + stderr)[:600]
 
         # Revise code via CodeWriterBoundary with feedback
+        # _code_intent carries the filtered strategy when plan=True (unchanged when False)
         [cw_dec2] = code_agent.decide({
-            "intent": intent, "name": name, "func": name,
+            "intent": _code_intent, "name": name, "func": name,
             "current_src": current_src, "context": context,
             "gherkin": gherkin, "feedback": feedback,
             "code_path": _cp,

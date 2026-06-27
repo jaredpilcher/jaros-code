@@ -1,0 +1,53 @@
+{
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/plan_agent.py",
+      "startLine": 21,
+      "endLine": 77
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 22,
+      "endLine": 172
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/strategy_filter_tool.py",
+      "startLine": 28,
+      "endLine": 167
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 23,
+      "endLine": 309
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/behavioral_solve.py",
+      "startLine": 247,
+      "endLine": 275
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 982,
+      "endLine": 1101
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1253,
+      "endLine": 1255
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1272,
+      "endLine": 1279
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 24,
+      "endLine": 622
+    }
+  ]
+}

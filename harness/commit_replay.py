@@ -979,6 +979,128 @@ def attempt_gherkin_jaros_gen(repo: Path, task: dict, branch: str, timeout: int 
         _reset(repo, branch)
 
 
+# #EXT-015-REQ-3 Start
+def attempt_gherkin_jaros_plan(repo: Path, task: dict, branch: str,
+                               timeout: int = 180, max_fix: int = 2) -> str:
+    """EXT-015: per-function solve via ``behavioral_solve_jaros(plan=True)``.
+
+    Mirrors ``attempt_gherkin_jaros`` exactly, but passes ``plan=True`` to
+    ``behavioral_solve_jaros`` so the plan_agent -> strategy_filter grain runs
+    before code generation.  The filtered strategy is included in the code-writer
+    prompt.  Scored on the hidden oracle (red->green), identical to all other paths.
+
+    HONESTY: no hidden-oracle access at any point; the plan is derived from the
+    visible commit intent only (same constraint as Gherkin and self-tests).
+    """
+    from harness.behavioral_solve import behavioral_solve_jaros
+    from harness.coding_loop import Runtime
+
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    if len(targets) > 4:
+        return "capped"
+    files = sorted({cf for cf, _, _ in targets})
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        ctx = {cf: _file_context(orig[cf]) for cf in files}
+        final: dict[str, dict] = {}
+        rt = Runtime()
+        tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"
+        abs_test_path = str((repo / tnode).resolve())
+
+        for cf, name, parent_src in targets:
+            pkg = cf.split("/")[0]
+            spec_path = str((repo / f".jcode/{name}.gherkin").resolve())
+            code_path = str((repo / f".jcode/{name}.py").resolve())
+            cname = f"jaros_selftest_{uuid.uuid4().hex[:12]}"
+            docker_cmd = (
+                f"docker run --rm --name {cname} --stop-timeout 5 "
+                f"-v {repo.resolve().as_posix()}:/repo -w /repo "
+                f"-e PYTHONPATH=/repo {_spec(repo)['img']} "
+                f"python -m pytest {tnode} --tb=short -q -p no:cacheprovider"
+            )
+
+            def _make_pre_test_hook(cf_=cf, name_=name):
+                def hook(code: str, tests: str) -> None:
+                    content = orig[cf_]
+                    for n2, c2 in {**final.get(cf_, {}), name_: code}.items():
+                        if c2:
+                            content = _apply_func(content, n2, c2)
+                    (repo / cf_).write_text(content, encoding="utf-8", newline="\n")
+                return hook
+
+            pre_test_hook = _make_pre_test_hook()
+            try:
+                result = behavioral_solve_jaros(
+                    intent=task["subject"],
+                    name=name,
+                    current_src=parent_src,
+                    context=ctx[cf],
+                    pkg=pkg,
+                    runtime=rt,
+                    spec_path=spec_path,
+                    test_path=abs_test_path,
+                    code_path=code_path,
+                    test_command=docker_cmd,
+                    max_fix=max_fix,
+                    pre_test_hook=pre_test_hook,
+                    plan=True,          # EXT-015: plan-then-code path
+                )
+            finally:
+                _docker_force_remove(cname)
+
+            final.setdefault(cf, {})[name] = result.get("code") or ""
+
+        for cf in files:
+            content = orig[cf]
+            for n2, c2 in final.get(cf, {}).items():
+                if c2:
+                    content = _apply_func(content, n2, c2)
+            (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+
+        st = repo / tnode
+        if st.exists():
+            st.unlink()
+
+        return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
+    except Exception as e:  # noqa: BLE001
+        return f"err:{type(e).__name__}"
+    finally:
+        _reset(repo, branch)
+
+
+def run_gherkin_jaros_plan(repo: Path, branch: str, tasks: list[dict]) -> dict:
+    """Run ``attempt_gherkin_jaros_plan`` over all tasks, scored on the hidden oracle.
+
+    Prints per-task results and a Wilson CI summary — same format as
+    ``run_gherkin_jaros``.  Use to measure EXT-015 plan-then-code vs the default
+    jaros-native baseline.
+
+    Exact measurement command::
+
+        python -m harness.commit_replay <repo> --gherkin-loop --jaros --plan --n 37
+    """
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_gherkin_jaros_plan(repo, t, branch)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-015 plan-then-code / intent-only / test HIDDEN]: "
+          f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
+          f">>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+# #EXT-015-REQ-3 End
+
+
 def run_gherkin_jaros_gen(repo: Path, branch: str, tasks: list[dict], n_gen: int = 4) -> dict:
     """Run ``attempt_gherkin_jaros_gen`` over all tasks, scored on the hidden oracle.
     Prints per-task results and a Wilson CI summary — same format as ``run_gherkin_jaros``.
@@ -1128,6 +1250,9 @@ if __name__ == "__main__":
         # Only active when combined with --jaros.  Default behaviour is unchanged.
         gen_n = int(sys.argv[sys.argv.index("--gen") + 1]) if "--gen" in sys.argv else 0
         augment = "--augment" in sys.argv   # EXT-012 REQ-13: stronger-oracle self-test augmenter
+        # #EXT-015-REQ-3 Start
+        plan = "--plan" in sys.argv         # EXT-015: plan-then-code (plan_agent -> filter -> code)
+        # #EXT-015-REQ-3 End
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
@@ -1144,6 +1269,14 @@ if __name__ == "__main__":
                 print(f">>> EXT-012 REQ-13 STRONGER-ORACLE AUGMENT on {len(tasks)} "
                       f"{tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros_augment(repo, branch, tasks)
+            # #EXT-015-REQ-3 Start
+            elif plan:
+                # EXT-015: plan-then-code decomposition — plan_agent -> strategy_filter -> code.
+                # Honest: no hidden-oracle access; strategy is derived from visible intent only.
+                print(f">>> EXT-015 PLAN-THEN-CODE on {len(tasks)} {tag} tasks of {repo.name}",
+                      flush=True)
+                run_gherkin_jaros_plan(repo, branch, tasks)
+            # #EXT-015-REQ-3 End
             else:
                 print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros(repo, branch, tasks)
