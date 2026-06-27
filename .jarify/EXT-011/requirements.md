@@ -134,3 +134,42 @@ previously orphaned a container at 100% CPU and stalled the entire eval (bug #15
 - [x] Isolation test (`test_run_nodes_timeout_leaves_no_orphan`): `_run_nodes` against a
       deliberately-hanging test (sleep 600) with a 3 s timeout returns the node as red (timed-out
       candidate fails) AND leaves zero `jaros_oracle_*` containers in `docker ps -a` within 10 s
+
+### [REQ-9] Multi-repo 100+ task eval bar (bigger, less-noisy)
+
+The 37-task more-itertools bar is too small: 1/37 gap = noise (observed: 4 false parities on the
+same bar). To honestly compare deterministic vs agentic orchestrator (PRIME-001 intent), we need
+**100+ held-out tasks** so a real delta has tight Wilson CIs.  Expand the corpus to ≥100 tasks by:
+
+1. Mining **deeper more-itertools history** (skip=800, skip=1200) — same validity bar as
+   before (red→green validated in Docker), disjoint from the existing 37-task and 17-task dev sets.
+2. Adding **toolz** tasks — extract valid tasks from pytoolz/toolz the same way.
+3. A `tasks_corpus(repos_dir, bar)` function loads and merges all validated task JSONs, stamps
+   each task with `"repo"` for multi-repo routing.
+4. A `run_gherkin_jaros_multi(repos_dir, tasks)` runner routes each task to the correct repo Path.
+5. Fix `validate_redgreen` and all `attempt_*` functions: replace hardcoded `"tests/"` with
+   `_spec(repo)["test"]` so toolz tasks use `toolz/tests/` not `tests/`.
+6. A `--bar big` flag in `__main__` loads the corpus and runs the multi-repo eval.
+
+ISOLATION INVARIANT: the big-bar corpus MUST NOT overlap the dev (jig-building) set
+(more-itertools_valid_tasks.json = skip=0..799).  Deeper slices (skip≥800) are disjoint.
+
+#### Acceptance Criteria
+- [x] `validate_redgreen` uses `_spec(repo)["test"]` for the test-dir checkout (not `"tests/"`)
+- [x] All `attempt_*` functions use `_spec(repo)["test"]` for the test-dir checkout
+- [x] `tasks_corpus(repos_dir, bar="big")` loads all validated task JSONs from REPO_LIST,
+      stamps each task with `"repo"`, and deduplicates by SHA across slices
+- [x] `tasks_corpus(repos_dir, bar="standard")` returns only more-itertools_valid_tasks.json
+      (backward-compatible — existing 37-task evals unchanged)
+- [x] `corpus_counts(repos_dir)` returns `{repo_name: task_count}` breakdown
+- [x] `run_gherkin_jaros_multi(repos_dir, tasks)` routes each task to the correct repo Path
+      and runs `attempt_gherkin_jaros` per task, printing results + Wilson CI summary
+- [x] `--bar big --gherkin-loop --jaros` in `__main__` loads the big corpus and calls
+      `run_gherkin_jaros_multi`; `--bar big --count` prints per-repo counts and total
+- [x] `--tag <name>` flag in `__main__` allows naming the output JSON for a deep-history slice
+      (e.g. `--skip 800 --tag valid_s800`)
+- [x] Unit tests cover: stamps, deduplication, bar=standard, missing-JSON skip, per-repo counts,
+      and the `"tests/"` hardcoding regression
+- [x] Big-bar corpus reaches ≥100 tasks across repos (101: 91 more-itertools + 10 toolz)
+- [x] Sample red→green Docker validation confirms the new tasks are solvable in principle
+      (2 s800 + 2 s1200 + 1 toolz samples all confirmed GREEN at commit SHA)

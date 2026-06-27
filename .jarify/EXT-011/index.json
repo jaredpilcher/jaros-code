@@ -17,5 +17,25 @@
       "startLine": 405,
       "endLine": 447
     }
+  ],
+  "REQ-9": [
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1199,
+      "endLine": 1288,
+      "note": "tasks_corpus(), corpus_counts(), REPO_LIST, --bar big corpus infrastructure"
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1302,
+      "endLine": 1333,
+      "note": "run_gherkin_jaros_multi() multi-repo runner"
+    },
+    {
+      "file": "tests/test_ext011_corpus.py",
+      "startLine": 1,
+      "endLine": 197,
+      "note": "Unit tests: stamps, deduplication, bar=standard, missing-JSON, per-repo counts, tests/-hardcoding regression"
+    }
   ]
 }

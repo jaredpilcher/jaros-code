@@ -160,7 +160,7 @@ def validate_redgreen(repo: Path, c: CommitInfo, branch: str, timeout: int = 180
         return ("no_affected_tests", [])
     try:
         _git(repo, "checkout", "-f", c.parent)          # parent code
-        _git(repo, "checkout", c.sha, "--", "tests/")   # + the commit's tests
+        _git(repo, "checkout", c.sha, "--", _spec(repo)["test"])  # + the commit's tests
         red = _run_nodes(repo, nodes, timeout)
         _git(repo, "checkout", "-f", c.sha)             # full commit
         green_fail = _run_nodes(repo, nodes, timeout)
@@ -461,7 +461,7 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
         ctx = {cf: _file_context(orig[cf]) for cf in files}
         final: dict[str, dict] = {}
@@ -567,7 +567,7 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
         ctx = {cf: _file_context(orig[cf]) for cf in files}
         final: dict[str, dict] = {}
@@ -746,7 +746,7 @@ def attempt_gherkin_jaros_augment(repo: Path, task: dict, branch: str,
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
         ctx = {cf: _file_context(orig[cf]) for cf in files}
         final: dict[str, dict] = {}
@@ -891,7 +891,7 @@ def attempt_gherkin_jaros_gen(repo: Path, task: dict, branch: str, timeout: int 
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
         ctx = {cf: _file_context(orig[cf]) for cf in files}
         final: dict[str, dict] = {}
@@ -1003,7 +1003,7 @@ def attempt_gherkin_jaros_plan(repo: Path, task: dict, branch: str,
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
         ctx = {cf: _file_context(orig[cf]) for cf in files}
         final: dict[str, dict] = {}
@@ -1167,7 +1167,7 @@ def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
     files = sorted({cf for cf, _, _ in targets})
     try:
         _git(repo, "checkout", "-f", task["parent"])
-        _git(repo, "checkout", task["sha"], "--", "tests/")
+        _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}  # clean parent per file
         ctx = {cf: (_file_context(orig[cf]) if use_context else "") for cf in files}
         feedback = ""
@@ -1196,6 +1196,98 @@ def attempt_task(repo: Path, task: dict, branch: str, solve=baseline_solve_2b,
     return "fail"
 
 
+# #EXT-011-REQ-9 Start
+# Multi-repo task corpus (bigger, less-noisy eval bar — EXT-011 REQ-9).
+#
+# REPO_LIST defines every repo participating in the big bar.  Each entry has:
+#   name:  repo directory name under .jaros-data/repos/
+#   tags:  which validated JSON slice(s) belong to this repo's corpus
+#
+# Extending the bar: add a new entry or a new tag for a repo that already has a
+# validated tasks JSON.  The corpus function loads all listed JSONs and stamps each
+# task with "repo" so multi-repo callers can resolve the right Path.
+#
+# ISOLATION INVARIANT: the big-bar corpus MUST NOT overlap the dev (jig-building)
+# set (skip=0..399 more-itertools, i.e. more-itertools_valid_tasks.json).  The
+# deeper slices (skip>=800) are disjoint by construction.
+REPO_LIST: list[dict] = [
+    # more-itertools — existing 37-task held-out bar (newest 400 commits, skip=0)
+    {"name": "more-itertools", "tags": ["valid"]},
+    # more-itertools — deeper history slices mined with skip>=800
+    # These JSONs are created offline by running:
+    #   python -m harness.commit_replay .jaros-data/repos/more-itertools 400 --skip 800 --validate
+    # and then appending the output tag to this list.
+    {"name": "more-itertools", "tags": ["valid_s800"]},
+    {"name": "more-itertools", "tags": ["valid_s1200"]},
+    # toolz — 11-task validated bar (400 commits, skip=0)
+    {"name": "toolz", "tags": ["valid"]},
+]
+
+
+def tasks_corpus(
+    repos_dir: Path | None = None,
+    repo_list: list[dict] | None = None,
+    bar: str = "big",
+) -> list[dict]:
+    """Load the combined multi-repo task corpus for the big eval bar (EXT-011 REQ-9).
+
+    bar="standard" — only the original 37-task more-itertools held-out set
+                     (more-itertools_valid_tasks.json).  Backward-compatible.
+    bar="big"      — all repos / all slices in REPO_LIST whose JSON files exist.
+                     Missing files are silently skipped (partial builds are valid).
+
+    Each returned task dict is stamped with "repo" (str repo name) so multi-repo
+    callers can resolve the correct Path via `repos_dir / task["repo"]`.
+
+    repos_dir defaults to <project>/.jaros-data/repos.
+    """
+    if repos_dir is None:
+        repos_dir = Path(__file__).resolve().parents[1] / ".jaros-data" / "repos"
+    artifacts = repos_dir.parent / "artifacts"
+
+    if bar == "standard":
+        # Original path: single repo, single JSON.
+        tj = artifacts / "more-itertools_valid_tasks.json"
+        if not tj.exists():
+            return []
+        import json as _json
+        tasks = _json.loads(tj.read_text(encoding="utf-8"))
+        for t in tasks:
+            t.setdefault("repo", "more-itertools")
+        return tasks
+
+    # bar == "big": all repos in REPO_LIST
+    import json as _json
+    rlist = repo_list if repo_list is not None else REPO_LIST
+    out: list[dict] = []
+    seen_shas: set[str] = set()
+    for entry in rlist:
+        rname = entry["name"]
+        for tag in entry["tags"]:
+            tj = artifacts / f"{rname}_{tag}_tasks.json"
+            if not tj.exists():
+                continue
+            tasks = _json.loads(tj.read_text(encoding="utf-8"))
+            for t in tasks:
+                sha = t.get("sha", "")
+                if sha in seen_shas:
+                    continue          # deduplicate across overlapping slices
+                seen_shas.add(sha)
+                t["repo"] = rname
+                out.append(t)
+    return out
+
+
+def corpus_counts(repos_dir: Path | None = None) -> dict[str, int]:
+    """Return {repo_name: task_count} for the big-bar corpus (useful for reporting)."""
+    tasks = tasks_corpus(repos_dir=repos_dir, bar="big")
+    counts: dict[str, int] = {}
+    for t in tasks:
+        counts[t["repo"]] = counts.get(t["repo"], 0) + 1
+    return counts
+# #EXT-011-REQ-9 End
+
+
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """Wilson score 95% CI for a proportion (honest small-n interval)."""
     if n == 0:
@@ -1205,6 +1297,40 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     centre = (p + z * z / (2 * n)) / denom
     half = (z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / denom
     return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+# #EXT-011-REQ-9 Start
+def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict]) -> dict:
+    """Run ``attempt_gherkin_jaros`` over a multi-repo task corpus (EXT-011 REQ-9).
+
+    Each task must have a "repo" key (set by ``tasks_corpus()``).  The correct repo
+    Path is resolved as ``repos_dir / task["repo"]`` so tasks from toolz, more-itertools,
+    or any future repo are routed to the right checkout.  Scored on each repo's own
+    oracle (red->green).  Prints per-task results and a Wilson CI summary.
+
+    This is the measurement harness for the big-bar eval:
+
+        python -m harness.commit_replay --bar big --gherkin-loop --jaros
+    """
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        repo_path = repos_dir / t["repo"]
+        branch = _git(repo_path, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        try:
+            r = attempt_gherkin_jaros(repo_path, t, branch)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} [{t['repo']}] {t['sha'][:8]} [{r}] | {t['subject'][:38]}",
+              flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-011 REQ-9 big-bar multi-repo / intent-only / test HIDDEN]: "
+          f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
+          f">>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+# #EXT-011-REQ-9 End
 
 
 def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solve_2b,
@@ -1236,6 +1362,32 @@ def run_baseline(repo: Path, branch: str, tasks: list[dict], solve=baseline_solv
 if __name__ == "__main__":
     import json
     import sys
+
+    # --bar big: load the combined multi-repo corpus via tasks_corpus().
+    # This path does NOT take a <repo> positional arg — the repos dir is auto-resolved.
+    # Usage:
+    #   python -m harness.commit_replay --bar big --gherkin-loop --jaros
+    #   python -m harness.commit_replay --bar big --count   (just print counts)
+    if "--bar" in sys.argv:
+        bar_val = sys.argv[sys.argv.index("--bar") + 1]
+        repos_dir = Path(".jaros-data/repos")
+        if "--count" in sys.argv:
+            counts = corpus_counts(repos_dir)
+            total = sum(counts.values())
+            print(f">>> big-bar corpus: {total} tasks total")
+            for rname, cnt in counts.items():
+                print(f"    {rname}: {cnt}")
+            sys.exit(0)
+        corpus = tasks_corpus(repos_dir=repos_dir, bar=bar_val)
+        counts_by_repo = corpus_counts(repos_dir)
+        print(f">>> big-bar corpus loaded: {len(corpus)} tasks total  "
+              f"({', '.join(f'{r}:{c}' for r, c in counts_by_repo.items())})", flush=True)
+        if "--gherkin-loop" in sys.argv and "--jaros" in sys.argv:
+            n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(corpus)
+            corpus = corpus[:n_tasks]
+            run_gherkin_jaros_multi(repos_dir, corpus)
+        sys.exit(0)
+
     repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".jaros-data/repos/more-itertools")
     if "--gherkin-loop" in sys.argv:
         branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
@@ -1307,8 +1459,11 @@ if __name__ == "__main__":
         sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 400
     skip = int(sys.argv[sys.argv.index("--skip") + 1]) if "--skip" in sys.argv else 0
+    # --tag <name>: override the output JSON tag (e.g. valid_s800 for skip=800 slice).
+    # Default: "dev" if skip>0 else "valid" (backward-compatible).
+    explicit_tag = sys.argv[sys.argv.index("--tag") + 1] if "--tag" in sys.argv else None
     cands, ledger = structural_filter(repo, n, skip=skip)
-    tag = "dev" if skip else "valid"
+    tag = explicit_tag if explicit_tag else ("dev" if skip else "valid")
     print(f">>> structural filter on {n} commits (skip {skip}) of {repo.name}", flush=True)
     print(f">>> drop ledger: {json.dumps(ledger)}", flush=True)
     print(f">>> structural candidates (touch code+tests, non-merge): {len(cands)}", flush=True)
