@@ -26,5 +26,37 @@
       "startLine": 196,
       "endLine": 216
     }
+  ],
+  "REQ-12": [
+    {
+      "file": "harness/pass1_eval.py",
+      "startLine": 79,
+      "endLine": 115
+    },
+    {
+      "file": "harness/pass1_eval.py",
+      "startLine": 125,
+      "endLine": 127
+    },
+    {
+      "file": "harness/pass1_eval.py",
+      "startLine": 223,
+      "endLine": 225
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 102,
+      "endLine": 128
+    },
+    {
+      "file": "tests/test_pass1_treekill.py",
+      "startLine": 53,
+      "endLine": 76
+    },
+    {
+      "file": "tests/test_pass1_treekill.py",
+      "startLine": 82,
+      "endLine": 102
+    }
   ]
 }

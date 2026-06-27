@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import doctest
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -75,6 +76,45 @@ def solve_pass1(task, *, edge: bool = False) -> str:
     return _bc.repair_indentation(_llm(), _bc.splice(sig_doc, reply))
 
 
+# #EXT-005-REQ-12 Start
+def _run_with_treekill(cmd: str, cwd: str, timeout: int) -> bool:
+    """Run *cmd* (shell=True) in *cwd*, returning True iff exit-code 0.
+
+    On timeout, kills the ENTIRE process tree (not just the shell), then reaps
+    the process before returning False.  This prevents infinite-loop solutions
+    from orphaning pytest grandchildren and hanging the caller on a broken pipe —
+    the task-71 / bug-#19 class of hang.
+
+    Windows: ``taskkill /F /T /PID`` kills the whole tree (cmd.exe + grandchildren).
+    POSIX:   start_new_session=True + SIGKILL to the process group.
+    """
+    kwargs: dict = dict(shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+    p = subprocess.Popen(cmd, cwd=cwd, **kwargs)
+    try:
+        p.communicate(timeout=timeout)
+        return p.returncode == 0
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            subprocess.run(
+                f"taskkill /F /T /PID {p.pid}",
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            import signal
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            p.communicate(timeout=5)
+        except Exception:
+            pass
+        return False
+# #EXT-005-REQ-12 End
+
+
 def run_pass1(tasks, *, edge: bool = False) -> tuple[int, list[str]]:
     """Deterministic pass@1 over stub Tasks. Returns (passed, failing_ids)."""
     passed, fails = 0, []
@@ -82,11 +122,9 @@ def run_pass1(tasks, *, edge: bool = False) -> tuple[int, list[str]]:
         with tempfile.TemporaryDirectory() as d:
             setup_task(t, Path(d))
             Path(d, "solution.py").write_text(solve_pass1(t, edge=edge), encoding="utf-8", newline="\n")
-            try:
-                r = subprocess.run(t.test_cmd, cwd=d, shell=True, capture_output=True, text=True, timeout=60)
-                ok = r.returncode == 0
-            except subprocess.TimeoutExpired:
-                ok = False
+            # #EXT-005-REQ-12 Start
+            ok = _run_with_treekill(t.test_cmd, d, timeout=60)
+            # #EXT-005-REQ-12 End
         passed += ok
         if not ok:
             fails.append(t.id)
@@ -182,11 +220,9 @@ def run_gated(tasks) -> tuple[int, list[str]]:
         with tempfile.TemporaryDirectory() as d:
             setup_task(t, Path(d))
             Path(d, "solution.py").write_text(solve_gated(t), encoding="utf-8", newline="\n")
-            try:
-                ok = subprocess.run(t.test_cmd, cwd=d, shell=True, capture_output=True,
-                                    text=True, timeout=60).returncode == 0
-            except subprocess.TimeoutExpired:
-                ok = False
+            # #EXT-005-REQ-12 Start
+            ok = _run_with_treekill(t.test_cmd, d, timeout=60)
+            # #EXT-005-REQ-12 End
         passed += ok
         if not ok:
             fails.append(t.id)

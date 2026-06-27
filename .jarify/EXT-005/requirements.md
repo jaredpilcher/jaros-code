@@ -8,6 +8,14 @@ implementation:
     ranges:
       - - 1
         - 200
+  - file: harness/pass1_eval.py
+    ranges:
+      - - 78
+        - 130
+  - file: harness/multi_file.py
+    ranges:
+      - - 96
+        - 130
 ---
 
 This spec serves the central, measurable promise of PRIME-001: the harness must
@@ -146,6 +154,30 @@ agent→tool wirings actually fire (no orphans), which agents/tools/evals are un
       `leverage` = solved tasks per agent (rises when wiring improves at flat agent count),
       distinct wired edges fired, and decisions composed per solved task — persisted to
       history and shown in the report with deltas vs the first recorded run
+
+### [REQ-12] Robust test-exec — hang-proof process tree kill
+
+When a generated solution contains an infinite loop (or any construct that never
+exits), the test-execution call must return within the timeout budget and MUST NOT
+leave orphan processes behind. On Windows with `shell=True` the immediate child is
+`cmd.exe`; a plain `subprocess.run(..., timeout=N)` kills only `cmd.exe`, leaving
+the pytest grandchild alive and the caller hanging on a broken pipe. The fix is a
+`Popen` + `communicate(timeout=N)` + whole-tree kill on `TimeoutExpired` (Windows:
+`taskkill /F /T /PID`; POSIX: `SIGKILL` to the process group via
+`os.killpg(os.getpgid(pid), SIGKILL)` with `start_new_session=True`), followed by a
+short `communicate(timeout=5)` reap before returning `ok=False`.
+
+This applies to every `shell=True` + timeout test-exec site in the harness:
+`run_pass1`, `run_gated` (both in `harness/pass1_eval.py`) and `_run` in
+`harness/multi_file.py`.
+
+#### Acceptance Criteria
+- [ ] `_run_with_treekill` helper in `harness/pass1_eval.py` uses Popen + tree-kill on timeout
+- [ ] `run_pass1` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
+- [ ] `run_gated` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
+- [ ] `harness/multi_file.py` `_run()` uses Popen + tree-kill on timeout
+- [ ] `tests/test_pass1_treekill.py` asserts `run_pass1([infinite_loop_task])` returns within 15 s
+- [ ] The fix is cross-platform: Windows uses `taskkill /F /T`, POSIX uses SIGKILL to process group
 
 ### [REQ-5] Real public benchmark integration
 

@@ -8,6 +8,7 @@ judgement; only the actual fix is model work (plane-placement: count/search -> d
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -97,13 +98,34 @@ def _run(cwd: str, test_cmd: str) -> tuple[bool, str]:
     # Real repos have suites slower than the old hard 30s (jaros-code's own is ~45s), which made every
     # test-gated flow — fix, build, REFACTOR — spuriously report "not green". Configurable, realistic
     # default. A timeout is a non-green run, never a crash.
-    import os
     to = int(os.environ.get("JCODE_TEST_TIMEOUT_S", "120"))
+    # #EXT-005-REQ-12 Start
+    # Use Popen + tree-kill on timeout so an infinite-loop solution can't orphan pytest on Windows.
+    kwargs: dict = dict(shell=True, capture_output=True, text=True)
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+    p = subprocess.Popen(test_cmd, cwd=cwd, **kwargs)
     try:
-        proc = subprocess.run(test_cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=to)
+        stdout, stderr = p.communicate(timeout=to)
+        return p.returncode == 0, (stdout or "") + (stderr or "")
     except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            subprocess.run(
+                f"taskkill /F /T /PID {p.pid}",
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            import signal
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        try:
+            p.communicate(timeout=5)
+        except Exception:
+            pass
         return False, f"test command timed out after {to}s (treated as not-passing): {test_cmd}"
-    return proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
+    # #EXT-005-REQ-12 End
 
 
 def _snapshot(cwd: str) -> dict[str, str]:
