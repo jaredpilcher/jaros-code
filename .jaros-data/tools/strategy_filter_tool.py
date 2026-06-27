@@ -25,7 +25,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from jaros.core.decision_gate import ValidationResult
+
 # #EXT-015-REQ-2 Start
+
+NAME = "code.filter_strategy"
 
 # ---------------------------------------------------------------------------
 # Pattern constants (all deterministic, no LLM)
@@ -126,13 +130,6 @@ def filter_strategy(strategy_text: str) -> str:
 # Jaros tool interface
 # ---------------------------------------------------------------------------
 
-class _ValidationResult:
-    """Plain class (not dataclass) so importlib.util.module_from_spec works with any module name."""
-
-    def __init__(self, ok: bool, error: str = "") -> None:
-        self.ok = ok
-        self.error = error
-
 
 class StrategyFilterTool:
     """Jaros tool: ``code.filter_strategy``
@@ -149,17 +146,19 @@ class StrategyFilterTool:
         }
     """
 
-    def validate(self, decision) -> _ValidationResult:
-        payload = getattr(decision, "payload", {}) or {}
+    NAME = "code.filter_strategy"
+
+    def validate(self, decision) -> ValidationResult:
+        payload = decision.payload if isinstance(decision.payload, dict) else {}
         strategy = payload.get("strategy")
         if not isinstance(strategy, str):
-            return _ValidationResult(ok=False, error="payload.strategy must be a str")
+            return ValidationResult.reject("payload.strategy must be a str")
         if not strategy.strip():
-            return _ValidationResult(ok=False, error="payload.strategy must not be empty")
-        return _ValidationResult(ok=True)
+            return ValidationResult.reject("payload.strategy must not be empty")
+        return ValidationResult.accept(decision)
 
-    def execute(self, decision) -> dict[str, Any]:
-        payload = getattr(decision, "payload", {}) or {}
+    def execute(self, decision, **collaborators) -> dict[str, Any]:
+        payload = decision.payload if isinstance(decision.payload, dict) else {}
         raw = payload.get("strategy", "")
         filtered = filter_strategy(raw)
         return {"tool": "code.filter_strategy", "filtered": filtered}
