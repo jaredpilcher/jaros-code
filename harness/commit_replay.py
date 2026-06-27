@@ -682,6 +682,150 @@ def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict]) -> dict:
 # #EXT-013-REQ-5 End
 
 
+# #EXT-012-REQ-13 Start
+def _apply_augmenter(name: str, source: str, self_tests: str) -> str:
+    """Augment *self_tests* with doctest-derived assertions from *source*.
+
+    Uses the ``code.augment_selftests`` execution-plane tool (deterministic, no LLM).
+    Falls back to the original *self_tests* unchanged if the tool cannot parse
+    the docstring or finds no examples (graceful no-op).
+
+    HONESTY: *source* is the VISIBLE function/module source from the parent repo
+    checkout.  The hidden oracle (``task["redgreen"]`` / ``test_more.py``) is
+    never passed here — see SelftestAugmenterTool docstring.
+    """
+    import importlib.util as _ilu
+    import os as _os
+    from pathlib import Path as _Path
+    from types import SimpleNamespace
+
+    _tools_dir = _Path(__file__).resolve().parents[1] / ".jaros-data" / "tools"
+    tool_path = str(_tools_dir / "selftest_augmenter_tool.py")
+    spec = _ilu.spec_from_file_location("_sat_tool", tool_path)
+    mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)       # type: ignore[union-attr]
+    tool = mod.SelftestAugmenterTool()
+
+    decision = SimpleNamespace(
+        payload={"name": name, "source": source, "self_tests": self_tests},
+        type="code.augment_selftests",
+    )
+    v = tool.validate(decision)
+    if not v.ok:
+        return self_tests   # validation failed — leave tests unchanged
+    result = tool.execute(decision)
+    return result.get("self_tests", self_tests)
+
+
+def attempt_gherkin_jaros_augment(repo: Path, task: dict, branch: str,
+                                  timeout: int = 180, max_fix: int = 2) -> str:
+    """EXT-012 / REQ-13: per-function solve via the Jaros-native fix-loop with
+    STRONGER ORACLE self-tests.
+
+    Mirrors ``attempt_gherkin_jaros`` exactly, except that after the model's
+    ``g_selftests`` grain produces the initial self-tests, they are augmented via
+    the deterministic ``code.augment_selftests`` tool: doctest ``>>> `` examples
+    from the target function's VISIBLE docstring (parent repo source) are parsed
+    and appended as concrete ``assert`` statements.
+
+    HONESTY: augmentation reads ONLY the visible docstring from the parent source
+    checkout — NEVER the hidden oracle (``task["redgreen"]`` / ``test_more.py``).
+    The hidden oracle is used only at the final scoring step (same as every other
+    path).  Augmented tests remain SCAFFOLDING; they are removed before the oracle
+    run (same as ``_run_selftests`` in the non-augmented path).
+
+    Default behavior is NOT changed: ``attempt_gherkin_jaros`` is unmodified.
+    This function is a separate additive path, active only when ``--augment`` is
+    passed on the CLI.
+    """
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    if len(targets) > 4:
+        return "capped"
+    files = sorted({cf for cf, _, _ in targets})
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        ctx = {cf: _file_context(orig[cf]) for cf in files}
+        final: dict[str, dict] = {}
+        for cf, name, parent_src in targets:
+            pkg = cf.split("/")[0]
+
+            # Step 1: Gherkin spec (same Python-path grain as attempt_gherkin).
+            gk = g_gherkin(task["subject"], name, parent_src, ctx[cf])
+
+            # Step 2: Model's self-tests from the spec.
+            tests = g_selftests(name, gk, pkg)
+
+            # Step 3: AUGMENT with doctest-derived assertions from the VISIBLE source.
+            # HONESTY: orig[cf] is the parent repo source (visible); NOT the hidden oracle.
+            tests = _apply_augmenter(name, orig[cf], tests)
+
+            # Step 4: Deterministic fix-loop (code -> run augmented tests -> revise).
+            code = g_code(task["subject"], name, parent_src, ctx[cf], gk)
+            for _ in range(max_fix + 1):
+                if not code:
+                    break
+                content = orig[cf]
+                for n2, c2 in {**final.get(cf, {}), name: code}.items():
+                    if c2:
+                        content = _apply_func(content, n2, c2)
+                (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+                ok, fb = _run_selftests(repo, tests, 25)
+                if ok:
+                    break
+                code = g_code(task["subject"], name, parent_src, ctx[cf], gk, fb)
+            final.setdefault(cf, {})[name] = code or ""
+
+        # Consolidate all settled functions per file.
+        for cf in files:
+            content = orig[cf]
+            for n2, c2 in final.get(cf, {}).items():
+                if c2:
+                    content = _apply_func(content, n2, c2)
+            (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+
+        # Remove scaffolding before the oracle (mirrors attempt_gherkin).
+        st = repo / (_spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py")
+        if st.exists():
+            st.unlink()
+
+        return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
+    except Exception as e:  # noqa: BLE001
+        return f"err:{type(e).__name__}"
+    finally:
+        _reset(repo, branch)
+
+
+def run_gherkin_jaros_augment(repo: Path, branch: str, tasks: list[dict]) -> dict:
+    """Run ``attempt_gherkin_jaros_augment`` over all tasks, scored on the hidden oracle.
+    Prints per-task results and a Wilson CI summary (same format as ``run_gherkin_jaros``).
+
+    This is the measurement harness for EXT-012 REQ-13 (stronger-oracle).  The
+    full 37-task run is launched with::
+
+        python -m harness.commit_replay <repo> --gherkin-loop --jaros --augment --n 37
+    """
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_gherkin_jaros_augment(repo, t, branch)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-012 REQ-13 stronger-oracle augment / intent-only / test HIDDEN]: "
+          f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
+          f">>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+# #EXT-012-REQ-13 End
+
+
 # #EXT-012-REQ-12 Start
 def _run_selftests_count(repo: Path, test_code: str, timeout: int = 120) -> tuple[int, str]:
     """Run the 2B's self-tests in Docker and return (pass_count, feedback).
@@ -983,6 +1127,7 @@ if __name__ == "__main__":
         # --gen N: generate-and-test best-of-N (EXT-012 REQ-12); default N=4.
         # Only active when combined with --jaros.  Default behaviour is unchanged.
         gen_n = int(sys.argv[sys.argv.index("--gen") + 1]) if "--gen" in sys.argv else 0
+        augment = "--augment" in sys.argv   # EXT-012 REQ-13: stronger-oracle self-test augmenter
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
@@ -993,6 +1138,12 @@ if __name__ == "__main__":
                 print(f">>> EXT-012 REQ-12 GENERATE-AND-TEST N={gen_n} on {len(tasks)} "
                       f"{tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros_gen(repo, branch, tasks, n_gen=gen_n)
+            elif augment:
+                # EXT-012 REQ-13: stronger-oracle path — self-tests augmented with doctest
+                # examples from the VISIBLE docstring.  HONESTY: never reads the hidden oracle.
+                print(f">>> EXT-012 REQ-13 STRONGER-ORACLE AUGMENT on {len(tasks)} "
+                      f"{tag} tasks of {repo.name}", flush=True)
+                run_gherkin_jaros_augment(repo, branch, tasks)
             else:
                 print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros(repo, branch, tasks)

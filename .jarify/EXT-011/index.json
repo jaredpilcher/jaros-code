@@ -1,16 +1,4 @@
 {
-  "REQ-7": [
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 405,
-      "endLine": 447
-    },
-    {
-      "file": "tests/test_ext011_container_lifecycle.py",
-      "startLine": 1,
-      "endLine": 119
-    }
-  ],
   "REQ-8": [
     {
       "file": "harness/commit_replay.py",
@@ -21,11 +9,13 @@
       "file": "harness/commit_replay.py",
       "startLine": 284,
       "endLine": 311
-    },
+    }
+  ],
+  "REQ-7": [
     {
-      "file": "tests/test_ext011_container_lifecycle.py",
-      "startLine": 122,
-      "endLine": 180
+      "file": "harness/commit_replay.py",
+      "startLine": 405,
+      "endLine": 447
     }
   ]
 }

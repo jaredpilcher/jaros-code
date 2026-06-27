@@ -1,13 +1,25 @@
 ---
 id: EXT-012
 title: Behavioral Gherkin-Driven Alignment Loop (2B-authored, all layers)
-status: covered
+status: partial
 priority: high
 implementation:
   - file: harness/gherkin_loop.py
     ranges:
       - - 1
         - 1
+  - file: .jaros-data/tools/selftest_augmenter_tool.py
+    ranges:
+      - - 1
+        - 175
+  - file: harness/commit_replay.py
+    ranges:
+      - - 684
+        - 830
+  - file: tests/test_selftest_augmenter.py
+    ranges:
+      - - 1
+        - 200
 ---
 
 ### [REQ-1] The 2B authors every layer; the harness only runs tests and keeps pointers
@@ -159,3 +171,25 @@ deleted behavior propagates: a test asserting the behavior is gone → code that
 - [ ] Reconcile each existing Gherkin as keep / modify / delete for a given task
 - [ ] Preserve behavior that must not change while applying the task's changes
 - [ ] Propagate deletions: assert the behavior is gone in tests and remove it in code across files
+
+### [REQ-13] Stronger-oracle self-test augmenter — docstring-example assertions
+
+The model's spec-derived self-tests are weak oracles (EXT-012/design.md PRUNE lesson: best-of-N
+selected by weak self-tests REGRESSED 5/37). The lever is STRONGER ORACLES. This requirement adds a
+deterministic augmenter: parse the target function's visible docstring (from the parent repo
+source — VISIBLE, never the hidden oracle) for ``>>> `` example lines, convert each into a concrete
+``assert`` statement, and append them to the model's self-tests. Stronger assertions give the
+fix-loop a better red signal on wrong candidates. A ``--augment`` flag in commit_replay activates
+this path; the default solve is NOT changed. Must be measured on held-out commits
+(integrate-or-prune gate, REQ-7) before any default use.
+
+#### Acceptance Criteria
+- [ ] `code.augment_selftests` tool validate() rejects non-str `name`, `source`, or `self_tests`
+- [ ] execute() parses ``>>> expr`` / value pairs from the target function's visible docstring
+- [ ] execute() appends a correctly-asserting test function to the model's self-tests
+- [ ] No-docstring source falls back unchanged (augmented=False, examples_found=0)
+- [ ] Docstring with no ``>>> `` lines falls back unchanged (graceful no-op)
+- [ ] Augmented test output is valid Python (ast.parse clean)
+- [ ] HONESTY: tool never reads, imports, or references the hidden oracle (test_more.py / redgreen)
+- [ ] ``--augment`` flag wired into commit_replay ``--gherkin-loop --jaros`` path; default unchanged
+- [ ] Unit tests cover all of the above cases offline (no LLM, no Jetson, no Docker)

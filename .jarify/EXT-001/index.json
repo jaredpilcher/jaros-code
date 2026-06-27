@@ -1,4 +1,11 @@
 {
+  "REQ-8": [
+    {
+      "file": ".jaros-data/tools/py_check_tool.py",
+      "startLine": 14,
+      "endLine": 41
+    }
+  ],
   "REQ-12": [
     {
       "file": ".jaros-data/tools/json_check_tool.py",
@@ -41,6 +48,13 @@
       "endLine": 76
     }
   ],
+  "REQ-6": [
+    {
+      "file": ".jaros-data/tools/write_file_tool.py",
+      "startLine": 22,
+      "endLine": 58
+    }
+  ],
   "REQ-5": [
     {
       "file": ".jaros-data/tools/shell_exec_tool.py",
@@ -53,20 +67,6 @@
       "file": ".jaros-data/tools/py_symbols_tool.py",
       "startLine": 14,
       "endLine": 46
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": ".jaros-data/tools/py_check_tool.py",
-      "startLine": 14,
-      "endLine": 41
-    }
-  ],
-  "REQ-6": [
-    {
-      "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 22,
-      "endLine": 58
     }
   ]
 }
