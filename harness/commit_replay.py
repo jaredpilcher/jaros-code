@@ -547,8 +547,16 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
 # #EXT-013-REQ-5 Start
 def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 180,
                           max_fix: int = 2) -> str:
-    """EXT-013 / REQ-5: per-function solve via the Jaros-native ``behavioral_solve_jaros``
-    (Runtime gate -> executor -> DecisionLog), scored on the hidden oracle (red->green).
+    """EXT-013 / REQ-5 + EXT-012 REQ-13: per-function solve via the Jaros-native
+    ``behavioral_solve_jaros`` (Runtime gate -> executor -> DecisionLog), scored on
+    the hidden oracle (red->green).
+
+    EXT-012 REQ-13 (integrated 2026-06-27): docstring-derived self-test augmentation is
+    now the DEFAULT here — self-tests are augmented with concrete ``assert`` statements
+    from the target function's visible docstring examples BEFORE the fix-loop.  This is
+    the confirmed honest lift (2-run mean 8.5/37 vs 6.0/37 baseline, held-out
+    more-itertools).  HONESTY: augmentation reads only the visible parent-repo source
+    (``orig[cf]``) — never the hidden oracle.
 
     The test-run op mirrors ``_run_selftests`` exactly — same Docker image, same container
     lifecycle (unique --name + force-remove in finally) — but the shell command is issued
@@ -634,6 +642,10 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
                     test_command=docker_cmd,
                     max_fix=max_fix,
                     pre_test_hook=pre_test_hook,
+                    # EXT-012 REQ-13: augment self-tests with visible docstring examples
+                    # (the confirmed honest lift).  HONESTY: orig[cf] is the parent-repo
+                    # source — never the hidden oracle.
+                    augment_source=orig[cf],
                 )
             finally:
                 # Belt-and-suspenders: force-remove the container even on exception/timeout.
@@ -1127,7 +1139,7 @@ if __name__ == "__main__":
         # --gen N: generate-and-test best-of-N (EXT-012 REQ-12); default N=4.
         # Only active when combined with --jaros.  Default behaviour is unchanged.
         gen_n = int(sys.argv[sys.argv.index("--gen") + 1]) if "--gen" in sys.argv else 0
-        augment = "--augment" in sys.argv   # EXT-012 REQ-13: stronger-oracle self-test augmenter
+        augment = "--augment" in sys.argv   # EXT-012 REQ-13: now a no-op (augmentation is DEFAULT)
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
@@ -1138,14 +1150,16 @@ if __name__ == "__main__":
                 print(f">>> EXT-012 REQ-12 GENERATE-AND-TEST N={gen_n} on {len(tasks)} "
                       f"{tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros_gen(repo, branch, tasks, n_gen=gen_n)
-            elif augment:
-                # EXT-012 REQ-13: stronger-oracle path — self-tests augmented with doctest
-                # examples from the VISIBLE docstring.  HONESTY: never reads the hidden oracle.
-                print(f">>> EXT-012 REQ-13 STRONGER-ORACLE AUGMENT on {len(tasks)} "
-                      f"{tag} tasks of {repo.name}", flush=True)
-                run_gherkin_jaros_augment(repo, branch, tasks)
             else:
-                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+                # EXT-012 REQ-13 (integrated 2026-06-27): augmentation is now the DEFAULT in
+                # attempt_gherkin_jaros / behavioral_solve_jaros — the --augment flag is a
+                # back-compat no-op (both paths run the same augmented solve).
+                if augment:
+                    print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP (+augment DEFAULT) on "
+                          f"{len(tasks)} {tag} tasks of {repo.name}", flush=True)
+                else:
+                    print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP (+augment DEFAULT) on "
+                          f"{len(tasks)} {tag} tasks of {repo.name}", flush=True)
                 run_gherkin_jaros(repo, branch, tasks)
         else:
             mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")

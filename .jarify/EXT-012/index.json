@@ -6,19 +6,19 @@
       "endLine": 387
     },
     {
-      "file": ".jaros-data/tools/generate_and_test_tool.py",
-      "startLine": 41,
-      "endLine": 119
-    },
-    {
       "file": "harness/generate_test_solve.py",
       "startLine": 58,
       "endLine": 187
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 829,
-      "endLine": 1005
+      "startLine": 841,
+      "endLine": 1017
+    },
+    {
+      "file": ".jaros-data/tools/generate_and_test_tool.py",
+      "startLine": 41,
+      "endLine": 119
     }
   ],
   "REQ-13": [
@@ -28,14 +28,33 @@
       "endLine": 330
     },
     {
-      "file": ".jaros-data/tools/selftest_augmenter_tool.py",
-      "startLine": 59,
-      "endLine": 211
+      "file": "tests/test_ext013_jaros_solve.py",
+      "startLine": 499,
+      "endLine": 671,
+      "note": "Integration tests: augment_source wires docstring augmentation into behavioral_solve_jaros (EXT-012 REQ-13 default)"
+    },
+    {
+      "file": "harness/behavioral_solve.py",
+      "startLine": 256,
+      "endLine": 277,
+      "note": "augment_source block in behavioral_solve_jaros — DEFAULT augmentation after Grain 2 (test-writer)"
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 685,
-      "endLine": 826
+      "startLine": 547,
+      "endLine": 694,
+      "note": "attempt_gherkin_jaros: augment_source=orig[cf] passed to behavioral_solve_jaros (default augmentation)"
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 697,
+      "endLine": 838,
+      "note": "_apply_augmenter + attempt_gherkin_jaros_augment + run_gherkin_jaros_augment (back-compat --augment path)"
+    },
+    {
+      "file": ".jaros-data/tools/selftest_augmenter_tool.py",
+      "startLine": 59,
+      "endLine": 211
     }
   ]
 }

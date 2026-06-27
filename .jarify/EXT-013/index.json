@@ -1,33 +1,4 @@
 {
-  "REQ-4": [
-    {
-      "file": "tests/test_ext013_jaros_solve.py",
-      "startLine": 15,
-      "endLine": 497
-    },
-    {
-      "file": "harness/behavioral_solve.py",
-      "startLine": 116,
-      "endLine": 297
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "tests/test_ext013_jaros_ops.py",
-      "startLine": 18,
-      "endLine": 298
-    },
-    {
-      "file": ".jaros-data/tools/repair_tool.py",
-      "startLine": 36,
-      "endLine": 125
-    },
-    {
-      "file": "harness/jaros_solve_ops.py",
-      "startLine": 34,
-      "endLine": 114
-    }
-  ],
   "REQ-3": [
     {
       "file": "tests/test_ext013_orchestrator_judge.py",
@@ -40,16 +11,45 @@
       "endLine": 118
     }
   ],
+  "REQ-4": [
+    {
+      "file": "tests/test_ext013_jaros_solve.py",
+      "startLine": 15,
+      "endLine": 497
+    },
+    {
+      "file": "harness/behavioral_solve.py",
+      "startLine": 116,
+      "endLine": 334
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "tests/test_ext013_jaros_ops.py",
+      "startLine": 18,
+      "endLine": 298
+    },
+    {
+      "file": "harness/jaros_solve_ops.py",
+      "startLine": 34,
+      "endLine": 114
+    },
+    {
+      "file": ".jaros-data/tools/repair_tool.py",
+      "startLine": 36,
+      "endLine": 125
+    }
+  ],
   "REQ-5": [
     {
       "file": "harness/commit_replay.py",
       "startLine": 547,
-      "endLine": 682
+      "endLine": 694
     },
     {
       "file": "harness/behavioral_solve.py",
-      "startLine": 261,
-      "endLine": 265
+      "startLine": 298,
+      "endLine": 302
     }
   ],
   "REQ-1": [

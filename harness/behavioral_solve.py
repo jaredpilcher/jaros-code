@@ -122,10 +122,17 @@ def behavioral_solve_agentic(intent: str, name: str, current_src: str | None, co
 # chain is enforced by the runtime — two-plane discipline by construction (Tenet 1) and
 # hash-chain logged for byte-identical replay (Tenet 3).
 #
-# Flow: gherkin-agent -> test-writer-agent -> code-writer-agent -> run_tests (shell.exec)
+# Flow: gherkin-agent -> test-writer-agent -> [augment] -> code-writer-agent -> run_tests
 #       -> on fail: code-writer-agent (feedback) -> run_tests ... (bounded by max_fix)
 # All decisions are applied through Runtime.apply; the solver is the DETERMINISTIC
 # fix-loop (not the orchestrator judge-agent).
+#
+# EXT-012 REQ-13 (2026-06-27): docstring-derived self-test augmentation is now the
+# DEFAULT in the Jaros-native path.  When ``augment_source`` is supplied (the visible
+# parent-repo source text), self-tests are augmented after Grain 2 via the deterministic
+# ``code.augment_selftests`` tool before the fix-loop starts.  This is the confirmed
+# honest lift (2-run mean 8.5/37 vs 6.0/37 baseline).  Honesty: augmentation reads
+# ONLY the visible docstring; the hidden oracle is never touched here.
 
 
 def _load_agent_from_file(filepath: str, llm):
@@ -153,6 +160,7 @@ def behavioral_solve_jaros(
     test_cwd: str | None = None,
     max_fix: int = 2,
     pre_test_hook: "Callable[[str, str], None] | None" = None,
+    augment_source: str | None = None,
 ) -> dict:
     """Jaros-native behavioral solve: same deterministic fix-loop as ``behavioral_solve``
     but every host effect routes through ``Runtime.apply(Decision)`` — gate -> executor ->
@@ -184,6 +192,12 @@ def behavioral_solve_jaros(
                     strings; any side effects (writing the file, staging test artefacts) are
                     the hook's responsibility.  The Runtime still issues the ``shell.exec``
                     Decision for the actual test run.
+    augment_source : visible parent-repo source text for the target function (default None).
+                    When provided, the model's self-tests are augmented with doctest-derived
+                    assertions AFTER Grain 2 and BEFORE the fix-loop, via the deterministic
+                    ``code.augment_selftests`` tool.  This is the EXT-012 REQ-13 confirmed
+                    honest lift; it reads ONLY the visible docstring — never the hidden oracle.
+                    If None, no augmentation is applied (graceful no-op).
 
     Returns
     -------
@@ -238,6 +252,29 @@ def behavioral_solve_jaros(
     })
     _apply(tw_decision)
     tests: str = tw_decision.payload.get("content", "")
+
+    # #EXT-012-REQ-13 Start
+    # --- Augment self-tests with doctest-derived assertions (EXT-012 REQ-13 default) ---
+    # HONESTY: augment_source is the VISIBLE parent-repo source; never the hidden oracle.
+    # Graceful no-op if augment_source is None or the target has no docstring examples.
+    if augment_source is not None:
+        try:
+            import importlib.util as _ilu
+            from pathlib import Path as _Path
+            from types import SimpleNamespace as _SN
+            _tools_dir = _Path(__file__).resolve().parents[1] / ".jaros-data" / "tools"
+            _spec = _ilu.spec_from_file_location("_sat_tool", str(_tools_dir / "selftest_augmenter_tool.py"))
+            _mod = _ilu.module_from_spec(_spec)    # type: ignore[arg-type]
+            _spec.loader.exec_module(_mod)         # type: ignore[union-attr]
+            _tool = _mod.SelftestAugmenterTool()
+            _dec = _SN(payload={"name": name, "source": augment_source, "self_tests": tests},
+                       type="code.augment_selftests")
+            _v = _tool.validate(_dec)
+            if _v.ok:
+                tests = _tool.execute(_dec).get("self_tests", tests)
+        except Exception:  # noqa: BLE001 — augmentation is best-effort; never block the solve
+            pass
+    # #EXT-012-REQ-13 End
 
     # --- Grain 3: First code implementation via CodeWriterBoundary -----------------
     code_agent = _load_agent_from_file(str(_agents_dir / "code_agent.py"), llm)
