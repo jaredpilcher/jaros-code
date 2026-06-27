@@ -1300,25 +1300,42 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 # #EXT-011-REQ-9 Start
-def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict]) -> dict:
-    """Run ``attempt_gherkin_jaros`` over a multi-repo task corpus (EXT-011 REQ-9).
+def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
+                            agentic: bool = False) -> dict:
+    """Run the big-bar multi-repo eval (EXT-011 REQ-9 / REQ-10).
 
     Each task must have a "repo" key (set by ``tasks_corpus()``).  The correct repo
     Path is resolved as ``repos_dir / task["repo"]`` so tasks from toolz, more-itertools,
     or any future repo are routed to the right checkout.  Scored on each repo's own
     oracle (red->green).  Prints per-task results and a Wilson CI summary.
 
-    This is the measurement harness for the big-bar eval:
+    agentic=False (default): deterministic Jaros-native fix-loop
+        (``attempt_gherkin_jaros`` — Runtime-gated, hash-chain logged).
+    agentic=True: 2B-orchestrator path
+        (``attempt_gherkin`` with agentic=True — non-deterministic, temp>0 judge).
 
-        python -m harness.commit_replay --bar big --gherkin-loop --jaros
+    The A/B differs ONLY in the driver; the Gherkin grains, self-tests, repair tools,
+    and red->green oracle are IDENTICAL between the two arms (honest comparison).
+
+    CLI:
+        python -m harness.commit_replay --bar big --gherkin-loop --jaros              # deterministic
+        python -m harness.commit_replay --bar big --gherkin-loop --jaros --agentic    # orchestrator
     """
     from collections import Counter
     res: Counter = Counter()
+    # #EXT-011-REQ-10 Start
+    driver_label = "AGENTIC-ORCHESTRATOR" if agentic else "DETERMINISTIC-JAROS"
+    # #EXT-011-REQ-10 End
     for i, t in enumerate(tasks):
         repo_path = repos_dir / t["repo"]
         branch = _git(repo_path, "rev-parse", "--abbrev-ref", "HEAD").strip()
         try:
-            r = attempt_gherkin_jaros(repo_path, t, branch)
+            # #EXT-011-REQ-10 Start
+            if agentic:
+                r = attempt_gherkin(repo_path, t, branch, agentic=True)
+            else:
+                r = attempt_gherkin_jaros(repo_path, t, branch)
+            # #EXT-011-REQ-10 End
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
@@ -1326,7 +1343,7 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict]) -> dict:
               flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    print(f">>> RESULT [EXT-011 REQ-9 big-bar multi-repo / intent-only / test HIDDEN]: "
+    print(f">>> RESULT [EXT-011 REQ-9/10 big-bar multi-repo {driver_label} / intent-only / test HIDDEN]: "
           f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
           f">>> breakdown: {dict(res)}", flush=True)
     return dict(res)
@@ -1385,7 +1402,16 @@ if __name__ == "__main__":
         if "--gherkin-loop" in sys.argv and "--jaros" in sys.argv:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(corpus)
             corpus = corpus[:n_tasks]
-            run_gherkin_jaros_multi(repos_dir, corpus)
+            # #EXT-011-REQ-10 Start
+            use_agentic = "--agentic" in sys.argv
+            if use_agentic:
+                print(">>> A/B arm: AGENTIC-ORCHESTRATOR (2B judge, non-deterministic)",
+                      flush=True)
+            else:
+                print(">>> A/B arm: DETERMINISTIC-JAROS (Runtime-gated fix-loop)",
+                      flush=True)
+            run_gherkin_jaros_multi(repos_dir, corpus, agentic=use_agentic)
+            # #EXT-011-REQ-10 End
         sys.exit(0)
 
     repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".jaros-data/repos/more-itertools")

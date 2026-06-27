@@ -1,4 +1,4 @@
-"""EXT-011-REQ-9 tests: multi-repo task corpus and big eval bar.
+"""EXT-011-REQ-9/10 tests: multi-repo task corpus and big eval bar (A/B arm).
 
 Tests verify:
 1. tasks_corpus() loads existing valid task JSONs and stamps each with 'repo'.
@@ -7,6 +7,8 @@ Tests verify:
 4. tasks_corpus(bar="standard") returns only more-itertools_valid_tasks.json.
 5. The validate_redgreen path uses _spec(repo)["test"] not hardcoded "tests/".
 6. Missing JSON files are silently skipped (partial builds are valid).
+7. [REQ-10] run_gherkin_jaros_multi(agentic=True) routes to attempt_gherkin (orchestrator arm).
+8. [REQ-10] run_gherkin_jaros_multi(agentic=False) routes to attempt_gherkin_jaros (deterministic arm).
 """
 from __future__ import annotations
 
@@ -195,3 +197,68 @@ def test_repo_list_contains_expected_repos():
     names = {e["name"] for e in REPO_LIST}
     assert "more-itertools" in names
     assert "toolz" in names
+
+
+# ---------------------------------------------------------------------------
+# Test 8 (REQ-10): A/B routing — agentic=True routes to attempt_gherkin,
+#   agentic=False routes to attempt_gherkin_jaros.  Uses monkeypatching so
+#   Docker / LLM / repos are never touched (fully offline).
+# ---------------------------------------------------------------------------
+def test_run_gherkin_jaros_multi_agentic_routes_to_orchestrator(monkeypatch, tmp_path):
+    """EXT-011 REQ-10: agentic=True arm calls attempt_gherkin (orchestrator)."""
+    import harness.commit_replay as cr
+
+    calls: list[str] = []
+
+    def fake_attempt_gherkin(repo, task, branch, **kwargs):
+        calls.append(f"agentic:{kwargs.get('agentic', False)}")
+        return "pass"
+
+    def fake_attempt_gherkin_jaros(repo, task, branch, **kwargs):
+        calls.append("jaros")
+        return "pass"
+
+    monkeypatch.setattr(cr, "attempt_gherkin", fake_attempt_gherkin)
+    monkeypatch.setattr(cr, "attempt_gherkin_jaros", fake_attempt_gherkin_jaros)
+
+    # Stub _git so the branch lookup doesn't fail (no real repo on disk).
+    monkeypatch.setattr(cr, "_git", lambda *a, **kw: "main\n")
+
+    tasks = [{"sha": "aa" * 20, "parent": "bb" * 20, "subject": "X",
+              "repo": "more-itertools", "redgreen": []}]
+
+    cr.run_gherkin_jaros_multi(tmp_path, tasks, agentic=True)
+
+    assert len(calls) == 1, f"expected 1 call, got {calls}"
+    assert calls[0] == "agentic:True", (
+        f"agentic=True arm should call attempt_gherkin with agentic=True, got {calls[0]}"
+    )
+
+
+def test_run_gherkin_jaros_multi_deterministic_routes_to_jaros(monkeypatch, tmp_path):
+    """EXT-011 REQ-10: agentic=False (default) arm calls attempt_gherkin_jaros (deterministic)."""
+    import harness.commit_replay as cr
+
+    calls: list[str] = []
+
+    def fake_attempt_gherkin(repo, task, branch, **kwargs):
+        calls.append(f"agentic:{kwargs.get('agentic', False)}")
+        return "pass"
+
+    def fake_attempt_gherkin_jaros(repo, task, branch, **kwargs):
+        calls.append("jaros")
+        return "pass"
+
+    monkeypatch.setattr(cr, "attempt_gherkin", fake_attempt_gherkin)
+    monkeypatch.setattr(cr, "attempt_gherkin_jaros", fake_attempt_gherkin_jaros)
+    monkeypatch.setattr(cr, "_git", lambda *a, **kw: "main\n")
+
+    tasks = [{"sha": "aa" * 20, "parent": "bb" * 20, "subject": "X",
+              "repo": "more-itertools", "redgreen": []}]
+
+    cr.run_gherkin_jaros_multi(tmp_path, tasks, agentic=False)
+
+    assert len(calls) == 1, f"expected 1 call, got {calls}"
+    assert calls[0] == "jaros", (
+        f"agentic=False arm should call attempt_gherkin_jaros, got {calls[0]}"
+    )

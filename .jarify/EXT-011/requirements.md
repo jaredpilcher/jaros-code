@@ -173,3 +173,30 @@ ISOLATION INVARIANT: the big-bar corpus MUST NOT overlap the dev (jig-building) 
 - [x] Big-bar corpus reaches ≥100 tasks across repos (101: 91 more-itertools + 10 toolz)
 - [x] Sample red→green Docker validation confirms the new tasks are solvable in principle
       (2 s800 + 2 s1200 + 1 toolz samples all confirmed GREEN at commit SHA)
+
+### [REQ-10] Agentic big-bar A/B arm (orchestrator vs deterministic, honest comparison)
+
+To settle whether the 2B-judge orchestrator (`behavioral_solve_agentic`, non-deterministic, temp>0)
+outperforms the deterministic Jaros-native fix-loop on the 100+ task big bar (PRIME-001 intent),
+`run_gherkin_jaros_multi` gains an `agentic: bool = False` parameter and `--bar big` gains
+`--agentic` in `__main__`.
+
+The A/B MUST differ ONLY in the driver:
+- `agentic=False`: calls `attempt_gherkin_jaros` (Runtime-gated, hash-chain logged, deterministic).
+- `agentic=True`: calls `attempt_gherkin(..., agentic=True)` (2B-judge orchestrator).
+
+Same Gherkin grains, self-tests, repair tools, and red→green oracle for both arms (honest).
+
+#### Acceptance Criteria
+- [x] `run_gherkin_jaros_multi` accepts `agentic: bool = False` parameter
+- [x] When `agentic=False`: each task is routed to `attempt_gherkin_jaros` (deterministic arm,
+      existing behavior — backward-compatible)
+- [x] When `agentic=True`: each task is routed to `attempt_gherkin(..., agentic=True)`
+      (orchestrator arm — same gherkin/self-test tools, only the driver differs)
+- [x] The RESULT banner clearly identifies the active arm (`DETERMINISTIC-JAROS` vs
+      `AGENTIC-ORCHESTRATOR`) for unambiguous log reading
+- [x] `--bar big --gherkin-loop --jaros` runs the deterministic arm (backward-compatible)
+- [x] `--bar big --gherkin-loop --jaros --agentic` runs the orchestrator arm
+- [x] The `__main__` branch prints which A/B arm is active before launching the run
+- [x] Unit tests (offline, no Docker/LLM) verify: agentic=True routes to `attempt_gherkin`
+      with `agentic=True`; agentic=False routes to `attempt_gherkin_jaros`
