@@ -84,6 +84,18 @@ regressions; honest — never reads the hidden oracle). **jaros-code's first hon
 lift: 7/37 → ~8.5/37 mean on held-out more-itertools, via STRONGER ORACLES (the #12 lever, validated).**
 Evidence base is 2 runs each + a clean mechanism asymmetry; reversible if larger-N data disagrees.
 
+**INTEGRATION CORRECTION (2026-06-27 06:20):** the FIRST integration attempt (`23f67a4` — re-wiring
+`attempt_gherkin_jaros` to augment via a new `behavioral_solve_jaros(augment_source=...)` path) REGRESSED
+the default: a confirmation run (augment3) FAILED `fix last()` and `Reject by ID` at tasks 1–2 — tasks
+that ALL 5 prior runs (both augment runs, both baselines, agentic) passed. The re-implemented path did
+NOT match the PROVEN standalone `--augment` (`attempt_gherkin_jaros_augment`). **REVERTED** (restored the
+clean default + the proven standalone path; 227 tests pass). The LIFT itself remains real and proven via
+`--augment` (8, 9 vs 7, 5). It must be RE-INTEGRATED correctly — make the default *call the proven
+`attempt_gherkin_jaros_augment`*, not a re-implementation — and re-confirmed by a fresh run before
+claiming "integrated". Honest self-correction: the regression was caught at 4/37 (a basic-task failure),
+not shipped silently. The "integrated" claim in the prior commit/overnight log is hereby corrected to
+"confirmed, integration reverted pending a correct redo".
+
 **#12 generate-and-test PRUNED (2026-06-26, held-out gen4_37.txt):** best-of-N (N=4) selecting by the
 model's OWN self-tests scored **5/37 — a REGRESSION** below the single-shot 7/37 (and the 6/37 agentic).
 It dropped `exactly_n` and `gray_product` that single-shot solved. **Root cause:** the model's

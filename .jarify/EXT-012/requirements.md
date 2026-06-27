@@ -172,36 +172,24 @@ deleted behavior propagates: a test asserting the behavior is gone → code that
 - [ ] Preserve behavior that must not change while applying the task's changes
 - [ ] Propagate deletions: assert the behavior is gone in tests and remove it in code across files
 
-### [REQ-13] Stronger-oracle self-test augmenter — docstring-example assertions (INTEGRATED DEFAULT)
+### [REQ-13] Stronger-oracle self-test augmenter — docstring-example assertions
 
 The model's spec-derived self-tests are weak oracles (EXT-012/design.md PRUNE lesson: best-of-N
 selected by weak self-tests REGRESSED 5/37). The lever is STRONGER ORACLES. This requirement adds a
 deterministic augmenter: parse the target function's visible docstring (from the parent repo
 source — VISIBLE, never the hidden oracle) for ``>>> `` example lines, convert each into a concrete
 ``assert`` statement, and append them to the model's self-tests. Stronger assertions give the
-fix-loop a better red signal on wrong candidates.
-
-CONFIRMED HONEST LIFT (2026-06-27, integrated as DEFAULT): 2-run evaluation on held-out
-more-itertools 37-task set: augment mean 8.5/37 (runs: 8, 9); baseline mean 6.0/37 (runs: 7, 5).
-Augment range [8,9] entirely above baseline range [5,7]. Both augment runs solve ``Reject by ID``
-and ``product_index``-iterator that NEITHER baseline run solves — reproducible, principled mechanism
-(stronger docstring-derived oracle gives the fix-loop better red signal).
-
-Augmentation is now the DEFAULT in ``attempt_gherkin_jaros`` / ``behavioral_solve_jaros``.  The
-``--augment`` CLI flag is preserved for back-compat (now a no-op / equivalent).  Honesty invariant:
-augmentation reads ONLY the visible docstring from the parent repo source; never test_more.py or
-task["redgreen"].
+fix-loop a better red signal on wrong candidates. A ``--augment`` flag in commit_replay activates
+this path; the default solve is NOT changed. Must be measured on held-out commits
+(integrate-or-prune gate, REQ-7) before any default use.
 
 #### Acceptance Criteria
-- [x] `code.augment_selftests` tool validate() rejects non-str `name`, `source`, or `self_tests`
-- [x] execute() parses ``>>> expr`` / value pairs from the target function's visible docstring
-- [x] execute() appends a correctly-asserting test function to the model's self-tests
-- [x] No-docstring source falls back unchanged (augmented=False, examples_found=0)
-- [x] Docstring with no ``>>> `` lines falls back unchanged (graceful no-op)
-- [x] Augmented test output is valid Python (ast.parse clean)
-- [x] HONESTY: tool never reads, imports, or references the hidden oracle (test_more.py / redgreen)
-- [x] Augmenter integrated as DEFAULT in ``behavioral_solve_jaros`` (``augment_source`` param)
-- [x] ``attempt_gherkin_jaros`` passes ``orig[cf]`` as ``augment_source`` — augmentation is default
-- [x] ``--augment`` flag preserved as back-compat no-op (both paths now run augmented solve)
-- [x] Unit tests cover all tool behaviors offline (no LLM, no Jetson, no Docker)
-- [x] Integration confirmed: 2-run lift on held-out more-itertools (8.5/37 vs 6.0/37 mean)
+- [ ] `code.augment_selftests` tool validate() rejects non-str `name`, `source`, or `self_tests`
+- [ ] execute() parses ``>>> expr`` / value pairs from the target function's visible docstring
+- [ ] execute() appends a correctly-asserting test function to the model's self-tests
+- [ ] No-docstring source falls back unchanged (augmented=False, examples_found=0)
+- [ ] Docstring with no ``>>> `` lines falls back unchanged (graceful no-op)
+- [ ] Augmented test output is valid Python (ast.parse clean)
+- [ ] HONESTY: tool never reads, imports, or references the hidden oracle (test_more.py / redgreen)
+- [ ] ``--augment`` flag wired into commit_replay ``--gherkin-loop --jaros`` path; default unchanged
+- [ ] Unit tests cover all of the above cases offline (no LLM, no Jetson, no Docker)
