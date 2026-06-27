@@ -126,6 +126,28 @@ behavioral content. Bootstrapped for existing units and reused across runs.
 - [ ] Resolve symbol→line-range via AST in the tool plane and re-resolve after every edit
 - [ ] Bootstrap the index for all existing code units and reuse it across runs
 
+### [REQ-12] Generate-and-test generation — select best-of-N candidates by the model's own self-tests
+
+A deterministic generate-and-test mechanism proposes N candidate implementations (via varied
+seeds on the code-writer agent), runs each against the model's own self-tests (derived from
+the visible spec/intent — NEVER the hidden oracle), then selects the best candidate: first to
+pass all self-tests, else highest pass-count, tie broken by lowest index (stable). Selection is
+purely deterministic; no model call is made at selection time.
+
+This tool is BUILT but NOT YET wired into the default solve path. It must be measured on
+held-out commits (integrate-or-prune gate, REQ-7) before any default use. Any pass-rate
+improvement must reflect the model genuinely solving more, never oracle leakage (Tenet 3 /
+REQ-8).
+
+#### Acceptance Criteria
+- [ ] `code.generate_and_test` tool validate() rejects empty or non-list candidates payloads
+- [ ] execute() selects the first all-pass candidate (all self-tests pass)
+- [ ] execute() falls back to the highest-pass-count candidate; ties broken by lowest index
+- [ ] Selection uses ONLY the model's own spec-derived self-tests; hidden oracle is never touched
+- [ ] `generate_and_test_solve()` generates n candidates (varied seed), runs selftests, applies selection
+- [ ] Tool and harness helper are additive; default solve path is NOT modified
+- [ ] Must be measured on held-out commits before wiring into the default path (integrate-or-prune)
+
 ### [REQ-11] Whole-repo bootstrap, reconcile, and multi-file changes
 
 The loop bootstraps Gherkin across a whole repo and reconciles existing behavior across multiple

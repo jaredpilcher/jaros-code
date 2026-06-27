@@ -1,0 +1,19 @@
+{
+  "REQ-12": [
+    {
+      "file": ".jaros-data/tools/generate_and_test_tool.py",
+      "startLine": 41,
+      "endLine": 119
+    },
+    {
+      "file": "harness/generate_test_solve.py",
+      "startLine": 58,
+      "endLine": 187
+    },
+    {
+      "file": "tests/test_generate_and_test.py",
+      "startLine": 37,
+      "endLine": 331
+    }
+  ]
+}
