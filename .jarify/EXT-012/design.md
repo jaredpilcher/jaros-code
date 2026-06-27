@@ -96,6 +96,18 @@ claiming "integrated". Honest self-correction: the regression was caught at 4/37
 not shipped silently. The "integrated" claim in the prior commit/overnight log is hereby corrected to
 "confirmed, integration reverted pending a correct redo".
 
+**LIFT RE-ASSESSMENT (2026-06-27 07:44) — the lift is NOT robust; largely VARIANCE.** A 3rd run of the
+SAME proven `--augment` path (`augment3_37.txt`) tracks the BASELINE: by 21/37 it had only 4 pass and
+solved NEITHER `Reject by ID` NOR `product_index` — the very "mechanism" tasks that runs 1 & 2 solved.
+So the 8 and 9 were largely lucky generation variance, not a reliable docstring-oracle effect. 3-run
+augment picture ≈ **[8, 9, ~5–7]** vs baseline **[7, 5]** — heavily overlapping. **Honest verdict: the
+docstring-augmenter is ≈ PARITY within noise on this 37-task suite; the docstring mechanism is NOT
+reliably reproducible; NOT integrated.** This is the 3rd honest non-win (after best-of-N and
+generate-and-test). **Methodological lesson:** a 37-task suite is too noisy to confirm a +1–2 lift — a
+single run's mechanism wins can be variance. The #12 lever needs (a) a more RELIABLE mechanism and/or
+(b) a bigger, less-noisy benchmark (HumanEval/MBPP, hundreds of items) where a real signal can't hide in
+37-task variance. Honest measurement caught this — the 2-run excitement did not survive a 3rd run.
+
 **#12 generate-and-test PRUNED (2026-06-26, held-out gen4_37.txt):** best-of-N (N=4) selecting by the
 model's OWN self-tests scored **5/37 — a REGRESSION** below the single-shot 7/37 (and the 6/37 agentic).
 It dropped `exactly_n` and `gray_product` that single-shot solved. **Root cause:** the model's
