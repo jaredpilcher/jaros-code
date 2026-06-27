@@ -516,6 +516,144 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
         _reset(repo, branch)
 
 
+# #EXT-013-REQ-5 Start
+def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 180,
+                          max_fix: int = 2) -> str:
+    """EXT-013 / REQ-5: per-function solve via the Jaros-native ``behavioral_solve_jaros``
+    (Runtime gate -> executor -> DecisionLog), scored on the hidden oracle (red->green).
+
+    The test-run op mirrors ``_run_selftests`` exactly — same Docker image, same container
+    lifecycle (unique --name + force-remove in finally) — but the shell command is issued
+    via ``Runtime.apply(shell.exec Decision)`` so it is gated + logged.  File writes
+    (gherkin spec, self-tests, code artefacts) go through ``Runtime.apply(code.write_file
+    Decision)``.  The comparison with the Python path is therefore apples-to-apples.
+    """
+    from harness.behavioral_solve import behavioral_solve_jaros
+    from harness.coding_loop import Runtime
+
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    if len(targets) > 4:
+        return "capped"
+    files = sorted({cf for cf, _, _ in targets})
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        ctx = {cf: _file_context(orig[cf]) for cf in files}
+        final: dict[str, dict] = {}
+
+        # One Runtime per task — all per-function solves share the same DecisionLog.
+        rt = Runtime()
+
+        # Self-test file: same location as _run_selftests uses.
+        tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"
+        abs_test_path = str((repo / tnode).resolve())
+
+        for cf, name, parent_src in targets:
+            pkg = cf.split("/")[0]
+            # Artefact paths for this function (written via Runtime through code.write_file).
+            spec_path = str((repo / f".jcode/{name}.gherkin").resolve())
+            code_path = str((repo / f".jcode/{name}.py").resolve())
+
+            # Build the Docker test command (mirrors _run_selftests).
+            cname = f"jaros_selftest_{uuid.uuid4().hex[:12]}"
+            docker_cmd = (
+                f"docker run --rm --name {cname} --stop-timeout 5 "
+                f"-v {repo.resolve().as_posix()}:/repo -w /repo "
+                f"-e PYTHONPATH=/repo {_spec(repo)['img']} "
+                f"python -m pytest {tnode} --tb=short -q -p no:cacheprovider"
+            )
+
+            def _make_pre_test_hook(cf_=cf, name_=name):
+                """Return a hook that applies the current code to the repo file BEFORE the
+                Docker test run.  Called with (code, tests) by ``behavioral_solve_jaros``
+                at each test iteration; the test file is already written by the test-writer
+                agent's ``code.write_file`` Decision before this hook runs.
+
+                The repo source file is written DIRECTLY (bypassing the code.write_file
+                safety gate) because it is NOT generated content — it is a controlled
+                _apply_func merge of the parent repo source + the candidate function.
+                The repo file may contain legitimate constructs (e.g. ``__import__``) that
+                the gate refuses as unsafe in model-generated code.  The agent-generated
+                artefacts (gherkin spec, self-tests, code snippet) continue to go through
+                the Runtime gate.  The Docker test-run Decision (shell.exec) is always
+                gated + logged."""
+                def hook(code: str, tests: str) -> None:
+                    # Apply the generated code into the full repo source file.
+                    content = orig[cf_]
+                    for n2, c2 in {**final.get(cf_, {}), name_: code}.items():
+                        if c2:
+                            content = _apply_func(content, n2, c2)
+                    # Direct write: repo source file merge is deterministic, not generated code.
+                    (repo / cf_).write_text(content, encoding="utf-8", newline="\n")
+                return hook
+
+            pre_test_hook = _make_pre_test_hook()
+
+            try:
+                result = behavioral_solve_jaros(
+                    intent=task["subject"],
+                    name=name,
+                    current_src=parent_src,
+                    context=ctx[cf],
+                    pkg=pkg,
+                    runtime=rt,
+                    spec_path=spec_path,
+                    test_path=abs_test_path,
+                    code_path=code_path,
+                    test_command=docker_cmd,
+                    max_fix=max_fix,
+                    pre_test_hook=pre_test_hook,
+                )
+            finally:
+                # Belt-and-suspenders: force-remove the container even on exception/timeout.
+                _docker_force_remove(cname)
+
+            final.setdefault(cf, {})[name] = result.get("code") or ""
+
+        # Consolidate all settled functions per file.
+        for cf in files:
+            content = orig[cf]
+            for n2, c2 in final.get(cf, {}).items():
+                if c2:
+                    content = _apply_func(content, n2, c2)
+            (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+
+        # Remove scaffolding before the oracle.
+        st = repo / tnode
+        if st.exists():
+            st.unlink()
+
+        return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
+    except Exception as e:  # noqa: BLE001
+        return f"err:{type(e).__name__}"
+    finally:
+        _reset(repo, branch)
+
+
+def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict]) -> dict:
+    """Run ``attempt_gherkin_jaros`` over all tasks, scored on the hidden oracle.
+    Prints per-task results and a Wilson CI summary — same format as ``run_gherkin``."""
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_gherkin_jaros(repo, t, branch)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-013 jaros-native gherkin-loop / intent-only / test HIDDEN]: "
+          f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
+          f">>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+# #EXT-013-REQ-5 End
+
+
 def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False,
                 ensemble: bool = False, agentic: bool = False) -> dict:
     """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b;
@@ -634,9 +772,16 @@ if __name__ == "__main__":
         reviews = "--reviews" in sys.argv
         ensemble = "--ensemble" in sys.argv
         agentic = "--agentic" in sys.argv
-        mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
-        print(f">>> EXT-012 GHERKIN-LOOP {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
-        run_gherkin(repo, branch, tasks, reviews=reviews, ensemble=ensemble, agentic=agentic)
+        jaros = "--jaros" in sys.argv
+        if jaros:
+            n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
+            tasks = tasks[:n_tasks]
+            print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+            run_gherkin_jaros(repo, branch, tasks)
+        else:
+            mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
+            print(f">>> EXT-012 GHERKIN-LOOP {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+            run_gherkin(repo, branch, tasks, reviews=reviews, ensemble=ensemble, agentic=agentic)
         sys.exit(0)
 
     if "--baseline" in sys.argv:

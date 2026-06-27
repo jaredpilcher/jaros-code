@@ -152,6 +152,7 @@ def behavioral_solve_jaros(
     test_command: str | None = None,
     test_cwd: str | None = None,
     max_fix: int = 2,
+    pre_test_hook: "Callable[[str, str], None] | None" = None,
 ) -> dict:
     """Jaros-native behavioral solve: same deterministic fix-loop as ``behavioral_solve``
     but every host effect routes through ``Runtime.apply(Decision)`` — gate -> executor ->
@@ -176,6 +177,13 @@ def behavioral_solve_jaros(
     test_command  : shell command to run self-tests (default ``python -m pytest <test_path>``).
     test_cwd      : working dir for the test command (default: None -> current dir).
     max_fix       : max repair iterations after the first attempt (default 2).
+    pre_test_hook : optional ``(code: str, tests: str) -> None`` called (via the Runtime or
+                    directly) BEFORE each test run to prepare the environment — e.g. apply
+                    the generated code to the repo file before running Docker.  When provided,
+                    the hook is called with the current candidate ``code`` and ``tests``
+                    strings; any side effects (writing the file, staging test artefacts) are
+                    the hook's responsibility.  The Runtime still issues the ``shell.exec``
+                    Decision for the actual test run.
 
     Returns
     -------
@@ -250,6 +258,11 @@ def behavioral_solve_jaros(
     for _attempt in range(max_fix + 1):
         if not code:
             break
+        # #EXT-013-REQ-5 Start
+        # Prepare environment before each test run (e.g. apply code to repo file for Docker).
+        if pre_test_hook is not None:
+            pre_test_hook(code, tests)
+        # #EXT-013-REQ-5 End
         # Run self-tests via shell.exec Decision (through Runtime, logged)
         run_result = _ops.run_tests(runtime, _tc, cwd=test_cwd, source="behavioral-solve-jaros")
         applied_decisions.append("shell.exec")
