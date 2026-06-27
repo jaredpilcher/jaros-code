@@ -57,15 +57,22 @@ class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
     def __init__(self) -> None:
-        os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
-        os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
-        from harness.coding_loop import Runtime, build_llm, _load_agent
+        # #EXT-014-REQ-1 Start
+        # Primary default is llama.cpp + Gemma 4 2B (e2b) via JCODE_LLM_BACKEND="llamacpp".
+        # Legacy Ollama path (gemma2:2b) only activates when JCODE_LLM_BACKEND=ollama explicitly.
+        # Do NOT set JAROS_LLM_PROVIDER or OLLAMA_MODEL here — build_llm() already selects
+        # the correct backend from JCODE_LLM_BACKEND (default "llamacpp").
+        from harness.coding_loop import Runtime, build_llm, _load_agent, _active_model_label
+        # #EXT-014-REQ-1 End
         from jaros.core import create_decision
         self._mk = create_decision
         self.rt = Runtime()
         self.llm = build_llm()
         self._load_agent = _load_agent
-        self.model = os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+        # #EXT-014-REQ-1 Start
+        # Report the model that is ACTUALLY serving inference (Tenet 3 — honest).
+        self.model = _active_model_label()
+        # #EXT-014-REQ-1 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -80,7 +87,12 @@ class JcodeCli:
         from harness.report import build_report, census
         rep = build_report()
         c = census()
-        return (f"model: {self.model} (ollama, local)\n"
+        # #EXT-014-REQ-1 Start
+        # Backend label is dynamic: llamacpp (default) or ollama (legacy, explicit only).
+        _backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
+        _backend_label = "llamacpp, local" if _backend.startswith("llama") else "ollama, local (legacy)"
+        # #EXT-014-REQ-1 End
+        return (f"model: {self.model} ({_backend_label})\n"
                 f"latest: {rep.get('headline','(no eval yet)')}\n"
                 f"census: agents={c['agents']} tools={c['tools']} capabilities={c['capabilities']} "
                 f"evals={c['evals']}+{c['harnessEvals']} specs={c['specs']}")
@@ -622,7 +634,10 @@ class JcodeCli:
 def repl() -> int:
     """Interactive Claude-Code-like prompt loop."""
     cli = JcodeCli()
-    print(f"\n\033[1m jaros-code \033[0m  local coding harness on {cli.model} (gemma2:2b)")
+    # #EXT-014-REQ-1 Start
+    # Banner reflects the active model (Gemma 4 2B e2b via llamacpp by default; gemma2:2b only if JCODE_LLM_BACKEND=ollama).
+    print(f"\n\033[1m jaros-code \033[0m  local coding harness on {cli.model}")
+    # #EXT-014-REQ-1 End
     print("  slash-command REPL — type /help, /quit to exit\n")
     while True:
         try:

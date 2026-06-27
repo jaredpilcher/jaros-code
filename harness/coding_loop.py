@@ -38,11 +38,18 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / ".jaros-data"
 AGENTS_DIR = DATA_DIR / "agents"
 TOOLS_DIR = DATA_DIR / "tools"
+# #EXT-014-REQ-1 Start
 def _active_model_label() -> str:
-    """The model actually serving inference, for honest banners/reports (Tenet 3)."""
+    """The model actually serving inference, for honest banners/reports (Tenet 3).
+
+    Default backend is llamacpp (Gemma 4 2B e2b on Jetson).
+    Legacy Ollama path (gemma2:2b) only reached when JCODE_LLM_BACKEND=ollama explicitly set.
+    """
     if os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower().startswith("llama"):
         return os.environ.get("LLAMACPP_MODEL", "gemma-4-e2b")
+    # Legacy back-compat: Ollama + gemma2:2b, only when JCODE_LLM_BACKEND=ollama
     return os.environ.get("OLLAMA_MODEL", "gemma2:2b")
+# #EXT-014-REQ-1 End
 
 
 MODEL = _active_model_label()
@@ -222,7 +229,12 @@ class LoopResult:
 
 def _banner(target: str, test_cmd: str, max_iters: int) -> None:
     print("\n\033[1m jaros-code \033[0m  software-dev harness on Jaros")
-    print(f"   model    : {MODEL}  (ollama, zero paid inference)")
+    # #EXT-014-REQ-1 Start
+    # Backend label is dynamic: llamacpp (default, Gemma 4 2B e2b) or ollama (legacy, explicit only).
+    _be = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
+    _be_label = "llamacpp, zero paid inference" if _be.startswith("llama") else "ollama, zero paid inference (legacy)"
+    print(f"   model    : {MODEL}  ({_be_label})")
+    # #EXT-014-REQ-1 End
     print(f"   target   : {target}")
     print(f"   test     : {test_cmd}")
     print(f"   max tries: {max_iters}")

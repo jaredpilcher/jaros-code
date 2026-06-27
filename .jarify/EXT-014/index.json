@@ -1,4 +1,36 @@
 {
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 60,
+      "endLine": 66
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 72,
+      "endLine": 75
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 90,
+      "endLine": 94
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 637,
+      "endLine": 640
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 41,
+      "endLine": 52
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 232,
+      "endLine": 237
+    }
+  ],
   "REQ-5": [
     {
       "file": "harness/ollama_client.py",

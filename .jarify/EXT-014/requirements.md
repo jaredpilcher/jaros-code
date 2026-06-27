@@ -25,9 +25,9 @@ never the default.
 The runtime selects Gemma 4 2B (`e2b`) via llama.cpp by default; no path silently uses another model.
 
 #### Acceptance Criteria
-- [ ] `.jaros-data/config/llm.json` (and the serve scripts) default to the llama.cpp backend + Gemma 4 2B (`e2b`)
-- [ ] Code default for the LLM backend is llama.cpp (Ollama only if explicitly selected, marked legacy)
-- [ ] A single source of truth names the model; no hard-coded `gemma2:2b` as "the model" in active paths
+- [x] `.jaros-data/config/llm.json` (and the serve scripts) default to the llama.cpp backend + Gemma 4 2B (`e2b`)
+- [x] Code default for the LLM backend is llama.cpp (Ollama only if explicitly selected, marked legacy)
+- [x] A single source of truth names the model; no hard-coded `gemma2:2b` as "the model" in active paths
 
 ### [REQ-2] All Jarify spec docs reference Gemma 4 2B (e2b)
 
