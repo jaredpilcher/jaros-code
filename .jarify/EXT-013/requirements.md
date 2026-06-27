@@ -80,9 +80,9 @@ The Jaros-native solve must match the Python behavioral solve on the EXT-011 com
 migration is form, not capability change.
 
 #### Acceptance Criteria
-- [ ] Jaros-native solve on the more-itertools held-out 37 matches the Python solve within noise (~6/37)
-- [ ] No regression vs the multi-function baseline (4/37); reported honestly with Wilson CI
-- [ ] The eval invokes the Jaros-native solve path (the eval becomes a client of the runtime-native system)
+- [x] Jaros-native solve on the more-itertools held-out 37 matches the Python solve within noise — EXACT: 7/37 = 18.9% = the Python fix-loop's 7/37 (jaros_parity_37.txt, 2026-06-26)
+- [x] No regression vs the multi-function baseline (4/37); reported honestly with Wilson CI [9.5–34.2%]
+- [x] The eval invokes the Jaros-native solve path (--jaros flag -> attempt_gherkin_jaros, the eval is a client of the runtime-native system)
 
 ### [REQ-6] Orchestrator design-axis variables (deferred — after the migration)
 

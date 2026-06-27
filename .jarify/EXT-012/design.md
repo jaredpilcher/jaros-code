@@ -46,6 +46,13 @@ Held-out more-itertools, intent-only (test HIDDEN), identical tools (proven gher
 |--------|-----------|-----------|
 | 2B-judge **orchestrator** (agentic) | 6/37 = 16.2% | 7.7–31.1% |
 | Deterministic **fix-loop** (fixed)  | 7/37 = 18.9% | 9.5–34.2% |
+| **Jaros-native** fix-loop via Runtime (EXT-013) | 7/37 = 18.9% | 9.5–34.2% |
+
+**Parity confirmed (2026-06-26):** the Jaros-native solve (EXT-013 — agents emit inert Decisions, every
+host effect through `Runtime.apply`, DecisionLog-logged + replayable) scores **7/37 = 18.9%, EXACTLY the
+Python fix-loop's number** (same Wilson CI). Different pass-set in places (2B variance — e.g. Jaros-native
+cracked the `gray_product` repeat-kwarg task the others missed, but missed `Reject by ID`) yet the same
+count: the two-plane migration preserves capability with zero loss. Prove-out-Jaros: done.
 
 **Finding:** the 2B-as-orchestrator adds **no benefit** over the deterministic fix-loop — marginally
 worse, well within overlapping CIs. The judge picks sensible revisions, but the underlying **generation**
