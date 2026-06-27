@@ -100,7 +100,8 @@ not shipped silently. The "integrated" claim in the prior commit/overnight log i
 SAME proven `--augment` path (`augment3_37.txt`) tracks the BASELINE: by 21/37 it had only 4 pass and
 solved NEITHER `Reject by ID` NOR `product_index` — the very "mechanism" tasks that runs 1 & 2 solved.
 So the 8 and 9 were largely lucky generation variance, not a reliable docstring-oracle effect. 3-run
-augment picture ≈ **[8, 9, ~5–7]** vs baseline **[7, 5]** — heavily overlapping. **Honest verdict: the
+augment picture (FINAL) = **[8, 9, 6]** (mean 7.7) vs baseline **[7, 5]** (mean 6) — heavily overlapping
+ranges; augment3 = 6/37 solved 0/2 mechanism tasks, confirming they were variance. **Honest verdict: the
 docstring-augmenter is ≈ PARITY within noise on this 37-task suite; the docstring mechanism is NOT
 reliably reproducible; NOT integrated.** This is the 3rd honest non-win (after best-of-N and
 generate-and-test). **Methodological lesson:** a 37-task suite is too noisy to confirm a +1–2 lift — a
