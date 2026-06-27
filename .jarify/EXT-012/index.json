@@ -1,9 +1,9 @@
 {
   "REQ-12": [
     {
-      "file": ".jaros-data/tools/generate_and_test_tool.py",
-      "startLine": 41,
-      "endLine": 119
+      "file": "tests/test_generate_and_test.py",
+      "startLine": 37,
+      "endLine": 387
     },
     {
       "file": "harness/generate_test_solve.py",
@@ -11,9 +11,14 @@
       "endLine": 187
     },
     {
-      "file": "tests/test_generate_and_test.py",
-      "startLine": 37,
-      "endLine": 331
+      "file": "harness/commit_replay.py",
+      "startLine": 657,
+      "endLine": 833
+    },
+    {
+      "file": ".jaros-data/tools/generate_and_test_tool.py",
+      "startLine": 41,
+      "endLine": 119
     }
   ]
 }

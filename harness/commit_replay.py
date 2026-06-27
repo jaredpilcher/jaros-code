@@ -654,6 +654,185 @@ def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict]) -> dict:
 # #EXT-013-REQ-5 End
 
 
+# #EXT-012-REQ-12 Start
+def _run_selftests_count(repo: Path, test_code: str, timeout: int = 120) -> tuple[int, str]:
+    """Run the 2B's self-tests in Docker and return (pass_count, feedback).
+
+    Mirrors ``_run_selftests`` exactly (same Docker image, same container lifecycle:
+    unique --name + force-remove in finally) but returns an INTEGER pass count instead
+    of a bool, so it can be used as the ``run_selftests`` callable for
+    ``generate_and_test_solve``.
+
+    HONESTY: the test_code MUST be derived from the model's own spec (visible intent),
+    NEVER from the hidden oracle.  This invariant is the caller's responsibility and is
+    documented at each call site.
+    """
+    tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"
+    (repo / tnode).write_text(test_code, encoding="utf-8", newline="\n")
+    cname = f"jaros_gentest_{uuid.uuid4().hex[:12]}"
+    cmd = ["docker", "run", "--rm", "--name", cname, "--stop-timeout", "5",
+           "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+           "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest",
+           tnode, "--tb=no", "-q", "-p", "no:cacheprovider"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+        text = r.stdout + r.stderr
+        # Count passed tests from pytest -q summary ("X passed" line).
+        import re as _re
+        m = _re.search(r"(\d+) passed", text)
+        count = int(m.group(1)) if m else 0
+        return count, text[-500:]
+    except subprocess.TimeoutExpired:
+        _docker_force_remove(cname)
+        return 0, "timeout"
+    except Exception:  # noqa: BLE001
+        _docker_force_remove(cname)
+        raise
+    finally:
+        _docker_force_remove(cname)
+
+
+def attempt_gherkin_jaros_gen(repo: Path, task: dict, branch: str, timeout: int = 180,
+                              n_gen: int = 4) -> str:
+    """EXT-012 / REQ-12: per-function solve via generate-and-test (best-of-N by self-tests),
+    scored on the hidden oracle (red->green).
+
+    For each changed function the 2B authors Gherkin -> self-tests (same as
+    ``attempt_gherkin``), then ``generate_and_test_solve`` generates ``n_gen`` candidate
+    implementations at varied seeds and selects the best by the self-test pass count.
+
+    SELECTION HONESTY: the ``run_selftests`` callable passed to ``generate_and_test_solve``
+    uses ONLY the model's own spec-derived tests (``_run_selftests_count``).  The hidden
+    oracle (``task["redgreen"]``) is NEVER exposed to the solve or to the selection step —
+    it is only used at the very end to score the chosen candidate (same as every other path).
+
+    Container lifecycle mirrors ``attempt_gherkin_jaros`` and ``_run_selftests`` exactly:
+    each Docker run gets a unique ``--name`` and is force-removed in a try/finally block
+    regardless of success, timeout, or exception (EXT-011 REQ-7 / #14-safe).
+    """
+    targets = _target_funcs(repo, task)
+    if not targets:
+        return "no_target"
+    if len(targets) > 4:
+        return "capped"
+    files = sorted({cf for cf, _, _ in targets})
+    try:
+        _git(repo, "checkout", "-f", task["parent"])
+        _git(repo, "checkout", task["sha"], "--", "tests/")
+        orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        ctx = {cf: _file_context(orig[cf]) for cf in files}
+        final: dict[str, dict] = {}
+
+        # One minimal Runtime per task (for the generate_and_test_solve Decision log).
+        from harness.coding_loop import Runtime
+        rt = Runtime()
+
+        # Self-test file: same location as _run_selftests / attempt_gherkin_jaros use.
+        tnode = _spec(repo)["test"].rstrip("/") + "/test_gherkin_self.py"
+
+        for cf, name, parent_src in targets:
+            pkg = cf.split("/")[0]
+
+            # Step 1: author Gherkin + self-tests (same Python-path grains as attempt_gherkin).
+            gk = g_gherkin(task["subject"], name, parent_src, ctx[cf])
+            tests = g_selftests(name, gk, pkg)
+
+            # Step 2: build the run_selftests callable.
+            # HONESTY: `tests` is derived from the model's OWN Gherkin spec (visible intent).
+            # The hidden oracle is NEVER touched here — selection is purely by self-tests.
+            def _make_run_selftests(cf_=cf, name_=name, tests_=tests):
+                """Return a callable (code: str) -> int that applies code and runs Docker.
+
+                The test file has already been written to disk with the model's own
+                spec-derived tests.  Each call applies the candidate code to the repo
+                source file, re-writes the test file (idempotent), runs pytest in Docker,
+                and returns the integer pass count.  Container cleanup is guaranteed by
+                ``_run_selftests_count``'s try/finally block.
+                """
+                def _run(code: str) -> int:
+                    # Apply the candidate into the full repo source file.
+                    content = orig[cf_]
+                    for n2, c2 in {**final.get(cf_, {}), name_: code}.items():
+                        if c2:
+                            content = _apply_func(content, n2, c2)
+                    # Direct write: deterministic merge, not generated content.
+                    (repo / cf_).write_text(content, encoding="utf-8", newline="\n")
+                    # Run Docker self-tests and return pass count (not bool).
+                    # HONESTY: tests_ was derived from visible spec only — never the oracle.
+                    count, _ = _run_selftests_count(repo, tests_, 25)
+                    return count
+                return _run
+
+            run_selftests = _make_run_selftests()
+
+            # Step 3: generate N candidates and select best by self-test pass count.
+            # generate_and_test_solve internally uses varied seeds and the code-writer agent.
+            from harness.generate_test_solve import generate_and_test_solve
+            from harness.pass1_eval import _llm
+
+            gen_result = generate_and_test_solve(
+                intent=task["subject"],
+                name=name,
+                current_src=parent_src,
+                context=ctx[cf],
+                pkg=pkg,
+                runtime=rt,
+                run_selftests=run_selftests,
+                n=n_gen,
+                base_seed=0,
+                llm=_llm(),
+                gherkin=gk,
+            )
+
+            final.setdefault(cf, {})[name] = gen_result.get("chosen") or ""
+
+        # Consolidate all settled functions per file.
+        for cf in files:
+            content = orig[cf]
+            for n2, c2 in final.get(cf, {}).items():
+                if c2:
+                    content = _apply_func(content, n2, c2)
+            (repo / cf).write_text(content, encoding="utf-8", newline="\n")
+
+        # Remove scaffolding before the oracle.
+        st = repo / tnode
+        if st.exists():
+            st.unlink()
+
+        return "pass" if not _run_nodes(repo, task["redgreen"], timeout) else "fail"
+    except Exception as e:  # noqa: BLE001
+        return f"err:{type(e).__name__}"
+    finally:
+        _reset(repo, branch)
+
+
+def run_gherkin_jaros_gen(repo: Path, branch: str, tasks: list[dict], n_gen: int = 4) -> dict:
+    """Run ``attempt_gherkin_jaros_gen`` over all tasks, scored on the hidden oracle.
+    Prints per-task results and a Wilson CI summary — same format as ``run_gherkin_jaros``.
+
+    n_gen candidates are generated per function per task; the best by self-test pass count
+    is selected (NEVER by the hidden oracle — honesty invariant inherited from
+    ``generate_and_test_solve`` and ``_run_selftests_count``).
+    """
+    from collections import Counter
+    res: Counter = Counter()
+    for i, t in enumerate(tasks):
+        try:
+            r = attempt_gherkin_jaros_gen(repo, t, branch, n_gen=n_gen)
+        except Exception as e:  # noqa: BLE001
+            r = f"err:{type(e).__name__}"
+        res[r] += 1
+        print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
+    k, n = res["pass"], len(tasks)
+    lo, hi = wilson(k, n)
+    print(f">>> RESULT [EXT-012 REQ-12 generate-and-test N={n_gen} / intent-only / test HIDDEN]: "
+          f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
+          f">>> breakdown: {dict(res)}", flush=True)
+    return dict(res)
+# #EXT-012-REQ-12 End
+
+
 def run_gherkin(repo: Path, branch: str, tasks: list[dict], reviews: bool = False,
                 ensemble: bool = False, agentic: bool = False) -> dict:
     """EXT-012 over tasks, scored on the hidden oracle. Honest pass@1 + Wilson CI. reviews -> Slice 1b;
@@ -773,11 +952,22 @@ if __name__ == "__main__":
         ensemble = "--ensemble" in sys.argv
         agentic = "--agentic" in sys.argv
         jaros = "--jaros" in sys.argv
+        # --gen N: generate-and-test best-of-N (EXT-012 REQ-12); default N=4.
+        # Only active when combined with --jaros.  Default behaviour is unchanged.
+        gen_n = int(sys.argv[sys.argv.index("--gen") + 1]) if "--gen" in sys.argv else 0
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
-            print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
-            run_gherkin_jaros(repo, branch, tasks)
+            if gen_n > 0:
+                # EXT-012 REQ-12: generate-and-test path — N candidates selected by self-tests.
+                # HONESTY: selection is ONLY by the model's own spec-derived self-tests;
+                # the hidden oracle is never touched until the final oracle score at the end.
+                print(f">>> EXT-012 REQ-12 GENERATE-AND-TEST N={gen_n} on {len(tasks)} "
+                      f"{tag} tasks of {repo.name}", flush=True)
+                run_gherkin_jaros_gen(repo, branch, tasks, n_gen=gen_n)
+            else:
+                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
+                run_gherkin_jaros(repo, branch, tasks)
         else:
             mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
             print(f">>> EXT-012 GHERKIN-LOOP {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)

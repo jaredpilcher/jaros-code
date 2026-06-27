@@ -328,4 +328,60 @@ def test_generate_and_test_solve_no_allpass_picks_best():
     assert result["index"] == 1  # lowest index with max count
 
 
+# ---------------------------------------------------------------------------
+# (g) commit_replay wiring: attempt_gherkin_jaros_gen + run_gherkin_jaros_gen
+#     are importable and correctly call generate_and_test_solve with n=N.
+#     Uses monkeypatching to avoid any real Docker or LLM call.
+# ---------------------------------------------------------------------------
+
+def test_commit_replay_gen_functions_importable():
+    """attempt_gherkin_jaros_gen and run_gherkin_jaros_gen must be importable from commit_replay."""
+    import importlib
+    mod = importlib.import_module("harness.commit_replay")
+    assert hasattr(mod, "attempt_gherkin_jaros_gen"), (
+        "attempt_gherkin_jaros_gen must be exported from harness.commit_replay"
+    )
+    assert hasattr(mod, "run_gherkin_jaros_gen"), (
+        "run_gherkin_jaros_gen must be exported from harness.commit_replay"
+    )
+
+
+def test_commit_replay_file_parses():
+    """harness/commit_replay.py must be syntactically valid after the --gen wiring."""
+    src = (_REPO_ROOT / "harness" / "commit_replay.py").read_text(encoding="utf-8")
+    ast.parse(src)
+
+
+def test_run_gherkin_jaros_gen_calls_gen_and_test(monkeypatch):
+    """run_gherkin_jaros_gen must call attempt_gherkin_jaros_gen for each task.
+
+    HONESTY: the stub never touches the hidden oracle — it just verifies the call chain.
+    """
+    import importlib
+    mod = importlib.import_module("harness.commit_replay")
+
+    calls: list[dict] = []
+
+    def _fake_attempt(repo, task, branch, timeout=180, n_gen=4):
+        calls.append({"task": task, "n_gen": n_gen})
+        return "pass"
+
+    monkeypatch.setattr(mod, "attempt_gherkin_jaros_gen", _fake_attempt)
+
+    tasks = [
+        {"sha": "aaaa1111", "parent": "pppp0000", "subject": "test task A",
+         "redgreen": [], "code_files": [], "test_files": []},
+        {"sha": "bbbb2222", "parent": "aaaa1111", "subject": "test task B",
+         "redgreen": [], "code_files": [], "test_files": []},
+    ]
+    from pathlib import Path
+    result = mod.run_gherkin_jaros_gen(Path("/fake/repo"), "main", tasks, n_gen=3)
+
+    assert len(calls) == 2, f"expected 2 calls to attempt_gherkin_jaros_gen, got {len(calls)}"
+    assert all(c["n_gen"] == 3 for c in calls), (
+        f"n_gen must be forwarded to attempt_gherkin_jaros_gen; got {[c['n_gen'] for c in calls]}"
+    )
+    assert result.get("pass") == 2, f"expected 2 pass, got {result}"
+
+
 # #EXT-012-REQ-12 End
