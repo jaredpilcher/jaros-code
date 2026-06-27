@@ -111,22 +111,37 @@ def _affected_nodes(repo: Path, sha: str, parent: str, test_file: str) -> list[s
     return [f"{test_file}::{k}" for k, v in c_nodes.items() if p_nodes.get(k) != v]
 
 
+# #EXT-011-REQ-8 Start
 def _run_nodes(repo: Path, nodes: list[str], timeout: int = 180) -> set[str]:
     """Run pytest on `nodes` in the reproducible Docker env. Return the set that did NOT pass
-    (failed/errored/uncollected) — i.e. 'red' nodes."""
+    (failed/errored/uncollected) — i.e. 'red' nodes.
+
+    Container lifecycle is BULLETPROOF (mirrors _run_selftests / EXT-011 REQ-8): every
+    invocation gets a unique --name and is force-removed in a try/finally block regardless
+    of success, timeout, or exception. An infinite-loop candidate that reaches the oracle
+    is killed and removed — never orphaned at 100% CPU."""
     if not nodes:
         return set()
-    cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+    cname = f"jaros_oracle_{uuid.uuid4().hex[:12]}"
+    cmd = ["docker", "run", "--rm", "--name", cname, "--stop-timeout", "5",
+           "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
            "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest", *nodes,
            "-v", "--tb=no", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=timeout)
         text = r.stdout + r.stderr
+        passed = set(re.findall(r"^(\S+) PASSED", text, re.M))
+        return set(nodes) - passed
     except subprocess.TimeoutExpired:
+        _docker_force_remove(cname)
         return set(nodes)
-    passed = set(re.findall(r"^(\S+) PASSED", text, re.M))
-    return set(nodes) - passed
+    except Exception:  # noqa: BLE001
+        _docker_force_remove(cname)
+        raise
+    finally:
+        _docker_force_remove(cname)
+# #EXT-011-REQ-8 End
 
 
 def _reset(repo: Path, branch: str) -> None:
@@ -266,21 +281,34 @@ def baseline_solve_2b(subject: str, test_src: str, name: str, parent_src: str | 
     return s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
 
 
+# #EXT-011-REQ-8 Start
 def _run_nodes_fb(repo: Path, nodes: list[str], timeout: int = 180) -> tuple[set[str], str]:
-    """Like _run_nodes but also returns a short failure traceback (feedback for iteration)."""
-    cmd = ["docker", "run", "--rm", "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
+    """Like _run_nodes but also returns a short failure traceback (feedback for iteration).
+
+    Container lifecycle mirrors _run_nodes (EXT-011 REQ-8): unique --name + force-remove
+    in try/finally so an infinite-loop candidate never orphans a container."""
+    cname = f"jaros_oracle_{uuid.uuid4().hex[:12]}"
+    cmd = ["docker", "run", "--rm", "--name", cname, "--stop-timeout", "5",
+           "-v", f"{repo.resolve().as_posix()}:/repo", "-w", "/repo",
            "-e", "PYTHONPATH=/repo", _spec(repo)["img"], "python", "-m", "pytest", *nodes,
            "-v", "--tb=short", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=timeout)
         text = r.stdout + r.stderr
+        passed = set(re.findall(r"^(\S+) PASSED", text, re.M))
+        fails = set(nodes) - passed
+        err = text[-700:] if fails else ""
+        return fails, err
     except subprocess.TimeoutExpired:
+        _docker_force_remove(cname)
         return set(nodes), "timeout"
-    passed = set(re.findall(r"^(\S+) PASSED", text, re.M))
-    fails = set(nodes) - passed
-    err = text[-700:] if fails else ""
-    return fails, err
+    except Exception:  # noqa: BLE001
+        _docker_force_remove(cname)
+        raise
+    finally:
+        _docker_force_remove(cname)
+# #EXT-011-REQ-8 End
 
 
 # --- EXT-012 Slice 1: full 2B-authored behavioral loop (Gherkin -> self-tests -> code -> fix) -------

@@ -1,4 +1,4 @@
-"""EXT-011-REQ-7 isolation tests: per-selftest container naming + guaranteed cleanup.
+"""EXT-011-REQ-7 + EXT-011-REQ-8 isolation tests: per-selftest and oracle container naming + guaranteed cleanup.
 
 These tests do NOT run the full 37-task eval; they verify ONLY the container-lifecycle
 helper in isolation using the real Docker daemon.
@@ -117,3 +117,64 @@ def test_run_selftests_timeout_leaves_no_orphan(tmp_path):
     )
     orphans = [n for n in r.stdout.splitlines() if n.startswith("jaros_selftest_")]
     assert not orphans, f"Orphaned containers found after timeout: {orphans}"
+
+
+# ---------------------------------------------------------------------------
+# Test 4 (EXT-011-REQ-8): _run_nodes timeout path kills container + leaves no orphan
+# ---------------------------------------------------------------------------
+def test_run_nodes_timeout_leaves_no_orphan(tmp_path):
+    """_run_nodes against a deliberately-hanging pytest test must:
+    - return the full set of nodes (all red = timeout fail)
+    - leave NO jaros_oracle_* container behind in `docker ps -a`
+
+    This simulates the bug #15 scenario: an infinite-loop candidate (e.g. exactly_n)
+    reaches the oracle Docker run and would previously orphan a container at 100% CPU.
+    """
+    from pathlib import Path
+    import harness.commit_replay as cr
+
+    # Build a minimal fake repo structure so _spec() finds "tests/" and the image "mi-test".
+    orig_registry = cr.REGISTRY.copy()
+    repo_name = f"test_repo_{uuid.uuid4().hex[:6]}"
+    fake_repo = tmp_path / repo_name
+    tests_dir = fake_repo / "tests"
+    tests_dir.mkdir(parents=True)
+    cr.REGISTRY[repo_name] = {"code": "", "test": "tests/", "img": MI_TEST_IMAGE}
+
+    # Write a hanging test file directly to the fake repo
+    hanging_test = tests_dir / "test_oracle_hang.py"
+    hanging_test.write_text(
+        "import time\n"
+        "def test_hang():\n"
+        "    time.sleep(600)\n",
+        encoding="utf-8",
+    )
+
+    node_id = "tests/test_oracle_hang.py::test_hang"
+
+    try:
+        # Use a very short timeout (3 s) so the test finishes quickly.
+        result = cr._run_nodes(fake_repo, [node_id], timeout=3)
+    finally:
+        cr.REGISTRY = orig_registry
+
+    # Timed-out oracle run = the candidate fails (all nodes red)
+    assert node_id in result, f"Expected node to be in red set on timeout; got {result!r}"
+
+    # Give Docker a moment for async removal, then check
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        r = subprocess.run(
+            ["docker", "ps", "-a", "--filter", "name=jaros_oracle_",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        orphans = [n for n in r.stdout.splitlines() if n.startswith("jaros_oracle_")]
+        if not orphans:
+            break
+        time.sleep(0.5)
+
+    assert not orphans, (
+        f"Orphaned jaros_oracle_* containers found after _run_nodes timeout: {orphans}\n"
+        "Bug #15: oracle container was not force-removed on TimeoutExpired."
+    )

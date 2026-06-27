@@ -6,12 +6,16 @@ priority: high
 implementation:
   - file: harness/commit_replay.py
     ranges:
-      - - 377
-        - 419
+      - - 114
+        - 144
+      - - 284
+        - 311
+      - - 405
+        - 447
   - file: tests/test_ext011_container_lifecycle.py
     ranges:
       - - 1
-        - 113
+        - 173
 ---
 
 ### [REQ-1] Reproducible environment (the hard part)
@@ -108,3 +112,25 @@ whole eval) are a defect.
       shows no trace of it afterwards
 - [x] Isolation test verifies: `_run_selftests` with a 3 s timeout against a hanging test returns
       `(False, "timeout")` and leaves zero `jaros_selftest_*` containers in `docker ps -a`
+
+### [REQ-8] Robust oracle red-green execution — per-test timeout + guaranteed container cleanup
+
+The oracle runner (`_run_nodes` and `_run_nodes_fb`) that scores the 2B's candidate code by
+running the repo's ACTUAL tests (the red→green hidden oracle) MUST guarantee container cleanup
+under all exit conditions. An infinite-loop candidate (e.g. `exactly_n`) that reaches the oracle
+previously orphaned a container at 100% CPU and stalled the entire eval (bug #15, observed live
+2026-06-26: orphaned container 'infallible_newton' had to be killed manually).
+
+#### Acceptance Criteria
+- [x] Each `_run_nodes` / `_run_nodes_fb` invocation launches its Docker container with an
+      explicit unique `--name jaros_oracle_<uuid4-hex[:12]>` so it can be targeted for cleanup
+      regardless of host-process state
+- [x] `--stop-timeout 5` is passed to Docker so the container's stop grace period is bounded
+- [x] On `subprocess.TimeoutExpired`, `_docker_force_remove(cname)` is called before returning
+      (the timed-out candidate = all nodes red; eval proceeds normally — scoring logic unchanged)
+- [x] A `finally` block unconditionally calls `_docker_force_remove(cname)` for
+      belt-and-suspenders cleanup on every exit path (normal, timeout, exception)
+- [x] Wall-clock timeout (default 180 s, caller-overridable) is enforced on every invocation
+- [x] Isolation test (`test_run_nodes_timeout_leaves_no_orphan`): `_run_nodes` against a
+      deliberately-hanging test (sleep 600) with a 3 s timeout returns the node as red (timed-out
+      candidate fails) AND leaves zero `jaros_oracle_*` containers in `docker ps -a` within 10 s

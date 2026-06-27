@@ -1,17 +1,31 @@
 {
-  "spec_id": "EXT-011",
-  "links": [
+  "REQ-7": [
     {
-      "req_id": "REQ-7",
       "file": "harness/commit_replay.py",
-      "ranges": [[377, 419]],
-      "comment": "_docker_force_remove helper + bulletproof _run_selftests with named container + try/finally cleanup"
+      "startLine": 405,
+      "endLine": 447
     },
     {
-      "req_id": "REQ-7",
       "file": "tests/test_ext011_container_lifecycle.py",
-      "ranges": [[1, 113]],
-      "comment": "Isolation tests: force-remove kills running container, no-op on nonexistent, timeout leaves no orphan"
+      "startLine": 1,
+      "endLine": 119
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 114,
+      "endLine": 144
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 284,
+      "endLine": 311
+    },
+    {
+      "file": "tests/test_ext011_container_lifecycle.py",
+      "startLine": 122,
+      "endLine": 180
     }
   ]
 }
