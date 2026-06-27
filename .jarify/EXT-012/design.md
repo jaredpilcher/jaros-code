@@ -73,6 +73,17 @@ itself varying to 8–9). If the baseline holds ~6–7, this is a genuine honest
 becomes the default solve path; if the baseline also reaches 8–9, it was shared variance (parity). Not
 integrated until that check clears — honest measurement to the end.
 
+**FINAL VERDICT (2026-06-27, default2_37.txt = 5/37): CONFIRMED LIFT → INTEGRATED.** Baseline is now 2
+runs **[7, 5]** (mean 6) — and NEITHER baseline run solves the mechanism tasks. Augment is 2 runs
+**[8, 9]** (mean 8.5) — and BOTH solve `Reject by ID` + `product_index`. The augment range **[8,9] sits
+entirely above the baseline range [5,7]** (the *worst* augment run beats the *best* baseline run), with a
+reproducible, principled mechanism (stronger docstring-derived oracle → better fix-loop red signal on
+tasks that carry docstring examples). The docstring-augmenter is now the **DEFAULT Jaros-native solve**
+(`behavioral_solve_jaros` augments self-tests from the VISIBLE docstring by default; 229 tests pass, no
+regressions; honest — never reads the hidden oracle). **jaros-code's first honestly-confirmed capability
+lift: 7/37 → ~8.5/37 mean on held-out more-itertools, via STRONGER ORACLES (the #12 lever, validated).**
+Evidence base is 2 runs each + a clean mechanism asymmetry; reversible if larger-N data disagrees.
+
 **#12 generate-and-test PRUNED (2026-06-26, held-out gen4_37.txt):** best-of-N (N=4) selecting by the
 model's OWN self-tests scored **5/37 — a REGRESSION** below the single-shot 7/37 (and the 6/37 agentic).
 It dropped `exactly_n` and `gray_product` that single-shot solved. **Root cause:** the model's
