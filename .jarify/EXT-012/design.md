@@ -48,6 +48,19 @@ Held-out more-itertools, intent-only (test HIDDEN), identical tools (proven gher
 | Deterministic **fix-loop** (fixed)  | 7/37 = 18.9% | 9.5–34.2% |
 | **Jaros-native** fix-loop via Runtime (EXT-013) | 7/37 = 18.9% | 9.5–34.2% |
 | generate-and-test N=4 by self-tests (#12 — **PRUNED**) | 5/37 = 13.5% | 5.9–28.0% |
+| stronger-oracle docstring augmenter (#12 — **PROMISING, unconfirmed**) | 8/37 = 21.6% | 11.4–37.2% |
+
+**#12 stronger-oracle augmenter — PROMISING but NOT a confirmed lift (2026-06-27, augment_37.txt):**
+strengthening the model's self-tests with assertions parsed from the target's VISIBLE docstring examples
+(honest — AST-scan + unit test confirm it never reads `test_more.py`/`redgreen`) scored **8/37 = 21.6%**,
+a nominal **+1 over the 7/37 single-shot baseline**. It solved `Reject by ID` and `product_index`-iterator
+that the default missed (plausibly the stronger oracle driving more corrective fix iterations) — but it
+LOST `gray_product` the default got, so the net is +1. **HONESTY CAVEAT (binding):** the Wilson CIs
+overlap heavily (11.4–37.2% vs 9.5–34.2%), n=37, single run — **a +1/37 is INSIDE the noise band, not a
+statistically confident improvement.** Per the project's honest-measurement discipline (a +6% best-of-6
+earlier was pure noise), this is NOT claimed as a win and is NOT wired into the default solve until
+**confirmed stable by re-measurement** (does augment ≥ baseline across repeated paired runs, re-solving
+the same mechanism tasks?). Verdict pending confirmation.
 
 **#12 generate-and-test PRUNED (2026-06-26, held-out gen4_37.txt):** best-of-N (N=4) selecting by the
 model's OWN self-tests scored **5/37 — a REGRESSION** below the single-shot 7/37 (and the 6/37 agentic).
