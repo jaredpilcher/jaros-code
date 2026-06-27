@@ -135,3 +135,6 @@ So the bottleneck is **generation, not orchestration**.
 orchestrator judge-agent is available but not the driver. The convergence lever (#12) targets
 **empowering generation of the hard classes** (deterministic helpers, generate-and-test, richer
 test-feedback + per-call validation), pursued generically — never special-casing benchmark items.
+
+## Clean low-noise bar VALIDATED (2026-06-27)
+The noisy 37-task commit-replay suite gave 4 FALSE PARITIES (best-of-N, gen-and-test, augmenter, plan-then-code). The deterministic HumanEval pass@1 bar (pass1_eval, single-shot temp=0, ZERO run-to-run variance) DETECTS real effects. On HumanEval[:70] (the run hung at task 71 on an LLM-client no-timeout bug): base solve_pass1 = **58/70 = 82.9
