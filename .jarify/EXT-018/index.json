@@ -1,0 +1,51 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 372,
+      "endLine": 403
+    },
+    {
+      "file": "harness/behavioral_solve.py",
+      "startLine": 300,
+      "endLine": 314
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 738,
+      "endLine": 740
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 749,
+      "endLine": 756
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1424,
+      "endLine": 1426
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1437,
+      "endLine": 1444
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1515,
+      "endLine": 1522
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1547,
+      "endLine": 1549
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1576,
+      "endLine": 1582
+    }
+  ]
+}

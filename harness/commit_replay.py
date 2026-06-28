@@ -369,6 +369,40 @@ def g_code(subject: str, name: str, parent_src: str | None, context: str, gherki
     return code
 
 
+# #EXT-018-REQ-1 Start
+def _g_code_think(subject: str, name: str, parent_src: str | None, context: str, gherkin: str) -> str:
+    """Like g_code but with a <think> reasoning pass first (EXT-018 gated-thinking).
+
+    Prompt mirrors _THINK from pass1_eval but framed for the repo grain: the 2B
+    reasons about the behavior scenarios, the commit intent, and edge cases inside
+    <think></think>, then outputs ONLY the complete function definition.  The
+    </think> boundary strips the reasoning so the caller gets a clean function body.
+    Inherits the proven indentation-repair layer from g_code (+12% on HumanEval).
+    """
+    cur = f"Current version:\n{parent_src}\n" if parent_src else ""
+    ctx = f"Module context:\n{context}\n" if context else ""
+    reply = _g_llm(
+        f"Implement the Python function `{name}` to satisfy these behavior scenarios:\n{gherkin}\n\n"
+        f"{ctx}{cur}COMMIT INTENT: {subject}\n"
+        f"First, inside <think> </think>, reason about the algorithm: the goal, the behavior "
+        f"scenarios, the exact steps and edge cases. Then AFTER </think> output ONLY the complete "
+        f"`def {name}(...):` definition — valid Python, correct indentation, no markdown, no "
+        f"prose, no test code.", 1000)
+    if "</think>" in reply:
+        reply = reply.rsplit("</think>", 1)[1]
+    s = re.sub(r"```[\w+-]*", "", reply).replace("```", "").strip()
+    i = s.find(f"def {name}")
+    code = s[i:] if i >= 0 else (s if s.lstrip().startswith("def ") else "")
+    if code:
+        try:
+            from harness.pass1_eval import _bc, _llm
+            code = _bc.repair_indentation(_llm(), code)
+        except Exception:  # noqa: BLE001 — repair is best-effort, never block the solve
+            pass
+    return code
+# #EXT-018-REQ-1 End
+
+
 # --- Slice 1b: the 2B's alignment REVIEW loops (the heart of the owner's design) ------------------
 def g_review_gherkin(subject: str, name: str, parent_src: str | None, gherkin: str) -> str:
     """SELF-REVIEW: the 2B judges its OWN scenarios — do they fully satisfy the intent AND preserve
@@ -546,7 +580,8 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
 
 # #EXT-013-REQ-5 Start
 def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 180,
-                          max_fix: int = 2, retrieve: bool = False) -> str:
+                          max_fix: int = 2, retrieve: bool = False,
+                          think: bool = False) -> str:
     """EXT-013 / REQ-5: per-function solve via the Jaros-native ``behavioral_solve_jaros``
     (Runtime gate -> executor -> DecisionLog), scored on the hidden oracle (red->green).
 
@@ -559,6 +594,10 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
     retrieve=True (EXT-017): per-function context is built with enriched_file_context
     (direct-dependency signatures + module API) instead of the baseline _file_context
     (preamble only).  retrieve=False (default) is byte-identical to the prior behaviour.
+
+    think=True (EXT-018): gated-thinking on the first code generation — if the direct
+    code fails the target function's visible docstring examples, regenerate once with a
+    <think> reasoning pass.  think=False (default) is byte-identical to the prior behaviour.
     """
     from harness.behavioral_solve import behavioral_solve_jaros
     from harness.coding_loop import Runtime
@@ -652,6 +691,7 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
                     test_command=docker_cmd,
                     max_fix=max_fix,
                     pre_test_hook=pre_test_hook,
+                    think=think,  # EXT-018: gated-thinking on first code gen
                 )
             finally:
                 # Belt-and-suspenders: force-remove the container even on exception/timeout.
@@ -680,19 +720,24 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
 
 
 def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict],
-                      retrieve: bool = False) -> dict:
+                      retrieve: bool = False, think: bool = False) -> dict:
     """Run ``attempt_gherkin_jaros`` over all tasks, scored on the hidden oracle.
     Prints per-task results and a Wilson CI summary — same format as ``run_gherkin``.
 
     retrieve=True (EXT-017): pass enriched per-function context to each attempt.
     retrieve=False (default): byte-identical to prior behaviour.
+
+    think=True (EXT-018): gated-thinking on first code gen (visible-example gate).
+    think=False (default): byte-identical to prior behaviour.
     """
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
             # #EXT-017-REQ-2 Start
-            r = attempt_gherkin_jaros(repo, t, branch, retrieve=retrieve)
+            # #EXT-018-REQ-2 Start
+            r = attempt_gherkin_jaros(repo, t, branch, retrieve=retrieve, think=think)
+            # #EXT-018-REQ-2 End
             # #EXT-017-REQ-2 End
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
@@ -701,11 +746,14 @@ def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict],
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
     # #EXT-017-REQ-2 Start
+    # #EXT-018-REQ-2 Start
     retrieve_tag = " +retrieve" if retrieve else ""
+    think_tag = " +think" if think else ""
     print(f">>> RESULT [EXT-013 jaros-native gherkin-loop / intent-only / test HIDDEN"
-          f"{retrieve_tag}]: "
+          f"{retrieve_tag}{think_tag}]: "
           f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
           f">>> breakdown: {dict(res)}", flush=True)
+    # #EXT-018-REQ-2 End
     # #EXT-017-REQ-2 End
     return dict(res)
 # #EXT-013-REQ-5 End
@@ -1330,7 +1378,8 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 # #EXT-011-REQ-9 Start
 def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
-                            agentic: bool = False, retrieve: bool = False) -> dict:
+                            agentic: bool = False, retrieve: bool = False,
+                            think: bool = False) -> dict:
     """Run the big-bar multi-repo eval (EXT-011 REQ-9 / REQ-10).
 
     Each task must have a "repo" key (set by ``tasks_corpus()``).  The correct repo
@@ -1346,6 +1395,9 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
     retrieve=True (EXT-017): enriched per-function context (direct-dependency signatures).
     retrieve=False (default): byte-identical to prior behaviour.
 
+    think=True (EXT-018): gated-thinking on first code gen (visible-example gate).
+    think=False (default): byte-identical to prior behaviour.
+
     The A/B differs ONLY in the driver; the Gherkin grains, self-tests, repair tools,
     and red->green oracle are IDENTICAL between the two arms (honest comparison).
 
@@ -1353,6 +1405,7 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
         python -m harness.commit_replay --bar big --gherkin-loop --jaros              # deterministic
         python -m harness.commit_replay --bar big --gherkin-loop --jaros --agentic    # orchestrator
         python -m harness.commit_replay --bar big --gherkin-loop --jaros --retrieve   # enriched ctx
+        python -m harness.commit_replay --bar big --gherkin-loop --jaros --think      # gated-thinking
     """
     from collections import Counter
     res: Counter = Counter()
@@ -1368,7 +1421,9 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
                 r = attempt_gherkin(repo_path, t, branch, agentic=True)
             else:
                 # #EXT-017-REQ-2 Start
-                r = attempt_gherkin_jaros(repo_path, t, branch, retrieve=retrieve)
+                # #EXT-018-REQ-2 Start
+                r = attempt_gherkin_jaros(repo_path, t, branch, retrieve=retrieve, think=think)
+                # #EXT-018-REQ-2 End
                 # #EXT-017-REQ-2 End
             # #EXT-011-REQ-10 End
         except Exception as e:  # noqa: BLE001
@@ -1379,11 +1434,14 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
     # #EXT-017-REQ-2 Start
+    # #EXT-018-REQ-2 Start
     retrieve_tag = " +retrieve" if retrieve else ""
+    think_tag = " +think" if think else ""
     print(f">>> RESULT [EXT-011 REQ-9/10 big-bar multi-repo {driver_label} / intent-only / test HIDDEN"
-          f"{retrieve_tag}]: "
+          f"{retrieve_tag}{think_tag}]: "
           f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
           f">>> breakdown: {dict(res)}", flush=True)
+    # #EXT-018-REQ-2 End
     # #EXT-017-REQ-2 End
     return dict(res)
 # #EXT-011-REQ-9 End
@@ -1454,7 +1512,14 @@ if __name__ == "__main__":
             if use_retrieve:
                 print(">>> context: ENRICHED +retrieve (direct-dependency signatures, EXT-017)",
                       flush=True)
-            run_gherkin_jaros_multi(repos_dir, corpus, agentic=use_agentic, retrieve=use_retrieve)
+            # #EXT-018-REQ-2 Start
+            use_think = "--think" in sys.argv
+            if use_think:
+                print(">>> code-gen: GATED-THINKING +think (visible-example gate, EXT-018)",
+                      flush=True)
+            run_gherkin_jaros_multi(repos_dir, corpus, agentic=use_agentic, retrieve=use_retrieve,
+                                    think=use_think)
+            # #EXT-018-REQ-2 End
             # #EXT-017-REQ-2 End
             # #EXT-011-REQ-10 End
         sys.exit(0)
@@ -1479,6 +1544,9 @@ if __name__ == "__main__":
         # #EXT-017-REQ-2 Start
         retrieve = "--retrieve" in sys.argv  # EXT-017: enriched per-function direct-dep context
         # #EXT-017-REQ-2 End
+        # #EXT-018-REQ-2 Start
+        think = "--think" in sys.argv        # EXT-018: gated-thinking on first code gen
+        # #EXT-018-REQ-2 End
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
@@ -1505,10 +1573,13 @@ if __name__ == "__main__":
             # #EXT-015-REQ-3 End
             else:
                 # #EXT-017-REQ-2 Start
+                # #EXT-018-REQ-2 Start
                 retrieve_tag = " +retrieve" if retrieve else ""
-                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP{retrieve_tag} on {len(tasks)} "
-                      f"{tag} tasks of {repo.name}", flush=True)
-                run_gherkin_jaros(repo, branch, tasks, retrieve=retrieve)
+                think_tag = " +think" if think else ""
+                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP{retrieve_tag}{think_tag} on "
+                      f"{len(tasks)} {tag} tasks of {repo.name}", flush=True)
+                run_gherkin_jaros(repo, branch, tasks, retrieve=retrieve, think=think)
+                # #EXT-018-REQ-2 End
                 # #EXT-017-REQ-2 End
         else:
             mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")

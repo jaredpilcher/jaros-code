@@ -154,6 +154,7 @@ def behavioral_solve_jaros(
     max_fix: int = 2,
     pre_test_hook: "Callable[[str, str], None] | None" = None,
     plan: bool = False,
+    think: bool = False,
 ) -> dict:
     """Jaros-native behavioral solve: same deterministic fix-loop as ``behavioral_solve``
     but every host effect routes through ``Runtime.apply(Decision)`` — gate -> executor ->
@@ -189,6 +190,11 @@ def behavioral_solve_jaros(
                     include the filtered strategy in the code-writer's prompt.  When False
                     (default), behavior is byte-identical to the existing path — no strategy
                     is generated and the code prompt is unchanged.  See EXT-015.
+    think         : when True, apply gated-thinking on the first code generation: parse the
+                    target's VISIBLE docstring examples from ``current_src``; if the direct
+                    code fails them, regenerate once with a ``<think>`` reasoning pass via
+                    ``_g_code_think``.  When False (default), behavior is byte-identical to
+                    the existing path — no extra LLM call is made.  See EXT-018.
 
     Returns
     -------
@@ -290,6 +296,22 @@ def behavioral_solve_jaros(
     })
     _apply(cw_decision)
     code: str = cw_decision.payload.get("content", "")
+
+    # #EXT-018-REQ-1 Start
+    # Gated-thinking: when think=True, parse the target's VISIBLE docstring examples
+    # from current_src; if the direct code demonstrably fails them (genuine AssertionError
+    # — not import errors or timeouts), spend ONE <think> reasoning pass and regenerate.
+    # HONEST: visible examples ONLY gate when to think; the hidden oracle never touches this.
+    # When think=False (default), this block is skipped — byte-identical path.
+    if think and code:
+        from harness.pass1_eval import _doctest_asserts, _visible_ok
+        from harness.commit_replay import _g_code_think
+        _repo_asserts = _doctest_asserts(current_src or "")
+        if _repo_asserts and not _visible_ok(code, _repo_asserts):
+            _think_code = _g_code_think(intent, name, current_src, context, gherkin)
+            if _think_code:
+                code = _think_code
+    # #EXT-018-REQ-1 End
 
     # --- Deterministic fix-loop: run self-tests, repair/regen on failure -----------
     # Default driver: deterministic fix-loop (NOT the judge-agent).
