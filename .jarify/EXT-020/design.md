@@ -76,3 +76,17 @@ The hidden oracle (`_run_nodes`) is EXECUTION plane — deterministic Docker tes
 
 ~8 tasks * 3 LLM calls (gherkin + plan + implement) * ~30s/call ≈ 12 minutes.
 No Docker for this probe (oracle is the only Docker touch, same as EXT-019).
+
+## DECOMPOSITION VERDICT (2026-06-28) — NO GAIN; the last lever flatlines
+On the 8 hard greedy-FAIL tasks: decomp(plan->implement, temp0) = 0/8; greedy(monolithic) = 1/8. Decomp even
+LOST task1 that greedy solves (the plan scaffolding HURT). Wilson95 [0, 32.4%].
+COMBINED with pass@k (sampling 0/7 beyond greedy): on the hard repo task class (the ~80% the harness fails),
+NONE of the harness levers extract a solution — not sampling, not decomposition, not orchestration (~parity),
+not retrieval (~parity), not gated-thinking. The bottleneck is genuine 2B GENERATION CAPABILITY on these tasks;
+extensive harness engineering does not overcome it.
+HONEST IMPLICATION (stresses the no-ceiling assumption): the levers tried do NOT crack these tasks. This does
+NOT prove an absolute ceiling — untried: much larger k (100+), multi-step decomposition with verified sub-pieces,
+fine-tuning, a larger Jetson-fitting model with harness adaptation. But it strongly indicates the lever for the
+HARD class is a STRONGER GENERATOR, not more 2B harness tricks. The 2B remains capable on easier tasks (~18% of
+the repo bar, ~70% HumanEval). OWNER DECISION: pursue a stronger Jetson-fitting model (harness-adapted, #22) for
+the hard class, OR accept the 2B's measured limit there and target where it competes.
