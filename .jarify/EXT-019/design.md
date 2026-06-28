@@ -1,0 +1,94 @@
+# EXT-019 Design: pass@k latent-capability probe
+
+## Purpose
+
+Measure the gap between pass@1 (what the current harness produces on one try) and
+pass@k (whether the 2B CAN produce a correct solution within k tries). The gap
+directly answers the founding no-ceiling question: is the bottleneck the MODEL
+(incapable) or the HARNESS (fails to select from what the model can produce)?
+
+## Architecture
+
+```text
+bigbar_jaros.txt ──► _parse_fail_shas(n) ──► [sha8 ...] (first N [fail] entries)
+                                                    │
+tasks_corpus(bar="big") ───────────────────────────►│
+                                                    ▼
+                                         _resolve_tasks(shas, corpus)
+                                                    │
+                                         [task dict, ...]  (N corpus tasks)
+                                                    │
+                         ┌──────────────────────────┘
+                         │  for each task:
+                         ▼
+               probe_task(repo, task, branch, k, temp)
+                │
+                ├─ git checkout parent + test files
+                ├─ read orig file content per code_file
+                ├─ build file context (preamble, mirrors attempt_gherkin_jaros)
+                ├─ g_gherkin(subject, name, parent_src, ctx) at temp=0  ← ONCE PER TARGET
+                │
+                └─► _core_probe(targets, orig, gherkins, task, repo, k, temp, ...)
+                         │
+                         ├─ [greedy] generate_fn(... temp=0.0) ──► apply ──► oracle ──► greedy_pass
+                         │                                                    │
+                         │                              (score-only, never fed back)
+                         │
+                         └─ for i in range(k):
+                               generate_fn(... temp=T)  ← BLIND (no oracle feedback)
+                                      │
+                                      ▼
+                               apply to repo files
+                                      │
+                                      ▼
+                               oracle_fn(repo, redgreen, timeout)  ← score-only
+                                      │
+                                      ▼
+                               restore files to orig
+                                      │
+                                      ▼
+                               n_passed += (1 if passed else 0)
+                         │
+                         └─► {greedy_pass, n_passed, passk, k}
+                         │
+                         ▼
+               git _reset(repo, branch)   ← always in finally
+
+run_probe:
+  ├─ collect per-task results
+  └─ print summary table + verdict
+       pass@1 = 0/N = 0.0%   (known fails)
+       greedy = X/N = Y%      (informational: 1-shot temp=0, no fix-loop)
+       pass@k = Z/N = W%      ← THE DECISIVE NUMBER
+       Wilson95 CI
+       Verdict: STRONG / WEAK / NO SIGNAL
+```
+
+## Honesty Invariants
+
+1. The hidden oracle (`_run_nodes` / `oracle_fn`) is called ONLY after each
+   sample is generated. Its output is NEVER passed back to `generate_fn`.
+2. All k samples are drawn blind — generation order and oracle outcomes are
+   independent for each sample.
+3. pass@1 is declared 0 by definition (these are tasks the current harness
+   already failed); greedy is measured separately and labelled informational.
+4. File restoration between samples ensures each sample is applied to a
+   clean parent state, not accumulating on a prior sample.
+
+## Injectable Seams for Offline Testing
+
+`_core_probe` accepts `generate_fn` and `oracle_fn` parameters that default to
+`_g_code_sampled` (real LLM) and `_run_nodes` (real Docker) respectively. Tests
+inject stubs — see `tests/test_passk_probe.py`.
+
+`probe_task` additionally wraps the full git lifecycle. Tests that need to exercise
+the sampling loop directly bypass `probe_task` and call `_core_probe` with a real
+temp directory and stub functions.
+
+## Estimated Runtime
+
+15 tasks × (1 greedy + 20 samples) × ~30s/sample ≈ 2.5–3 hours wall-clock.
+Runtime scales linearly with k. Use --tasks 5 --k 5 for a quick smoke run (Jetson
+must be up):
+
+    python -m harness.passk_probe --tasks 5 --k 5 --temp 0.8
