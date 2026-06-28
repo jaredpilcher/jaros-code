@@ -140,3 +140,9 @@ test-feedback + per-call validation), pursued generically — never special-casi
 The noisy 37-task commit-replay suite gave 4 FALSE PARITIES (best-of-N, gen-and-test, augmenter, plan-then-code). The deterministic HumanEval pass@1 bar (pass1_eval, single-shot temp=0, ZERO run-to-run variance) DETECTS real effects. On HumanEval[:70] (the run hung at task 71 on an LLM-client no-timeout bug): base solve_pass1 = **58/70 = 82.9
 ## HumanEval A/B: self-gated thinking (2026-06-27, pass1_ab.txt, full 164, robust runner)
 solve_pass1 (direct) = 115/164 = 70.1%; solve_gated (self-gated thinking) = 136/164 = 82.9%; DELTA = +21, DETERMINISTIC (temp=0, same tasks+harness -> zero run-to-run variance). The +21 is a REAL A/B mechanism win: self-gated thinking (solve direct; if it fails the VISIBLE docstring examples, spend one <think> reasoning pass) genuinely solves 21 that direct misses on the HIDDEN tests. HONEST (visible examples only TRIGGER the think; hidden tests score -> no leakage). HONESTY CAVEAT (binding, Tenet 3): the ABSOLUTE (70-83% for a 2B) is implausibly high = HumanEval CONTAMINATION (model has seen it). The absolute is NOT an honest capability number and is NOT a claimed external-benchmark milestone. Takeaways: (1) self-gated thinking is a STRONG real mechanism -> test on the held-out repo bar; (2) HumanEval contaminated -> the 101-task held-out repo bar is the honest instrument.
+
+## MODEL UPGRADE A/B — Gemma-2B anchor (2026-06-27, owner opened Tenet 2)
+Gemma-4-2B (e2b) DETERMINISTIC fix-loop on the 101-task held-out repo bar (more-itertools 91 + toolz 10):
+**19/101 = 18.8% red->green [Wilson95 12.4-27.5%]** (bigbar_jaros.txt). The honest 2B anchor. Next: swap
+the Jetson to Qwen2.5-Coder-3B and run the SAME 101-task bar (identical harness/ctx/flags) -> bigbar_qwen.txt,
+to measure what a stronger on-device coding model buys. 7B ruled out (Jetson 7.3GB; 2B already uses 6.5GB).
