@@ -1,0 +1,75 @@
+{
+  "_comment": "Founding model profile — Gemma 4 2B (e2b). EXT-021 REQ-1.",
+  "id": "gemma-4-e2b",
+  "alias": "gemma-4-e2b",
+  "serve": {
+    "_gguf_note": "Served on Jetson Orin Nano via gemma.service (systemd). Path on Jetson is the path passed to llama-server -m; check /etc/systemd/system/gemma.service or the Jetson's ExecStart= for the exact .gguf path. Placeholder below — update with the real path once confirmed on device.",
+    "gguf": "<JETSON_GGUF_PATH>/gemma-4-e2b.gguf",
+    "ctx": 4096,
+    "ngl": 99,
+    "fits_jetson": true
+  },
+  "classes": [
+    {
+      "name": "standalone-fn-gen",
+      "bar": "HumanEval/MBPP pass@1 (gated, held-out)",
+      "score": "~82% HumanEval / ~48% MBPP",
+      "date": "2026-06-25",
+      "note": "Honest deterministic pass@1 (temp=0). Syntax-repair harness included. Held-out problems only."
+    },
+    {
+      "name": "single-file-repair",
+      "bar": "repo 101-task red->green (held-out)",
+      "score": "~18/101",
+      "date": "2026-06-28",
+      "note": "Mutation-repair + generate-and-test on the 101-task repo suite. Honest score; hard multi-step repo tasks excluded from this class."
+    }
+  ],
+  "adaptation": {
+    "tools": [
+      "fs_read_tool",
+      "fs_list_tool",
+      "fs_grep_tool",
+      "fs_find_tool",
+      "write_file_tool",
+      "apply_patch_tool",
+      "py_check_tool",
+      "py_symbols_tool",
+      "json_check_tool",
+      "shell_exec_tool",
+      "repair_tool",
+      "generate_and_test_tool",
+      "selftest_augmenter_tool",
+      "strategy_filter_tool"
+    ],
+    "agents": [
+      "orchestrator_agent",
+      "orchestrator_judge_agent",
+      "gherkin_agent",
+      "code_agent",
+      "editor_agent",
+      "rewriter_agent",
+      "body_completer_agent",
+      "plan_agent",
+      "planner_agent",
+      "test_reader_agent",
+      "test_writer_agent",
+      "navigator_agent",
+      "commander_agent",
+      "config_editor_agent",
+      "dockerfile_editor_agent",
+      "markdown_editor_agent"
+    ],
+    "config": {
+      "backend": "llamacpp",
+      "host": "http://192.168.1.183:8000",
+      "model_alias": "gemma-4-e2b",
+      "temperature": 0,
+      "ctx": 4096
+    },
+    "prompts": {
+      "solve_style": "gherkin-decompose",
+      "note": "Gherkin behavioral decomposition + per-step code agent; syntax-repair post-pass. Current default prompt set tuned for Gemma 4 2B (e2b)."
+    }
+  }
+}

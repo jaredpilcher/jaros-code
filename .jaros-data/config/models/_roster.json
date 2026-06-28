@@ -1,0 +1,6 @@
+{
+  "_comment": "Model roster — ordered best-first (strongest Jetson-fitting model first). Only models that fit the Jetson (~8 GB) are admitted. EXT-021 REQ-4.",
+  "default": "gemma-4-e2b",
+  "order": ["gemma-4-e2b"],
+  "note": "best-first; only Jetson-fitting (<=~8GB) models admitted"
+}

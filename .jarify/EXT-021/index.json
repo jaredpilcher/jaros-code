@@ -1,0 +1,24 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/model_registry.py",
+      "startLine": 18,
+      "endLine": 194
+    },
+    {
+      "file": ".jaros-data/config/models/gemma-4-e2b.json",
+      "startLine": 1,
+      "endLine": 65
+    },
+    {
+      "file": ".jaros-data/config/models/_roster.json",
+      "startLine": 1,
+      "endLine": 6
+    },
+    {
+      "file": "tests/test_model_registry.py",
+      "startLine": 1,
+      "endLine": 170
+    }
+  ]
+}

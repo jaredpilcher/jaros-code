@@ -1,7 +1,7 @@
 ---
 id: EXT-021
 title: Multi-Model Routing Harness
-status: uncovered
+status: partial
 priority: high
 implementation:
   - file: harness/model_registry.py
@@ -22,10 +22,10 @@ variants to activate when this model is selected. The registry is data (JSON/py)
 queryable; Gemma 4 2B (`e2b`) is the founding entry and the baseline anchor.
 
 #### Acceptance Criteria
-- [ ] Define a `ModelProfile` (id, alias, serve params, fits_jetson, classes-handled with evidence, adaptation = {tools, agents, config, prompts}).
-- [ ] A registry that loads all profiles from `.jaros-data/config/models/` (one file per model) and exposes lookup by id and by class.
-- [ ] Gemma 4 2B (`e2b`) registered as the founding profile with its current adaptation + measured classes.
-- [ ] A registry never invents a class for a model that has no recorded held-out evidence (honest profiling, Tenet 3).
+- [x] Define a `ModelProfile` (id, alias, serve params, fits_jetson, classes-handled with evidence, adaptation = {tools, agents, config, prompts}).
+- [x] A registry that loads all profiles from `.jaros-data/config/models/` (one file per model) and exposes lookup by id and by class.
+- [x] Gemma 4 2B (`e2b`) registered as the founding profile with its current adaptation + measured classes.
+- [x] A registry never invents a class for a model that has no recorded held-out evidence (honest profiling, Tenet 3).
 
 ### [REQ-2] Model-router judge (class → model Decision)
 
