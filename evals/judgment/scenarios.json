@@ -1,0 +1,92 @@
+[
+  {
+    "id": "syntax-indent",
+    "failure_class": "syntax",
+    "intent": "implement a function that returns the cumulative sum of a list",
+    "name": "cumulative_sum",
+    "feedback": "E   IndentationError: unexpected indent (line 4)\n    result = []\n        for x in nums:\n    ^\nFAILED test_cumulative_sum.py::test_basic - IndentationError: unexpected indent",
+    "expected_action": "repair",
+    "rationale": "An IndentationError means the logic may be correct but the code is syntactically broken; the parse-gated repair tool handles exactly this."
+  },
+  {
+    "id": "syntax-paren",
+    "failure_class": "syntax",
+    "intent": "implement a function that checks whether a string is a palindrome",
+    "name": "is_palindrome",
+    "feedback": "  File \".jcode/is_palindrome.py\", line 6\n    return s == s[::-1\n                    ^\nSyntaxError: unexpected EOF while parsing\nFAILED test_is_palindrome.py::test_basic - SyntaxError: unexpected EOF",
+    "expected_action": "repair",
+    "rationale": "An unmatched paren/bracket is a syntactic defect, not a logic defect; the repair tool closes incomplete expressions without changing the intended logic."
+  },
+  {
+    "id": "logic-off-by-one",
+    "failure_class": "logic",
+    "intent": "implement a function that returns the n-th Fibonacci number (0-indexed, fib(0)=0, fib(1)=1)",
+    "name": "fib",
+    "feedback": "FAILED test_fib.py::test_basic\nassert fib(5) == 5\nAssertionError: assert 8 == 5\n1 failed in 0.03s",
+    "expected_action": "code",
+    "rationale": "The code runs cleanly (no syntax error), but produces the wrong answer for n=5 — that is a logic bug (off-by-one in the iteration) that requires regenerating the implementation."
+  },
+  {
+    "id": "logic-wrong-operator",
+    "failure_class": "logic",
+    "intent": "implement a function that returns True if all elements in a list are positive",
+    "name": "all_positive",
+    "feedback": "FAILED test_all_positive.py::test_mixed_list\nassert all_positive([1, -2, 3]) == False\nAssertionError: assert True == False\n1 failed in 0.02s",
+    "expected_action": "code",
+    "rationale": "The code executes without error but uses the wrong comparison (>= 0 instead of > 0); this is a logic defect requiring a fresh code generation."
+  },
+  {
+    "id": "import-nameerror",
+    "failure_class": "import",
+    "intent": "implement a function that computes the greatest common divisor using math.gcd",
+    "name": "compute_gcd",
+    "feedback": "FAILED test_compute_gcd.py::test_basic\nNameError: name 'gcd' is not defined\n  File \".jcode/compute_gcd.py\", line 3, in compute_gcd\n    return gcd(a, b)\n1 failed in 0.02s",
+    "expected_action": "repair",
+    "rationale": "A NameError from a missing import is a structural defect (the function references a name it never imported); the repair layer can inject the missing import without altering the intended logic."
+  },
+  {
+    "id": "all-pass",
+    "failure_class": "all_pass",
+    "intent": "implement a function that reverses a string",
+    "name": "reverse_string",
+    "feedback": "test_reverse_string.py::test_basic PASSED\ntest_reverse_string.py::test_empty PASSED\ntest_reverse_string.py::test_unicode PASSED\n3 passed in 0.04s",
+    "expected_action": "done",
+    "rationale": "All self-tests passed — the solve is complete; continuing would waste budget and risk breaking a working solution."
+  },
+  {
+    "id": "bad-tests-contradict",
+    "failure_class": "bad_tests",
+    "intent": "implement a function that returns the absolute value of a number",
+    "name": "absolute_value",
+    "feedback": "FAILED test_absolute_value.py::test_negative\nassert absolute_value(-5) == -5\nAssertionError: assert 5 == -5\n(The test expects abs(-5) == -5, which contradicts the intent 'return the absolute value')\n1 failed in 0.04s",
+    "expected_action": "gherkin",
+    "rationale": "The self-test contradicts the intent (it expects a negative absolute value) — the behavior spec must be re-derived to correct the tests before re-coding."
+  },
+  {
+    "id": "bad-tests-malformed",
+    "failure_class": "bad_tests",
+    "intent": "implement a function that counts the vowels in a string",
+    "name": "count_vowels",
+    "feedback": "ERROR test_count_vowels.py::test_basic\nSyntaxError: invalid syntax in test file (line 8)\n  assert count_vowels('hello') == ???\n(The test file itself is syntactically broken — the assertion has a placeholder, not a value)\n",
+    "expected_action": "gherkin",
+    "rationale": "The test file is malformed (placeholder instead of expected value); the behavior spec must be rewritten so the test generator produces valid assertions."
+  },
+  {
+    "id": "logic-wrong-type",
+    "failure_class": "logic",
+    "intent": "implement a function that returns the product of all elements in a list",
+    "name": "list_product",
+    "feedback": "FAILED test_list_product.py::test_basic\nassert list_product([2, 3, 4]) == 24\nAssertionError: assert '234' == 24\nThe function is concatenating strings instead of multiplying numbers.\n1 failed in 0.02s",
+    "expected_action": "code",
+    "rationale": "The function runs without error but uses the wrong operation (string concatenation instead of integer multiplication); this is a logic error requiring code regeneration."
+  },
+  {
+    "id": "import-helper-missing",
+    "failure_class": "import",
+    "intent": "implement a function that flattens a nested list using itertools.chain.from_iterable",
+    "name": "flatten_list",
+    "feedback": "FAILED test_flatten_list.py::test_basic\nAttributeError: module 'itertools' has no attribute 'chain'\n  Actually: NameError: name 'itertools' is not defined\n  File \".jcode/flatten_list.py\", line 4, in flatten_list\n    return list(itertools.chain.from_iterable(nested))\n1 failed in 0.02s",
+    "expected_action": "repair",
+    "rationale": "The helper module (itertools) was referenced but never imported; a repair pass can inject the missing import at the top of the function without altering the intended algorithm."
+  }
+]

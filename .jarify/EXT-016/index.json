@@ -1,0 +1,23 @@
+{
+  "REQ-1": [
+    {
+      "file": "evals/judgment/scenarios.json",
+      "startLine": 1,
+      "endLine": 92
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/judgment_eval.py",
+      "startLine": 22,
+      "endLine": 134
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "tests/test_judgment_eval.py",
+      "startLine": 9,
+      "endLine": 231
+    }
+  ]
+}
