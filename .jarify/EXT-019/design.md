@@ -99,3 +99,17 @@ SMOKING GUN: task 1 greedy=PASS but all 20 temp-0.8 samples FAIL — the 2B can'
 known-correct answer when sampled at 0.8. -> temp 0.8 is TOO HIGH for this 2B; samples are incoherent,
 so pass@k=0 measures NOISE not latent-capability-absence. Re-probing at temp 0.4 (the fair test: diverse
 but coherent, samples stay near the correct region). Confounded run not used as the verdict.
+
+## pass@k VERDICT (FAIR temp 0.4, concluded 8/15, 2026-06-28) — sampling does NOT reveal latent capability on hard repo tasks
+Probed 8 tasks the FULL HARNESS fails, k=20 at temp 0.4 (validated COHERENT: solvable task1 = 19/20, vs 0/20 at temp 0.8).
+RESULTS: greedy(temp0)=PASS 1/8 (only task1 — simple gen beats the full pipeline on that 1), passk=YES 1/8,
+**pass@k-BEYOND-greedy = 0/7** — NOT ONE of the 7 greedy-FAIL hard tasks was solved by ANY of 20 fair-temp samples.
+HONEST VERDICT (no spin): on repo-level red->green commit-replay (the hardest ~80% the harness fails), SAMPLING does NOT
+extract latent capability the deterministic generation misses. The bottleneck here is genuine GENERATION capability, NOT
+selection — the 'sample-at-scale + verifier' pivot does NOT pay off on this class (there was nothing correct to select).
+A MEASURED STRESS on the no-ceiling founding assumption: within k=20 at a fair temp, the 2B cannot generate correct
+solutions for these hard repo tasks.
+BINDING CAVEATS: (a) k=20 only — pass@k may rise at k=100+ (literature uses large k); 0/7 at k=20 is strong, not
+'no capability at any k'. (b) HARDEST class (full-harness-fails); does NOT imply a wall on easier tasks (HumanEval ~70%).
+(c) temp 0.4 validated coherent -> not a temp confound. (d) greedy_pass only 1/8 -> simplifying the pipeline isn't a big win either.
+NEXT + LAST untried lever: DECOMPOSITION — does breaking the function into explicit sub-steps crack what monolithic generation + sampling cannot?
