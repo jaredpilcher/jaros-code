@@ -36,10 +36,10 @@ choice: a **deterministic default** routes to a known-capable model when the jud
 system never fails to route. The routing decision is hash-chain logged and replayable.
 
 #### Acceptance Criteria
-- [ ] `route(problem) -> Decision{model_id, problem_class, confidence, rationale}` — inert data, no side effects.
-- [ ] Selection consults the registry's class→model coverage; ties/uncertainty fall back to the deterministic default model.
-- [ ] The router is offline-testable with a fake LLM (classification stubbed) and a stub registry.
-- [ ] A misroute is treated as a harness gap to close (better profile/features), never a model limit — recorded for the convergence loop.
+- [x] `route(problem) -> Decision{model_id, problem_class, confidence, rationale}` — inert data, no side effects.
+- [x] Selection consults the registry's class→model coverage; ties/uncertainty fall back to the deterministic default model.
+- [x] The router is offline-testable with a fake LLM (classification stubbed) and a stub registry.
+- [x] A misroute is treated as a harness gap to close (better profile/features), never a model limit — recorded for the convergence loop.
 
 ### [REQ-3] Deterministic rewire to the selected model
 
