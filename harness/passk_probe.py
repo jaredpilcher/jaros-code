@@ -121,9 +121,12 @@ def _core_probe(
         passk:       bool — did any of the k samples pass?
         k:           int
     """
-    from harness.commit_replay import _apply_func  # deferred
+    from harness.commit_replay import _apply_func, _file_context  # deferred
 
     files = sorted({cf for cf, _, _ in targets})
+    # Context = the SMALL module preamble (imports + module-level names), NOT the whole file:
+    # passing orig[cf] (entire module ~100KB) blew past the 4096 ctx -> HTTP 400 on every task.
+    ctxs = {cf: _file_context(orig.get(cf, "")) for cf in files}
 
     def _apply_sample_and_score(
         codes: dict[tuple[str, str], str],
@@ -148,7 +151,7 @@ def _core_probe(
 
     # --- Greedy (temp=0) sample — informational ---
     greedy_codes = {
-        (cf, name): generate_fn(task["subject"], name, parent_src, orig.get(cf, ""),
+        (cf, name): generate_fn(task["subject"], name, parent_src, ctxs[cf],
                                 gherkins[(cf, name)], 0.0)
         for cf, name, parent_src in targets
     }
@@ -158,7 +161,7 @@ def _core_probe(
     n_passed = 0
     for sample_idx in range(k):
         sample_codes = {
-            (cf, name): generate_fn(task["subject"], name, parent_src, orig.get(cf, ""),
+            (cf, name): generate_fn(task["subject"], name, parent_src, ctxs[cf],
                                     gherkins[(cf, name)], temp)
             for cf, name, parent_src in targets
         }
