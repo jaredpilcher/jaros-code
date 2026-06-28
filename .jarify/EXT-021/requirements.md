@@ -51,10 +51,10 @@ config/prompts) for the ensuing solve. The rewire is an execution-plane operatio
 records what it did.
 
 #### Acceptance Criteria
-- [ ] `rewire(model_id)` resolves the profile, and if the served model differs, performs the documented Jetson swap (edit serve params + restart `gemma.service`) — otherwise a no-op.
-- [ ] After rewire, the active LLM client + the active tool/agent/config/prompt set match the chosen model's profile.
-- [ ] Idempotent and safe: re-rewiring to the already-served model performs no swap; a failed swap is reported honestly, never silently.
-- [ ] The swap path is gated/guarded so it cannot run an unsafe command (Tenet 1) and never escalates off-device (Tenet 2).
+- [x] `rewire(model_id)` resolves the profile, and if the served model differs, performs the documented Jetson swap (edit serve params + restart `gemma.service`) — otherwise a no-op.
+- [x] After rewire, the active LLM client + the active tool/agent/config/prompt set match the chosen model's profile.
+- [x] Idempotent and safe: re-rewiring to the already-served model performs no swap; a failed swap is reported honestly, never silently.
+- [x] The swap path is gated/guarded so it cannot run an unsafe command (Tenet 1) and never escalates off-device (Tenet 2).
 
 ### [REQ-4] Per-model profiling / roster exploration loop
 
