@@ -1,9 +1,10 @@
 # PRIME-001 — System Architecture
 
-`jaros-code` is a fleet of single-purpose reasoning agents (each calling
-`gemma2:2b`) whose only output is inert `Decision` data, executed by a deterministic
-tool plane on top of the Jaros runtime. This document maps the system-wide
-architecture the Intent demands. Feature specs (`EXT-00x`) decompose individual
+`jaros-code` is a **multi-model** fleet of single-purpose reasoning agents. A
+**model-router judge** first routes each task to the Jetson-fitting model whose measured
+profile best covers its class; that model's agents then emit only inert `Decision` data,
+executed by a deterministic tool plane on top of the Jaros runtime. This document maps the
+system-wide architecture the Intent demands. Feature specs (`EXT-00x`) decompose individual
 tenets into requirements, design, and tasks.
 
 ## The two planes
@@ -35,6 +36,49 @@ tenets into requirements, design, and tasks.
 The arrow only ever points down. Nothing in the reasoning plane holds a handle to
 the file system, the shell, or the network — those exist solely as harness-granted
 capabilities the execution plane uses (Jaros capability-safety, Tenet 1).
+
+## The multi-model router (the outer judge)
+
+Above the two planes sits the **model-router** (owner directive, 2026-06-28). Every task
+first passes through a judge that classifies the problem and routes it to the Jetson-fitting
+model whose *measured profile* best covers that class — then the harness **rewires itself** to
+that model before any solving begins. Single models have real, measured class-ceilings; the
+system routes *around* them instead of denying them.
+
+```text
+   task ("make test_login pass" │ a HumanEval problem │ a repo red->green commit)
+        │
+        ▼
+   ┌──────────────────── MODEL-ROUTER JUDGE (on-device) ──────────────────────┐
+   │ classify the problem's CLASS + difficulty; pick the model whose profile   │
+   │ is MEASURED to cover it. Inert Decision (Tenet 1). Deterministic default  │
+   │ when unsure -> a capable model, never a failure.                          │
+   └───────────────────────────────┬───────────────────────────────────────────┘
+                                    │  Decision: model = <name>
+                                    ▼
+   ┌──────────────────── MODEL REGISTRY (Jetson-fitting only) ─────────────────┐
+   │  gemma-4-2b   profile{ classes:[…], tools, agents, config, prompts }       │
+   │  <model-B>    profile{ classes:[…], tools, agents, config, prompts }       │
+   │  <model-C>    profile{ … }                        explored best-first       │
+   └───────────────────────────────┬───────────────────────────────────────────┘
+                                    │
+                                    ▼
+   ┌──────────────── REWIRE (deterministic — the clerk, Tenet 1) ──────────────┐
+   │  ensure <model> is the one served on the Jetson (swap llama.cpp if needed) │
+   │  + activate THAT model's tools / agents / config / prompts                  │
+   └───────────────────────────────┬───────────────────────────────────────────┘
+                                    ▼
+                 the two planes below, now wired for <model>
+              (the orchestrator composes THAT model's agents + tools)
+```
+
+Each model's **profile** is *earned by measurement* — a model is credited with a class only
+once held-out tasks show it handles that class. The roster grows **best-first** (the strongest
+Jetson-fitting model first); each new model is *adapted* (its own tools/agents/config/prompts)
+before it is trusted with a class. A naive swap with no adaptation regressed (0/16 where the
+co-adapted baseline scored 4/16) — proof that the *adaptation*, not just the weights, is what
+performs, so the rewiring is per-model and first-class. The router, the registry lookup, and
+the rewire all flow through the clerk: hash-chain logged and byte-replayable (Tenet 3).
 
 ## Why many small agents beat one big one
 
@@ -254,7 +298,10 @@ except in service of a written requirement that serves the prime directive.
      ├── EXT-003  orchestration / bounded coding loop (+ REQ-4 deterministic repair)
      ├── EXT-004  operator terminal UX (Claude-Code-like front-end)
      ├── EXT-005  self-evaluation & monitoring + the supervisor convergence loop
-     └── EXT-008  from-intent build loop (generative spine, hidden-oracle scoring)
+     ├── EXT-008  from-intent build loop (generative spine, hidden-oracle scoring)
+     ├── EXT-014  model-reference honesty → founding profile of the model roster
+     └── EXT-021  MULTI-MODEL routing harness (registry + router judge + rewire +
+                  per-model adaptation + best-first roster profiling)
 ```
 
 Every `EXT` serves exactly one tenet of the Intent and must never contradict a

@@ -2,9 +2,14 @@
 
 **jaros-code** is a software-development harness built on Jaros whose purpose is to
 match or exceed Claude Code at real coding work **while every reasoning call is
-served by a single local open-weight model that runs entirely on-device on the Jetson Orin Nano
-via llama.cpp — at zero inference cost** (the specific model is a lever within that on-device
-budget — see commitment 2; the system began on **Gemma 4 2B (`e2b`)**).
+served by a local open-weight model that runs entirely on-device on the Jetson Orin Nano
+via llama.cpp — at zero inference cost.** As of 2026-06-28 the system is a **multi-model
+harness** (owner directive): rather than one fixed model, a **model-router judge** classifies
+each problem and routes it to the on-device model best able to handle that *class* of problem,
+and the harness then **rewires itself** — loading that model on the Jetson and activating the
+tools, agents, configuration, and prompts proven to adapt the harness *to that model*. Every
+model still runs on the Jetson at zero cost (commitment 2); the system began on **Gemma 4 2B
+(`e2b`)**, which remains one member of the model roster and the honest baseline anchor.
 
 **The bar is explicit and high — it is the very North Star: the system must become so
 good that it overcomes the model limitations of Gemma 4 2B (`e2b`) and is AS GOOD OR BETTER,
@@ -28,25 +33,31 @@ the bar to flatter the system; when it masters a level, the level gets harder. I
 home-grown evals are not good enough, hardening them — and pulling in tougher real
 benchmarks — is itself required work, not optional.
 
-The wager behind this system — and, as of 2026-06-23, its explicit, non-negotiable
-**founding assumption**: *small models have not been useful for development because
-their harnesses are thin, not because the models are incapable.* We assume there is
-**NO model-capability ceiling.** Despite the industry's belief that small models top
-out at some pass rate, **100% on HumanEval (and MBPP, SWE-bench, and the rest) is
-reachable — by harness engineering alone.** Every eval failure is therefore a **harness
-failure to diagnose and fix**, never a model limit to accept: the harness did not
-decompose, scaffold, retrieve, verify, or iterate enough to extract the capability the
-model already has. *"The harness can't be made to do this"* is the **forbidden
-conclusion**; a failure first poses *what generic scaffolding is missing* — harness
-engineering (decompose, ground, retrieve, verify, iterate) remains the **primary craft**,
-applied to whatever on-device model we run, and is never abandoned. Choosing a stronger
-Jetson-fitting open-weight model (commitment 2) is a permitted, largely one-time **platform
-lever** — it is *not* a per-failure escape hatch, and it never excuses thin scaffolding:
-a stronger model raises the floor, but the harness is still what reaches the bar. The
-pursuit of 100% must be **generic** — general mechanisms that lift
-problem-solving across the board, proven on held-out evals — and never overfitting or
-special-casing benchmark items, which would prove nothing and violate honest
+The wager behind this system — refined by measurement as of 2026-06-28: *small models have
+not been useful for development because their harnesses are thin — but each individual small
+model still has a real, measurable class-ceiling, and the honest move is to MAP that ceiling and
+ROUTE around it, not to deny it.* We no longer assume a single model has no capability ceiling;
+we **measured** one and recorded it honestly: on the hardest repo-level tasks, sampling at scale
+(pass@k, k=20 at a fair temperature), explicit decomposition, and non-deterministic orchestration
+**all** failed to extract a solution from Gemma 4 2B — the bottleneck there was genuine generation
+capability, not a missing scaffold. Denying that, after probing it, would have violated honest
 measurement (commitment 3).
+
+**The no-ceiling principle now lives at the SYSTEM level.** The *multi-model harness* has no
+ceiling, because for any class of problem some Jetson-fitting model — paired with the harness
+adaptation built for it — can reach it, and both the model roster and the per-model adaptations
+grow without bound. So a model failing a class is, in order: **(a)** still a **harness gap for
+THAT model** — did its adaptation decompose, scaffold, retrieve, verify, and iterate enough? this
+remains the primary craft and is exhausted honestly first; and only then **(b)** a signal to
+**route that class to a stronger Jetson-fitting model** whose measured profile covers it. *"No
+Jetson-fitting model, with any harness adaptation, can reach this class"* is the only forbidden
+conclusion now — and it may be asserted **only when proven by measurement across the roster**,
+never assumed from one model's limit. Escalating to a cloud or paid model stays absolutely
+forbidden (commitment 2). The craft is now three-layered — per-model harness engineering, the
+router that picks the right model per class, and growing the Jetson-fitting roster + each model's
+reachable-class map — and every layer's claims stay **generic** (general mechanisms, held-out
+proof, never benchmark-fitting) and **honest** (commitment 3): a dishonest score is worse than an
+honest one, and a denied ceiling is worse than a mapped one.
 
 **And the 100% must itself be 100% honest** (commitment 3 binds the whole pursuit). The
 number counts only if it is GENUINE generic solving, measured on **held-out** problems
@@ -74,24 +85,30 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    no network call originates from a model output. Everything the harness *does*
    is a deterministic tool the clerk runs.
 
-2. **Local-on-device-only, zero paid inference.**
-   Every reasoning call goes to a single local open-weight model served by **llama.cpp**
-   on the **Jetson Orin Nano**, at **zero inference cost**. The binding constraint is
-   **local + fully on-device + free** — *any* open-weight model is permitted **so long as it
-   actually fits and runs on the Jetson** (within its ~8 GB budget). The constraint was never
-   a specific parameter count; it is the device and the zero-cost, no-cloud rule. **No cloud
-   model, no paid API, ever** — not as a fallback, not "just for the hard parts." (The legacy
-   Ollama `gemma2:2b` path is not the intended model.)
+2. **Local-on-device-only, MULTI-MODEL, zero paid inference.**
+   Every reasoning call goes to a local open-weight model served by **llama.cpp** on the
+   **Jetson Orin Nano**, at **zero inference cost**. The binding constraint is **local + fully
+   on-device + free** — *any* open-weight model is permitted **so long as it actually fits and
+   runs on the Jetson** (within its ~8 GB budget). The constraint was never a specific parameter
+   count; it is the device and the zero-cost, no-cloud rule. **No cloud model, no paid API,
+   ever** — not as a fallback, not "just for the hard parts."
 
-   **Model choice is itself a permitted lever (owner directive, 2026-06-27).** The system
-   began on **Gemma 4 2B (`e2b`)** and may move to a stronger Jetson-fitting open-weight model
-   (e.g. a coding-specialized 3–7B) to strengthen the **agentic judgment** a 2B is measurably
-   weak at (independently confirmed: Gemma 4 e2b scored 0/5 on a tool-use-judgment probe).
-   Gemma 4 2B remains the prior baseline and the honest comparison anchor. When a capability
-   appears to exceed the chosen on-device model, the levers are (a) **decompose into smaller
-   agent steps and stronger deterministic tools** and (b) **pick the strongest open-weight
-   model that still fits the Jetson** — but escalating to a cloud or paid model remains
-   absolutely forbidden.
+   **The system is a MULTI-MODEL harness (owner directive, 2026-06-28).** It maintains a
+   **registry of Jetson-fitting models**, explored best-first (strongest-that-fits first). Each
+   model carries a **profile**: the problem *classes* it is measured to handle, plus the **tools,
+   agents, configuration, and prompts** that adapt the harness *to that model* — because a model
+   is only as good as its adaptation (a naive model swap regressed, confirming the harness is
+   co-adapted per model; the adaptation, not just the weights, is what performs). At solve-time a
+   **model-router judge** classifies the problem and selects the model whose profile best covers
+   that class (the routing choice is itself an inert `Decision`, commitment 1). The harness then
+   **rewires itself** to the chosen model: it ensures that model is the one served on the Jetson
+   (swapping the llama.cpp model if needed) and activates that model's tools / agents / config /
+   prompts. When no current model's profile covers a class, the levers are (a) **deepen that
+   model's adaptation** — decompose into smaller agent steps and stronger deterministic tools —
+   and (b) **bring a stronger Jetson-fitting model into the roster and adapt it**; escalating to a
+   cloud or paid model remains absolutely forbidden. **Gemma 4 2B (`e2b`)** is the founding
+   roster member and the honest baseline anchor; it is kept, profiled, and routed to for the
+   classes it is measured to handle well — not discarded.
 
    **Decomposition has two directions, not one.** "Decompose" does *not* only mean
    "more, tinier agents." Some judgements are boulders no model-side slice can shrink:
@@ -169,6 +186,22 @@ agents compose) and an **extensive suite of evaluations** (the proof we are
 converging on the bar). More capability is always answered by *more, smaller* agents,
 *sharper* tools, and *more* evals — never by a bigger model.
 
+**Two judges, nested: the model-router OUTSIDE, the orchestrator INSIDE.** The multi-model harness
+adds an OUTER judgement before any solving begins. The **model-router judge** reads the problem,
+classifies its *kind and difficulty*, and selects the roster model whose measured profile best covers
+that class; the harness then **rewires itself** to that model (serves it on the Jetson, activates its
+tools/agents/config/prompts). INSIDE that choice, the chosen model's own **orchestrator** (below)
+composes *that model's* agents and tools to solve the task. Both are inert `Decision`s on the reasoning
+plane (commitment 1), and both are held to the right-decision-every-time bar: every misroute and every
+wrong next-step is a harness gap to close, never a model limit to accept. The router's profiles are
+**earned by measurement** — a model is credited with a class only once it is shown, on held-out tasks,
+to handle it; an unmapped or mis-routed class is a gap to close by better profiling, deeper per-model
+adaptation, or a stronger roster model. The router runs on-device (a small classification, backed by
+deterministic features), and a deterministic default guarantees that when it is unsure the task still
+goes to a capable model rather than failing. The rewiring is itself deterministic (commitment 1): the
+model the router names, the config that loads, and the swap that serves it all flow through the clerk,
+hash-chain logged and replayable.
+
 **The composition is EMERGENT and NON-DETERMINISTIC — orchestrated by the model itself.** The swarm is
 not one fixed pipeline. At solve-time the 2B acts as an **orchestrator** that judges which agents and
 tools to apply next, in what order, and when the work is done — composing the proven grains emergently,
@@ -220,7 +253,10 @@ replacing Claude Code on Opus 4.8.* The loop, run forever:
    and evals that do not help. Net-negative changes are reverted, never shipped.
 
 The supervisor **watches the system closely and corrects it** — the wiring, the agents,
-the deterministic tools, the evals — and treats the convergence trend (not activity) as
-the sole proof of progress. This loop, and the supervisor's ownership of it, is itself
+the deterministic tools, the evals, **the model-router's class profiles, each model's
+harness adaptation, and the Jetson-fitting model roster** — and treats the convergence
+trend (not activity) as the sole proof of progress. When a class is failing, the loop now
+also asks: is this a gap in *this model's* adaptation, in the *router's* profile for it, or
+does it need a *stronger roster model* — and measures the answer rather than guessing. This loop, and the supervisor's ownership of it, is itself
 part of the intent: the system is never "done" until parity is proven on genuinely hard,
 external problems.

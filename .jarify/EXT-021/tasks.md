@@ -1,0 +1,68 @@
+# Implementation Tasks — Multi-Model Routing Harness
+
+### [TASK-1] Model registry + ModelProfile + founding Gemma profile
+
+Build the data layer the whole feature rests on.
+
+#### Steps
+1. Create `harness/model_registry.py` with a `ModelProfile` dataclass: `id`, `alias`, `serve` ({gguf, ctx, ngl, fits_jetson}), `classes` (list of {name, bar, score, date}), `adaptation` ({tools, agents, config, prompts}).
+2. Implement `ModelRegistry` that loads every `.jaros-data/config/models/*.json` into profiles; expose `lookup_by_id(id)`, `lookup_by_class(class_name) -> [ids]`, and `default_model() -> id`.
+3. Write the founding profile `.jaros-data/config/models/gemma-4-e2b.json` — Gemma 4 2B (`e2b`): serve params from the current Jetson serve.sh, `classes` seeded ONLY with classes it has measured evidence for (e.g. standalone-fn-gen on HumanEval/MBPP), `adaptation` = the current default tools/agents/config/prompts.
+4. Add `tests/test_model_registry.py`: load the founding profile, lookup by id/class, default_model resolves, and a profile with no evidence for a class is NOT returned by `lookup_by_class`.
+
+#### Implements
+- [REQ-1] Model registry with per-model profiles
+
+### [TASK-2] Model-router judge (class → model Decision)
+
+The on-device judge that picks the model.
+
+#### Steps
+1. Create `harness/model_router.py` with `route(problem, registry, llm=None) -> Decision` returning inert `{model_id, problem_class, confidence, rationale}` (no side effects).
+2. Implement classification: derive cheap deterministic features of the problem (standalone vs repo, has-docstring-examples, multi-file, function-size) + an optional small-LLM class label; map the class to a model via `registry.lookup_by_class`, breaking ties/low-confidence with `registry.default_model()`.
+3. Guarantee a routed result always (deterministic default fallback); attach `confidence` + `rationale`.
+4. Add `tests/test_model_router.py` with a fake LLM + stub registry: a class covered only by model B routes to B; an unknown/low-confidence class routes to the default; the return is inert data.
+
+#### Implements
+- [REQ-2] Model-router judge (class → model Decision)
+
+### [TASK-3] Deterministic rewire + guarded Jetson swap
+
+Make the harness actually become the chosen model.
+
+#### Steps
+1. Create `harness/model_rewire.py` with `rewire(model_id, registry) -> result` that resolves the profile, checks the currently-served model, and only swaps when different (idempotent).
+2. Implement the guarded Jetson swap: update the llama.cpp serve params (`-m`/`--alias`) for the target and restart `gemma.service`, via a constrained helper that cannot run an arbitrary command (Tenet 1) and never escalates off-device (Tenet 2); a swap failure returns an honest error (Tenet 3).
+3. After (or without) a swap, point the active LLM client at the model's alias and activate its `adaptation` set (the active tools/agents/config/prompts).
+4. Add `tests/test_model_rewire.py`: re-rewiring to the already-served model is a no-op (no swap call); rewiring to a different model invokes the swap helper (mocked); a mocked swap failure surfaces honestly.
+
+#### Implements
+- [REQ-3] Deterministic rewire to the selected model
+
+### [TASK-4] Per-model profiling / roster exploration loop
+
+Earn the profiles by measurement; grow the roster best-first.
+
+#### Steps
+1. Create `harness/model_profiler.py` with `profile_model(model_id, classes, registry)` that serves the model, runs each held-out class eval, and appends only cleared classes (with bar/score/date evidence) to the profile JSON.
+2. Define the roster order (best-first, Jetson-fitting only) in `.jaros-data/config/models/_roster.json` and a `fits_jetson` admission check (~8 GB budget).
+3. Document the candidate Jetson-fitting models to explore best-first (e.g. a strong coding 3B that fits, down to Gemma 2B) in `.jarify/EXT-021/design.md` appendix; profile at least one non-Gemma candidate honestly.
+4. Add `tests/test_model_profiler.py` (offline, stub evals): a class clearing the bar is written with evidence; a class below the bar is NOT added (honest).
+
+#### Implements
+- [REQ-4] Per-model profiling / roster exploration loop
+
+### [TASK-5] End-to-end wiring: route → rewire → solve, two classes / two models
+
+Prove the whole loop and wire it into the solve entry point.
+
+#### Steps
+1. Add a `solve_routed(problem)` entry (in `harness/model_router.py` or the existing solve entry) that calls `route` → `rewire` → the existing behavioral/orchestrator solve using the active model's adaptation.
+2. Route the standalone-fn-gen class to the Gemma profile and a hard repo class to a stronger profiled model; demonstrate both end-to-end (logged Decisions + rewire records).
+3. Ensure the whole path runs native on Jaros (inert routing Decision → gate → clerk rewire → hash-chain log → replay) and is honest (the profile evidence gates which model owns which class).
+4. Add `tests/test_solve_routed.py` (offline): two problems of two classes route+rewire to two different models and invoke the corresponding adaptation (mocked solve).
+
+#### Implements
+- [REQ-2] Model-router judge (class → model Decision)
+- [REQ-3] Deterministic rewire to the selected model
+- [REQ-4] Per-model profiling / roster exploration loop
