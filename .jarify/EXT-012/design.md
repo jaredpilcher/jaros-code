@@ -157,3 +157,9 @@ CO-ADAPTED to Gemma over months of tuning; Qwen responds differently and the pip
 capability. Confirms PRIME's thesis (the harness does the lifting) AND Raschka's point that models are
 optimized for specific harnesses (Qwen->Qwen-Code). REVERTED to Gemma-2B (proven). Leveraging Qwen needs
 deliberate HARNESS-ADAPTATION (re-tune prompts for Qwen), queued — not a drop-in.
+
+## #20 ORCHESTRATOR VERDICT — honest 101-task held-out bar (2026-06-28)
+Non-deterministic 2B AGENTIC-ORCHESTRATOR vs DETERMINISTIC fix-loop, SAME 101 held-out repo tasks (more-itertools 91 + toolz 10), identical tools/ctx/flags:
+- AGENTIC orchestrator: **17/101 = 16.8%** [Wilson 10.8-25.3%] (bigbar_agentic.txt; breakdown pass17/fail73/capped4/no_target7)
+- DETERMINISTIC fix-loop: **19/101 = 18.8%** [Wilson 12.4-27.5%] (bigbar_jaros.txt anchor)
+VERDICT: **~PARITY** — orchestrator 2 below, CIs heavily overlap. The non-deterministic 2B JUDGE does NOT beat the deterministic fix-loop even on the honest bar (marginally below, within noise). This honestly RESOLVES the orchestration question: the old noisy 6/37-vs-7/37 was directionally right but the honest 101-bar confirms ~parity. PER PRIME-001: KEEP non-deterministic orchestration (co-equal goal + ~parity, not a regression to abandon); the LEVER toward right-decision-every-time is GROUNDING the judge — the deterministic Jaros tool+validation library (#12) that CONSTRAINS + VERIFIES the judge's choices + the tool-use-judgment eval (#21). Trusting the raw 2B judge more is NOT the path (Raschka: gemma4-e2b 0/5 on tool-use judgment). Default solve stays the deterministic fix-loop.
