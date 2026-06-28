@@ -29,7 +29,24 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 When a change would violate a tenet, **STOP and flag the conflict** — do not
 silently resolve it.
 
-## Founding assumption — THERE IS NO 2B CEILING (owner directive, 2026-06-23, non-negotiable)
+## ⚠️ MULTI-MODEL PIVOT (owner directive, 2026-06-28) — supersedes the single-model founding assumption below
+
+jaros-code is now a **MULTI-MODEL harness.** We MEASURED a real single-model ceiling (the drastic
+pivot: pass@k 0/7 beyond greedy + decomposition 0/8 on the hardest repo tasks — sampling,
+decomposition, and orchestration all fail to extract a solution from Gemma 4 2B on that class). So a
+**model-router judge** classifies each problem and routes it to the Jetson-fitting model whose
+**measured profile** covers that class; the harness then **rewires itself** to that model — loads it
+on the Jetson and activates that model's tools/agents/config/prompts. If Gemma 4 2B can't handle a
+class, route it to a stronger Jetson-fitting model that can. Only models that fit the Jetson (~8 GB),
+explored **best-first**; cloud/paid still **absolutely forbidden**. The no-ceiling principle moved to
+the **SYSTEM level**: the multi-model system has no ceiling (some Jetson-fitting model + its adaptation
+reaches any class, and the roster grows), while **per-model ceilings are MEASURED, not denied**. The
+only forbidden conclusion now is *"no Jetson-fitting model, with any adaptation, can reach this
+class,"* proven across the roster. Honest measurement is MORE central (map ceilings, don't deny them).
+See `PRIME-001/intent.md` + `.jarify/EXT-021/`. The single-model section below stays for history — its
+harness-engineering discipline still applies **per model** (the primary craft for each roster member).
+
+## Founding assumption — THERE IS NO 2B CEILING (owner directive, 2026-06-23, SUPERSEDED — see the multi-model pivot above)
 
 **We build on the explicit assumption that the model has NO hard capability ceiling. Despite what
 the industry believes about small models, every eval failure is a HARNESS failure — not a model
