@@ -146,3 +146,14 @@ Gemma-4-2B (e2b) DETERMINISTIC fix-loop on the 101-task held-out repo bar (more-
 **19/101 = 18.8% red->green [Wilson95 12.4-27.5%]** (bigbar_jaros.txt). The honest 2B anchor. Next: swap
 the Jetson to Qwen2.5-Coder-3B and run the SAME 101-task bar (identical harness/ctx/flags) -> bigbar_qwen.txt,
 to measure what a stronger on-device coding model buys. 7B ruled out (Jetson 7.3GB; 2B already uses 6.5GB).
+
+## MODEL UPGRADE A/B — VERDICT: naive Qwen-3B swap REGRESSES (2026-06-27)
+Qwen2.5-Coder-3B on the SAME harness (identical ctx/flags) on the 101-task held-out repo bar: **0 passes in
+the first 16 tasks**, vs the Gemma-2B's **4/16 on the IDENTICAL tasks** (Reject by ID, running_median, Issue
+900, negative-exactly). Killed at 16/101 — signal definitive (0 vs 4, same tasks). NO crashes (15 fail + 1
+capped): Qwen's solves RUN but don't pass the strict commit-oracle, and solve NONE the 2B did. HONEST
+FINDING: a naive model swap REGRESSES because the harness (gherkin/self-test/code/fix-loop prompts) is
+CO-ADAPTED to Gemma over months of tuning; Qwen responds differently and the pipeline doesn't extract its
+capability. Confirms PRIME's thesis (the harness does the lifting) AND Raschka's point that models are
+optimized for specific harnesses (Qwen->Qwen-Code). REVERTED to Gemma-2B (proven). Leveraging Qwen needs
+deliberate HARNESS-ADAPTATION (re-tune prompts for Qwen), queued — not a drop-in.
