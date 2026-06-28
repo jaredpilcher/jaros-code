@@ -101,7 +101,7 @@ def _run(cwd: str, test_cmd: str) -> tuple[bool, str]:
     to = int(os.environ.get("JCODE_TEST_TIMEOUT_S", "120"))
     # #EXT-005-REQ-12 Start
     # Use Popen + tree-kill on timeout so an infinite-loop solution can't orphan pytest on Windows.
-    kwargs: dict = dict(shell=True, capture_output=True, text=True)
+    kwargs: dict = dict(shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if os.name != "nt":
         kwargs["start_new_session"] = True
     p = subprocess.Popen(test_cmd, cwd=cwd, **kwargs)
