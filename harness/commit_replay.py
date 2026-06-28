@@ -546,7 +546,7 @@ def attempt_gherkin(repo: Path, task: dict, branch: str, timeout: int = 180, max
 
 # #EXT-013-REQ-5 Start
 def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 180,
-                          max_fix: int = 2) -> str:
+                          max_fix: int = 2, retrieve: bool = False) -> str:
     """EXT-013 / REQ-5: per-function solve via the Jaros-native ``behavioral_solve_jaros``
     (Runtime gate -> executor -> DecisionLog), scored on the hidden oracle (red->green).
 
@@ -555,9 +555,17 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
     via ``Runtime.apply(shell.exec Decision)`` so it is gated + logged.  File writes
     (gherkin spec, self-tests, code artefacts) go through ``Runtime.apply(code.write_file
     Decision)``.  The comparison with the Python path is therefore apples-to-apples.
+
+    retrieve=True (EXT-017): per-function context is built with enriched_file_context
+    (direct-dependency signatures + module API) instead of the baseline _file_context
+    (preamble only).  retrieve=False (default) is byte-identical to the prior behaviour.
     """
     from harness.behavioral_solve import behavioral_solve_jaros
     from harness.coding_loop import Runtime
+    # #EXT-017-REQ-2 Start
+    if retrieve:
+        from harness.repo_context import enriched_file_context
+    # #EXT-017-REQ-2 End
 
     targets = _target_funcs(repo, task)
     if not targets:
@@ -569,7 +577,11 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
         _git(repo, "checkout", "-f", task["parent"])
         _git(repo, "checkout", task["sha"], "--", _spec(repo)["test"])
         orig = {cf: (repo / cf).read_text(encoding="utf-8") for cf in files}
+        # #EXT-017-REQ-2 Start
+        # retrieve=False (default): baseline preamble-only context, byte-identical to before.
+        # retrieve=True: enriched per-function context built inside the per-function loop below.
         ctx = {cf: _file_context(orig[cf]) for cf in files}
+        # #EXT-017-REQ-2 End
         final: dict[str, dict] = {}
 
         # One Runtime per task — all per-function solves share the same DecisionLog.
@@ -581,6 +593,12 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
 
         for cf, name, parent_src in targets:
             pkg = cf.split("/")[0]
+            # #EXT-017-REQ-2 Start
+            # When --retrieve is active, compute enriched context per target function
+            # (each function's direct dependencies differ).  Falls back to baseline ctx[cf]
+            # when retrieve=False so the default path is byte-identical to before.
+            fn_ctx = enriched_file_context(orig[cf], name) if retrieve else ctx[cf]
+            # #EXT-017-REQ-2 End
             # Artefact paths for this function (written via Runtime through code.write_file).
             spec_path = str((repo / f".jcode/{name}.gherkin").resolve())
             code_path = str((repo / f".jcode/{name}.py").resolve())
@@ -625,7 +643,7 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
                     intent=task["subject"],
                     name=name,
                     current_src=parent_src,
-                    context=ctx[cf],
+                    context=fn_ctx,  # EXT-017: enriched when --retrieve, baseline otherwise
                     pkg=pkg,
                     runtime=rt,
                     spec_path=spec_path,
@@ -661,23 +679,34 @@ def attempt_gherkin_jaros(repo: Path, task: dict, branch: str, timeout: int = 18
         _reset(repo, branch)
 
 
-def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict]) -> dict:
+def run_gherkin_jaros(repo: Path, branch: str, tasks: list[dict],
+                      retrieve: bool = False) -> dict:
     """Run ``attempt_gherkin_jaros`` over all tasks, scored on the hidden oracle.
-    Prints per-task results and a Wilson CI summary — same format as ``run_gherkin``."""
+    Prints per-task results and a Wilson CI summary — same format as ``run_gherkin``.
+
+    retrieve=True (EXT-017): pass enriched per-function context to each attempt.
+    retrieve=False (default): byte-identical to prior behaviour.
+    """
     from collections import Counter
     res: Counter = Counter()
     for i, t in enumerate(tasks):
         try:
-            r = attempt_gherkin_jaros(repo, t, branch)
+            # #EXT-017-REQ-2 Start
+            r = attempt_gherkin_jaros(repo, t, branch, retrieve=retrieve)
+            # #EXT-017-REQ-2 End
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
         res[r] += 1
         print(f"  {i+1}/{len(tasks)} {t['sha'][:8]} [{r}] | {t['subject'][:42]}", flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    print(f">>> RESULT [EXT-013 jaros-native gherkin-loop / intent-only / test HIDDEN]: "
+    # #EXT-017-REQ-2 Start
+    retrieve_tag = " +retrieve" if retrieve else ""
+    print(f">>> RESULT [EXT-013 jaros-native gherkin-loop / intent-only / test HIDDEN"
+          f"{retrieve_tag}]: "
           f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
           f">>> breakdown: {dict(res)}", flush=True)
+    # #EXT-017-REQ-2 End
     return dict(res)
 # #EXT-013-REQ-5 End
 
@@ -1301,7 +1330,7 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 # #EXT-011-REQ-9 Start
 def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
-                            agentic: bool = False) -> dict:
+                            agentic: bool = False, retrieve: bool = False) -> dict:
     """Run the big-bar multi-repo eval (EXT-011 REQ-9 / REQ-10).
 
     Each task must have a "repo" key (set by ``tasks_corpus()``).  The correct repo
@@ -1314,12 +1343,16 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
     agentic=True: 2B-orchestrator path
         (``attempt_gherkin`` with agentic=True — non-deterministic, temp>0 judge).
 
+    retrieve=True (EXT-017): enriched per-function context (direct-dependency signatures).
+    retrieve=False (default): byte-identical to prior behaviour.
+
     The A/B differs ONLY in the driver; the Gherkin grains, self-tests, repair tools,
     and red->green oracle are IDENTICAL between the two arms (honest comparison).
 
     CLI:
         python -m harness.commit_replay --bar big --gherkin-loop --jaros              # deterministic
         python -m harness.commit_replay --bar big --gherkin-loop --jaros --agentic    # orchestrator
+        python -m harness.commit_replay --bar big --gherkin-loop --jaros --retrieve   # enriched ctx
     """
     from collections import Counter
     res: Counter = Counter()
@@ -1334,7 +1367,9 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
             if agentic:
                 r = attempt_gherkin(repo_path, t, branch, agentic=True)
             else:
-                r = attempt_gherkin_jaros(repo_path, t, branch)
+                # #EXT-017-REQ-2 Start
+                r = attempt_gherkin_jaros(repo_path, t, branch, retrieve=retrieve)
+                # #EXT-017-REQ-2 End
             # #EXT-011-REQ-10 End
         except Exception as e:  # noqa: BLE001
             r = f"err:{type(e).__name__}"
@@ -1343,9 +1378,13 @@ def run_gherkin_jaros_multi(repos_dir: Path, tasks: list[dict],
               flush=True)
     k, n = res["pass"], len(tasks)
     lo, hi = wilson(k, n)
-    print(f">>> RESULT [EXT-011 REQ-9/10 big-bar multi-repo {driver_label} / intent-only / test HIDDEN]: "
+    # #EXT-017-REQ-2 Start
+    retrieve_tag = " +retrieve" if retrieve else ""
+    print(f">>> RESULT [EXT-011 REQ-9/10 big-bar multi-repo {driver_label} / intent-only / test HIDDEN"
+          f"{retrieve_tag}]: "
           f"{k}/{n} = {k/n*100:.1f}% red->green  [Wilson95 {lo*100:.1f}-{hi*100:.1f}%]\n"
           f">>> breakdown: {dict(res)}", flush=True)
+    # #EXT-017-REQ-2 End
     return dict(res)
 # #EXT-011-REQ-9 End
 
@@ -1410,7 +1449,13 @@ if __name__ == "__main__":
             else:
                 print(">>> A/B arm: DETERMINISTIC-JAROS (Runtime-gated fix-loop)",
                       flush=True)
-            run_gherkin_jaros_multi(repos_dir, corpus, agentic=use_agentic)
+            # #EXT-017-REQ-2 Start
+            use_retrieve = "--retrieve" in sys.argv
+            if use_retrieve:
+                print(">>> context: ENRICHED +retrieve (direct-dependency signatures, EXT-017)",
+                      flush=True)
+            run_gherkin_jaros_multi(repos_dir, corpus, agentic=use_agentic, retrieve=use_retrieve)
+            # #EXT-017-REQ-2 End
             # #EXT-011-REQ-10 End
         sys.exit(0)
 
@@ -1431,6 +1476,9 @@ if __name__ == "__main__":
         # #EXT-015-REQ-3 Start
         plan = "--plan" in sys.argv         # EXT-015: plan-then-code (plan_agent -> filter -> code)
         # #EXT-015-REQ-3 End
+        # #EXT-017-REQ-2 Start
+        retrieve = "--retrieve" in sys.argv  # EXT-017: enriched per-function direct-dep context
+        # #EXT-017-REQ-2 End
         if jaros:
             n_tasks = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else len(tasks)
             tasks = tasks[:n_tasks]
@@ -1456,8 +1504,12 @@ if __name__ == "__main__":
                 run_gherkin_jaros_plan(repo, branch, tasks)
             # #EXT-015-REQ-3 End
             else:
-                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
-                run_gherkin_jaros(repo, branch, tasks)
+                # #EXT-017-REQ-2 Start
+                retrieve_tag = " +retrieve" if retrieve else ""
+                print(f">>> EXT-013 JAROS-NATIVE GHERKIN-LOOP{retrieve_tag} on {len(tasks)} "
+                      f"{tag} tasks of {repo.name}", flush=True)
+                run_gherkin_jaros(repo, branch, tasks, retrieve=retrieve)
+                # #EXT-017-REQ-2 End
         else:
             mode = "AGENTIC" if agentic else "ENSEMBLE" if ensemble else ("1b(+reviews)" if reviews else "1a")
             print(f">>> EXT-012 GHERKIN-LOOP {mode} on {len(tasks)} {tag} tasks of {repo.name}", flush=True)
