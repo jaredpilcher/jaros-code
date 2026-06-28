@@ -2,7 +2,9 @@
 
 **jaros-code** is a software-development harness built on Jaros whose purpose is to
 match or exceed Claude Code at real coding work **while every reasoning call is
-served by a single small local model — **Gemma 4 2B (`e2b`)**, run locally via llama.cpp — at zero inference cost.**
+served by a single local open-weight model that runs entirely on-device on the Jetson Orin Nano
+via llama.cpp — at zero inference cost** (the specific model is a lever within that on-device
+budget — see commitment 2; the system began on **Gemma 4 2B (`e2b`)**).
 
 **The bar is explicit and high — it is the very North Star: the system must become so
 good that it overcomes the model limitations of Gemma 4 2B (`e2b`) and is AS GOOD OR BETTER,
@@ -34,9 +36,14 @@ out at some pass rate, **100% on HumanEval (and MBPP, SWE-bench, and the rest) i
 reachable — by harness engineering alone.** Every eval failure is therefore a **harness
 failure to diagnose and fix**, never a model limit to accept: the harness did not
 decompose, scaffold, retrieve, verify, or iterate enough to extract the capability the
-model already has. *"The 2B can't"* and *"the model ceiling"* are **forbidden
-conclusions**; the only question a failure poses is *what generic scaffolding is
-missing.* The pursuit of 100% must be **generic** — general mechanisms that lift
+model already has. *"The harness can't be made to do this"* is the **forbidden
+conclusion**; a failure first poses *what generic scaffolding is missing* — harness
+engineering (decompose, ground, retrieve, verify, iterate) remains the **primary craft**,
+applied to whatever on-device model we run, and is never abandoned. Choosing a stronger
+Jetson-fitting open-weight model (commitment 2) is a permitted, largely one-time **platform
+lever** — it is *not* a per-failure escape hatch, and it never excuses thin scaffolding:
+a stronger model raises the floor, but the harness is still what reaches the bar. The
+pursuit of 100% must be **generic** — general mechanisms that lift
 problem-solving across the board, proven on held-out evals — and never overfitting or
 special-casing benchmark items, which would prove nothing and violate honest
 measurement (commitment 3).
@@ -67,15 +74,24 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    no network call originates from a model output. Everything the harness *does*
    is a deterministic tool the clerk runs.
 
-2. **Small-model-only, zero paid inference.**
-   Every reasoning call goes to the local **Gemma 4 2B (`e2b`)** model, served by
-   **llama.cpp** on the Jetson Orin Nano. **Gemma 4 2B (`e2b`) is the EXCLUSIVE model —
-   the only model the system ever calls.** (The earlier Ollama `gemma2:2b` path is legacy,
-   not the intended model.) No cloud model, no
-   paid API, ever — not as a fallback, not "just for the hard parts." If a
-   capability appears to require a larger model, that is a signal to **decompose
-   the work into smaller agent steps and stronger deterministic tools**, never to
-   escalate the model.
+2. **Local-on-device-only, zero paid inference.**
+   Every reasoning call goes to a single local open-weight model served by **llama.cpp**
+   on the **Jetson Orin Nano**, at **zero inference cost**. The binding constraint is
+   **local + fully on-device + free** — *any* open-weight model is permitted **so long as it
+   actually fits and runs on the Jetson** (within its ~8 GB budget). The constraint was never
+   a specific parameter count; it is the device and the zero-cost, no-cloud rule. **No cloud
+   model, no paid API, ever** — not as a fallback, not "just for the hard parts." (The legacy
+   Ollama `gemma2:2b` path is not the intended model.)
+
+   **Model choice is itself a permitted lever (owner directive, 2026-06-27).** The system
+   began on **Gemma 4 2B (`e2b`)** and may move to a stronger Jetson-fitting open-weight model
+   (e.g. a coding-specialized 3–7B) to strengthen the **agentic judgment** a 2B is measurably
+   weak at (independently confirmed: Gemma 4 e2b scored 0/5 on a tool-use-judgment probe).
+   Gemma 4 2B remains the prior baseline and the honest comparison anchor. When a capability
+   appears to exceed the chosen on-device model, the levers are (a) **decompose into smaller
+   agent steps and stronger deterministic tools** and (b) **pick the strongest open-weight
+   model that still fits the Jetson** — but escalating to a cloud or paid model remains
+   absolutely forbidden.
 
    **Decomposition has two directions, not one.** "Decompose" does *not* only mean
    "more, tinier agents." Some judgements are boulders no model-side slice can shrink:
