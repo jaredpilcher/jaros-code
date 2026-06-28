@@ -92,3 +92,10 @@ Runtime scales linearly with k. Use --tasks 5 --k 5 for a quick smoke run (Jetso
 must be up):
 
     python -m harness.passk_probe --tasks 5 --k 5 --temp 0.8
+
+## pass@k probe — temp 0.8 run CONFOUNDED (5/15, 2026-06-28)
+At temp 0.8: pass@k=YES = 0/5 (NO task where any of 20 samples passes), greedy(temp0)=PASS = 1/5.
+SMOKING GUN: task 1 greedy=PASS but all 20 temp-0.8 samples FAIL — the 2B can't even reproduce its OWN
+known-correct answer when sampled at 0.8. -> temp 0.8 is TOO HIGH for this 2B; samples are incoherent,
+so pass@k=0 measures NOISE not latent-capability-absence. Re-probing at temp 0.4 (the fair test: diverse
+but coherent, samples stay near the correct region). Confounded run not used as the verdict.
