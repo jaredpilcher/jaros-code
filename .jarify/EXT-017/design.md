@@ -53,3 +53,6 @@ commit_replay.py  (attempt_gherkin_jaros)
 When multiple helpers qualify, they are sorted by how many times their name appears in
 the target's body (most-called first). This ensures the most-used helpers fit under the
 cap before less-used ones are added.
+
+## VERDICT: #18 enriched repo-context retrieval — PRUNED (2026-06-28)
+At 44/101 the --retrieve arm had 6 pass vs the deterministic baseline's 8 on the SAME tasks — tracking ~parity-or-below, NO lift. Stopped early to pursue the drastic pivot (#23 pass@k probe). Honest non-win: precise direct-dependency repo-context did NOT lift the 2B's generation on the held-out repo bar (consistent with the prior retrieval-negative [[jaros-code-retrieval-fewshot-negative]]). --retrieve kept OPT-IN, never default. This is the last same-frame (single-shot generator-tweak) bet — the capability stayed ~18%. Pivoting to sample-at-scale + strong verifier (#23).
