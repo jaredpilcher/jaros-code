@@ -1,0 +1,17 @@
+{
+  "_comment": "Qwen2.5-Coder-3B-Instruct profile. EXT-021 REQ-4/REQ-5. Classes are EMPTY until profiling run earns them (Tenet 3 — honest).",
+  "id": "qwen2.5-coder-3b",
+  "alias": "qwen2.5-coder-3b",
+  "serve": {
+    "_gguf_note": "Served on Jetson Orin Nano via llama-server. Path must match the operator's local layout. See scripts/jetson_models.json for the confirmed path used during profiling.",
+    "gguf": "/home/jared/gemma-server/Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
+    "ctx": 4096,
+    "ngl": 99,
+    "fits_jetson": true
+  },
+  "classes": [],
+  "adaptation": {
+    "prompts": "qwen-instruct-direct",
+    "note": "Clean direct instruct code-gen, NO Gherkin scaffolding. Qwen-Coder wants a direct 'Implement the Python function ... Output ONLY the function definition' prompt. Earned classes (from profiling run) added to classes[] with evidence."
+  }
+}
