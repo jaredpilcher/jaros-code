@@ -119,6 +119,60 @@ Profile notes:
 - The roster is explored best-first; stop when coverage is sufficient for the routing classes
   needed (no need to profile every candidate if the first one covers the hard classes).
 
+## REQ-5: the coverage tally, judgement/deterministic split, and roster progression
+
+Selection is split cleanly across the two planes (the owner's refinement, 2026-06-28):
+
+```text
+   problem
+     │
+     ▼
+   [model-router AGENT]  JUDGEMENT: what CLASS is this problem?   ← reasoning plane (a Decision)
+     │  class = "multi-step-repo"
+     ▼
+   best_model_for(class)  DETERMINISTIC argmax over the class column ← execution plane (a tool)
+     │
+     ▼  model_id = the measured-best model for that class
+
+   THE COVERAGE TALLY  (deterministic, persisted, kept filled in by the profiler)
+   ┌────────────────────┬───────────────┬───────────────────┬──────────────────┐
+   │ model \ class       │ standalone-fn │ single-file-repair│ multi-step-repo  │
+   ├────────────────────┼───────────────┼───────────────────┼──────────────────┤
+   │ gemma-4-e2b         │ 0.82 ✓        │ 0.18              │  —  (fails)       │
+   │ qwen2.5-coder-3b    │  ? (profiling)│  ? (profiling)    │  ? (profiling)   │
+   │ <next best model>   │  —            │  —                │  —               │
+   └────────────────────┴───────────────┴───────────────────┴──────────────────┘
+   best_model_for(class) = argmax down the class COLUMN (ties → roster order / default)
+```
+
+The class is a **judgement** (only a model can read "what kind of problem is this?"); the best model
+for a known class is a **deterministic table lookup** (argmax over measured scores) — never a model
+guess. Cells are filled ONLY by honest held-out measurement (Tenet 3); an empty cell means "not yet
+measured," and the router falls back + records a new/unhandled class rather than fabricating coverage.
+
+**Roster progression (keep going, indefinitely):**
+
+```text
+   profile current model across ALL known classes (fill its ROW)
+        │  coverage captured?  (every known class measured for this model)
+        ▼ yes
+   admit the NEXT most capable Jetson-fitting model → profile it across all classes → repeat …
+```
+
+**New class → re-profile the whole roster (go back to prior models):**
+
+```text
+   new class discovered (new-class recording)  ──►  add a COLUMN to the tally
+        │
+        ▼  re-profile EVERY roster model against it (gemma, qwen, …) — fill the column
+   the tally stays COMPLETE, so best_model_for(new_class) is always measured, not assumed
+```
+
+So the system never "finishes" a model and forgets it: a new class pulls every prior model back for
+measurement, and the deterministic tally is the single source of truth for which model wins each class.
+Each model's profile also carries the **evals** used to measure its classes (part of its adaptation),
+so re-profiling is reproducible.
+
 ## Relationship to existing specs
 
 - EXT-013/EXT-012 (behavioral solve + orchestrator) is the INNER solve the router wraps — unchanged

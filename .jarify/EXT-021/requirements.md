@@ -1,7 +1,7 @@
 ---
 id: EXT-021
 title: Multi-Model Routing Harness
-status: covered
+status: partial
 priority: high
 implementation:
   - file: harness/model_registry.py
@@ -69,3 +69,24 @@ profiles stay truthful.
 - [x] The roster is ordered best-first (strongest Jetson-fitting model first) and only Jetson-fitting models are admitted (fits the ~8 GB budget). (`_roster.json` `order` field; `fits_jetson()` admission check; APPENDIX in design.md.)
 - [x] Profiling is honest (held-out, visible-spec, no hidden-test leakage) and a class is added to a profile ONLY with recorded evidence. (Honesty gate in `profile_model`: `passed=True` is the sole condition; below-bar classes go to `rejected`, never to the profile JSON — tested in `TestBelowTheBar`.)
 - [x] The end-to-end path (route → rewire → solve with the chosen model's adaptation) is demonstrated on at least two classes routed to two different models. (`harness/solve_routed.py` `solve_routed`; `tests/test_solve_routed.py` — 12 offline tests; stub 2-profile registry proves model-alpha/standalone-fn-gen and model-beta/multi-step-repo end-to-end. TASK-5.)
+
+### [REQ-5] Deterministic best-model-per-class tally + roster progression + new-class re-profiling
+
+(Owner refinement, 2026-06-28.) Model selection splits two-plane: a model **JUDGEMENT** classifies the
+problem's CLASS (an agent decision), and a **DETERMINISTIC tally** selects the best model for that
+class. The tally is a persistent coverage **matrix** (model × class → measured score + evidence), kept
+filled in by the profiler; `best_model_for(class)` is the deterministic argmax over that class's column.
+The roster is explored **progressively**: a model is profiled across **all known classes** before the
+system moves on; once its coverage is captured, the **next most capable Jetson-fitting model** is
+admitted and profiled the same way — and so on, indefinitely. When a **new class** is discovered (the
+new-class recording feature), it is a new column: **every existing roster model is re-profiled against
+it** (go back to prior models) so the tally stays complete. A model's per-model adaptation includes its
+own **evals** (alongside tools/agents/config/prompts). The router never credits a model for a class
+without a tally entry (honest; otherwise default-fallback + record as a new/unhandled class).
+
+#### Acceptance Criteria
+- [ ] A persisted, queryable coverage tally (model × class → {score, bar, date, evidence}); `best_model_for(class) -> model_id` is the deterministic argmax (ties broken by roster order / default).
+- [ ] The router uses model JUDGEMENT to classify the CLASS, then the deterministic tally to SELECT the best model for it (judgement = class; deterministic = selection).
+- [ ] Roster progression: a model is profiled across ALL known classes; a documented "coverage captured" criterion gates admitting + profiling the next-most-capable Jetson-fitting model.
+- [ ] New-class trigger: recording a new class re-profiles ALL existing roster models against it, filling that column of the tally.
+- [ ] A `ModelProfile`'s adaptation set includes the EVALS used to measure its classes (not only tools/agents/config/prompts).

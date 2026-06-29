@@ -80,6 +80,14 @@ co-adapted baseline scored 4/16) — proof that the *adaptation*, not just the w
 performs, so the rewiring is per-model and first-class. The router, the registry lookup, and
 the rewire all flow through the clerk: hash-chain logged and byte-replayable (Tenet 3).
 
+**Selection splits two-plane (owner refinement, 2026-06-28):** the router AGENT uses **judgement**
+to name the problem's CLASS; a **deterministic coverage tally** (model × class → measured score, kept
+filled in by the profiler) then selects the *best* model for that class by argmax — judgement for the
+class, determinism for the choice. The roster grows **forever**: each model is profiled across all
+known classes, then the next most capable Jetson-fitting model is admitted and profiled the same way;
+and a **new class re-profiles every prior model** (go back, don't forget them) so the tally is always
+complete. Per-model adaptation includes that model's own evals. See EXT-021 REQ-5.
+
 ## Why many small agents beat one big one
 
 A single `gemma2:2b` prompt asked to "fix this bug across the repo" fails. The same
