@@ -27,5 +27,12 @@
     "ctx": 8192,
     "ngl": 99,
     "extra_args": ["--threads", "4"]
+  },
+  "qwen3-4b-thinking": {
+    "gguf": "/home/jared/gemma-server/Qwen3-4B-Thinking-2507-Q4_K_M.gguf",
+    "alias": "qwen3-4b-thinking",
+    "ctx": 16384,
+    "ngl": 99,
+    "extra_args": ["--threads", "4"]
   }
 }

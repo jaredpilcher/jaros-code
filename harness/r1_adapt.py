@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import re
 from pathlib import Path
 
@@ -150,7 +151,7 @@ def r1_code(task_or_spec: str, name: str, context: str = "") -> str:
         f"valid Python, correct indentation, no markdown outside the code block."
     )
     reply = _llm().complete(
-        LlmRequest(prompt=prompt, params={"temperature": 0.0, "max_tokens": 3500})
+        LlmRequest(prompt=prompt, params={"temperature": 0.0, "max_tokens": int(os.environ.get("R1_MAX_TOKENS", "3500"))})
     ).text
 
     # Step 1: strip <think>...</think> reasoning trace
