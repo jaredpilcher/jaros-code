@@ -119,3 +119,17 @@ gemma), independent of n.
   form of working memory — bounded, task-scoped, fed progressively.
 - EXT-011 (commit_replay): _run_nodes_fb, _apply_func, oracle infrastructure
   all reused.
+
+## HARD-CLASS SYNTHESIS (2026-06-29) — experiment-to-understand = 0/6; SIX distinct approaches now all 0
+EXT-030 experiment-to-understand (qwen proposes bounded E1/E2/E3 -> observes -> accumulates understanding -> solves, max_experiments=3, oracle sole test-gate): **0/6** on the hard bigbar [fail] tasks. The loop RAN correctly (6 probed, exps=3 each; the NameError was caught + fixed first, not a false 0).
+This is the **SIXTH** distinct, independent solving approach to return 0 on this hard multi-step-repo class:
+  1. pass@k sampling (best-of-N, temp): 0/7
+  2. deterministic decomposition: 0/8
+  3. maximal-help (context + worked example + plan): 0
+  4. decorrelated reasoner (R1-Distill-1.5B, the fitting one): 0/6
+  5. cross-model collaboration (qwen draft -> gemma critique -> qwen revise): 0/6
+  6. experiment-to-understand (agentic run-observe-understand-then-solve): 0/6
+HONEST VERDICT: the weight of evidence across SIX diverse mechanisms strongly favors a genuine ROOT-CAPABILITY wall for the current Jetson-fitting roster (gemma-4-e2b 2B + qwen2.5-coder-3b) on this class — NOT a thin-solve/harness gap. The owner's collaboration/richer-solve hypotheses (2026-06-29) were worth testing + were tested rigorously; the data says combining/sampling/decomposing/exploring does not supply a capability the models lack at the root. The tasks are REAL more-itertools feature commits (new algorithms: interleave_randomly, multidimensional reshape, random derangements) — a high bar for 2-3B models from a commit subject + failing test.
+CAVEAT (honest): each mechanism could be deepened (#33 team-discussion untested); but no single thin implementation explains all SIX independent 0s. Consistent with the multi-model pivot's REVISED principle: per-roster/device ceilings are MEASURED honestly (Tenet 3); system-level no-ceiling means GROW THE ROSTER — but fitting models don't reach it (R1-7B that might doesn't fit the 7.3GB device; R1-1.5B too weak).
+BANKED + REAL: the multi-model harness (complete) + the qwen breadth win (92% HE/65% MBPP vs gemma 82%/25%, routed per-class) + SIX general mechanisms (registry/router/rewire/tally/test-gate, memory, dependency-structure, collaboration, experiment-loop) that lift the EASIER/MEDIUM classes. The hard class is the ONE mapped ceiling.
+DECISION (auto-steer): STEP BACK from grinding the hard class (6 zeros = diminishing returns on a 7th obvious attempt). PIVOT to BANKING + HARDENING the wins (routed solve_routed eval on the 101-bar showing the per-class floor rose). The hard class needs a hardware upgrade or a genuinely novel mechanism — an OWNER strategic call, surfaced not auto-pursued. #33 + #32 remain available but lower-probability.
