@@ -24,6 +24,15 @@ benchmarks where they exist (e.g. SWE-bench / SWE-bench-Verified, HumanEval/MBPP
 Aider's edit benchmark) so the bar is an external, recognized one — not a yardstick
 we drew ourselves. Progress is the benchmark trend, not a feeling.
 
+**Scope: PYTHON-FIRST (owner directive, 2026-06-28).** The system focuses on a SINGLE language —
+**Python** — for now. The evals, the problem **classes** + their taxonomy, the deterministic
+classifier's signals (Python AST + traceback/error parsing), and each model's measured profile are
+all Python-scoped. Other languages are a deliberate LATER expansion, not a current dilution: one
+language done excellently first, then broaden. Until then the roster, the coverage tally, and the
+class ontology are Python-specific, and that focus is a feature — it lets the classifier exploit
+Python-specific structure (typed signatures, tracebacks, imports) rather than staying language-generic
+and shallow.
+
 **The evaluations must get harder and harder.** An eval suite the harness can ace is
 too easy to be informative and MUST be made harder — this is a non-negotiable
 ratchet. As the pass rate on a tier climbs, the system escalates: harder authored
