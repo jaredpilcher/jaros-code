@@ -1,9 +1,21 @@
 {
+  "REQ-7": [
+    {
+      "file": "harness/new_class_log.py",
+      "startLine": 17,
+      "endLine": 285
+    },
+    {
+      "file": "harness/model_router.py",
+      "startLine": 300,
+      "endLine": 309
+    }
+  ],
   "REQ-2": [
     {
       "file": "harness/model_router.py",
       "startLine": 30,
-      "endLine": 289
+      "endLine": 312
     },
     {
       "file": "harness/solve_routed.py",

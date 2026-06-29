@@ -139,7 +139,7 @@ class TestRouteFallback:
     def test_uncovered_class_routes_to_default(self):
         """Repo task, only gemma registered (covers standalone) -> fallback to gemma."""
         reg = _gemma_only_registry()
-        decision = route({"is_repo_task": True}, reg)
+        decision = route({"is_repo_task": True}, reg, record=False)
 
         assert decision["model_id"] == "gemma-4-e2b"  # the only / default model
         assert decision["confidence"] < 0.5
@@ -147,13 +147,13 @@ class TestRouteFallback:
     def test_fallback_confidence_is_low(self):
         """Fallback decisions must have clearly low confidence."""
         reg = _gemma_only_registry()
-        decision = route({"is_repo_task": True}, reg)
+        decision = route({"is_repo_task": True}, reg, record=False)
         assert decision["confidence"] <= 0.3
 
     def test_fallback_rationale_contains_harness_gap_marker(self):
         """HARNESS-GAP marker must appear so the convergence loop can see it."""
         reg = _gemma_only_registry()
-        decision = route({"is_repo_task": True}, reg)
+        decision = route({"is_repo_task": True}, reg, record=False)
         assert "HARNESS-GAP" in decision["rationale"]
 
     def test_fallback_rationale_not_model_limit(self):
@@ -164,7 +164,7 @@ class TestRouteFallback:
         is attributing the fallback TO the model without denial.
         """
         reg = _gemma_only_registry()
-        decision = route({"is_repo_task": True}, reg)
+        decision = route({"is_repo_task": True}, reg, record=False)
         # The gap marker is the positive signal; just verify it's present
         assert "HARNESS-GAP" in decision["rationale"]
         # Must NOT use a bare "is a model limit" or "model ceiling" attribution
@@ -175,7 +175,7 @@ class TestRouteFallback:
     def test_empty_registry_always_returns_default(self):
         """Even with zero loaded profiles, route() returns the default id."""
         reg = ModelRegistry(profiles=[], default_id="gemma-4-e2b")
-        decision = route({"source": "do something"}, reg)
+        decision = route({"source": "do something"}, reg, record=False)
 
         assert decision["model_id"] == "gemma-4-e2b"
         assert isinstance(decision["model_id"], str)

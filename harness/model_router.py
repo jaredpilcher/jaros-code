@@ -196,6 +196,8 @@ def route(
     problem: Any,
     registry: Any,
     llm: Any = None,
+    *,
+    record: bool = True,
 ) -> dict[str, Any]:
     """Classify *problem* and select the best-matching registry model.
 
@@ -213,6 +215,10 @@ def route(
         deterministic confidence < ``_AMBIGUITY_THRESHOLD``, the LLM is
         asked to supply a class label.  The deterministic path is fully
         self-contained when ``llm=None``.
+    record:
+        When ``True`` (the default), a HARNESS-GAP result appends one record
+        to the new-class log via ``harness.new_class_log.record_unhandled``.
+        Set to ``False`` in unit tests to keep them side-effect-free.
 
     Returns
     -------
@@ -223,10 +229,12 @@ def route(
         Never raises.  Always returns a valid model_id (worst-case: the
         registry default).
 
-    Tenet 1 guarantee
-        This function has NO side effects.  It reads ``registry`` and
-        optionally calls ``llm``; it does not write files, serve models,
-        modify environment state, or perform I/O beyond those calls.
+    Tenet 1 note
+        The routing decision itself has NO side effects.  When ``record=True``
+        a HARNESS-GAP triggers a best-effort JSONL append (new_class_log);
+        that append is the honest observation that a class is unhandled, and
+        it never mutates routing state.  Pass ``record=False`` when callers
+        need a fully pure read (e.g. unit tests, replay).
     """
     # 1. Normalise problem representation
     problem_dict = _to_dict(problem)
@@ -261,6 +269,7 @@ def route(
     default_id: str = registry.default_model()
     covering_ids: list[str] = registry.lookup_by_class(problem_class)
 
+    is_gap: bool = False
     if covering_ids:
         # Prefer the default model if it also covers the class (roster preference)
         if default_id in covering_ids:
@@ -279,11 +288,25 @@ def route(
             f"routed to default '{model_id}' -- "
             "add held-out evidence to a profile to close this gap (not a model limit)"
         )
+        is_gap = True
 
-    return {
+    decision: dict[str, Any] = {
         "model_id": model_id,
         "problem_class": problem_class,
         "confidence": float(confidence),
         "rationale": "; ".join(rationale_parts),
     }
+
+    # #EXT-021-REQ-7 Start
+    # DISCOVER: record unhandled problems so the class ontology can evolve.
+    # Only fires on HARNESS-GAP (no measured coverage); never blocks the return.
+    if record and is_gap:
+        try:
+            from harness.new_class_log import record_unhandled  # lazy to avoid circ-import
+            record_unhandled(problem_dict, decision)
+        except Exception:
+            pass  # best-effort; routing decision is unaffected
+    # #EXT-021-REQ-7 End
+
+    return decision
 # #EXT-021-REQ-2 End
