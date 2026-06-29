@@ -68,35 +68,86 @@ def _default_solve_fn(
     problem: Any,
     decision: dict,
     rewire_result: dict,
+    registry: Optional[Any] = None,
 ) -> dict:
-    """Thin adapter: extract problem fields and call ``behavioral_solve``.
+    """Adaptation-aware adapter: dispatch to the active model's code-gen then solve.
 
     This is the DEFAULT solve path when no ``solve_fn`` is injected into
-    ``solve_routed``.  It maps the generic ``problem`` dict / object to the
-    ``behavioral_solve`` signature.
+    ``solve_routed``.  When *registry* is supplied (by ``solve_routed``'s closure),
+    the routed model's adaptation is resolved and its code-gen callable is used
+    as the code-generation step:
 
-    Required problem keys
-    ---------------------
-    intent    : str      — the change to make (commit message / user request)
-    name      : str      — the function to write/repair
-    run_tests : callable — env adapter ``(code, test_code) -> (passed, feedback)``
+    - ``qwen-instruct-direct``  →  ``harness.qwen_adapt.qwen_code``
+    - ``gherkin-decompose``     →  ``g_gherkin`` + ``g_code`` wrapper (Gemma)
+    - unknown / missing label   →  DEFAULT fallback to ``gherkin-decompose``
 
-    Optional
-    --------
-    current_src : str | None — existing source (None if new function)
-    context     : str        — module preamble (imports/sentinels)
-    pkg         : str        — import package for self-tests
-    max_fix     : int        — fix iterations (default 2)
+    When no *registry* is available (or the model_id is not found in the registry),
+    the function falls back to the legacy ``behavioral_solve`` path — keeping
+    backward compatibility for all existing call sites.
+
+    Adaptation path (registry provided and profile found)
+    -----------------------------------------------------
+    Required problem keys : intent, name
+    Optional problem keys : context, run_tests, max_fix
+
+    Legacy fallback path (no registry / profile)
+    --------------------------------------------
+    Required problem keys : intent, name, run_tests
+    Optional problem keys : current_src, context, pkg, max_fix
 
     Raises ``KeyError`` with a descriptive message if required keys are missing.
     """
-    # Late import: avoids pulling in the full behavioral_solve dependency chain
-    # when solve_routed is used with an injected solve_fn (e.g. in tests).
-    from harness.behavioral_solve import behavioral_solve  # noqa: PLC0415
-
+    # #EXT-021-REQ-3 Start
     p: dict = problem if isinstance(problem, dict) else (
         vars(problem) if hasattr(problem, "__dict__") else {}
     )
+
+    # -- Adaptation-aware dispatch ------------------------------------------
+    # Resolve the routed model's profile and look up its code-gen callable.
+    # ``registry`` is injected by solve_routed / solve_routed_escalating as a
+    # closure so the adaptation fires automatically for every non-injected solve.
+    _code_gen = None
+    if registry is not None:
+        _model_id: str = decision.get("model_id", "")
+        _profile = registry.lookup_by_id(_model_id)
+        if _profile is not None:
+            from harness.adaptation import code_gen_for  # noqa: PLC0415
+            _code_gen = code_gen_for(_profile.adaptation)
+
+    if _code_gen is not None:
+        # Adaptation path: call the model's code-gen, then optionally run tests.
+        _adapt_required = ("intent", "name")
+        _adapt_missing = [k for k in _adapt_required if k not in p]
+        if _adapt_missing:
+            raise KeyError(
+                f"Default solve_fn (adaptation path) requires problem dict keys: "
+                f"{_adapt_required}; missing: {_adapt_missing}.  "
+                "Inject a custom solve_fn or include these fields in the problem dict."
+            )
+        intent: str = p["intent"]
+        name: str = p["name"]
+        context: str = p.get("context", "")
+        run_tests = p.get("run_tests")   # optional for the adaptation path
+        max_fix: int = p.get("max_fix", 2)
+
+        code: str = _code_gen(intent, name, context)
+        self_pass = False
+        if run_tests is not None and code:
+            for _attempt in range(max_fix + 1):
+                self_pass, _fb = run_tests(code, "")
+                if self_pass:
+                    break
+                if _attempt < max_fix:
+                    # Re-generate; code_gen owns the feedback channel (e.g. qwen
+                    # keeps temperature=0 so additional calls are deterministic).
+                    code = _code_gen(intent, name, context)
+        return {"code": code, "self_pass": self_pass}
+    # #EXT-021-REQ-3 End
+
+    # -- Legacy fallback: no adaptation info → behavioral_solve ---------------
+    # Late import: avoids pulling in the full behavioral_solve dependency chain
+    # when solve_routed is used with an injected solve_fn (e.g. in tests).
+    from harness.behavioral_solve import behavioral_solve  # noqa: PLC0415
 
     _required = ("intent", "name", "run_tests")
     _missing = [k for k in _required if k not in p]
@@ -184,7 +235,15 @@ def solve_routed(
     # 2. Resolve injectable callables -----------------------------------------
     _route: Callable = route_fn if route_fn is not None else route
     _rewire: Callable = rewire_fn if rewire_fn is not None else rewire
-    _solve: Callable = solve_fn if solve_fn is not None else _default_solve_fn
+    if solve_fn is not None:
+        _solve: Callable = solve_fn
+    else:
+        # Capture registry in a closure so _default_solve_fn can resolve the
+        # active model's adaptation without changing the (problem, decision,
+        # rewire_result) call signature used throughout the rest of the pipeline.
+        _reg = registry
+        def _solve(problem, decision, rewire_result):  # type: ignore[misc]
+            return _default_solve_fn(problem, decision, rewire_result, registry=_reg)
 
     # 3. Route: produce an INERT Decision (Tenet 1 -- no side effects here) ---
     decision: dict = _route(problem, registry)
@@ -328,7 +387,14 @@ def solve_routed_escalating(
     # 2. Resolve injectable callables -------------------------------------------
     _route: Callable = route_fn if route_fn is not None else route
     _rewire: Callable = rewire_fn if rewire_fn is not None else rewire
-    _solve: Callable = solve_fn if solve_fn is not None else _default_solve_fn
+    if solve_fn is not None:
+        _solve: Callable = solve_fn
+    else:
+        # Same registry-capturing closure as solve_routed: adaptation fires
+        # automatically for every non-injected solve across the escalation loop.
+        _reg_esc = registry
+        def _solve(problem, decision, rewire_result):  # type: ignore[misc]
+            return _default_solve_fn(problem, decision, rewire_result, registry=_reg_esc)
     # test_fn must be provided for real use; default is honest pass=False
     _test: Callable = test_fn if test_fn is not None else (
         lambda _prob, _sol: {"passed": False, "reason": "no test_fn provided"}
