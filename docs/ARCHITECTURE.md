@@ -1,10 +1,18 @@
 # jaros-code — Architecture & How It Works
 
 A software-development harness built on **Jaros** that aims to reach Claude-Code-on-
-Opus-4.8 quality while every reasoning call is served by a single small local model —
-**Gemma 4 2B (`e2b`)** via llama.cpp on the Jetson Orin Nano — at zero inference cost.
+Opus-4.8 quality while every reasoning call is served by a **small open-weight model
+running on the Jetson Orin Nano** via llama.cpp — at zero inference cost.
+As of 2026-06 it is a **MULTI-MODEL** harness: a deterministic router classifies each
+problem and sends it to the on-device model measured-best for that *class*, then the
+harness **rewires itself** to that model. The roster: **Gemma 4 2B (`e2b`)** (default +
+honest baseline), **Qwen2.5-Coder-3B** (stronger synthesis), and **Qwen3-4B-Thinking**
+(the reasoner that earns the hard multi-step-repo class). Cheap models first; escalate to
+a stronger fitting model on a test failure — never to the cloud.
 (Legacy Ollama `gemma2:2b` path remains selectable for back-compat.)
-The wager: *small models underperform because their harnesses are thin, not because the models are incapable.*
+The wager: *small models underperform because their harnesses are thin, not because the
+models are incapable — and where one model's class-ceiling is real, the system routes to a
+stronger Jetson-fitting model instead of denying the limit.*
 
 This document is the written-up, honest picture of the whole system. It is governed by
 `.jarify/PRIME-001` (the prime directive) and the `EXT-00x` specs.
