@@ -238,7 +238,7 @@ python3 jetson_model_manager.py          # serves the default model + the contro
 
 ```bash
 git clone https://github.com/jaredpilcher/jaros-code && cd jaros-code
-pip install -r requirements.txt          # llama.cpp client, pytest, etc.
+pip install -r requirements.txt          # the Jaros runtime (PyPI) + test deps; no heavy ML deps
 
 export JCODE_LLM_BACKEND=llamacpp
 export LLAMACPP_HOST=http://<jetson-ip>:8000      # e.g. http://192.168.1.183:8000
