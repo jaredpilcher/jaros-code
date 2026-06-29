@@ -30,6 +30,8 @@ import json
 import os
 import shlex
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -47,11 +49,12 @@ _JETSON_SSH_HOST: str = os.environ.get("JETSON_SSH_HOST", "jetson")
 
 
 # ---------------------------------------------------------------------------
-# Guarded Jetson swap — the ONLY swap path; constrained, never arbitrary
+# SSH fallback swap — guarded, constrained, never arbitrary; NOT the default
+# (Default swap path is _manager_swap via the HTTP model-manager API below.)
 # ---------------------------------------------------------------------------
 
 def _jetson_swap(serve_params: dict) -> None:
-    """Swap the Jetson llama.cpp model by updating gemma.service env + restart.
+    """SSH fallback: swap the Jetson llama.cpp model via gemma.service env + restart.
 
     Accepts ONLY a validated serve-params dict (keys: gguf, ctx, ngl).
     It does NOT accept or execute an arbitrary command string — Tenet 1.
@@ -123,6 +126,100 @@ def _jetson_swap(serve_params: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Jetson model-manager HTTP control API (default swap + serving-state path)
+# ---------------------------------------------------------------------------
+
+
+def _manager_base() -> str:
+    """Return the model-manager control URL.
+
+    Configurable via env var ``JCODE_MODEL_MANAGER_URL``.  Defaults to the
+    fixed LAN address of the Jetson model-manager daemon (port 8001).
+    """
+    return os.environ.get("JCODE_MODEL_MANAGER_URL", "http://192.168.1.183:8001")
+
+
+def _manager_current() -> Optional[str]:
+    """Query the on-device model-manager for the currently-served model id.
+
+    GET {_manager_base()}/current -> {"current": "<model_id>"|null, "serving_ok": bool}
+
+    Returns the ``"current"`` field string, or ``None`` on any error (network
+    unreachable, timeout, JSON parse error, etc.) — the caller treats ``None``
+    as "unknown / not yet serving" and triggers a swap to the target.
+
+    This is the DEFAULT ``serving_state`` provider for ``rewire()``.
+    """
+    try:
+        url = f"{_manager_base()}/current"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        return data.get("current") or None
+    except Exception:
+        return None
+
+
+def _manager_swap(model_id: str) -> dict:
+    """Swap the Jetson to *model_id* via the model-manager HTTP control API.
+
+    POST {_manager_base()}/serve  body: {"model": model_id}
+
+    The manager daemon blocks until llama-server is up on :8000 (typically
+    15-20 s) and returns ``{"ok": True, "current": ..., "swapped": ...,
+    "ready": True}`` on success.  Raises ``RuntimeError`` honestly if the
+    manager returns a non-ok/non-ready response or if the endpoint is
+    unreachable — Tenet 3.
+
+    This is the DEFAULT ``swap_fn`` for ``rewire()``.  The manager daemon
+    (``scripts/jetson_model_manager.py``) is the ONLY agent that touches
+    llama-server; this call never escalates off-device beyond the LAN
+    control endpoint — Tenet 2.
+
+    Parameters
+    ----------
+    model_id : str
+        The model id as known to the manager catalog
+        (e.g. ``"gemma-4-e2b"``, ``"qwen2.5-coder-3b"``).
+
+    Returns
+    -------
+    dict
+        The manager's response body: ``{ok, current, swapped, ready}``.
+
+    Raises
+    ------
+    RuntimeError
+        If the manager is unreachable, returns an HTTP error, or its
+        response has ``ok=false`` / ``ready=false`` — always raised, never
+        silently swallowed (Tenet 3).
+    """
+    url = f"{_manager_base()}/serve"
+    body = json.dumps({"model": model_id}).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result: dict = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"Manager HTTP error {exc.code}: {exc.reason}"
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(f"Manager unreachable: {exc}") from exc
+
+    if not result.get("ok") or not result.get("ready"):
+        raise RuntimeError(
+            f"Manager swap not ok/ready: "
+            f"ok={result.get('ok')!r}, ready={result.get('ready')!r}, "
+            f"response={result!r}"
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Default serving-state provider (reads local state file — no network call)
 # ---------------------------------------------------------------------------
 
@@ -191,7 +288,7 @@ def rewire(
     registry: Any,
     *,
     serving_state: Optional[Callable[[], Optional[str]]] = None,
-    swap_fn: Optional[Callable[[dict], None]] = None,
+    swap_fn: Optional[Callable[[str], Any]] = None,
     activate_fn: Optional[Callable[[dict, str], Any]] = None,
 ) -> dict:
     """Deterministically rewire the harness to *model_id*.
@@ -207,16 +304,19 @@ def rewire(
     registry :
         A ``ModelRegistry`` instance (``harness.model_registry``).
     serving_state :
-        Optional callable ``() -> str | None`` returning the alias of the
-        currently-served model.  Default reads the local state file (no
-        network call — Tenet 2 / offline-testable).  Inject a lambda stub
-        for unit tests.
+        Optional callable ``() -> str | None`` returning the id/alias of the
+        currently-served model.  Default is ``_manager_current``, which
+        queries the on-device model-manager HTTP API (GET /current) and
+        returns ``None`` on any error (triggers a swap to ensure the target
+        is live).  Inject a lambda stub for unit tests.
     swap_fn :
-        Optional callable ``(serve_params: dict) -> None`` that performs the
-        Jetson model swap.  Default is ``_jetson_swap`` (guarded — accepts
-        a serve-params dict only; no arbitrary command strings; SSH to the
-        fixed Jetson host only — Tenet 1 + Tenet 2).  Inject a mock for
-        unit tests so no live Jetson or SSH is required.
+        Optional callable ``(model_id: str) -> Any`` that performs the
+        Jetson model swap.  Default is ``_manager_swap``, which POST-s to
+        the on-device model-manager HTTP control API — no SSH required (the
+        manager daemon is the only agent that touches llama-server — Tenet 2).
+        Inject a mock for unit tests so no live Jetson or network is needed.
+        The old SSH path (``_jetson_swap``) is still importable as a labeled
+        fallback but is no longer the default.
     activate_fn :
         Optional callable ``(adaptation: dict, alias: str) -> Any`` that
         records and activates the model's adaptation.  Default writes
@@ -236,18 +336,18 @@ def rewire(
     ----------------
     - **Tenet 1**: ``_jetson_swap`` accepts only a serve-params dict; no
       arbitrary command execution path exists.
-    - **Tenet 2**: swap is scoped to the known Jetson device + gemma.service;
-      never escalates off-device.
+    - **Tenet 2**: swap uses the LAN model-manager control endpoint only;
+      the manager daemon owns llama-server — we never escalate off-device.
     - **Tenet 3**: all failures are in the return dict; none are hidden.
     - **Idempotent**: re-rewiring to the already-served model performs no swap
       and still ensures activation is current.
     """
     # -- resolve callables (defaults when not injected) ----------------------
     _ss: Callable[[], Optional[str]] = (
-        serving_state if serving_state is not None else _default_serving_state
+        serving_state if serving_state is not None else _manager_current
     )
-    _swap: Callable[[dict], None] = (
-        swap_fn if swap_fn is not None else _jetson_swap
+    _swap: Callable[[str], Any] = (
+        swap_fn if swap_fn is not None else _manager_swap
     )
     _activate: Callable[[dict, str], Any] = (
         activate_fn if activate_fn is not None else _default_activate_fn
@@ -278,7 +378,7 @@ def rewire(
     swapped = False
     if served_before != profile.alias:
         try:
-            _swap(profile.serve)
+            _swap(model_id)
             swapped = True
         except Exception as exc:
             return {
@@ -288,7 +388,7 @@ def rewire(
                 "served_after": None,
                 "adaptation_active": [],
                 "ok": False,
-                "error": f"Jetson swap failed: {exc}",
+                "error": f"Swap failed: {exc}",
             }
 
     # 4. Point the active LLM client at the new/current alias -----------------

@@ -1,33 +1,21 @@
 {
-  "REQ-1": [
-    {
-      "file": "harness/model_registry.py",
-      "startLine": 18,
-      "endLine": 194
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "harness/model_router.py",
-      "startLine": 30,
-      "endLine": 289
-    },
-    {
-      "file": "harness/solve_routed.py",
-      "startLine": 53,
-      "endLine": 229
-    }
-  ],
   "REQ-3": [
     {
       "file": "harness/model_rewire.py",
       "startLine": 28,
-      "endLine": 322
+      "endLine": 422
     },
     {
       "file": "harness/solve_routed.py",
       "startLine": 54,
       "endLine": 230
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/model_registry.py",
+      "startLine": 18,
+      "endLine": 194
     }
   ],
   "REQ-4": [
@@ -40,6 +28,18 @@
       "file": "harness/solve_routed.py",
       "startLine": 55,
       "endLine": 231
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/model_router.py",
+      "startLine": 30,
+      "endLine": 289
+    },
+    {
+      "file": "harness/solve_routed.py",
+      "startLine": 53,
+      "endLine": 229
     }
   ]
 }

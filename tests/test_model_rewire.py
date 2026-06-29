@@ -19,9 +19,11 @@ Acceptance criteria covered
 from __future__ import annotations
 
 import inspect
+import json
 import sys
 from pathlib import Path
 from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -30,7 +32,12 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from harness.model_registry import ModelProfile, ModelRegistry
-from harness.model_rewire import rewire, _jetson_swap
+from harness.model_rewire import (
+    rewire,
+    _jetson_swap,
+    _manager_current,
+    _manager_swap,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +177,10 @@ class TestAlreadyServed:
 class TestSwapDifferentModel:
     """rewire() to a different model -> swap_fn called once with correct serve params."""
 
-    def test_swap_called_once_with_serve_params(self):
+    def test_swap_called_once_with_model_id(self):
+        """swap_fn is called exactly once, receiving the target model_id string."""
         registry = _make_registry(_GEMMA, _STRONG)
-        swap_calls: list[dict] = []
+        swap_calls: list = []
 
         rewire(
             "strong-7b",
@@ -183,9 +191,10 @@ class TestSwapDifferentModel:
         )
 
         assert len(swap_calls) == 1, "swap_fn must be called exactly once"
-        # The serve dict passed must be the target profile's serve dict
-        assert swap_calls[0] is _STRONG.serve, (
-            "swap_fn must receive the target profile's serve dict (identity check)"
+        # swap_fn now receives the model_id string (not the serve-params dict);
+        # the manager API accepts the id directly.
+        assert swap_calls[0] == "strong-7b", (
+            "swap_fn must receive the target model_id string"
         )
 
     def test_swapped_true_after_different_model(self):
@@ -615,3 +624,169 @@ class TestReturnSchema:
             activate_fn=_stub_activate,
         )
         self._assert_schema(result)
+
+
+# ---------------------------------------------------------------------------
+# Manager HTTP control API unit tests — OFFLINE (urlopen mocked, no network)
+# ---------------------------------------------------------------------------
+
+class TestManagerHttp:
+    """Unit tests for _manager_current and _manager_swap — mocked urlopen, no network."""
+
+    # -- helpers --------------------------------------------------------------
+
+    def _make_cm(self, response_body: dict) -> MagicMock:
+        """Return a mock context manager yielding response_body JSON bytes."""
+        cm = MagicMock()
+        cm.read.return_value = json.dumps(response_body).encode()
+        cm.__enter__ = MagicMock(return_value=cm)
+        cm.__exit__ = MagicMock(return_value=False)
+        return cm
+
+    # -- _manager_swap: correct POST URL + body --------------------------------
+
+    def test_manager_swap_posts_to_serve_url(self):
+        """_manager_swap must POST to {base}/serve."""
+        ok_body = {"ok": True, "current": "gemma-4-e2b", "swapped": True, "ready": True}
+        cm = self._make_cm(ok_body)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return cm
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            _manager_swap("gemma-4-e2b")
+
+        assert len(captured) == 1
+        assert captured[0].full_url.endswith("/serve"), (
+            f"Expected URL to end with '/serve', got: {captured[0].full_url!r}"
+        )
+
+    def test_manager_swap_post_body_contains_model_id(self):
+        """_manager_swap body must be JSON {\"model\": model_id}."""
+        ok_body = {"ok": True, "current": "qwen2.5-coder-3b", "swapped": True, "ready": True}
+        cm = self._make_cm(ok_body)
+        captured = []
+
+        def fake_urlopen(req, timeout=None):
+            captured.append(req)
+            return cm
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            _manager_swap("qwen2.5-coder-3b")
+
+        posted = json.loads(captured[0].data.decode())
+        assert posted == {"model": "qwen2.5-coder-3b"}, (
+            f"POST body must be {{\"model\": model_id}}, got {posted!r}"
+        )
+
+    def test_manager_swap_returns_response_dict_on_success(self):
+        """_manager_swap returns the manager response dict on success."""
+        ok_body = {"ok": True, "current": "gemma-4-e2b", "swapped": True, "ready": True}
+        cm = self._make_cm(ok_body)
+
+        with patch("urllib.request.urlopen", lambda req, timeout=None: cm):
+            result = _manager_swap("gemma-4-e2b")
+
+        assert result["ok"] is True
+        assert result["ready"] is True
+
+    # -- _manager_swap: honest failure on ok=false ----------------------------
+
+    def test_manager_swap_raises_on_ok_false(self):
+        """_manager_swap raises RuntimeError if manager response has ok=false."""
+        fail_body = {"ok": False, "current": None, "swapped": False, "ready": False}
+        cm = self._make_cm(fail_body)
+
+        with patch("urllib.request.urlopen", lambda req, timeout=None: cm):
+            with pytest.raises(RuntimeError) as exc_info:
+                _manager_swap("qwen2.5-coder-3b")
+
+        msg = str(exc_info.value).lower()
+        assert "ok" in msg or "ready" in msg, (
+            f"RuntimeError must mention 'ok' or 'ready', got: {msg!r}"
+        )
+
+    def test_manager_swap_raises_on_ready_false(self):
+        """_manager_swap raises RuntimeError if ready=false even when ok=true."""
+        body = {"ok": True, "current": "gemma-4-e2b", "swapped": True, "ready": False}
+        cm = self._make_cm(body)
+
+        with patch("urllib.request.urlopen", lambda req, timeout=None: cm):
+            with pytest.raises(RuntimeError):
+                _manager_swap("gemma-4-e2b")
+
+    def test_manager_swap_raises_on_network_error(self):
+        """_manager_swap raises RuntimeError if the manager is unreachable."""
+        with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+            with pytest.raises(RuntimeError) as exc_info:
+                _manager_swap("gemma-4-e2b")
+        assert "unreachable" in str(exc_info.value).lower() or "connection" in str(exc_info.value).lower()
+
+    # -- _manager_current: returns current field -------------------------------
+
+    def test_manager_current_returns_current_field(self):
+        """_manager_current returns the 'current' field string on success."""
+        ok_body = {"current": "gemma-4-e2b", "serving_ok": True}
+        cm = self._make_cm(ok_body)
+
+        with patch("urllib.request.urlopen", lambda url, timeout=None: cm):
+            result = _manager_current()
+
+        assert result == "gemma-4-e2b"
+
+    def test_manager_current_returns_none_on_network_error(self):
+        """_manager_current returns None if the endpoint is unreachable."""
+        with patch("urllib.request.urlopen", side_effect=OSError("unreachable")):
+            result = _manager_current()
+        assert result is None
+
+    def test_manager_current_returns_none_on_null_current(self):
+        """_manager_current returns None when the manager reports current=null."""
+        ok_body = {"current": None, "serving_ok": False}
+        cm = self._make_cm(ok_body)
+
+        with patch("urllib.request.urlopen", lambda url, timeout=None: cm):
+            result = _manager_current()
+
+        assert result is None
+
+    # -- rewire() integration: ok=False on manager failure --------------------
+
+    def test_rewire_ok_false_when_manager_swap_fails(self):
+        """rewire() returns ok=False if the injected swap_fn raises (manager failure)."""
+        registry = _make_registry(_GEMMA)
+
+        def manager_fail_swap(model_id: str):
+            raise RuntimeError("Manager swap not ok/ready: ok=False, ready=False")
+
+        result = rewire(
+            "gemma-4-e2b",
+            registry,
+            serving_state=lambda: None,   # unknown -> swap triggered
+            swap_fn=manager_fail_swap,
+            activate_fn=_stub_activate,
+        )
+
+        assert result["ok"] is False
+        assert result["error"] is not None
+        assert "ok=False" in result["error"] or "False" in result["error"]
+
+    def test_rewire_swap_fn_receives_model_id_string(self):
+        """rewire() passes the model_id string (not serve dict) to swap_fn."""
+        registry = _make_registry(_GEMMA, _STRONG)
+        captured = []
+
+        rewire(
+            "strong-7b",
+            registry,
+            serving_state=lambda: "gemma-4-e2b",
+            swap_fn=lambda mid: captured.append(mid),
+            activate_fn=_stub_activate,
+        )
+
+        assert len(captured) == 1
+        assert captured[0] == "strong-7b", (
+            f"swap_fn must receive the model_id string, got {captured[0]!r}"
+        )
