@@ -1,0 +1,32 @@
+{
+  "id": "qwen3-4b-thinking",
+  "alias": "qwen3-4b-thinking",
+  "serve": {
+    "gguf": "/home/jared/gemma-server/Qwen3-4B-Thinking-2507-Q4_K_M.gguf",
+    "ctx": 16384,
+    "ngl": 99,
+    "fits_jetson": true
+  },
+  "classes": [
+    {
+      "name": "hard-multi-step-repo",
+      "bar": "bigbar [fail] tasks (gemma+qwen both 0/8; all 6 prior harness approaches 0)",
+      "score": "1/4 conclusive — CRACKED cca32949 (fix last() when __reversed__ is None), a task the 2-3B roster + 6 prior approaches ALL failed; tasks 4,5,6 genuine fail; tasks 2,3 INCONCLUSIVE (device RAM ~224MB + ~10 tok/s runaway-thinking timeouts, not a clean fail)",
+      "date": "2026-06-29"
+    }
+  ],
+  "adaptation": {
+    "prompts": "r1-reasoning",
+    "note": "Qwen3-4B-Thinking-2507 native <think> reasoning; r1_code parses the code AFTER </think>; needs R1_MAX_TOKENS>=7000-10000 (else the thinking trace truncates the code -> false fail); SLOW ~10 tok/s on the Jetson; ctx 16384; runaway thinking on the hardest tasks can exceed even a 10000-token budget"
+  },
+  "status": "ADMITTED 2026-06-29 — earned the hard-multi-step-repo class: cracked >=1 hard task the 2-3B roster + 6 distinct harness approaches (pass@k, decomposition, maximal-help, decorrelated-reasoner, collaboration, experiment-to-understand) all returned 0 on. The hard class was NOT a pure root-capacity wall — a FITTING reasoner breaks it on the current 7.3GB Jetson. Route the hard class to it via REQ-6 test-gated ESCALATION (cheap gemma/qwen first since qwen3 is slow; escalate to qwen3-4b-thinking on test-fail).",
+  "honesty_caveat": "The hard tasks are real PUBLIC more-itertools commits, so training-data memorization cannot be fully excluded for ANY model. But the 2-3B roster failed the IDENTICAL tasks, so qwen3-4b-thinking solving one is a genuine capability difference (recall or reason), not a setup artifact. Test-gate (_run_nodes oracle) is the sole arbiter. Full count was device-limited (slow + RAM); 1/4 conclusive, not a clean 6/6 measurement.",
+  "security_vet": {
+    "source": "unsloth/Qwen3-4B-Thinking-2507-GGUF (HuggingFace, reputable widely-used GGUF converter)",
+    "license": "Apache-2.0 (Qwen3)",
+    "offline": "runs entirely on the Jetson via llama.cpp; no network egress (Tenet 2)",
+    "runtime_backstop": "two-plane gate — model emits only inert Decisions; deterministic clerk + test-gate validate every side effect",
+    "size_gb": 2.5,
+    "verified": "HF content-length match (2497281152 bytes) + GGUF magic confirmed on download"
+  }
+}
