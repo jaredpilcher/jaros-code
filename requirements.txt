@@ -1,0 +1,21 @@
+# jaros-code dependencies — Python 3.12+
+#
+# RUNTIME: the harness uses ONLY the Python standard library plus the Jaros runtime.
+# There are intentionally no heavyweight runtime deps (no torch, no transformers) —
+# inference runs remotely on the Jetson via llama.cpp's HTTP API (urllib, stdlib).
+#
+# ── Jaros (required runtime) ─────────────────────────────────────────────────
+# Jaros is the two-plane execution runtime jaros-code is built on (Decision/gate/
+# executor/hash-chained DecisionLog/replay). It is a SEPARATE package with its own
+# repository and pyproject.toml. Install it from source — choose one:
+#
+#     pip install git+https://github.com/jaredpilcher/jaros        # if/when published
+#     # — or, with the jaros repo cloned alongside this one —
+#     pip install -e ../jaros
+#
+# (Set the URL/path to your actual Jaros checkout. This is the one dependency a fresh
+#  clone needs to import before `python -m harness.cli` will run.)
+
+# ── test / dev only ──────────────────────────────────────────────────────────
+pytest>=7.0
+requests>=2.28        # used by tests/test_ext001_tools.py
