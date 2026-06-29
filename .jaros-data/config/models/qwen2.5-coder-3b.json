@@ -15,7 +15,8 @@
       "bar": "HumanEval pass@1 >=50% (held-out HumanEval[:12])",
       "score": "~11/12 (92%)",
       "date": "2026-06-28",
-      "note": "Qwen2.5-Coder-3B direct instruct gen (qwen-instruct-direct, no Gherkin)."
+      "note": "Qwen2.5-Coder-3B direct instruct gen (qwen-instruct-direct, no Gherkin).",
+      "mbpp_confirm": "MBPP 13/20=65% (clean bar) vs gemma 25% direct/48% gated -> real edge, not contamination"
     }
   ],
   "adaptation": {

@@ -198,3 +198,13 @@ resampling" needs DECORRELATED errors, which two similar general models don't gi
 that class needs harness-DEEPENING (#26 maximal-help) or a genuinely DIFFERENT model, not just a 2nd
 capable-but-similar one. The multi-model INFRASTRUCTURE works end-to-end (manager swap, profiler, honest
 tally); the PAYOFF so far = per-class routing (qwen for standalone-fn-gen), not cracking the hard class.
+
+## MBPP CONTAMINATION CHECK (2026-06-28) — qwen standalone-fn-gen edge is REAL
+qwen2.5-coder-3b MBPP[:20] = 13/20 = 65% (qwen_code direct, correct fn-name from test asserts, no import
+errors). Gemma baseline: direct ~25%, gated ~48%. VERDICT: qwen 65% DIRECT beats gemma 25% direct (~2.6x)
+AND gemma's 48% gated -> the standalone-fn-gen advantage is GENUINE, not HumanEval contamination (MBPP is
+the cleaner bar). So best_model_for(standalone-fn-gen) = qwen is a REAL, measured multi-model win — the
+first clean payoff: routing standalone function-gen to qwen genuinely outperforms gemma. (The hard
+multi-step-repo class remains uncracked by both — correlated failure, needs harness-deepening #26 or a
+decorrelated model.) Honest scorecard: multi-model delivers per-class routing wins where models DIFFER;
+qwen>>gemma on standalone-fn-gen is now confirmed on a clean benchmark.
