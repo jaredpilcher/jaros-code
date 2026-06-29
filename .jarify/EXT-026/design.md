@@ -113,3 +113,17 @@ harness/maximal_help_probe.py
 | EXT-019 passk_probe | none (blind sampling k=20) | measure latent capability |
 | EXT-020 decomp_probe | plan only | does planning help? |
 | EXT-026 maxhelp_probe | ctx + example + plan | maximum harness help before new model |
+
+## MAXIMAL-HELP VERDICT (2026-06-28) — harness-deepening EXHAUSTED on the hard class
+qwen2.5-coder-3b + MAXIMAL help (retrieved context + worked example from a DIFFERENT task + decomposition
+plan, temp=0) = 0/6 cracked on the 6 hardest bigbar [fail] tasks (gemma+qwen both fail raw). 0 errors —
+honest fails. So even the STRONGEST harness-deepening with the STRONGER model does NOT crack the hard
+multi-step-repo class.
+CUMULATIVE (measured, cheapest-first — ALL ruled out): sampling at scale (pass@k 0/7), decomposition (0/8),
+a 2nd SIMILAR model (qwen, correlated failure 0/8), maximal harness-deepening (0/6).
+HONEST CONCLUSION: the hard multi-step-repo class is genuinely beyond BOTH Jetson coders AND every cheaper
+harness lever. The next HEIGHT lever is a DECORRELATED model — a reasoning-specialized small model (e.g.
+DeepSeek-R1-Distill) whose failures decorrelate from general coders — admitted ONLY via the EXT-021
+admission gate (measured-decorrelation probe + security/provenance vet FIRST). This is a MEASURED
+conclusion, not a hunch: every cheaper lever was tried + failed. OWNER DECISION POINT (deep research +
+security vet before adding a roster slot).
