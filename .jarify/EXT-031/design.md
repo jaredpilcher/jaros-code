@@ -84,3 +84,13 @@ python -m harness.eval_strategy_easy --strategy decomposition --n 10 --bar human
 
 The full `compare()` run on n=20 HumanEval tasks makes ~60 LLM calls (3 strategies × 20 tasks);
 each HumanEval task is simpler than a bigbar task so latency should be lower than the hard probes.
+
+## MEASURED RESULT #1 (2026-06-29) — easy HumanEval is at the BARE CEILING; hard-task scaffolds HURT here
+Ran bare vs decomposition vs experiment-to-understand on n=12 HumanEval (gemma, honest Wilson95 CI, 0 errors):
+- **bare = 1.000** (12/12) — gemma aces this easy slice; there is NO headroom for a multiplier to lift.
+- decomposition = 0.083 (1/12, delta -0.917) · experiment-to-understand = 0.167 (2/12, delta -0.833) — NET-NEGATIVE.
+HONEST INTERPRETATION (genuine, not a wiring crash — strategies produced real but wrong code):
+1. This slice CANNOT test "do scaffolds lift easier tasks" — bare is at 100% (ceiling). It refutes the earlier UNVERIFIED assumption "scaffolds lift easier classes" *at least where bare is already maxed*.
+2. The scaffolds are net-NEGATIVE on easy synthesis: decomposition over-engineers a trivial function; experiment-to-understand is CATEGORY-MISMATCHED (a REPAIR scaffold — runs the failing test / calls the existing fn — applied to FROM-SCRATCH synthesis, so its probes are noise). Mis-applying a hard-task scaffold to easy synthesis HURTS, it isn't merely neutral.
+3. LESSON (vindicates routing): scaffolds are CLASS-SPECIFIC multipliers — apply the right scaffold to the right class. The harness's bare/light default for easy synthesis is correct; do NOT wire heavy/repair scaffolds onto it.
+CAVEAT: n=12, and the informative test needs a slice WITH headroom. Follow-up: MBPP (gemma ~25% bare = lots of room) with the synthesis-appropriate scaffold (decomposition), to see if a scaffold lifts where the base is weak. Wired NOTHING from this run (the "winner" for easy synthesis is bare).
