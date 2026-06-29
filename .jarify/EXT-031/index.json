@@ -1,0 +1,23 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/eval_strategy_easy.py",
+      "startLine": 103,
+      "endLine": 176
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/eval_strategy_easy.py",
+      "startLine": 180,
+      "endLine": 308
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/eval_strategy_easy.py",
+      "startLine": 312,
+      "endLine": 436
+    }
+  ]
+}
