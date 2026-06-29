@@ -33,6 +33,7 @@ from harness.adaptation import (
     _extract_label,
     _gemma_gherkin_code_gen,
     _qwen_instruct_code_gen,
+    _r1_reasoning_code_gen,
     code_gen_for,
 )
 from harness.model_registry import ModelProfile, ModelRegistry
@@ -434,3 +435,64 @@ class TestExtractLabel:
     def test_solve_style_key_directly(self):
         """adaptation dict with top-level solve_style (alternative layout)."""
         assert _extract_label({"solve_style": "gherkin-decompose"}) == "gherkin-decompose"
+
+
+# ---------------------------------------------------------------------------
+# (F) r1-reasoning adaptation (qwen3-4b-thinking) — EXT-021 TASK-34 follow-up
+# ---------------------------------------------------------------------------
+
+# #EXT-021-REQ-3 r1-reasoning-wiring Start
+class TestR1ReasoningAdaptation:
+    """'r1-reasoning' must resolve to r1_code-based gen (qwen3-4b-thinking path).
+
+    qwen3-4b-thinking uses adaptation = {"prompts": "r1-reasoning"}, which maps
+    to harness.r1_adapt.r1_code via ADAPTATION_REGISTRY.  The <think> block is
+    stripped and the LAST fenced code block is extracted — all inside r1_code.
+    """
+
+    def test_r1_reasoning_label_in_registry(self):
+        """'r1-reasoning' is a registered key in ADAPTATION_REGISTRY."""
+        assert "r1-reasoning" in ADAPTATION_REGISTRY, (
+            "ADAPTATION_REGISTRY must have 'r1-reasoning' for qwen3-4b-thinking routing"
+        )
+
+    def test_r1_reasoning_string_label_returns_r1_callable(self):
+        """code_gen_for('r1-reasoning') returns _r1_reasoning_code_gen."""
+        fn = code_gen_for("r1-reasoning")
+        assert fn is _r1_reasoning_code_gen, (
+            f"Expected _r1_reasoning_code_gen, got {fn!r}"
+        )
+
+    def test_r1_reasoning_is_distinct_from_gemma_and_qwen(self):
+        """r1-reasoning callable is different from both gemma and qwen callables."""
+        r1_fn = code_gen_for("r1-reasoning")
+        assert r1_fn is not _gemma_gherkin_code_gen, "r1 != gemma (different model path)"
+        assert r1_fn is not _qwen_instruct_code_gen, "r1 != qwen (different model path)"
+
+    def test_qwen3_thinking_adaptation_dict_resolves_to_r1(self):
+        """An adaptation dict matching qwen3-4b-thinking's real shape resolves to r1."""
+        # Real qwen3-4b-thinking.json shape: adaptation["prompts"] is a string "r1-reasoning"
+        adaptation = {
+            "prompts": "r1-reasoning",
+            "note": "Qwen3 native <think> reasoning; r1_code parses code after </think>",
+        }
+        fn = code_gen_for(adaptation)
+        assert fn is _r1_reasoning_code_gen, (
+            f"qwen3-4b-thinking adaptation dict must resolve to r1_code-based callable, "
+            f"got {fn!r}"
+        )
+
+    def test_r1_reasoning_label_extraction(self):
+        """_extract_label correctly reads 'r1-reasoning' from qwen3-4b-thinking-shaped dict."""
+        adaptation = {"prompts": "r1-reasoning", "note": "stub"}
+        assert _extract_label(adaptation) == "r1-reasoning"
+
+    def test_code_gen_for_r1_is_callable(self):
+        """The returned r1 callable has the uniform (spec, name, context) signature."""
+        import inspect
+        fn = code_gen_for("r1-reasoning")
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.keys())
+        # Must accept at least subject_or_spec and name; context is optional
+        assert len(params) >= 2, f"Expected >=2 params, got: {params}"
+# #EXT-021-REQ-3 r1-reasoning-wiring End

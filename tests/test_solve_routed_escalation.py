@@ -45,7 +45,10 @@ class _StubTally:
 class _StubRegistry:
     """Minimal registry stub; only default_model() is needed for empty-tally paths."""
 
-    def __init__(self, default_id: str = "default-model"):
+    def __init__(self, default_id: str = "model-alpha"):
+        # Default is "model-alpha" so that existing tests whose tally includes
+        # "model-alpha" see the default already IN the candidate list and
+        # the cost-aware prepend does not fire (preserving prior behaviour).
         self._default = default_id
 
     def default_model(self) -> str:
@@ -764,3 +767,147 @@ class TestExistingSolveRoutedUnchanged:
         # solve_routed has decision/rewire/solve/ok/error (not test_gated)
         assert "test_gated" not in result
         assert "winner_model_id" not in result
+
+
+# ---------------------------------------------------------------------------
+# qwen3-4b-thinking escalation order (EXT-021 TASK-34 follow-up, REQ-6)
+# ---------------------------------------------------------------------------
+
+# #EXT-021-REQ-6 qwen3-4b-thinking-tests Start
+class TestQwen3EscalationOrder:
+    """REQ-6 cost-aware tier ordering: cheap default first, qwen3-4b-thinking LAST.
+
+    For classes where only a slow non-default model has tally coverage
+    (e.g. hard-multi-step-repo -> qwen3-4b-thinking), the cheap default
+    model (e.g. gemma-4-e2b) is prepended as a fast first-tier attempt
+    before paying the ~10 tok/s qwen3 latency.
+
+    For classes where the default IS already in the tally (e.g. standalone-fn-gen),
+    the tally order is respected unchanged (no prepend).
+    """
+
+    def test_hard_class_prepends_cheap_default_before_qwen3(self):
+        """For hard-multi-step-repo, the cheap default is tried FIRST; qwen3 is LAST."""
+        tally = _StubTally({"hard-multi-step-repo": ["qwen3-4b-thinking"]})
+        registry = _StubRegistry(default_id="gemma-4-e2b")
+        rewire_fn, rewire_calls = _make_ok_rewire()
+        solve_fn, _ = _make_solve_fn()
+        test_fn, _ = _make_test_fn(set())  # all fail -> see full escalation sequence
+
+        solve_routed_escalating(
+            _PROBLEM,
+            registry=registry,
+            route_fn=_stub_route_fn("hard-multi-step-repo"),
+            rewire_fn=rewire_fn,
+            solve_fn=solve_fn,
+            test_fn=test_fn,
+            tally=tally,
+            max_models=3,
+            record=False,
+        )
+
+        # gemma (cheap default) first, qwen3-4b-thinking last
+        assert rewire_calls == ["gemma-4-e2b", "qwen3-4b-thinking"], (
+            f"Expected cheap default first, qwen3 last; got: {rewire_calls}"
+        )
+
+    def test_hard_class_qwen3_wins_when_cheap_fails(self):
+        """When cheap model fails the test, qwen3-4b-thinking is tried and wins."""
+        tally = _StubTally({"hard-multi-step-repo": ["qwen3-4b-thinking"]})
+        registry = _StubRegistry(default_id="gemma-4-e2b")
+        rewire_fn, _ = _make_ok_rewire()
+        solve_fn, _ = _make_solve_fn()
+        test_fn, _ = _make_test_fn({"qwen3-4b-thinking"})  # only qwen3 passes
+
+        result = solve_routed_escalating(
+            _PROBLEM,
+            registry=registry,
+            route_fn=_stub_route_fn("hard-multi-step-repo"),
+            rewire_fn=rewire_fn,
+            solve_fn=solve_fn,
+            test_fn=test_fn,
+            tally=tally,
+            max_models=3,
+            record=False,
+        )
+
+        assert result["ok"] is True
+        assert result["winner_model_id"] == "qwen3-4b-thinking"
+
+    def test_hard_class_cheap_default_wins_without_trying_qwen3(self):
+        """If the cheap default passes, qwen3-4b-thinking is NOT tried (early exit)."""
+        tally = _StubTally({"hard-multi-step-repo": ["qwen3-4b-thinking"]})
+        registry = _StubRegistry(default_id="gemma-4-e2b")
+        rewire_fn, rewire_calls = _make_ok_rewire()
+        solve_fn, _ = _make_solve_fn()
+        test_fn, _ = _make_test_fn({"gemma-4-e2b"})  # cheap model wins
+
+        result = solve_routed_escalating(
+            _PROBLEM,
+            registry=registry,
+            route_fn=_stub_route_fn("hard-multi-step-repo"),
+            rewire_fn=rewire_fn,
+            solve_fn=solve_fn,
+            test_fn=test_fn,
+            tally=tally,
+            max_models=3,
+            record=False,
+        )
+
+        assert result["ok"] is True
+        assert result["winner_model_id"] == "gemma-4-e2b"
+        # qwen3-4b-thinking was NOT tried
+        assert "qwen3-4b-thinking" not in rewire_calls
+
+    def test_non_hard_class_default_in_tally_order_unchanged(self):
+        """When default IS in the tally, tally order is respected (no prepend)."""
+        # Mirrors real standalone-fn-gen: qwen (high score) first, gemma second
+        tally = _StubTally({"standalone-fn-gen": ["qwen-model-high", "gemma-4-e2b"]})
+        registry = _StubRegistry(default_id="gemma-4-e2b")  # default IS in tally
+        rewire_fn, rewire_calls = _make_ok_rewire()
+        solve_fn, _ = _make_solve_fn()
+        test_fn, _ = _make_test_fn({"qwen-model-high"})  # first tally model wins
+
+        solve_routed_escalating(
+            _PROBLEM,
+            registry=registry,
+            route_fn=_stub_route_fn("standalone-fn-gen"),
+            rewire_fn=rewire_fn,
+            solve_fn=solve_fn,
+            test_fn=test_fn,
+            tally=tally,
+            record=False,
+        )
+
+        # default (gemma) is in tally; qwen-model-high (higher tally score) stays first
+        assert rewire_calls == ["qwen-model-high"], (
+            f"When default is in tally, tally order must be preserved; got: {rewire_calls}"
+        )
+
+    def test_hard_class_two_covered_models_default_still_first(self):
+        """Multiple slow models cover the class; default is still prepended first."""
+        tally = _StubTally({"hard-multi-step-repo": ["qwen3-4b-thinking", "other-slow"]})
+        registry = _StubRegistry(default_id="gemma-4-e2b")
+        rewire_fn, rewire_calls = _make_ok_rewire()
+        solve_fn, _ = _make_solve_fn()
+        test_fn, _ = _make_test_fn(set())  # all fail -> see full order
+
+        solve_routed_escalating(
+            _PROBLEM,
+            registry=registry,
+            route_fn=_stub_route_fn("hard-multi-step-repo"),
+            rewire_fn=rewire_fn,
+            solve_fn=solve_fn,
+            test_fn=test_fn,
+            tally=tally,
+            max_models=5,
+            record=False,
+        )
+
+        # gemma-4-e2b (default) is first; the two slow models follow in tally order
+        assert rewire_calls[0] == "gemma-4-e2b", (
+            f"Default must be first; got: {rewire_calls}"
+        )
+        assert "qwen3-4b-thinking" in rewire_calls
+        assert "other-slow" in rewire_calls
+# #EXT-021-REQ-6 qwen3-4b-thinking-tests End

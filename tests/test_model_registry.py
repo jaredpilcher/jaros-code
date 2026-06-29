@@ -188,3 +188,101 @@ class TestLoadRegistryFunction:
         """load_registry() must find the founding profile without arguments."""
         reg = load_registry()
         assert reg.lookup_by_id(FOUNDING_ID) is not None
+
+
+# #EXT-021-REQ-1 qwen3-4b-thinking-admission Start
+class TestQwen3ThinkingProfile:
+    """EXT-021 TASK-34 follow-up: qwen3-4b-thinking is admitted and loads correctly.
+
+    The profile carries extra keys not in ModelProfile's schema
+    (status, honesty_caveat, security_vet); from_dict must be tolerant of
+    these (Tenet 3 — only the measured fields matter for routing, not
+    administrative metadata).
+    """
+
+    def test_qwen3_thinking_loads_from_real_config(self):
+        """from_dir picks up qwen3-4b-thinking profile without crashing."""
+        reg = _load()
+        profile = reg.lookup_by_id("qwen3-4b-thinking")
+        assert profile is not None, (
+            "qwen3-4b-thinking profile must load from .jaros-data/config/models/"
+        )
+
+    def test_qwen3_thinking_id_and_alias(self):
+        """Loaded profile has the correct id and alias."""
+        reg = _load()
+        profile = reg.lookup_by_id("qwen3-4b-thinking")
+        assert profile.id == "qwen3-4b-thinking"
+        assert profile.alias == "qwen3-4b-thinking"
+
+    def test_lookup_by_class_hard_multi_step_repo_returns_qwen3(self):
+        """lookup_by_class('hard-multi-step-repo') includes qwen3-4b-thinking."""
+        reg = _load()
+        ids = reg.lookup_by_class("hard-multi-step-repo")
+        assert "qwen3-4b-thinking" in ids, (
+            f"Expected 'qwen3-4b-thinking' in lookup_by_class('hard-multi-step-repo'), "
+            f"got {ids}"
+        )
+
+    def test_qwen3_handled_class_names(self):
+        """qwen3-4b-thinking profile lists 'hard-multi-step-repo' as handled."""
+        reg = _load()
+        profile = reg.lookup_by_id("qwen3-4b-thinking")
+        assert "hard-multi-step-repo" in profile.handled_class_names()
+
+    def test_gemma_not_in_hard_multi_step_repo(self):
+        """Gemma (founding model) is NOT in lookup_by_class('hard-multi-step-repo')
+        — it has no measured coverage for the hard class (Tenet 3, honest profiling)."""
+        reg = _load()
+        ids = reg.lookup_by_class("hard-multi-step-repo")
+        assert FOUNDING_ID not in ids, (
+            f"'{FOUNDING_ID}' must NOT appear in hard-multi-step-repo lookup "
+            "(no measured evidence)"
+        )
+
+    def test_profile_tolerates_extra_keys_in_tmp_dir(self, tmp_path):
+        """from_dir is tolerant of extra JSON keys (status, honesty_caveat, security_vet)."""
+        import json
+        profile_data = {
+            "id": "qwen3-tol-test",
+            "alias": "qwen3-tol-test",
+            "serve": {
+                "gguf": "/path/Qwen3.gguf",
+                "ctx": 16384,
+                "ngl": 99,
+                "fits_jetson": True,
+            },
+            "classes": [
+                {
+                    "name": "hard-multi-step-repo",
+                    "bar": "hard tasks (gemma+qwen 0/8)",
+                    "score": "1/4",
+                    "date": "2026-06-29",
+                }
+            ],
+            "adaptation": {"prompts": "r1-reasoning"},
+            # Extra administrative keys NOT in ModelProfile schema:
+            "status": "ADMITTED 2026-06-29",
+            "honesty_caveat": "1/4 conclusive; 2 inconclusive due to Jetson RAM",
+            "security_vet": {
+                "source": "unsloth/Qwen3-4B-Thinking-2507-GGUF",
+                "license": "Apache-2.0",
+                "offline": True,
+                "size_gb": 2.5,
+            },
+        }
+        (tmp_path / "qwen3-tol-test.json").write_text(
+            json.dumps(profile_data), encoding="utf-8"
+        )
+        (tmp_path / "_roster.json").write_text(
+            '{"default": "qwen3-tol-test", "order": ["qwen3-tol-test"]}',
+            encoding="utf-8",
+        )
+        reg = from_dir(tmp_path)
+        profile = reg.lookup_by_id("qwen3-tol-test")
+        assert profile is not None, (
+            "Profile with extra JSON keys must load without crashing"
+        )
+        assert profile.id == "qwen3-tol-test"
+        assert "hard-multi-step-repo" in profile.handled_class_names()
+# #EXT-021-REQ-1 qwen3-4b-thinking-admission End

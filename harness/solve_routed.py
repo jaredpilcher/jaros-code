@@ -597,9 +597,25 @@ def solve_routed_escalating(
     # 5. Escalation order: best-measured-first candidates for this class --------
     #    Empty tally -> single-candidate fallback to the registry default.
     #    ALL candidates are LOCAL/Jetson-fitting (tally invariant, Tenet 2).
+    # #EXT-021-REQ-6 qwen3-4b-thinking-last Start
     candidates: list[str] = _active_tally.ranked_models_for(problem_class)
+    _default_model_id: str = registry.default_model()
     if not candidates:
-        candidates = [registry.default_model()]
+        # No tally coverage -> try only the cheap default model.
+        candidates = [_default_model_id]
+    elif _default_model_id not in candidates:
+        # Cost-aware tier ordering: when the cheap default model has no
+        # measured coverage for the class (e.g. gemma-4-e2b for
+        # hard-multi-step-repo), prepend it as the fast first-tier attempt.
+        # If the cheap model solves it we skip the slow qwen3-4b-thinking
+        # invocation entirely.  If it fails we escalate through the
+        # tally-ranked candidates (which have actual measured coverage).
+        # When the default IS already in the tally for this class, the tally
+        # score order already encodes its relative strength — leave it as-is
+        # (Tenet 3: don't disrupt the honest measured ranking).
+        candidates = [_default_model_id] + candidates
+    # else: default has measured coverage -> tally order is authoritative
+    # #EXT-021-REQ-6 qwen3-4b-thinking-last End
 
     # Budget cap: never exceed max_models attempts (Tenet 2 / cost-safety)
     candidates = candidates[:max_models]
