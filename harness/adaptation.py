@@ -19,6 +19,11 @@ Labels
     Gherkin-decompose pipeline — Gemma's path: ``g_gherkin`` then ``g_code``.
     Do NOT change ``harness.commit_replay``; the wrapper adapts the signature only.
 
+``"r1-reasoning"``
+    Reasoning-model path — DeepSeek-R1-Distill-Qwen-7B's chain-of-thought style.
+    Strips ``<think>...</think>`` block, extracts the LAST fenced code block.
+    Backed by ``harness.r1_adapt.r1_code``.
+
 DEFAULT fallback
     Any unknown or missing label resolves to ``"gherkin-decompose"`` (Gemma's
     path).  ``code_gen_for`` NEVER raises — safe to call with any input.
@@ -55,6 +60,18 @@ def _qwen_instruct_code_gen(subject_or_spec: str, name: str, context: str = "") 
     return qwen_code(subject_or_spec, name, context)
 
 
+def _r1_reasoning_code_gen(subject_or_spec: str, name: str, context: str = "") -> str:
+    """Thin shim: DeepSeek-R1-Distill-Qwen-7B reasoning path (r1_code).
+
+    Strips ``<think>...</think>`` reasoning trace and extracts the LAST fenced
+    code block — R1 reasons at length before emitting the final answer.
+    Maps the uniform ``(spec, name, context)`` signature onto
+    ``harness.r1_adapt.r1_code``'s identical signature.
+    """
+    from harness.r1_adapt import r1_code  # noqa: PLC0415
+    return r1_code(subject_or_spec, name, context)
+
+
 # ---------------------------------------------------------------------------
 # Registry: style label -> code-gen callable
 # ---------------------------------------------------------------------------
@@ -62,6 +79,7 @@ def _qwen_instruct_code_gen(subject_or_spec: str, name: str, context: str = "") 
 ADAPTATION_REGISTRY: dict[str, Callable[[str, str, str], str]] = {
     "gherkin-decompose": _gemma_gherkin_code_gen,
     "qwen-instruct-direct": _qwen_instruct_code_gen,
+    "r1-reasoning": _r1_reasoning_code_gen,
 }
 
 _DEFAULT_LABEL: str = "gherkin-decompose"
