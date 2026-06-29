@@ -511,7 +511,7 @@ def _make_jetson_fns(
             f"For E3: params has fn_name."
         )
         raw = _get_llm_text(prompt)
-        return _parse_experiment_decision(raw, fn_name)
+        return _parse_experiment_decision(raw, name)
 
     def solve_fn(problem: Any, understanding: list) -> str:
         """Write the fix informed by all accumulated observations.
