@@ -111,10 +111,10 @@ models, test-gated), never version "B" (cloud escalation). Escalation order is t
 (best-measured-first), bounded by a max-models budget.
 
 #### Acceptance Criteria
-- [ ] On a multi-candidate class, `solve_routed` tries models best-tally-first and keeps the FIRST whose output passes the given/visible test (the deterministic gate), escalating on fail.
-- [ ] The winner is chosen ONLY by the deterministic test/oracle — no model ranks or picks between model outputs (model-as-judge forbidden).
-- [ ] Escalation is bounded (a max-models budget) and stays entirely on LOCAL Jetson-fitting models — cloud/paid is never a tier (Tenet 2).
-- [ ] Honest: the visible test/spec gates selection at solve time; the hidden held-out oracle is used only to SCORE the eval, never to pick the model.
+- [x] On a multi-candidate class, `solve_routed` tries models best-tally-first and keeps the FIRST whose output passes the given/visible test (the deterministic gate), escalating on fail.
+- [x] The winner is chosen ONLY by the deterministic test/oracle — no model ranks or picks between model outputs (model-as-judge forbidden).
+- [x] Escalation is bounded (a max-models budget) and stays entirely on LOCAL Jetson-fitting models — cloud/paid is never a tier (Tenet 2).
+- [x] Honest: the visible test/spec gates selection at solve time; the hidden held-out oracle is used only to SCORE the eval, never to pick the model.
 
 ### [REQ-7] Class definition, classification & evolution (data-driven, test-gate-labeled)
 

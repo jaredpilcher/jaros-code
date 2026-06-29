@@ -229,3 +229,204 @@ def solve_routed(
 # #EXT-021-REQ-2 End
 # #EXT-021-REQ-3 End
 # #EXT-021-REQ-4 End
+
+# #EXT-021-REQ-6 Start
+
+def solve_routed_escalating(
+    problem: Any,
+    registry: Optional[Any] = None,
+    *,
+    route_fn: Optional[Callable] = None,
+    rewire_fn: Optional[Callable] = None,
+    solve_fn: Optional[Callable] = None,
+    test_fn: Optional[Callable] = None,
+    tally: Optional[Any] = None,
+    max_models: int = 3,
+) -> dict:
+    """Route and escalate through ranked-tally candidates; test_fn picks the winner.
+
+    REQ-6: the deterministic ``test_fn`` is the SOLE judge between candidate
+    model outputs — no model ranks or picks between outputs (model-as-judge
+    forbidden, REQ-2 / REQ-6).  Escalation stays entirely on LOCAL
+    Jetson-fitting models; cloud/paid is never a tier (Tenet 2).  All failure
+    paths are surfaced honestly (Tenet 3).
+
+    Parameters
+    ----------
+    problem :
+        A dict (or object with ``__dict__``) describing the coding task.
+    registry :
+        A ``ModelRegistry`` instance.  Defaults to ``load_registry()``.
+    route_fn :
+        Optional replacement for ``route(problem, registry) -> dict``.
+        Injected in tests for deterministic offline routing.
+    rewire_fn :
+        Optional replacement for ``rewire(model_id, registry) -> dict``.
+        Injected in tests to avoid Jetson SSH/HTTP calls.
+    solve_fn :
+        Optional replacement for the inner solve.  Signature::
+
+            solve_fn(problem, decision, rewire_result) -> dict
+
+        Defaults to ``_default_solve_fn``.
+    test_fn :
+        Callable ``(problem, solve_result) -> dict`` that runs the
+        given/visible test (the task's own failing test or docstring examples)
+        and returns at least ``{"passed": bool}``.  This is the DETERMINISTIC
+        GATE — never a model.  Required for meaningful escalation; callers
+        should always inject a real test_fn.  The default always returns
+        ``passed=False`` (honest: without a test we cannot pick a winner).
+    tally :
+        Optional pre-built ``CoverageTally`` for offline injection in tests.
+        When ``None``, built on-the-fly from *registry*.
+    max_models :
+        Maximum number of candidate models to try (escalation budget).
+        Default 3.  Models beyond this cap are never tried (Tenet 2 /
+        cost-safety).
+
+    Returns
+    -------
+    dict
+        ``{decision, winner_model_id, attempts, solve, test_gated, ok, error}``
+
+        - ``decision``        -- the inert routing Decision dict
+        - ``winner_model_id`` -- model id of the passing candidate, or ``None``
+        - ``attempts``        -- ``[{model, rewire_ok, passed, ...}, ...]``
+        - ``solve``           -- winning solve result, or last attempt on
+                                 all-fail (``None`` if every solve raised)
+        - ``test_gated``      -- always ``True`` (REQ-6 contract)
+        - ``ok``              -- ``True`` only when a candidate passed the test
+        - ``error``           -- ``None`` on success; honest message on all-fail
+
+    Escalation rules (REQ-6)
+    ------------------------
+    1. ``ranked_models_for(problem_class)`` is the escalation ORDER — best
+       tally score first, then roster order, then deterministic tiebreak.
+    2. Empty tally -> single-candidate fallback to the registry default model.
+    3. Budget capped at *max_models*; models beyond the budget are NEVER tried.
+    4. First candidate whose output passes ``test_fn`` is the winner; returned
+       immediately — remaining candidates are NOT tried (early-exit efficiency).
+    5. If NO candidate passes within budget, returns honest
+       ``"no candidate passed the test within budget"`` status (Tenet 3).
+    6. ALL candidates are LOCAL Jetson-fitting (the tally only records local
+       models; cloud/paid has no tally entry — Tenet 2 guarantee).
+
+    Tenet guarantees
+    ----------------
+    - **Tenet 1**: route_fn is inert; rewire_fn is the clerk.
+    - **Tenet 2**: escalation is bounded to LOCAL models only; cloud/paid is
+      never a tier — the tally invariant enforces this.
+    - **Tenet 3**: all failure paths are surfaced explicitly; "no candidate
+      passed" is never silently hidden.
+    - **Model-as-judge forbidden**: ``test_fn`` is the SOLE arbiter; no model
+      is called to compare or rank outputs between candidates (REQ-6 / REQ-2).
+    """
+    # 1. Registry default -------------------------------------------------------
+    if registry is None:
+        registry = load_registry()
+
+    # 2. Resolve injectable callables -------------------------------------------
+    _route: Callable = route_fn if route_fn is not None else route
+    _rewire: Callable = rewire_fn if rewire_fn is not None else rewire
+    _solve: Callable = solve_fn if solve_fn is not None else _default_solve_fn
+    # test_fn must be provided for real use; default is honest pass=False
+    _test: Callable = test_fn if test_fn is not None else (
+        lambda _prob, _sol: {"passed": False, "reason": "no test_fn provided"}
+    )
+
+    # 3. Route: produce an INERT Decision (Tenet 1 -- no side effects here) -----
+    decision: dict = _route(problem, registry)
+    problem_class: str = decision.get("problem_class", "")
+
+    # 4. Tally: build from registry on demand; injectable for offline tests ------
+    _active_tally = tally
+    if _active_tally is None:
+        from harness.model_tally import CoverageTally  # lazy: avoid circ-import
+        _active_tally = CoverageTally(registry)
+
+    # 5. Escalation order: best-measured-first candidates for this class --------
+    #    Empty tally -> single-candidate fallback to the registry default.
+    #    ALL candidates are LOCAL/Jetson-fitting (tally invariant, Tenet 2).
+    candidates: list[str] = _active_tally.ranked_models_for(problem_class)
+    if not candidates:
+        candidates = [registry.default_model()]
+
+    # Budget cap: never exceed max_models attempts (Tenet 2 / cost-safety)
+    candidates = candidates[:max_models]
+
+    # 6. Escalation loop --------------------------------------------------------
+    #    test_fn is the SOLE judge; no model is ever asked to rank outputs.
+    attempts: list[dict] = []
+    last_solve_result: Optional[dict] = None
+
+    for model_id in candidates:
+        # 6a. Rewire to this candidate (deterministic clerk, guarded)
+        rewire_result: dict = _rewire(model_id, registry)
+        if not rewire_result.get("ok"):
+            attempts.append({
+                "model": model_id,
+                "rewire_ok": False,
+                "passed": False,
+                "error": rewire_result.get("error", "rewire failed"),
+            })
+            continue  # escalate to next candidate (not a model limit — harness gap)
+
+        # 6b. Derive candidate-scoped decision.
+        #     Inherits class/confidence/rationale from the router Decision;
+        #     overrides model_id so the solve_fn sees the correct active model.
+        candidate_decision: dict = {**decision, "model_id": model_id}
+
+        # 6c. Solve under this candidate's adaptation
+        try:
+            solve_result: dict = _solve(problem, candidate_decision, rewire_result)
+        except Exception as exc:
+            attempts.append({
+                "model": model_id,
+                "rewire_ok": True,
+                "passed": False,
+                "error": f"solve_fn raised: {exc}",
+            })
+            continue  # escalate
+
+        last_solve_result = solve_result
+
+        # 6d. DETERMINISTIC TEST GATE — test_fn picks the winner.
+        #     NO model is consulted here; model-as-judge is forbidden (REQ-6).
+        try:
+            test_result: dict = _test(problem, solve_result)
+        except Exception as exc:
+            test_result = {"passed": False, "error": f"test_fn raised: {exc}"}
+
+        passed: bool = bool(test_result.get("passed", False))
+        attempts.append({
+            "model": model_id,
+            "rewire_ok": True,
+            "passed": passed,
+            "test_result": test_result,
+        })
+
+        if passed:
+            # Winner found — return immediately; remaining candidates NOT tried
+            return {
+                "decision": decision,
+                "winner_model_id": model_id,
+                "attempts": attempts,
+                "solve": solve_result,
+                "test_gated": True,
+                "ok": True,
+                "error": None,
+            }
+        # passed=False -> escalate to next candidate
+
+    # 7. No candidate passed within budget — honest failure status (Tenet 3) ----
+    return {
+        "decision": decision,
+        "winner_model_id": None,
+        "attempts": attempts,
+        "solve": last_solve_result,
+        "test_gated": True,
+        "ok": False,
+        "error": "no candidate passed the test within budget",
+    }
+
+# #EXT-021-REQ-6 End
