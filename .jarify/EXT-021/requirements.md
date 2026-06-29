@@ -1,7 +1,7 @@
 ---
 id: EXT-021
 title: Multi-Model Routing Harness
-status: partial
+status: covered
 priority: high
 implementation:
   - file: harness/model_registry.py
@@ -68,4 +68,4 @@ profiles stay truthful.
 - [x] A documented procedure + script to profile a model: serve it, run the per-class held-out evals, write the measured classes into its profile with the evidence (scores, dates, bar). (`harness/model_profiler.py` — `profile_model` + `fits_jetson` + `roster_order`; 32 offline tests in `tests/test_model_profiler.py`.)
 - [x] The roster is ordered best-first (strongest Jetson-fitting model first) and only Jetson-fitting models are admitted (fits the ~8 GB budget). (`_roster.json` `order` field; `fits_jetson()` admission check; APPENDIX in design.md.)
 - [x] Profiling is honest (held-out, visible-spec, no hidden-test leakage) and a class is added to a profile ONLY with recorded evidence. (Honesty gate in `profile_model`: `passed=True` is the sole condition; below-bar classes go to `rejected`, never to the profile JSON — tested in `TestBelowTheBar`.)
-- [ ] The end-to-end path (route → rewire → solve with the chosen model's adaptation) is demonstrated on at least two classes routed to two different models. (TASK-5.)
+- [x] The end-to-end path (route → rewire → solve with the chosen model's adaptation) is demonstrated on at least two classes routed to two different models. (`harness/solve_routed.py` `solve_routed`; `tests/test_solve_routed.py` — 12 offline tests; stub 2-profile registry proves model-alpha/standalone-fn-gen and model-beta/multi-step-repo end-to-end. TASK-5.)
