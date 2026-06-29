@@ -1,6 +1,11 @@
 {
   "_comment": "Model roster — ordered best-first (strongest Jetson-fitting model first). Only models that fit the Jetson (~8 GB) are admitted. EXT-021 REQ-4.",
   "default": "gemma-4-e2b",
-  "order": ["gemma-4-e2b"],
-  "note": "best-first; only Jetson-fitting (<=~8GB) models admitted"
+  "order": [
+    "qwen2.5-coder-3b-instruct",
+    "phi-4-mini-instruct",
+    "deepseek-coder-v2-lite",
+    "gemma-4-e2b"
+  ],
+  "note": "best-first; only Jetson-fitting (<=~8GB) models admitted; profile each in order — profile JSONs created only after honest measurement confirms Jetson fit"
 }

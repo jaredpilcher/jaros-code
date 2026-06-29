@@ -6,6 +6,13 @@
       "endLine": 289
     }
   ],
+  "REQ-3": [
+    {
+      "file": "harness/model_rewire.py",
+      "startLine": 28,
+      "endLine": 322
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/model_registry.py",
@@ -13,16 +20,11 @@
       "endLine": 194
     }
   ],
-  "REQ-3": [
+  "REQ-4": [
     {
-      "file": "harness/model_rewire.py",
-      "startLine": 28,
-      "endLine": 322
-    },
-    {
-      "file": "tests/test_model_rewire.py",
-      "startLine": 1,
-      "endLine": 562
+      "file": "harness/model_profiler.py",
+      "startLine": 33,
+      "endLine": 336
     }
   ]
 }

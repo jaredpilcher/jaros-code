@@ -98,6 +98,27 @@ The roster is explored strongest-that-fits first. Routing quality is then a func
 profiles; a misroute is a profiling/feature gap to close (the convergence loop, PRIME-001), never a
 model limit to accept until proven across the roster.
 
+## APPENDIX: Candidate Jetson-Fitting Models (best-first roster)
+
+Explore in this order — strongest measured coding capability first, all within the Jetson Orin
+Nano ~8 GB VRAM budget.  Profile JSONs are created ONLY after honest measurement (EXT-021 REQ-4
+profiling loop).  Do NOT serve any of these candidates here; the profiling loop does that.
+
+| Rank | model_id | Params | Est. VRAM (Q4_K_M) | Coding notes |
+|------|----------|--------|--------------------|--------------|
+| 1 | `qwen2.5-coder-3b-instruct` | 3B | ~2.0 GB | Strongest coding 3B available (2025); HumanEval 75%+ reported; explore first |
+| 2 | `phi-4-mini-instruct` | 3.8B | ~2.5 GB | Microsoft Phi-4 mini; strong reasoning + code; fits Jetson with headroom |
+| 3 | `deepseek-coder-v2-lite` | 2.4B active | ~1.6 GB | DeepSeek MoE lite; good coding; very small active-param footprint |
+| 4 | `gemma-4-e2b` (baseline) | 2B | ~1.4 GB | Current default; measured classes: standalone-fn-gen + single-file-repair |
+
+Profile notes:
+- A model enters the roster's `_roster.json` `order` array when it is judged Jetson-fitting
+  (`fits_jetson` check in `model_profiler.py`).
+- A model's profile JSON (`.jaros-data/config/models/<id>.json`) is created + a class added
+  ONLY after `profile_model` confirms it cleared the bar on held-out tasks.
+- The roster is explored best-first; stop when coverage is sufficient for the routing classes
+  needed (no need to profile every candidate if the first one covers the hard classes).
+
 ## Relationship to existing specs
 
 - EXT-013/EXT-012 (behavioral solve + orchestrator) is the INNER solve the router wraps — unchanged
