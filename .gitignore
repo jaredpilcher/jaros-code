@@ -1,5 +1,8 @@
 # Jaros runtime state (regenerable / mutable). Source lives in
 # .jaros-data/agents, .jaros-data/tools, .jaros-data/config, .jaros-data/schedules.
+# Throwaway probes (not part of the versioned harness).
+.jaros-data/r1_decorrelation.py
+.jaros-data/qwen3_repair_probe.py
 .jaros-data/inbox/
 .jaros-data/outbox/
 .jaros-data/processed/
