@@ -114,3 +114,29 @@ models, test-gated), never version "B" (cloud escalation). Escalation order is t
 - [ ] The winner is chosen ONLY by the deterministic test/oracle — no model ranks or picks between model outputs (model-as-judge forbidden).
 - [ ] Escalation is bounded (a max-models budget) and stays entirely on LOCAL Jetson-fitting models — cloud/paid is never a tier (Tenet 2).
 - [ ] Honest: the visible test/spec gates selection at solve time; the hidden held-out oracle is used only to SCORE the eval, never to pick the model.
+
+### [REQ-7] Class definition, classification & evolution (data-driven, test-gate-labeled)
+
+(Owner design question, 2026-06-28.) A "class" is **not a guessed taxonomy** — it is a cluster of
+problems with *correlated model success*, **discovered from the test-gate's honest labels**, kept only
+while it stays *predictive* of which model wins. Classifying a given (files+code+task) is a **cheap
+deterministic PRIOR**: the *failure signal* (parse the failing test/traceback — error type:
+attribute/boundary/type/logic; the asserting line; the touched symbol) plus structural features
+(language, standalone-vs-repo, #files, function size, has-examples). This prior need NOT be perfect —
+the test gate (REQ-6) is the real judge, so a mis-class merely costs one extra escalation attempt
+(self-correcting), and **every test-gated solve records a `(problem-signature, model, pass/fail)` label
+for free**. Those labels EVOLVE the ontology: **DISCOVER** (a problem matching no class / no coverage →
+`new_classes.jsonl`; when similar ones accumulate, name a class + re-profile the roster, REQ-5); **SPLIT**
+(a class whose best-model wins on some members but loses on others — high within-class outcome variance —
+is too coarse → split into sub-classes along the separating feature → re-profile); **VALIDATE** (retain a
+class only while its named best-model wins above a bar; non-predictive classes are re-examined).
+**Sub-problems:** decomposition splits a task into sub-tasks, each independently classified + routed +
+test-gated (recursive). Embedding/cluster-based discovery is an *option* but kill-tested first
+(retrieval/embeddings were a prior negative on the 2B — [[jaros-code-retrieval-fewshot-negative]]).
+
+#### Acceptance Criteria
+- [ ] Classification is a deterministic prior from the failure signal + structural features; the test gate is the final judge, so a mis-class is self-correcting (just escalates).
+- [ ] Every test-gated solve records a `(problem-signature, model, outcome)` label to a persistent store (the labels that drive class evolution).
+- [ ] DISCOVER: uncovered/unmatched problems accumulate → a named class + roster re-profile when a threshold cluster forms.
+- [ ] SPLIT: a class with inconsistent best-model outcomes (variance > threshold) is flagged + split into sub-classes, then re-profiled.
+- [ ] VALIDATE: a class is retained only while predictive (named best-model win-rate above a bar); decomposition-produced sub-tasks are classified + routed independently.
