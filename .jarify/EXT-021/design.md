@@ -208,3 +208,48 @@ first clean payoff: routing standalone function-gen to qwen genuinely outperform
 multi-step-repo class remains uncracked by both — correlated failure, needs harness-deepening #26 or a
 decorrelated model.) Honest scorecard: multi-model delivers per-class routing wins where models DIFFER;
 qwen>>gemma on standalone-fn-gen is now confirmed on a clean benchmark.
+
+## ROSTER ADMISSION POLICY — decorrelation + security (owner + external review, 2026-06-28)
+
+THE DECORRELATION LAW (the law of this whole direction): multi-model buys capability ONLY to the extent
+the models' FAILURES are decorrelated. Two competent-but-SIMILAR small models fail the same hard problems
+(MEASURED: gemma-4-e2b AND qwen2.5-coder-3b both 0/8 on the hard multi-step-repo class — correlated
+failure). So a new model EARNS a slot ONLY by covering, TEST-GATED + MEASURED, tasks/a class the current
+roster CANNOT — not by being "a strong model." Optimize DECORRELATION-PER-SLOT, not model count: five
+similar models ~= one model with extra latency.
+
+JETSON SERIAL CONSTRAINT: the model-manager swaps ONE model onto :8000 at a time (~15-20s). Every slot has
+a swap cost; roster size is bounded by this single-GPU reality -> each slot must cover a class the others
+can't. Mitigation: batch-by-model routing (group queued tasks by routed model to amortize swaps).
+
+ADMISSION GATE (a model joins ONLY when ALL hold):
+1. DECORRELATED + MEASURED: solves, test-gated, tasks/a class the current roster FAILS (run a decorrelation
+   probe: does it crack the hard tasks gemma+qwen both fail?). No measured decorrelation -> no slot.
+2. JETSON-FITTING: ~8 GB budget (<= ~7-8B at Q4).
+3. SECURITY-VETTED (below).
+4. GENUINELY DIFFERENT (diversity not count): prefer a different TRAINING/strength — e.g. a REASONING-
+   specialized model — over another general-purpose coder.
+
+SECURITY VETTING (owner directive — "make sure they're safe security-wise"):
+- THE TWO-PLANE GATE IS THE RUNTIME BACKSTOP: the model emits only inert Decisions; the deterministic clerk
+  + test-gate validate every side effect. So even an adversarial / jailbroken / weakly-aligned model CANNOT
+  escalate — it can only suggest, and the deterministic plane catches bad output. We therefore do NOT rely
+  on a model's built-in safety (research: open-weight models incl. DeepSeek-R1 fail most prompt-injection
+  tests + carry high offensive-cyber knowledge) — the ARCHITECTURE is the safety, not the model.
+- PROVENANCE is the real vet: download OFFICIAL or reputable-verified GGUFs only (community conversions risk
+  wrong tokenizer/chat-template, unsafe mirrors, incomplete shards, quant drift); verify checksums; confirm
+  the open-weight LICENSE permits use.
+- OFFLINE: runs entirely on the Jetson via llama.cpp, NO network egress (Tenet 2) -> no data-exfiltration
+  concern from the weights; the hosted-API/app concerns about a vendor do NOT apply to local GGUF inference.
+
+REVISED CANDIDATE ROSTER (decorrelation-first; researched 2026-06-28 — supersedes the all-coders APPENDIX):
+| Candidate | Decorrelation rationale | Caveats |
+|-----------|------------------------|---------|
+| DeepSeek-R1-Distill-Qwen-7B / -Llama-8B | REASONING-specialized (RL-distilled chain-of-thought) — different training from general coders -> failures should DECORRELATE on the reasoning-heavy hard class | CoT = many tokens -> SLOW on serial Jetson (~minutes/problem); use OFFICIAL R1-Distill GGUF + checksum; weak alignment (gate handles it) |
+| Phi-4-mini / Phi-4-reasoning (3.8B) | Microsoft reasoning-leaning; ~3.5GB Q4 (fits w/ headroom); better-documented provenance (more-trusted source) | only PARTIALLY decorrelated (still fairly general) |
+| AVOID: Qwen3 / Qwen3.5 | SAME FAMILY as qwen2.5-coder -> CORRELATED failures, zero decorrelation gain | would be "one model with extra latency" |
+
+SEQUENCE: #26 (maximal-help harness-deepening) is tried FIRST on the hard class — cheaper than a slot; if it
+cracks the class, no new model is needed. Only if harness-deepening fails do we add a decorrelated reasoning
+model, and ONLY after the admission gate (measured decorrelation + security vet) passes. Deep research +
+security-vet happens at that point; this section is the STANDING policy.
