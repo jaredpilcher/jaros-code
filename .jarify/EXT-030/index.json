@@ -1,0 +1,21 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/experiment_solve.py",
+      "startLine": 57,
+      "endLine": 354
+    },
+    {
+      "file": "tests/test_experiment_solve.py",
+      "startLine": 1,
+      "endLine": 433
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/experiment_solve.py",
+      "startLine": 358,
+      "endLine": 772
+    }
+  ]
+}
