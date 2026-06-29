@@ -18,6 +18,14 @@
     "alias": "deepseek-r1-distill-qwen-7b",
     "ctx": 8192,
     "ngl": 99,
+    "extra_args": ["--threads", "4"],
+    "_note": "TOO BIG for the 7.3GB Jetson — loads (5.5GB) but OOMs during generation. Not usable."
+  },
+  "deepseek-r1-distill-qwen-1.5b": {
+    "gguf": "/home/jared/gemma-server/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+    "alias": "deepseek-r1-distill-qwen-1.5b",
+    "ctx": 8192,
+    "ngl": 99,
     "extra_args": ["--threads", "4"]
   }
 }

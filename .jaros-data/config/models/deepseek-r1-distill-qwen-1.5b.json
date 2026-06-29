@@ -1,0 +1,9 @@
+{
+  "id": "deepseek-r1-distill-qwen-1.5b",
+  "alias": "deepseek-r1-distill-qwen-1.5b",
+  "serve": {"gguf": "/home/jared/gemma-server/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf", "ctx": 8192, "ngl": 99, "fits_jetson": true},
+  "classes": [],
+  "adaptation": {"prompts": "r1-reasoning", "note": "R1-distill reasoning; r1_code parses code after </think>."},
+  "status": "CANDIDATE — admission gate NOT met: 0/6 on the hard multi-step-repo class (decorrelation trial 2026-06-29). Fits the Jetson but too weak for that class. Not routed to.",
+  "security_vet": {"source": "bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF (HuggingFace, reputable)", "license": "MIT", "offline": true, "runtime_backstop": "two-plane gate"}
+}

@@ -253,3 +253,11 @@ SEQUENCE: #26 (maximal-help harness-deepening) is tried FIRST on the hard class 
 cracks the class, no new model is needed. Only if harness-deepening fails do we add a decorrelated reasoning
 model, and ONLY after the admission gate (measured decorrelation + security vet) passes. Deep research +
 security-vet happens at that point; this section is the STANDING policy.
+
+## DECORRELATED-MODEL TRIAL VERDICT (R1-distill, 2026-06-29) — hard class is beyond Jetson-FITTING models
+Owner-approved trial of a DECORRELATED reasoning model on the hard multi-step-repo class (gemma+qwen both 0/8; sampling/decomp/maximal-deepening all 0):
+- R1-Distill-Qwen-7B (capable reasoner): LOADS (5.5GB) but OOMs DURING generation on the 7.3GB Jetson (unified memory; ngl-offload doesn't help). NOT USABLE here.
+- R1-Distill-Qwen-1.5B (fits, 5.3GB headroom, works — r1_code clean in 26s): 0/6 cracked. Too weak.
+HONEST VERDICT: neither the CAPABLE decorrelated reasoner (7B, doesn't fit) nor the FITTING one (1.5B, too weak) cracks the hard class -> the binding constraint is the Jetson's 7.3GB RAM, a measured DEVICE ceiling (not a denied model ceiling; Tenet 3). On this hardware the fitting models (<=~3-4B) are too weak + the capable ones (7B+) don't fit.
+BANKED + REAL: the multi-model BREADTH wins stand — qwen beats gemma on standalone-fn-gen (92% HE / 65% MBPP clean vs 82%/25%), routed per-class; the floor rose; the full architecture (registry/router/rewire/tally/test-gate/adaptation) works end-to-end. The hard class is the one ceiling, gated by the device.
+OPTIONS (owner decision, NOT auto-picked): (a) accept it's beyond Jetson-class hardware + bank breadth; (b) bigger-RAM device (fit a 7B+ reasoner); (c) CPU-offload the 7B (slow); (d) a different kind of harness-deepening. R1-distill admission gate NOT met -> 1.5B stays CANDIDATE (empty classes, not routed). Security vet (both): bartowski/HF reputable, MIT, offline, two-plane backstop.
