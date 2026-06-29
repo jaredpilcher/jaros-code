@@ -129,7 +129,13 @@ def _real_humaneval_eval(n: int) -> dict:
             sig_doc = _bc.signature_and_docstring(stub)
             # Direct qwen_code: no Gherkin, no body-only splice — full function gen
             solution = qwen_code(task.instruction, fn_name, sig_doc)
-            Path(d, "solution.py").write_text(solution, encoding="utf-8", newline="\n")
+            # qwen_code returns ONLY the `def` (it slices from `def {name}`), dropping the stub's
+            # import preamble (e.g. `from typing import List`) that typed HumanEval solutions need to
+            # import at all — the dropped-imports failure class (cf. gemma pass1). Prepend the stub's
+            # preamble (everything before the signature) so solution.py is self-contained.
+            _def_idx = stub.find(f"def {fn_name}")
+            _preamble = stub[:_def_idx] if _def_idx > 0 else ""
+            Path(d, "solution.py").write_text(_preamble + solution, encoding="utf-8", newline="\n")
             ok = _run_with_treekill(task.test_cmd, d, timeout=60)
         if ok:
             passed += 1
