@@ -118,7 +118,7 @@ def record_verified(
         problem_class = _infer_problem_class(p, sig)
         source: str = str(p.get("source", p.get("prompt", p.get("text", ""))))
         record: dict = {
-            "ts": datetime.datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             "signature": sig,
             "problem_class": problem_class,
             "code": code,

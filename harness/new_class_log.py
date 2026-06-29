@@ -218,7 +218,7 @@ def record_unhandled(
         sig = _build_signature(p)
         source: str = str(p.get("source", p.get("prompt", p.get("text", ""))))
         record: dict = {
-            "ts": datetime.datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             "signature": sig,
             "chosen_default": str(decision.get("model_id", "")),
             "confidence": float(decision.get("confidence", 0.0)),

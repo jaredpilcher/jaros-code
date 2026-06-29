@@ -112,7 +112,7 @@ def record_outcome(
         p = _normalise(problem)
         sig = _build_signature(p)
         record: dict = {
-            "ts": datetime.datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             "signature": sig,
             "problem_class": str(problem_class),
             "model_id": str(model_id),
