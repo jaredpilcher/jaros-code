@@ -44,7 +44,7 @@ LLM class-label path is dropped — classification stays deterministic.)
 - [x] Selection consults the registry's class→model coverage; ties/uncertainty fall back to the deterministic default model.
 - [x] The router is offline-testable with a stub registry (deterministic — no LLM needed).
 - [x] A misroute is treated as a harness gap to close (better profile/features), never a model limit — recorded for the convergence loop.
-- [ ] The router uses ONLY deterministic features to classify the class — no model is asked to route or to choose between models (model-as-judge forbidden here; the earlier optional-LLM path is removed/disabled).
+- [x] The router uses ONLY deterministic features to classify the class — no model is asked to route or to choose between models (model-as-judge forbidden here; the earlier optional-LLM path is removed/disabled).
 
 ### [REQ-3] Deterministic rewire to the selected model
 
@@ -136,7 +136,7 @@ test-gated (recursive). Embedding/cluster-based discovery is an *option* but kil
 (retrieval/embeddings were a prior negative on the 2B — [[jaros-code-retrieval-fewshot-negative]]).
 
 #### Acceptance Criteria
-- [ ] Classification is a deterministic prior from the failure signal + structural features; the test gate is the final judge, so a mis-class is self-correcting (just escalates).
+- [x] Classification is a deterministic prior from the failure signal + structural features; the test gate is the final judge, so a mis-class is self-correcting (just escalates).
 - [ ] Every test-gated solve records a `(problem-signature, model, outcome)` label to a persistent store (the labels that drive class evolution).
 - [ ] DISCOVER: uncovered/unmatched problems accumulate → a named class + roster re-profile when a threshold cluster forms.
 - [ ] SPLIT: a class with inconsistent best-model outcomes (variance > threshold) is flagged + split into sub-classes, then re-profiled.

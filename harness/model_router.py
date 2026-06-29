@@ -1,6 +1,6 @@
 """Model-router judge for the multi-model routing harness (EXT-021, REQ-2).
 
-``route(problem, registry, llm=None) -> dict`` is the public entry point.
+``route(problem, registry) -> dict`` is the public entry point.
 
 It returns an INERT decision dict::
 
@@ -17,17 +17,28 @@ No side effects -- Tenet 1 requires the decision to be data only; the clerk
 Classification strategy
 -----------------------
 1. Cheap DETERMINISTIC features are extracted first (no LLM, no network).
-2. If an *llm* callable is provided AND the deterministic confidence falls
-   below ``_AMBIGUITY_THRESHOLD``, we ask the LLM for a class label.
-3. The resolved class is mapped to a model via the registry; ties (multiple
-   covering models) are broken by preferring the default model, then roster
-   order.
-4. If no profile covers the class, the registry default is used and the
+2. If the problem carries a Python failure signal (traceback / failing test),
+   that signal is parsed deterministically and maps to a richer Python class
+   prior (e.g. ``missing-method-or-attr``, ``logic-or-assertion``).  These
+   are PRIORs -- the test gate (REQ-6) is the real judge; a mis-class merely
+   costs one extra escalation attempt (self-correcting).  They accumulate in
+   ``new_classes.jsonl`` for later profiling (REQ-7 DISCOVER).
+3. When no failure signal is present, structural features determine the class
+   (multi-file/repo > has-examples > single-file-repair).
+4. The resolved class is mapped to a model via the registry tally; ties are
+   broken by the default model, then roster order.
+5. If no profile covers the class, the registry default is used and the
    rationale marks this as a HARNESS-GAP -- never a model limit (PRIME-001).
+
+NOTE: The LLM-classification path has been removed (REQ-2 criterion closed,
+TASK-27).  Classification is DETERMINISTIC end-to-end -- no model is ever
+consulted to route or to choose between models (model-as-judge is forbidden
+per the external-review correction).
 """
 from __future__ import annotations
 
 # #EXT-021-REQ-2 Start
+import re
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -40,11 +51,35 @@ _KNOWN_CLASSES: list[str] = [
     "multi-step-repo",     # multi-step tasks rooted in a real repository
 ]
 
+# Richer Python-error-derived classes (PRIORS; accumulate for later profiling)
+# These are HYPOTHESES validated by the test gate (REQ-6).  Won't have tally
+# coverage yet, so route() will default-fallback + record them as new/unhandled
+# classes (REQ-7 DISCOVER) -- that is CORRECT; they accumulate for profiling.
+_FAILURE_CLASSES: list[str] = [
+    "missing-method-or-attr",   # AttributeError / 'has no attribute'
+    "logic-or-assertion",       # AssertionError / ValueError
+    "signature-or-type",        # TypeError on call/arg
+    "missing-import",           # ImportError / ModuleNotFoundError
+    "undefined-name",           # NameError
+    "bounds-or-key",            # IndexError / KeyError
+]
+
+# Mapping: Python error_type -> richer problem class (deterministic prior)
+_FAILURE_CLASS_MAP: dict[str, str] = {
+    "AttributeError":       "missing-method-or-attr",
+    "AssertionError":       "logic-or-assertion",
+    "ValueError":           "logic-or-assertion",
+    "TypeError":            "signature-or-type",
+    "ImportError":          "missing-import",
+    "ModuleNotFoundError":  "missing-import",
+    "NameError":            "undefined-name",
+    "IndexError":           "bounds-or-key",
+    "KeyError":             "bounds-or-key",
+}
+
 # Confidence thresholds
 _HIGH_CONFIDENCE: float = 0.9
 _MED_CONFIDENCE: float = 0.65
-_AMBIGUITY_THRESHOLD: float = 0.7   # below this -> may consult LLM
-_LLM_CONFIDENCE: float = 0.75       # assigned when LLM supplied a valid label
 _FALLBACK_CONFIDENCE: float = 0.2   # assigned when no profile covers the class
 
 
@@ -133,11 +168,96 @@ def _extract_features(problem: dict) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Deterministic class classification
+# Python failure-signal parser (deterministic prior for richer classes)
+# ---------------------------------------------------------------------------
+
+def _failure_signal(problem: dict) -> dict[str, Any] | None:
+    """Parse a Python failure signal from the problem dict.
+
+    Checks several plausible fields for a failing test / traceback text,
+    then deterministically extracts:
+
+    * ``error_type`` -- e.g. ``AttributeError``, ``TypeError``, etc.
+    * ``symbol``     -- the touched symbol or abbreviated error detail (optional).
+
+    Returns ``None`` when no Python failure signal is found.
+
+    These are DETERMINISTIC PRIORS that seed the richer class ontology.
+    The test gate (REQ-6) is the real judge -- a mis-class merely costs
+    one extra escalation attempt (self-correcting, by design).  The richer
+    classes won't have tally coverage yet; route() records them as
+    new/unhandled (REQ-7 DISCOVER) so the roster can be re-profiled.
+    """
+    # Collect candidate strings that may carry a traceback / error
+    candidates: list[str] = []
+    for key in ("traceback", "test_output", "error", "failing_test"):
+        val = problem.get(key)
+        if isinstance(val, str) and val.strip():
+            candidates.append(val)
+    # context/task fields may embed a traceback inline
+    for key in ("context", "task"):
+        val = problem.get(key)
+        if isinstance(val, str) and "Traceback" in val:
+            candidates.append(val)
+
+    if not candidates:
+        return None
+
+    text = "\n".join(candidates)
+
+    # Check known error types (more-specific before aliases)
+    _ORDERED_ERRORS: list[str] = [
+        "ModuleNotFoundError",   # before ImportError (it is a subclass)
+        "ImportError",
+        "AttributeError",
+        "TypeError",
+        "AssertionError",
+        "NameError",
+        "IndexError",
+        "KeyError",
+        "ValueError",
+    ]
+    error_type: str | None = None
+    for et in _ORDERED_ERRORS:
+        if et in text:
+            error_type = et
+            break
+
+    if error_type is None:
+        return None
+
+    # Try to extract the touched symbol for richer context
+    symbol: str | None = None
+
+    # "AttributeError: 'Foo' has no attribute 'bar'" -> symbol = 'bar'
+    m = re.search(r"has no attribute '([^']+)'", text)
+    if m:
+        symbol = m.group(1)
+
+    if symbol is None:
+        # "NameError: name 'foo' is not defined" -> symbol = 'foo'
+        m = re.search(r"name '([^']+)' is not defined", text)
+        if m:
+            symbol = m.group(1)
+
+    if symbol is None:
+        # Fall back to the error detail on the same line as the error type
+        m = re.search(rf"{re.escape(error_type)}: (.{{0,80}})", text)
+        if m:
+            symbol = m.group(1).strip()
+
+    result: dict[str, Any] = {"error_type": error_type}
+    if symbol:
+        result["symbol"] = symbol
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Classification (structural + failure-signal paths, both deterministic)
 # ---------------------------------------------------------------------------
 
 def _classify_deterministic(features: dict[str, Any]) -> tuple[str, float]:
-    """Map extracted features to ``(problem_class, confidence)``.
+    """Map extracted structural features to ``(problem_class, confidence)``.
 
     Priority: multi-file / repo tasks are harder and need a stronger model;
     docstring examples signal a standalone-fn-gen style; everything else leans
@@ -157,35 +277,27 @@ def _classify_deterministic(features: dict[str, Any]) -> tuple[str, float]:
     return "single-file-repair", _MED_CONFIDENCE
 
 
-# ---------------------------------------------------------------------------
-# Optional LLM label (stub-friendly)
-# ---------------------------------------------------------------------------
+def _classify(problem_dict: dict, features: dict[str, Any]) -> tuple[str, float, str]:
+    """Classify a problem to ``(problem_class, confidence, method)``.
 
-def _ask_llm(llm: Any, problem: dict, current_class: str) -> str | None:
-    """Ask *llm* for a problem-class label.
+    When the problem carries a Python failure signal (traceback / failing test),
+    that signal maps to a richer class (deterministic PRIOR; REQ-7).  Otherwise
+    the structural feature mapping is used.  ``method`` is a short label for
+    the rationale (``"failure-signal"`` or ``"structural"``).
 
-    *llm* must be callable as ``llm(prompt: str) -> str``.  Returns one of
-    ``_KNOWN_CLASSES`` or ``None`` (bad reply, unknown label, or exception).
-    Never propagates an exception to the caller.
+    The richer failure-signal classes are HYPOTHESES -- the test gate (REQ-6)
+    validates predictiveness, and they accumulate in new_class_log for
+    later roster re-profiling (REQ-7 DISCOVER).
     """
-    source_snippet: str = str(
-        problem.get("source", problem.get("prompt", problem.get("text", "")))
-    )[:500]
-    prompt = (
-        "Classify this coding problem into exactly one of these classes:\n"
-        f"  {', '.join(_KNOWN_CLASSES)}\n\n"
-        "Reply with ONLY the class name, nothing else.\n\n"
-        f"Problem:\n{source_snippet}"
-    )
-    try:
-        result = llm(prompt)
-        if isinstance(result, str):
-            label = result.strip()
-            if label in _KNOWN_CLASSES:
-                return label
-    except Exception:
-        pass
-    return None
+    signal = _failure_signal(problem_dict)
+    if signal is not None:
+        error_type = signal["error_type"]
+        mapped_class = _FAILURE_CLASS_MAP.get(error_type)
+        if mapped_class is not None:
+            return mapped_class, _HIGH_CONFIDENCE, "failure-signal"
+
+    problem_class, confidence = _classify_deterministic(features)
+    return problem_class, confidence, "structural"
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +307,6 @@ def _ask_llm(llm: Any, problem: dict, current_class: str) -> str | None:
 def route(
     problem: Any,
     registry: Any,
-    llm: Any = None,
     *,
     tally: Any = None,
     record: bool = True,
@@ -208,19 +319,15 @@ def route(
         A dict (or object with ``__dict__``) describing the coding task.
         Recognised keys: ``source``/``prompt``/``text``, ``has_examples``,
         ``is_repo_task``/``repo_root``/``repo_path``, ``is_multi_file``,
-        ``files``, ``task_type``.
+        ``files``, ``task_type``, ``traceback``, ``test_output``, ``error``,
+        ``failing_test``, ``context``, ``task``.
     registry:
         A ``ModelRegistry`` instance (``harness.model_registry``).
-    llm:
-        Optional callable ``(prompt: str) -> str``.  When provided AND
-        deterministic confidence < ``_AMBIGUITY_THRESHOLD``, the LLM is
-        asked to supply a class label.  The deterministic path is fully
-        self-contained when ``llm=None``.
     tally:
         Optional ``CoverageTally`` (``harness.model_tally``).  When ``None``
         (the default), a tally is built on-the-fly from *registry*.  Inject
         a pre-built tally in tests for full offline isolation.  The tally is
-        the sole mechanism for model selection (deterministic argmax — no
+        the sole mechanism for model selection (deterministic argmax -- no
         model-as-judge, REQ-5).
     record:
         When ``True`` (the default), a HARNESS-GAP result appends one record
@@ -242,6 +349,13 @@ def route(
         that append is the honest observation that a class is unhandled, and
         it never mutates routing state.  Pass ``record=False`` when callers
         need a fully pure read (e.g. unit tests, replay).
+
+    REQ-2 note
+        Classification is DETERMINISTIC end-to-end.  No model is ever
+        consulted to route or to choose between models (model-as-judge is
+        forbidden per the external-review correction in REQ-2/REQ-7).  The
+        optional LLM-classification path present in earlier versions has been
+        removed (TASK-27).
     """
     # 1. Normalise problem representation
     problem_dict = _to_dict(problem)
@@ -249,33 +363,22 @@ def route(
     # 2. Cheap, deterministic feature extraction
     features = _extract_features(problem_dict)
 
-    # 3. Deterministic classification
-    problem_class, confidence = _classify_deterministic(features)
+    # 3. Deterministic classification: failure-signal PRIOR when available,
+    #    else structural features (REQ-2 + REQ-7)
+    problem_class, confidence, method = _classify(problem_dict, features)
     rationale_parts: list[str] = [
         "features={"
         f"has_examples:{features['has_examples']}, "
         f"is_repo_task:{features['is_repo_task']}, "
         f"is_multi_file:{features['is_multi_file']}, "
         f"fn_len:{features['fn_len']}"
-        "}"
+        f"}} method={method}"
     ]
 
-    # 4. Optional LLM refinement when features are ambiguous
-    if llm is not None and confidence < _AMBIGUITY_THRESHOLD:
-        llm_label = _ask_llm(llm, problem_dict, problem_class)
-        if llm_label is not None:
-            problem_class = llm_label
-            confidence = _LLM_CONFIDENCE
-            rationale_parts.append(f"LLM labelled as '{llm_label}'")
-        else:
-            rationale_parts.append(
-                "LLM returned no usable label; kept deterministic class"
-            )
-
     # #EXT-021-REQ-5 Start
-    # 5. Tally argmax: deterministic best-model-per-class (REQ-5)
+    # 4. Tally argmax: deterministic best-model-per-class (REQ-5)
     #    Build from registry on demand if no pre-built tally was injected.
-    #    NOTE: the tally is a pure deterministic table lookup — no model judges
+    #    NOTE: the tally is a pure deterministic table lookup -- no model judges
     #    between models here (model-as-judge is forbidden, REQ-2 / REQ-5).
     default_id: str = registry.default_model()
     _active_tally = tally
