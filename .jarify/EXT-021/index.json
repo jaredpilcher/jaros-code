@@ -1,21 +1,16 @@
 {
-  "REQ-7": [
+  "REQ-1": [
     {
-      "file": "harness/new_class_log.py",
-      "startLine": 17,
-      "endLine": 285
-    },
-    {
-      "file": "harness/model_router.py",
-      "startLine": 300,
-      "endLine": 309
+      "file": "harness/model_registry.py",
+      "startLine": 18,
+      "endLine": 210
     }
   ],
   "REQ-2": [
     {
       "file": "harness/model_router.py",
       "startLine": 30,
-      "endLine": 312
+      "endLine": 325
     },
     {
       "file": "harness/solve_routed.py",
@@ -35,13 +30,6 @@
       "endLine": 230
     }
   ],
-  "REQ-1": [
-    {
-      "file": "harness/model_registry.py",
-      "startLine": 18,
-      "endLine": 194
-    }
-  ],
   "REQ-4": [
     {
       "file": "harness/model_profiler.py",
@@ -52,6 +40,30 @@
       "file": "harness/solve_routed.py",
       "startLine": 55,
       "endLine": 231
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/model_tally.py",
+      "startLine": 42,
+      "endLine": 325
+    },
+    {
+      "file": "harness/model_router.py",
+      "startLine": 275,
+      "endLine": 304
+    }
+  ],
+  "REQ-7": [
+    {
+      "file": "harness/new_class_log.py",
+      "startLine": 17,
+      "endLine": 285
+    },
+    {
+      "file": "harness/model_router.py",
+      "startLine": 313,
+      "endLine": 322
     }
   ]
 }

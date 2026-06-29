@@ -197,6 +197,7 @@ def route(
     registry: Any,
     llm: Any = None,
     *,
+    tally: Any = None,
     record: bool = True,
 ) -> dict[str, Any]:
     """Classify *problem* and select the best-matching registry model.
@@ -215,6 +216,12 @@ def route(
         deterministic confidence < ``_AMBIGUITY_THRESHOLD``, the LLM is
         asked to supply a class label.  The deterministic path is fully
         self-contained when ``llm=None``.
+    tally:
+        Optional ``CoverageTally`` (``harness.model_tally``).  When ``None``
+        (the default), a tally is built on-the-fly from *registry*.  Inject
+        a pre-built tally in tests for full offline isolation.  The tally is
+        the sole mechanism for model selection (deterministic argmax — no
+        model-as-judge, REQ-5).
     record:
         When ``True`` (the default), a HARNESS-GAP result appends one record
         to the new-class log via ``harness.new_class_log.record_unhandled``.
@@ -265,19 +272,24 @@ def route(
                 "LLM returned no usable label; kept deterministic class"
             )
 
-    # 5. Registry lookup: find which models have measured coverage
+    # #EXT-021-REQ-5 Start
+    # 5. Tally argmax: deterministic best-model-per-class (REQ-5)
+    #    Build from registry on demand if no pre-built tally was injected.
+    #    NOTE: the tally is a pure deterministic table lookup — no model judges
+    #    between models here (model-as-judge is forbidden, REQ-2 / REQ-5).
     default_id: str = registry.default_model()
-    covering_ids: list[str] = registry.lookup_by_class(problem_class)
+    _active_tally = tally
+    if _active_tally is None:
+        from harness.model_tally import CoverageTally  # lazy: avoids import at module load
+        _active_tally = CoverageTally(registry)
+
+    best_id: str | None = _active_tally.best_model_for(problem_class)
 
     is_gap: bool = False
-    if covering_ids:
-        # Prefer the default model if it also covers the class (roster preference)
-        if default_id in covering_ids:
-            model_id: str = default_id
-        else:
-            model_id = covering_ids[0]
+    if best_id is not None:
+        model_id: str = best_id
         rationale_parts.append(
-            f"routed to '{model_id}' (measured coverage for '{problem_class}')"
+            f"routed to '{model_id}' (tally argmax for '{problem_class}')"
         )
     else:
         # No profile has evidence for this class -> deterministic default fallback
@@ -289,6 +301,7 @@ def route(
             "add held-out evidence to a profile to close this gap (not a model limit)"
         )
         is_gap = True
+    # #EXT-021-REQ-5 End
 
     decision: dict[str, Any] = {
         "model_id": model_id,

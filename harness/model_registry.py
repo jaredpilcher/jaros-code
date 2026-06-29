@@ -110,9 +110,15 @@ class ModelRegistry:
     Files beginning with ``_`` are meta-files and are ignored as profiles.
     """
 
-    def __init__(self, profiles: list[ModelProfile], default_id: str) -> None:
+    def __init__(
+        self,
+        profiles: list[ModelProfile],
+        default_id: str,
+        roster_order: Optional[list[str]] = None,
+    ) -> None:
         self._profiles: dict[str, ModelProfile] = {p.id: p for p in profiles}
         self._default_id = default_id
+        self._roster_order: list[str] = list(roster_order) if roster_order else []
 
     # ------------------------------------------------------------------
     # Public query API
@@ -146,6 +152,14 @@ class ModelRegistry:
         """Return every loaded profile (order not guaranteed)."""
         return list(self._profiles.values())
 
+    def roster_order(self) -> list[str]:
+        """Return the ordered list of model ids (best-first) from ``_roster.json``.
+
+        Used by ``CoverageTally`` to break ties in the argmax (REQ-5).
+        Returns an empty list when no roster order is known.
+        """
+        return list(self._roster_order)
+
 
 # ---------------------------------------------------------------------------
 # Factory functions
@@ -165,10 +179,12 @@ def from_dir(models_dir: str | Path) -> ModelRegistry:
     # -- read roster meta-file (optional) -----------------------------------
     roster_path = models_dir / _ROSTER_FILE
     default_id = _FALLBACK_DEFAULT
+    roster_order: list[str] = []
     if roster_path.is_file():
         try:
             roster = json.loads(roster_path.read_text(encoding="utf-8"))
             default_id = roster.get("default", _FALLBACK_DEFAULT)
+            roster_order = roster.get("order", [])
         except (json.JSONDecodeError, OSError):
             pass  # malformed roster — keep fallback
 
@@ -185,7 +201,7 @@ def from_dir(models_dir: str | Path) -> ModelRegistry:
                 # Skip malformed files — don't crash the registry
                 pass
 
-    return ModelRegistry(profiles=profiles, default_id=default_id)
+    return ModelRegistry(profiles=profiles, default_id=default_id, roster_order=roster_order)
 
 
 def load_registry() -> ModelRegistry:

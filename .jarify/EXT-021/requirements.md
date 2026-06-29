@@ -90,8 +90,8 @@ own **evals** (alongside tools/agents/config/prompts). The router never credits 
 without a tally entry (honest; otherwise default-fallback + record as a new/unhandled class).
 
 #### Acceptance Criteria
-- [ ] A persisted, queryable coverage tally (model × class → {score, bar, date, evidence}); `best_model_for(class) -> model_id` is the deterministic argmax (ties broken by roster order / default).
-- [ ] The router uses model JUDGEMENT to classify the CLASS, then the deterministic tally to SELECT the best model for it (judgement = class; deterministic = selection).
+- [x] A persisted, queryable coverage tally (model × class → {score, bar, date, evidence}); `best_model_for(class) -> model_id` is the deterministic argmax (ties broken by roster order / default). (`harness/model_tally.py` — `CoverageTally`, `_parse_score`; 38 offline tests in `tests/test_model_tally.py`.)
+- [x] The router uses model JUDGEMENT to classify the CLASS, then the deterministic tally to SELECT the best model for it (judgement = class; deterministic = selection). (`harness/model_router.route` step 5 now calls `CoverageTally.best_model_for` — tally injectable for tests; REQ-5 anchors in `model_router.py` lines 275–304.)
 - [ ] Roster progression: a model is profiled across ALL known classes; a documented "coverage captured" criterion gates admitting + profiling the next-most-capable Jetson-fitting model.
 - [ ] New-class trigger: recording a new class re-profiles ALL existing roster models against it, filling that column of the tally.
 - [ ] A `ModelProfile`'s adaptation set includes the EVALS used to measure its classes (not only tools/agents/config/prompts).
