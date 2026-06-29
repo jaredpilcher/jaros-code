@@ -12,5 +12,12 @@
     "ctx": 4096,
     "ngl": 99,
     "extra_args": ["--threads", "4"]
+  },
+  "deepseek-r1-distill-qwen-7b": {
+    "gguf": "/home/jared/gemma-server/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+    "alias": "deepseek-r1-distill-qwen-7b",
+    "ctx": 8192,
+    "ngl": 99,
+    "extra_args": ["--threads", "4"]
   }
 }

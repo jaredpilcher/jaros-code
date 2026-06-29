@@ -1,0 +1,24 @@
+{
+  "id": "deepseek-r1-distill-qwen-7b",
+  "alias": "deepseek-r1-distill-qwen-7b",
+  "serve": {
+    "gguf": "/home/jared/gemma-server/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+    "ctx": 8192,
+    "ngl": 99,
+    "fits_jetson": true
+  },
+  "classes": [],
+  "adaptation": {
+    "prompts": "r1-reasoning",
+    "note": "DeepSeek-R1-Distill-Qwen-7B: reasoning-specialized (RL-distilled <think> chain-of-thought). DECORRELATED candidate for the hard multi-step-repo class (different solve PROCESS than the general coders). Output = <think>...reasoning...</think> then the answer; the adaptation MUST parse the FINAL code AFTER </think>. Needs larger max_tokens + ctx for the reasoning trace."
+  },
+  "status": "CANDIDATE — under decorrelation trial. NOT admitted to routing until it MEASURABLY cracks tasks gemma+qwen both fail (EXT-021 admission gate). classes[] stays empty until earned.",
+  "security_vet": {
+    "source": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF (HuggingFace) — reputable, widely-used llama.cpp GGUF converter",
+    "license": "MIT (DeepSeek R1 + distills are MIT-licensed)",
+    "offline": "runs entirely on the Jetson via llama.cpp; no network egress (Tenet 2)",
+    "runtime_backstop": "two-plane gate — the model emits only inert Decisions; the deterministic clerk + test-gate validate every side effect, so even a weakly-aligned model cannot escalate",
+    "size_gb": 4.68,
+    "verify": "confirm downloaded size == 4.68GB + llama.cpp loads it cleanly before trusting"
+  }
+}
