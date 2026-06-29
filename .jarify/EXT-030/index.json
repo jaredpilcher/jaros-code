@@ -16,6 +16,11 @@
       "file": "harness/experiment_solve.py",
       "startLine": 358,
       "endLine": 772
+    },
+    {
+      "file": "tests/test_solve_live_path.py",
+      "startLine": 75,
+      "endLine": 254
     }
   ]
 }
