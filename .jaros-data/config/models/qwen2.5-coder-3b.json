@@ -1,5 +1,5 @@
 {
-  "_comment": "Qwen2.5-Coder-3B-Instruct profile. EXT-021 REQ-4/REQ-5. Classes are EMPTY until profiling run earns them (Tenet 3 — honest).",
+  "_comment": "Qwen2.5-Coder-3B-Instruct profile. EXT-021 REQ-4/REQ-5. Classes are EMPTY until profiling run earns them (Tenet 3 \u2014 honest).",
   "id": "qwen2.5-coder-3b",
   "alias": "qwen2.5-coder-3b",
   "serve": {
@@ -9,7 +9,15 @@
     "ngl": 99,
     "fits_jetson": true
   },
-  "classes": [],
+  "classes": [
+    {
+      "name": "standalone-fn-gen",
+      "bar": "HumanEval pass@1 >=50% (held-out HumanEval[:12])",
+      "score": "~11/12 (92%)",
+      "date": "2026-06-28",
+      "note": "Qwen2.5-Coder-3B direct instruct gen (qwen-instruct-direct, no Gherkin)."
+    }
+  ],
   "adaptation": {
     "prompts": "qwen-instruct-direct",
     "note": "Clean direct instruct code-gen, NO Gherkin scaffolding. Qwen-Coder wants a direct 'Implement the Python function ... Output ONLY the function definition' prompt. Earned classes (from profiling run) added to classes[] with evidence."

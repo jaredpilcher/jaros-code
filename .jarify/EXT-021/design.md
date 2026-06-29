@@ -181,3 +181,20 @@ so re-profiling is reproducible.
   Jetson-fitting models"; the founding Gemma profile is the EXT-014 anchor.
 - The router/rewire run NATIVE on Jaros (inert Decision → gate → clerk → log → replay), satisfying
   Tenet 1 and Tenet 3 like every other grain.
+
+## QWEN PROFILING VERDICT (2026-06-28 — first roster expansion)
+qwen2.5-coder-3b profiled via the model-manager (served on demand, gemma restored after).
+NOTE: the FIRST run was a HARNESS BUG (qwen_code dropped the import preamble -> fake 12% HumanEval,
+impossible for qwen-coder; fixed 0ac0c2f). Corrected results:
+- standalone-fn-gen: 11/12 = 92% HumanEval (gemma ~82%) -> EARNED; best_model_for = qwen.
+  CAVEAT: HumanEval is contaminated for both models, so the +10% is NOT a clean capability delta —
+  verify on MBPP (less contaminated) before over-claiming.
+- multi-step-repo (8 hardest bigbar [fail] tasks; gemma 0 + pass@k 0 + decomp 0): qwen 0/8 -> REJECTED.
+  The repo-eval path was VERIFIED sound (proper _file_context, _apply_func keeps imports, oracle-only
+  scoring) so 0/8 is HONEST: this hard class is beyond qwen too.
+HONEST SYNTHESIS: multi-model helps where models DIFFER (standalone-fn-gen -> route to qwen). The hard
+repo class is CORRELATED failure (two general coding models fail it together) -> "diversity beats
+resampling" needs DECORRELATED errors, which two similar general models don't give on this class. So
+that class needs harness-DEEPENING (#26 maximal-help) or a genuinely DIFFERENT model, not just a 2nd
+capable-but-similar one. The multi-model INFRASTRUCTURE works end-to-end (manager swap, profiler, honest
+tally); the PAYOFF so far = per-class routing (qwen for standalone-fn-gen), not cracking the hard class.
