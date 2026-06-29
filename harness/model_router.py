@@ -425,4 +425,47 @@ def route(
     # #EXT-021-REQ-7 End
 
     return decision
-# #EXT-021-REQ-2 End
+
+
+# #EXT-021-REQ-2 Start (route_native — Jaros-native routing, TASK-25)
+def route_native(
+    problem: Any,
+    registry: Any,
+    runtime: Any,
+    *,
+    tally: Any = None,
+    record: bool = False,
+) -> "dict[str, Any]":
+    """Like route() but emits the routing Decision through Runtime.apply for Jaros-native logging.
+
+    The routing logic is UNCHANGED (deterministic classification + tally argmax,
+    same as route()).  This function wraps the inert routing dict as a real Jaros
+    Decision (type ``'model.route'``), applies it through Runtime.apply
+    (gate -> executor -> DecisionLog), and returns the routing dict for the caller.
+
+    Parameters
+    ----------
+    problem : the coding task (same as route())
+    registry : ModelRegistry (same as route())
+    runtime : a Runtime instance; the Decision is applied through it and hash-chain logged.
+    tally : optional CoverageTally (same as route())
+    record : bool, default False — offline-safe; same semantics as route(record=)
+
+    Returns
+    -------
+    dict : the inert routing dict (model_id, problem_class, confidence, rationale)
+    """
+    import uuid
+    from jaros.core import create_decision
+
+    decision_data = route(problem, registry, tally=tally, record=record)
+
+    jaros_decision = create_decision(
+        id=f"route-{uuid.uuid4().hex}",
+        source="model-router",
+        type="model.route",
+        payload=decision_data,
+    )
+    runtime.apply(jaros_decision)
+    return decision_data
+# #EXT-021-REQ-2 End (route_native)

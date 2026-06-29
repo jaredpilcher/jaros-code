@@ -289,6 +289,178 @@ def solve_routed(
 # #EXT-021-REQ-3 End
 # #EXT-021-REQ-4 End
 
+
+# #EXT-021-REQ-2 Start (native)
+# #EXT-021-REQ-3 Start (native)
+def solve_routed_native(
+    problem: Any,
+    registry: Optional[Any] = None,
+    *,
+    runtime: Optional[Any] = None,
+    solve_fn: Optional[Callable] = None,
+    swap_fn: Optional[Callable] = None,
+    serving_state: Optional[Callable] = None,
+    activate_fn: Optional[Callable] = None,
+) -> dict:
+    """Jaros-native route -> rewire -> solve on ONE Runtime (hash-chain logged + replayable).
+
+    Unlike solve_routed(), every routing and rewire step flows through
+    Runtime.apply() (gate -> executor -> DecisionLog), making the full path
+    Jaros-native.  All three steps share ONE Runtime so the DecisionLog records
+    the sequence in order (byte-identically replayable via ``jaros replay``):
+
+      route_native(problem, registry, runtime)   => type='model.route' logged
+      runtime.apply(<model.rewire Decision>)     => type='model.rewire' logged + swap executed
+      solve_fn(problem, decision, rewire_result) => solve result
+
+    Parameters
+    ----------
+    problem :
+        A dict (or object with ``__dict__``) describing the coding task.
+    registry :
+        A ``ModelRegistry`` instance.  Defaults to ``load_registry()``.
+    runtime :
+        A ``Runtime`` instance.  Defaults to ``Runtime()`` (new instance per call).
+        ALL Decision applications share this Runtime so they land in the same
+        hash-chained DecisionLog.
+    solve_fn :
+        Optional ``(problem, decision, rewire_result) -> dict`` callable.
+        Defaults to ``_default_solve_fn`` (adaptation-aware behavioral solve).
+    swap_fn :
+        Injectable model swap callable — pass a mock for offline tests so no
+        live Jetson HTTP call is made.  Forwarded to ModelRewireTool via the
+        ``harness._rewire_config`` singleton.
+    serving_state :
+        Injectable serving-state reader — pass a stub for offline tests.
+    activate_fn :
+        Injectable adaptation-activate callable — pass a stub for offline tests.
+
+    Returns
+    -------
+    dict
+        ``{decision, rewire, solve, ok, error, applied_decisions}``
+
+        - ``decision``          — the inert routing dict
+        - ``rewire``            — the rewire result (from model.rewire tool execute)
+        - ``solve``             — solve result, or ``None`` on failure
+        - ``ok``                — ``False`` if rewire failed or solve raised
+        - ``error``             — honest error string or ``None`` (Tenet 3)
+        - ``applied_decisions`` — ordered list of decision types applied via Runtime
+
+    Tenet guarantees
+    ----------------
+    - **Tenet 1**: routing is inert (no side effects); the rewire Decision is the
+      only clerk — its side effect flows through Runtime.apply, gate-validated.
+    - **Tenet 2**: ModelRewireTool.validate() enforces fits_jetson=True; off-device
+      models are rejected at the gate before any swap attempt.
+    - **Tenet 3**: a rewire failure short-circuits HONESTLY — solve_fn is NEVER
+      called when the wrong model might be active.  All failures are surfaced in
+      the return dict; none are hidden.
+    """
+    import uuid
+    from jaros.core import create_decision
+    from harness.model_router import route_native
+    from harness._rewire_config import (
+        set_registry as _cfg_set_reg,
+        set_swap_fn as _cfg_set_swap,
+        set_serving_state_fn as _cfg_set_serving,
+        set_activate_fn as _cfg_set_activate,
+        reset_all as _cfg_reset,
+    )
+
+    # 1. Registry
+    if registry is None:
+        registry = load_registry()
+
+    # 2. Runtime — one instance for all steps (shared DecisionLog)
+    if runtime is None:
+        from harness.coding_loop import Runtime  # noqa: PLC0415
+        runtime = Runtime()
+
+    applied_decisions: list[str] = []
+
+    # 3. Route: emit model.route Decision through Runtime (inert, logged)
+    decision: dict = route_native(problem, registry, runtime, record=False)
+    applied_decisions.append("model.route")
+
+    # 4. Configure the rewire tool's injection state via the stable singleton
+    #    (harness._rewire_config) BEFORE applying the model.rewire Decision.
+    #    The tool imports lazily from the singleton at call time, so setting state
+    #    here is visible to ModelRewireTool.validate() and ModelRewireTool.execute().
+    _cfg_set_reg(registry)
+    if swap_fn is not None:
+        _cfg_set_swap(swap_fn)
+    if serving_state is not None:
+        _cfg_set_serving(serving_state)
+    if activate_fn is not None:
+        _cfg_set_activate(activate_fn)
+
+    # 5. Rewire: emit model.rewire Decision through Runtime
+    #    (gate validates model_id + on-device check; execute performs the swap)
+    rewire_decision = create_decision(
+        id=f"rewire-{uuid.uuid4().hex}",
+        source="model-router",
+        type="model.rewire",
+        payload={"model_id": decision["model_id"]},
+    )
+    try:
+        rewire_result: dict = runtime.apply(rewire_decision)
+        applied_decisions.append("model.rewire")
+    except RuntimeError as exc:
+        return {
+            "decision": decision,
+            "rewire": {"ok": False, "error": str(exc)},
+            "solve": None,
+            "ok": False,
+            "error": str(exc),
+            "applied_decisions": applied_decisions,
+        }
+    finally:
+        # Always reset to prevent state leakage between calls (test isolation).
+        _cfg_reset()
+
+    # 6. Honesty gate (Tenet 3): never solve on a failed rewire
+    if not rewire_result.get("ok"):
+        return {
+            "decision": decision,
+            "rewire": rewire_result,
+            "solve": None,
+            "ok": False,
+            "error": (
+                "solve_routed_native short-circuited: rewire failed — "
+                + str(rewire_result.get("error", "unknown error"))
+            ),
+            "applied_decisions": applied_decisions,
+        }
+
+    # 7. Solve with the active model's adaptation
+    _solve: Callable = solve_fn if solve_fn is not None else (
+        lambda p, d, r: _default_solve_fn(p, d, r, registry=registry)
+    )
+    try:
+        solve_result = _solve(problem, decision, rewire_result)
+    except Exception as exc:
+        return {
+            "decision": decision,
+            "rewire": rewire_result,
+            "solve": None,
+            "ok": False,
+            "error": f"solve_fn raised: {exc}",
+            "applied_decisions": applied_decisions,
+        }
+
+    return {
+        "decision": decision,
+        "rewire": rewire_result,
+        "solve": solve_result,
+        "ok": True,
+        "error": None,
+        "applied_decisions": applied_decisions,
+    }
+# #EXT-021-REQ-3 End (native)
+# #EXT-021-REQ-2 End (native)
+
+
 # #EXT-021-REQ-6 Start
 
 def solve_routed_escalating(

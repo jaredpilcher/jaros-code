@@ -66,3 +66,38 @@ Prove the whole loop and wire it into the solve entry point.
 - [REQ-2] Model-router judge (class → model Decision)
 - [REQ-3] Deterministic rewire to the selected model
 - [REQ-4] Per-model profiling / roster exploration loop
+
+### [TASK-25] Migrate routing layer to Jaros-native Runtime (TASK-25)
+
+Make the multi-model routing layer Jaros-native: routing decisions and rewire
+side effects flow through Runtime.apply (gate -> executor -> DecisionLog) exactly
+like the core behavioral solve, so they are hash-chain logged and replayable.
+
+#### Steps
+1. Create `harness/_rewire_config.py` — stable singleton for injectable state
+   (registry, swap_fn, serving_state, activate_fn) shared between solve_routed_native
+   and ModelRewireTool across the importlib dynamic-loading boundary.
+2. Create `.jaros-data/tools/model_route_tool.py` — Jaros tool (NAME="model.route")
+   that lets the inert routing Decision flow through Runtime.apply: validate() checks
+   model_id + problem_class + confidence; execute() returns the routing info (no side
+   effects — this tool is a pass-through logger for the hash chain).
+3. Create `.jaros-data/tools/model_rewire_tool.py` — Jaros tool (NAME="model.rewire")
+   with validate() (checks model_id resolves in registry + fits_jetson=True, Tenet 1/2)
+   and execute() (calls harness.model_rewire.rewire() via injected state from
+   harness._rewire_config). Keep existing rewire() as the implementation called by execute().
+4. Add `route_native(problem, registry, runtime, *, tally, record)` to
+   `harness/model_router.py`: calls route() for the inert dict, wraps it as a Jaros
+   Decision (type="model.route"), applies through Runtime.apply, returns the dict.
+5. Add `solve_routed_native(problem, registry, *, runtime, solve_fn, swap_fn,
+   serving_state, activate_fn)` to `harness/solve_routed.py`: route_native() ->
+   Runtime.apply(model.rewire Decision) -> solve_fn, all on ONE Runtime
+   (shared DecisionLog, hash-chain logged, replayable). Keep existing solve_routed()
+   for back-compat.
+6. Create `tests/test_jaros_native_routing.py` (OFFLINE, no live Jetson): 20 tests
+   covering route_native logged Decision, ModelRewireTool.validate() rejects (unknown
+   id + off-device), execute() mocked swap, and solve_routed_native full flow with
+   DecisionLog replayability.
+
+#### Implements
+- [REQ-2] Model-router judge (class → model Decision)
+- [REQ-3] Deterministic rewire to the selected model
