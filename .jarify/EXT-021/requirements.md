@@ -137,7 +137,7 @@ test-gated (recursive). Embedding/cluster-based discovery is an *option* but kil
 
 #### Acceptance Criteria
 - [x] Classification is a deterministic prior from the failure signal + structural features; the test gate is the final judge, so a mis-class is self-correcting (just escalates).
-- [ ] Every test-gated solve records a `(problem-signature, model, outcome)` label to a persistent store (the labels that drive class evolution).
+- [x] Every test-gated solve records a `(problem-signature, model, outcome)` label to a persistent store (the labels that drive class evolution).
 - [ ] DISCOVER: uncovered/unmatched problems accumulate → a named class + roster re-profile when a threshold cluster forms.
-- [ ] SPLIT: a class with inconsistent best-model outcomes (variance > threshold) is flagged + split into sub-classes, then re-profiled.
-- [ ] VALIDATE: a class is retained only while predictive (named best-model win-rate above a bar); decomposition-produced sub-tasks are classified + routed independently.
+- [x] SPLIT: a class with inconsistent best-model outcomes (variance > threshold) is flagged + split into sub-classes, then re-profiled.
+- [x] VALIDATE: a class is retained only while predictive (named best-model win-rate above a bar); decomposition-produced sub-tasks are classified + routed independently.

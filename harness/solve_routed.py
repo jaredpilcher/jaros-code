@@ -301,6 +301,8 @@ def solve_routed_escalating(
     test_fn: Optional[Callable] = None,
     tally: Optional[Any] = None,
     max_models: int = 3,
+    record: bool = True,
+    label_path: "Optional[Any]" = None,
 ) -> dict:
     """Route and escalate through ranked-tally candidates; test_fn picks the winner.
 
@@ -342,6 +344,16 @@ def solve_routed_escalating(
         Maximum number of candidate models to try (escalation budget).
         Default 3.  Models beyond this cap are never tried (Tenet 2 /
         cost-safety).
+    record :
+        When ``True`` (default), each test-gated outcome is appended to the
+        label store via ``label_store.record_outcome`` (best-effort, never
+        raises).  Pass ``False`` in tests that want isolation from the store,
+        or inject a *label_path* pointing at a temp file instead.
+    label_path :
+        Override the label store path for ``record_outcome``.  ``None`` uses
+        the default ``.jaros-data/artifacts/solve_labels.jsonl`` path.
+        Inject a ``tmp_path``-based path in tests to avoid polluting the
+        real runtime store.
 
     Returns
     -------
@@ -464,6 +476,22 @@ def solve_routed_escalating(
             test_result = {"passed": False, "error": f"test_fn raised: {exc}"}
 
         passed: bool = bool(test_result.get("passed", False))
+
+        # #EXT-021-REQ-7 Start
+        # Label recording: every test-gated outcome is a free (problem, model,
+        # pass/fail) label that drives class evolution (SPLIT + VALIDATE).
+        # Best-effort only — record_outcome never raises (Tenet 1).
+        if record:
+            from harness.label_store import record_outcome  # lazy; avoids circ-import
+            record_outcome(
+                problem,
+                model_id,
+                problem_class,
+                passed,
+                path=label_path,
+            )
+        # #EXT-021-REQ-7 End
+
         attempts.append({
             "model": model_id,
             "rewire_ok": True,

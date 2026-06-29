@@ -1,9 +1,73 @@
 {
-  "REQ-1": [
+  "REQ-3": [
     {
-      "file": "harness/model_registry.py",
-      "startLine": 18,
-      "endLine": 210
+      "file": "harness/adaptation.py",
+      "startLine": 30,
+      "endLine": 140
+    },
+    {
+      "file": "harness/model_rewire.py",
+      "startLine": 28,
+      "endLine": 422
+    },
+    {
+      "file": "harness/solve_routed.py",
+      "startLine": 54,
+      "endLine": 145
+    },
+    {
+      "file": "harness/solve_routed.py",
+      "startLine": 100,
+      "endLine": 289
+    }
+  ],
+  "REQ-7": [
+    {
+      "file": "harness/new_class_log.py",
+      "startLine": 17,
+      "endLine": 285
+    },
+    {
+      "file": "harness/model_router.py",
+      "startLine": 416,
+      "endLine": 425
+    },
+    {
+      "file": "harness/label_store.py",
+      "startLine": 61,
+      "endLine": 330
+    },
+    {
+      "file": "harness/solve_routed.py",
+      "startLine": 480,
+      "endLine": 493
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/model_tally.py",
+      "startLine": 42,
+      "endLine": 325
+    },
+    {
+      "file": "harness/model_router.py",
+      "startLine": 378,
+      "endLine": 407
+    },
+    {
+      "file": "harness/eval_qwen_mbpp.py",
+      "startLine": 54,
+      "endLine": 221
+    },
+    {
+      "file": "harness/qwen_adapt.py",
+      "startLine": 29,
+      "endLine": 145
+    },
+    {
+      "file": "harness/profile_qwen.py",
+      "startLine": 44,
+      "endLine": 528
     }
   ],
   "REQ-2": [
@@ -18,24 +82,19 @@
       "endLine": 288
     }
   ],
-  "REQ-3": [
+  "REQ-1": [
     {
-      "file": "harness/adaptation.py",
-      "startLine": 30,
-      "endLine": 140
-    },
-    {
-      "file": "harness/solve_routed.py",
-      "startLine": 54,
-      "endLine": 289
-    },
-    {
-      "file": "harness/model_rewire.py",
-      "startLine": 28,
-      "endLine": 422
+      "file": "harness/model_registry.py",
+      "startLine": 18,
+      "endLine": 210
     }
   ],
   "REQ-4": [
+    {
+      "file": "harness/model_profiler.py",
+      "startLine": 33,
+      "endLine": 336
+    },
     {
       "file": "harness/solve_routed.py",
       "startLine": 55,
@@ -50,62 +109,13 @@
       "file": "harness/profile_qwen.py",
       "startLine": 43,
       "endLine": 527
-    },
-    {
-      "file": "harness/model_profiler.py",
-      "startLine": 33,
-      "endLine": 336
-    }
-  ],
-  "REQ-5": [
-    {
-      "file": "harness/eval_qwen_mbpp.py",
-      "startLine": 54,
-      "endLine": 221
-    },
-    {
-      "file": "tests/test_eval_qwen_mbpp.py",
-      "startLine": 1,
-      "endLine": 434
-    },
-    {
-      "file": "harness/qwen_adapt.py",
-      "startLine": 29,
-      "endLine": 145
-    },
-    {
-      "file": "harness/profile_qwen.py",
-      "startLine": 44,
-      "endLine": 528
-    },
-    {
-      "file": "harness/model_tally.py",
-      "startLine": 42,
-      "endLine": 325
-    },
-    {
-      "file": "harness/model_router.py",
-      "startLine": 378,
-      "endLine": 407
     }
   ],
   "REQ-6": [
     {
       "file": "harness/solve_routed.py",
       "startLine": 292,
-      "endLine": 498
-    }
-  ],
-  "REQ-7": [
-    {
-      "file": "harness/new_class_log.py",
-      "startLine": 17,
-      "endLine": 285
-    },
-    {
-      "file": "harness/model_router.py",
-      "startLine": 416,
-      "endLine": 425
+      "endLine": 526
     }
   ]
 }
