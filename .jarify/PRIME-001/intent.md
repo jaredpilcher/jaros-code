@@ -186,21 +186,23 @@ agents compose) and an **extensive suite of evaluations** (the proof we are
 converging on the bar). More capability is always answered by *more, smaller* agents,
 *sharper* tools, and *more* evals — never by a bigger model.
 
-**Two judges, nested: the model-router OUTSIDE, the orchestrator INSIDE.** The multi-model harness
-adds an OUTER judgement before any solving begins. The **model-router judge** reads the problem,
-classifies its *kind and difficulty*, and selects the roster model whose measured profile best covers
-that class; the harness then **rewires itself** to that model (serves it on the Jetson, activates its
-tools/agents/config/prompts). INSIDE that choice, the chosen model's own **orchestrator** (below)
-composes *that model's* agents and tools to solve the task. Both are inert `Decision`s on the reasoning
-plane (commitment 1), and both are held to the right-decision-every-time bar: every misroute and every
-wrong next-step is a harness gap to close, never a model limit to accept. The router's profiles are
-**earned by measurement** — a model is credited with a class only once it is shown, on held-out tasks,
-to handle it; an unmapped or mis-routed class is a gap to close by better profiling, deeper per-model
-adaptation, or a stronger roster model. The router runs on-device (a small classification, backed by
-deterministic features), and a deterministic default guarantees that when it is unsure the task still
-goes to a capable model rather than failing. The rewiring is itself deterministic (commitment 1): the
-model the router names, the config that loads, and the swap that serves it all flow through the clerk,
-hash-chain logged and replayable.
+**The router OUTSIDE is DETERMINISTIC; the model judges only INSIDE.** The multi-model harness adds an
+OUTER routing layer before any solving begins — and that layer is **deterministic, not a model
+judgement** (external review + owner, 2026-06-28). The **router** classifies the problem's *class* from
+deterministic features (standalone-vs-repo, has-examples, multi-file, size, language), consults the
+deterministic **coverage tally** (which roster model is measured-best for that class), and — when more
+than one model qualifies — lets the **deterministic test gate** pick the winner: try the candidates
+best-measured-first and keep the first whose output passes the given/visible test. A model is **never**
+used to route or to choose between models — model-as-judge was *measured* net-negative, and letting a
+model pick models would re-introduce the very randomness multi-model exists to tame; the decorrelated
+errors of diverse small models are harvested by the *test*, not by a meta-model. Escalation always goes
+to the next-best **local, Jetson-fitting, free** model — **never** a cloud or paid model (commitment 2).
+The reasoning plane's judgement is reserved for INSIDE the chosen model — its **orchestrator** (below)
+composes *that model's* agents and tools to solve the task. Routing, the tally lookup, the test-gated
+selection, and the rewire are all deterministic clerk operations (commitment 1) — hash-chain logged and
+replayable — and a model's coverage is **earned by measurement** (a class is credited only on held-out
+evidence); an unmapped or mis-routed class is a harness gap to close (better features, deeper per-model
+adaptation, or a stronger roster model), never a model limit to accept.
 
 **The composition is EMERGENT and NON-DETERMINISTIC — orchestrated by the model itself.** The swarm is
 not one fixed pipeline. At solve-time the 2B acts as an **orchestrator** that judges which agents and

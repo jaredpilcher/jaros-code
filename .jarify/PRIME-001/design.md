@@ -80,13 +80,17 @@ co-adapted baseline scored 4/16) — proof that the *adaptation*, not just the w
 performs, so the rewiring is per-model and first-class. The router, the registry lookup, and
 the rewire all flow through the clerk: hash-chain logged and byte-replayable (Tenet 3).
 
-**Selection splits two-plane (owner refinement, 2026-06-28):** the router AGENT uses **judgement**
-to name the problem's CLASS; a **deterministic coverage tally** (model × class → measured score, kept
-filled in by the profiler) then selects the *best* model for that class by argmax — judgement for the
-class, determinism for the choice. The roster grows **forever**: each model is profiled across all
-known classes, then the next most capable Jetson-fitting model is admitted and profiled the same way;
-and a **new class re-profiles every prior model** (go back, don't forget them) so the tally is always
-complete. Per-model adaptation includes that model's own evals. See EXT-021 REQ-5.
+**Selection is DETERMINISTIC end-to-end (owner + external review, 2026-06-28):** the router classifies
+the CLASS from deterministic features (*not* a model); a **deterministic coverage tally** (model × class
+→ measured score, kept filled in by the profiler) names the best model by argmax; and when several
+models cover a class, the **deterministic test gate** picks the winner — try them best-measured-first,
+keep the first whose output passes the given test. **No model ever routes or chooses between models**
+(model-as-judge was measured net-negative; the test, not a meta-model, harvests the decorrelated errors
+of diverse small models). The roster grows **forever**: profile a model across all known classes, then
+admit + profile the next most capable Jetson-fitting model; a **new class re-profiles every prior model**
+(go back, don't forget them) so the tally stays complete. Per-model adaptation includes that model's own
+evals. All escalation stays on **local Jetson-fitting** models — never cloud (Tenet 2). See EXT-021
+REQ-5/REQ-6.
 
 ## Why many small agents beat one big one
 

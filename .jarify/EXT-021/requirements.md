@@ -27,19 +27,24 @@ queryable; Gemma 4 2B (`e2b`) is the founding entry and the baseline anchor.
 - [x] Gemma 4 2B (`e2b`) registered as the founding profile with its current adaptation + measured classes.
 - [x] A registry never invents a class for a model that has no recorded held-out evidence (honest profiling, Tenet 3).
 
-### [REQ-2] Model-router judge (class → model Decision)
+### [REQ-2] Deterministic model-router (class → model; NO model-as-judge)
 
-A judge that, given a problem, classifies its **class and difficulty** and selects the registry
-model whose profile best covers that class, emitting an inert `Decision` (Tenet 1). It runs
-on-device (a small classification, optionally backed by deterministic features) and ALWAYS yields a
-choice: a **deterministic default** routes to a known-capable model when the judge is unsure, so the
-system never fails to route. The routing decision is hash-chain logged and replayable.
+A **deterministic** router that classifies a problem's **class** from deterministic features
+(standalone-vs-repo, has-docstring-examples, multi-file, function size, language — *not* a model's
+judgement) and selects the model via the deterministic coverage tally (REQ-5), emitting an inert
+`Decision` (Tenet 1). **A model is never used to route or to pick between models** — model-as-judge
+was *measured* net-negative (#20/#21: the 2B orchestrator was ~parity with a 80%-accurate blind spot),
+and letting a model choose models would re-introduce the very randomness multi-model exists to tame
+(external review, 2026-06-28). It ALWAYS yields a choice (a deterministic default when no tally entry
+covers the class) and is hash-chain logged + replayable. (The earlier implementation's optional
+LLM class-label path is dropped — classification stays deterministic.)
 
 #### Acceptance Criteria
 - [x] `route(problem) -> Decision{model_id, problem_class, confidence, rationale}` — inert data, no side effects.
 - [x] Selection consults the registry's class→model coverage; ties/uncertainty fall back to the deterministic default model.
-- [x] The router is offline-testable with a fake LLM (classification stubbed) and a stub registry.
+- [x] The router is offline-testable with a stub registry (deterministic — no LLM needed).
 - [x] A misroute is treated as a harness gap to close (better profile/features), never a model limit — recorded for the convergence loop.
+- [ ] The router uses ONLY deterministic features to classify the class — no model is asked to route or to choose between models (model-as-judge forbidden here; the earlier optional-LLM path is removed/disabled).
 
 ### [REQ-3] Deterministic rewire to the selected model
 
@@ -90,3 +95,22 @@ without a tally entry (honest; otherwise default-fallback + record as a new/unha
 - [ ] Roster progression: a model is profiled across ALL known classes; a documented "coverage captured" criterion gates admitting + profiling the next-most-capable Jetson-fitting model.
 - [ ] New-class trigger: recording a new class re-profiles ALL existing roster models against it, filling that column of the tally.
 - [ ] A `ModelProfile`'s adaptation set includes the EVALS used to measure its classes (not only tools/agents/config/prompts).
+
+### [REQ-6] Test-gated roster escalation (the deterministic test is the judge, never a model)
+
+(External review + owner, 2026-06-28.) When a class has more than one candidate model in the tally,
+the winner is resolved by the **deterministic test gate, not by a model**: try the best-tally model,
+run its solve, let the **given/visible test** (the task's own failing test, or the docstring examples)
+decide pass/fail; on fail, **escalate to the next candidate model** for that class and retry. The
+oracle/test — never a model — picks the winner, so the decorrelated errors of diverse small models are
+harvested (diversity beats best-of-N resampling, which we measured as noise) WITHOUT re-introducing
+model-as-judge. ALL candidate models are **local + Jetson-fitting + free** (Tenet 2): escalation goes
+to the next-best LOCAL model, NEVER to a cloud or paid model — version "A" (many diverse small local
+models, test-gated), never version "B" (cloud escalation). Escalation order is the deterministic tally
+(best-measured-first), bounded by a max-models budget.
+
+#### Acceptance Criteria
+- [ ] On a multi-candidate class, `solve_routed` tries models best-tally-first and keeps the FIRST whose output passes the given/visible test (the deterministic gate), escalating on fail.
+- [ ] The winner is chosen ONLY by the deterministic test/oracle — no model ranks or picks between model outputs (model-as-judge forbidden).
+- [ ] Escalation is bounded (a max-models budget) and stays entirely on LOCAL Jetson-fitting models — cloud/paid is never a tier (Tenet 2).
+- [ ] Honest: the visible test/spec gates selection at solve time; the hidden held-out oracle is used only to SCORE the eval, never to pick the model.
