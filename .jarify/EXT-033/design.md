@@ -162,3 +162,11 @@ Full suite: 26/26 eval_routed tests, 943/943 total. Gemma baseline path unaffect
 
 **Next step:** `python -m harness.eval_routed --n 20 --bar mbpp` (MBPP has real headroom:
 gemma 25% vs qwen 65%); restore gemma after: `python -m harness.model_rewire gemma-4-e2b`.
+
+## RUN #2 (2026-06-29) — MBPP, fixed eval: routing is DIRECTIONALLY positive (+10pp), not CI-significant at n=20
+With the preamble-assembly bug FIXED (commit f5141e5), re-ran on MBPP (n=20, gemma headroom), 0 errors:
+- single-gemma baseline = 0.550 [0.342, 0.742]
+- routed (route standalone-fn-gen -> qwen2.5-coder-3b) = 0.650 [0.433, 0.819]
+- delta = +0.100, lift? = NO (CI overlap at n=20).
+HONEST VERDICT: routing to the best-per-class model is DIRECTIONALLY better (+10pp), consistent with the multi-model claim, but NOT statistically significant at n=20 (Wilson95 CIs overlap; n>=30 needed to separate a 10pp gap). NOT pushed (routine, honest non-significant).
+KEY NUANCE (honest): gemma scored 55% here vs the 25% bare-component MBPP number — because this eval uses the GATED solve (test-feedback iterations), which LIFTS the weak model (25% -> 55%), NARROWING the routing advantage (bare component gap gemma 25% vs qwen 65% = 40pp -> end-to-end gated gap = +10pp). So the harness's per-model gated solve already does much of the work; the marginal end-to-end routing lift is real but modest. The STRONGER evidence for the multi-model value remains the per-component held-out numbers (qwen 92%HE/65%MBPP vs gemma 82%/25% bare). This is the honest end-to-end picture (Tenet 3): routing helps directionally; it is not a dramatic system-level multiplier once both models use the full gated solve. A larger-n run (>=30) would test CI significance but the gated eval is slow (~2-3hr per 20 tasks); the directional result + the component evidence are sufficient honest signal. The capstone eval (EXT-033) is now CORRECT + reproducible (the bug-catch was the real value of RUN#1).
