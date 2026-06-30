@@ -1,0 +1,36 @@
+{
+  "REQ-2": [
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 28,
+      "endLine": 35
+    },
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 195,
+      "endLine": 420
+    },
+    {
+      "file": "harness/swebench.py",
+      "startLine": 114,
+      "endLine": 289
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 27,
+      "endLine": 36
+    },
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 102,
+      "endLine": 188
+    },
+    {
+      "file": "harness/swebench.py",
+      "startLine": 54,
+      "endLine": 111
+    }
+  ]
+}
