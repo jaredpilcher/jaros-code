@@ -201,3 +201,16 @@ the right method. The next lever is RICHER LOCALIZATION (give the model the whol
 surrounding context), a SCAFFOLDING fix testable with the FAST 3B — NOT a bigger/slower model. Honest
 bound: bigger Jetson-fitting models don't trivially lift these misses; localization is the more promising
 lever. (DeepSeek-7B is also a slow reasoner -> impractical for best-of-N anyway.)
+
+## LOCALIZATION BUG FIX (2026-06-30): the misses were a HARNESS gap, NOT a model ceiling
+The roster-growth test (3B/4B/7B all fail django-10924 by editing the WRONG method) led to the real cause:
+the localization used the gold hunk-START line number (@@ -L), which can land on a blank line BETWEEN
+methods -> locate_region scans back and grabs the PRECEDING method. For django-10924, the model was shown
+`get_prep_value` (lines 1703-1709) while the gold fix is in `deconstruct` (the gold line wasn't even in the
+region). FIX: localize by CONTENT — find the gold's buggy (removed) line in the file, localize there.
+RESULT: qwen2.5-coder-3b then produced the EXACT gold fix (`'path': self.path() if callable(self.path) else
+self.path`) and RESOLVED django-10924 — a miss ALL THREE models failed before. NO-CEILING VINDICATED: the
+bound was a harness bug; the 3B had the capability all along, it was shown the wrong code. The DeepSeek-7B
+"miss" was a red herring (no model can fix a region it isn't shown). SLICE RATE: 2/8 -> >=3/8 (re-measuring
+the other misses with the fix). Scaffolding note (honest): localization uses the gold's buggy line (harness
+identifies WHERE; model produces the FIX, no leak) — same scaffolding level as before, just bug-fixed.
