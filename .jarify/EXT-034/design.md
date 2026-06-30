@@ -117,3 +117,14 @@ HONEST NEGATIVE (same easy slice): astropy__astropy-6938's "1-line fix" needs an
 HONEST CALIBRATION (Tenet 3, NOT a novelty claim): small models resolving EASY SWE-bench-Lite instances is ESTABLISHED (SWE-Gym/Agentless/SWE-smith etc.); these instances are tractable. What is distinctive is the SYSTEM — a multi-model harness resolving the gold-standard bar FULLY LOCAL on a ~$250 Jetson at $0, reproducible. The honest claim: "jaros-code PLACES on SWE-bench-Lite locally at $0" (>=1 genuine resolve + 1 measured negative on the easy slice), NOT "a small model cracks SWE-bench." The citable number is resolution-rate-at-a-stated-scaffolding-level, local.
 INFRASTRUCTURE LESSONS (the "predictable zero" was ALL friction, never the model): (1) the swebench eval MUST run in WSL/Linux, not Windows — Windows needs a `resource`-module stub AND corrupts patch line-endings (stray CR) so git apply dies ("malformed patch"); WSL/Linux is clean (gold resolves there). (2) extract repo files from the BUILT Docker image (`wsl bash -c "docker run --rm <img> cat /testbed/<file> > <dst>"`, redirect INSIDE wsl) + LF-normalize. (3) make_unified_diff had a DOUBLE-NEWLINE bug (splitlines(keepends=True)+"\n".join doubled every line -> "malformed patch") — FIXED to splitlines() no-keepends (24 swebench tests still green). (4) qwen3-thinking is SLOW + truncates mid-think unless R1_MAX_TOKENS>=9000 + timeout>=1300. (5) SOLVE = extract file -> localize (issue usually names it) -> model produces a TARGETED single-line/region edit (whole-function rewrites mis-indent unrelated lines) -> make_unified_diff -> WSL eval. (6) best-of-N + the test-gate is the honest multiplier.
 NEXT: more easy instances for a slice resolution-rate; productionize the grind scripts into harness/swebench_live.py.
+
+## PRODUCTIONIZED: harness/swebench_live.py (2026-06-30)
+The validated grind (django-12125 resolve) is productionized into `harness/swebench_live.py` — the
+PURE, offline-testable core of the live solve: `locate_region` (def/class enclosing the hunk),
+`parse_search_replace` / `apply_search_replace` (SEARCH/REPLACE editor — handles line-change,
+addition, method-add, with rstrip-tolerant matching), `build_solve_prompt`, and `solve_instance_live`
+(best-of-N, gen_fn injected). Two-plane: the model emits inert SEARCH/REPLACE text; this module
+applies it deterministically. Side effects (Docker file-extract, model gen, WSL eval) are INJECTED so
+the logic is unit-tested with no Docker/WSL/Jetson — tests/test_swebench_live.py (10 tests) reproduce
+the django-12125 __name__->__qualname__ resolve with a canned reply. The live wiring (extract-from-image
++ WSL eval) stays in the gitignored grind scripts; this module is the reusable test-gated core.
