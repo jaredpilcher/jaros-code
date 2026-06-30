@@ -122,6 +122,52 @@ def _score_task(task: Any, code: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Preamble assembly (uniform for all model adaptations)
+# ---------------------------------------------------------------------------
+
+# #EXT-033-REQ-1 Start (preamble assembly)
+def _assemble_solution(task: Any, code: str) -> str:
+    """Prepend the stub's import preamble to ``code`` if it was dropped.
+
+    HumanEval/MBPP stubs may carry import lines before the ``def`` line
+    (e.g. ``from typing import List``).  Model adaptations that return ONLY
+    the bare ``def`` (qwen_code slices from ``def {name}`` and drops those
+    imports) produce a solution.py that fails to import when annotations
+    reference the missing names — the RUN #1 harness bug (2026-06-29).
+
+    Strategy: if the stub has a non-empty preamble (lines before the first
+    top-level ``def`` line) AND the generated code's first non-blank line
+    starts with ``def``, the preamble was dropped — prepend it.  When the
+    code already opens with non-def lines (gemma's splice via sig_doc always
+    includes the preamble), the code is returned unchanged — no doubling.
+
+    Mirrors ``profile_qwen._real_humaneval_eval`` (the reference that already
+    measured qwen at 92%) and is applied uniformly to ALL model adaptations
+    so the comparison is apples-to-apples.
+    """
+    stub: str = ""
+    if hasattr(task, "files") and isinstance(task.files, dict):
+        stub = task.files.get("solution.py", "")
+    if not stub:
+        return code
+
+    # Find the first top-level ``def `` in the stub.
+    m = re.search(r"^def ", stub, re.MULTILINE)
+    if m is None or m.start() == 0:
+        return code  # No preamble (def is the very first character)
+
+    preamble = stub[: m.start()]
+    if not preamble.strip():
+        return code  # Preamble is blank lines only
+
+    # Prepend only when the code starts with ``def`` (preamble was dropped).
+    if code.lstrip().startswith("def "):
+        return preamble + code
+    return code
+# #EXT-033-REQ-1 End (preamble assembly)
+
+
+# ---------------------------------------------------------------------------
 # Problem dict builder for routing (deterministic feature extraction)
 # ---------------------------------------------------------------------------
 
@@ -273,6 +319,7 @@ def eval_routed(
         problem_class: str = decision.get("problem_class", "unknown")
 
         code: str = _solve(t, decision)
+        code = _assemble_solution(t, code)  # prepend stub preamble if dropped
         ok: bool = _score_task(t, code)
         routed_passed += int(ok)
 
@@ -359,6 +406,7 @@ def eval_single(
 
     for t in tasks:
         code: str = _solve(t)
+        code = _assemble_solution(t, code)  # prepend stub preamble if dropped
         ok: bool = _score_task(t, code)
         passed += int(ok)
         per_task.append({"task_id": t.id, "model": model, "passed": ok})

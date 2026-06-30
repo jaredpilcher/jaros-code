@@ -140,3 +140,25 @@ Offline tests mock both the routing and solve sides:
 
 ## RUN #1 (2026-06-29) — INVALID (harness bug caught); NOT a routing-negative
 First live run (n=20 HumanEval): single-gemma=1.000 (easy slice, ceiling), routed=0.400 => delta -0.600 "NEGATIVE". This is a HARNESS BUG, NOT a real result (sanity: qwen alone is 92% on HumanEval, so routed-via-qwen scoring 40% is absurd). ROOT CAUSE: qwen_code slices from `def` and DROPS the HumanEval stub's import preamble (e.g. `from typing import List`); harness/profile_qwen.py `_real_humaneval_eval` (the honest 92% measurement) COMPENSATES by prepending the stub preamble before scoring, but eval_routed does NOT — so typed solutions fail to import -> false 40%. The gemma path (solve_gated) assembles correctly (100%), exposing the asymmetry. The 92% qwen claim STANDS (correct HumanEval assembly = stub-preamble + completion, standard methodology; and in real production qwen adds functions to files that already have the imports). FIX: eval_routed must assemble the testable program uniformly (prepend the stub preamble/prompt to the generated function for ALL model adaptations, mirroring _real_humaneval_eval). Also: the first-20 HumanEval slice is at gemma's CEILING (100%) so it cannot show a routing lift regardless — the informative bar is MBPP (gemma 25% vs qwen 65%, real headroom). Re-run on MBPP after the fix. NO routing-negative is recorded; this run is discarded as a measurement-harness defect (honest measurement, Tenet 3).
+
+## RUN #1 FIX (2026-06-29) — preamble assembly + regression test
+
+**Assembly fix:** Added `_assemble_solution(task, code) -> str` to `harness/eval_routed.py`.
+The helper extracts the stub's import preamble (every line before the first top-level `def`)
+and prepends it to `code` ONLY when `code` starts with `def` (i.e. the preamble was dropped).
+When the code already opens with non-def lines (gemma's `splice` via `sig_doc` includes the
+preamble), the code is returned unchanged — no doubling. Called in BOTH `eval_routed` and
+`eval_single` loops after `solve_fn` returns and before `_score_task` writes solution.py.
+This mirrors the fix already present in `profile_qwen._real_humaneval_eval` (the reference
+that produced the honest 92% qwen measurement) and makes the comparison apples-to-apples.
+
+**Regression test:** `test_eval_routed_typed_stub_drops_preamble_still_passes` in
+`tests/test_eval_routed.py`. A `_StubTaskTyped` with `from typing import List` in the stub,
+a solve_fn returning bare `def list_length(x: List[int]) -> int: return len(x)` (no import),
+asserts `routed_passed == 1`. Without the fix this fails with NameError on `List[int]`
+(Python 3.12 evaluates annotations eagerly at function definition time). Full `_assemble_solution`
+unit tests also added (prepend, no-double, no-preamble, no-files-attr cases).
+Full suite: 26/26 eval_routed tests, 943/943 total. Gemma baseline path unaffected.
+
+**Next step:** `python -m harness.eval_routed --n 20 --bar mbpp` (MBPP has real headroom:
+gemma 25% vs qwen 65%); restore gemma after: `python -m harness.model_rewire gemma-4-e2b`.

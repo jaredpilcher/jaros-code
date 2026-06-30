@@ -61,6 +61,28 @@ _TEST_ALWAYS_FAIL = (
 )
 _TEST_CMD = f"{sys.executable} -m pytest test_solution.py -q --tb=no"
 
+# Typed stub: mimics a HumanEval problem whose preamble has `from typing import List`.
+# A bare-def solve_fn (like qwen_code) drops that import, causing NameError on the
+# annotation -> false FAIL.  The preamble-assembly fix (RUN #1 bug 2026-06-29) must
+# prepend the preamble so the solution imports cleanly.
+_TYPED_STUB = (
+    "from typing import List\n\n"
+    "def list_length(x: List[int]) -> int:\n"
+    '    """Return the number of elements in a list.\n\n'
+    "    >>> list_length([1, 2, 3])\n"
+    "    3\n"
+    '    """\n'
+    "    pass\n"
+)
+# qwen_code / bare-def output: correct logic, NO import preamble (mimics the bug)
+_TYPED_DEF_ONLY = "def list_length(x: List[int]) -> int:\n    return len(x)\n"
+_TYPED_TEST = (
+    "from solution import list_length\n\n"
+    "def test_list_length():\n"
+    "    assert list_length([1, 2, 3]) == 3\n"
+    "    assert list_length([]) == 0\n"
+)
+
 
 class _StubTask:
     """Minimal Task-shaped object that eval_routed/_score_task actually read."""
@@ -75,6 +97,19 @@ class _StubTask:
             "solution.py": _STUB_SRC,
             "test_solution.py": _TEST_OK if passes else _TEST_ALWAYS_FAIL,
         }
+
+
+class _StubTaskTyped:
+    """Task whose stub has a ``from typing import List`` import preamble."""
+    id = "task_typed_preamble"
+    instruction = "implement list_length(x: List[int]) -> int"
+    target = "solution.py"
+    test_cmd = f"{sys.executable} -m pytest test_solution.py -q --tb=no"
+    tier = 4
+    files = {
+        "solution.py": _TYPED_STUB,
+        "test_solution.py": _TYPED_TEST,
+    }
 
 
 def _make_tasks(n: int, which_pass: set | None = None) -> list[_StubTask]:
@@ -173,6 +208,7 @@ def test_eval_routed_imports():
         _ci_overlap,
         _score_task,
         _load_tasks,
+        _assemble_solution,
     )
 
 
@@ -629,3 +665,135 @@ def test_ci_overlap_non_overlapping():
 
     assert _ci_overlap(0.0, 0.3, 0.5, 0.9) is False
     assert _ci_overlap(0.6, 0.9, 0.1, 0.4) is False
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION: preamble assembly fix (RUN #1 harness bug, 2026-06-29)
+#
+# eval_routed was scoring qwen's raw output WITHOUT prepending the stub's
+# import preamble.  qwen_code slices from `def {fn_name}` and drops lines
+# like `from typing import List`; Python's eager annotation evaluation then
+# raises NameError on the signature -> solution.py fails to import ->
+# false ~40% for qwen (which is genuinely 92%).
+#
+# These tests would have caught the bug before RUN #1.
+# ---------------------------------------------------------------------------
+
+def test_assemble_solution_prepends_preamble_when_code_starts_with_def():
+    """_assemble_solution must prepend the stub's preamble when code starts with def."""
+    from harness.eval_routed import _assemble_solution
+
+    task = _StubTaskTyped()
+    assembled = _assemble_solution(task, _TYPED_DEF_ONLY)
+    assert assembled.startswith("from typing import List"), (
+        f"Preamble not prepended; got: {assembled[:80]!r}"
+    )
+    assert "def list_length" in assembled
+    assert assembled.count("def list_length") == 1
+
+
+def test_assemble_solution_does_not_double_preamble_when_code_already_has_it():
+    """_assemble_solution must NOT double-prepend when code already contains the preamble.
+
+    gemma's splice (via body_completer_agent.splice + signature_and_docstring) includes
+    the preamble in sig_doc, so the output already starts with `from typing import List`.
+    The fix must leave such code unchanged to avoid duplicate imports.
+    """
+    from harness.eval_routed import _assemble_solution
+
+    task = _StubTaskTyped()
+    # Code that already includes the preamble (gemma-style splice output)
+    code_with_preamble = (
+        "from typing import List\n\n"
+        "def list_length(x: List[int]) -> int:\n"
+        '    """Return the number of elements in a list."""\n'
+        "    return len(x)\n"
+    )
+    assembled = _assemble_solution(task, code_with_preamble)
+    # Must NOT start with doubled imports
+    assert assembled.count("from typing import List") == 1, (
+        f"Preamble doubled; got: {assembled[:160]!r}"
+    )
+
+
+def test_assemble_solution_no_preamble_returns_code_unchanged():
+    """_assemble_solution returns code unchanged when the stub has no preamble."""
+    from harness.eval_routed import _assemble_solution
+
+    # Stub with `def` as the first line (no preamble) — matches the existing _StubTask
+    class _NoPreStub:
+        files = {"solution.py": _STUB_SRC}  # def add(a, b):\n    pass\n
+
+    assembled = _assemble_solution(_NoPreStub(), _CORRECT_CODE)
+    assert assembled == _CORRECT_CODE, (
+        f"No-preamble stub should leave code unchanged; got {assembled!r}"
+    )
+
+
+def test_assemble_solution_no_files_attr_returns_code_unchanged():
+    """_assemble_solution returns code unchanged when task has no files attribute."""
+    from harness.eval_routed import _assemble_solution
+
+    class _NoFilesTask:
+        pass
+
+    result = _assemble_solution(_NoFilesTask(), _CORRECT_CODE)
+    assert result == _CORRECT_CODE
+
+
+def test_eval_routed_typed_stub_drops_preamble_still_passes():
+    """REGRESSION (RUN #1 bug 2026-06-29): eval_routed must score PASS for a typed stub
+    even when the solve_fn returns bare ``def`` without the import preamble.
+
+    Before the preamble-assembly fix:
+      solution.py = ``def list_length(x: List[int]) -> int:\\n    return len(x)\\n``
+      Python eagerly evaluates ``List[int]`` annotation at function definition ->
+      NameError: name 'List' is not defined -> ``from solution import list_length`` fails
+      -> test fails -> false FAIL (false ~40% routed rate for qwen).
+
+    After the fix:
+      _assemble_solution prepends ``from typing import List\\n\\n`` before writing to
+      solution.py -> annotation resolves -> import succeeds -> test passes -> PASS.
+    """
+    from harness.eval_routed import eval_routed
+
+    registry = _stub_registry()
+    task = _StubTaskTyped()
+
+    result = eval_routed(
+        1, "humaneval", registry,
+        route_fn=_always_qwen_route,
+        solve_fn=lambda t, d: _TYPED_DEF_ONLY,  # bare def, no import — mimics qwen_code
+        _tasks=[task],
+    )
+
+    assert result["routed_passed"] == 1, (
+        "Typed stub with bare-def solve (no import preamble) must score PASS after "
+        "preamble assembly fix; failed means NameError on List[int] annotation — "
+        "the exact RUN #1 bug."
+    )
+    assert result["routed_rate"] == 1.0
+    assert result["per_task"][0]["passed"] is True
+
+
+def test_eval_single_typed_stub_drops_preamble_still_passes():
+    """eval_single must also assemble preamble correctly (uniform fix across both paths).
+
+    Ensures the assembly fix is applied symmetrically so single-model baseline and
+    routed scores are always apples-to-apples regardless of model adaptation.
+    """
+    from harness.eval_routed import eval_single
+
+    task = _StubTaskTyped()
+
+    result = eval_single(
+        1, "humaneval", "model-gemma",
+        solve_fn=lambda t: _TYPED_DEF_ONLY,  # bare def, no import
+        _tasks=[task],
+    )
+
+    assert result["passed"] == 1, (
+        "eval_single with bare-def solve on typed stub must score PASS after "
+        "preamble assembly fix."
+    )
+    assert result["pass_rate"] == 1.0
