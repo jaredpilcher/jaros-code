@@ -116,3 +116,66 @@ def solve_instance_live(
         if new is not None:
             return make_unified_diff(file_path, original, new)
     return ""
+
+
+def build_repair_prompt(
+    issue: str, file_path: str, region: str, prev_patch: str, failure: str,
+    issue_chars: int = 900, fail_chars: int = 1200,
+) -> str:
+    """Repair prompt: previous patch APPLIED but tests still fail -> reconsider with the real error."""
+    return (
+        f"Your previous patch to {file_path} was applied successfully, but the tests STILL FAIL.\n\n"
+        f"ISSUE:\n{issue[:issue_chars]}\n\n"
+        f"Code region:\n```python\n{region}\n```\n\n"
+        f"Your previous patch:\n{prev_patch}\n\n"
+        f"The actual test failure:\n{failure[:fail_chars]}\n\n"
+        f"Reconsider WHY it failed and produce a CORRECTED minimal fix as ONE search/replace edit "
+        f"(SEARCH must reproduce existing lines VERBATIM):\n"
+        f"<<<<<<< SEARCH\n<exact existing lines>\n=======\n<replacement lines>\n>>>>>>> REPLACE\n"
+    )
+
+
+def solve_with_repair(
+    *,
+    issue: str,
+    file_path: str,
+    original: str,
+    hunk_start: int,
+    gen_fn: Callable[[str, float], str],
+    run_test_fn: Callable[[str], tuple],
+    n: int = 7,
+    max_repairs: int = 2,
+) -> str:
+    """Solve, then if the patch fails the gated tests, feed the real failure back and retry.
+
+    The honest multiplier: the deterministic test-gate teaches the fallible model.
+    ``run_test_fn(patch_diff) -> (passed: bool, failure_text: str)`` is injected — in production it
+    applies the patch in the instance container and runs FAIL_TO_PASS; in tests it is canned.
+    Returns the first patch that passes, else the last attempted patch, else "".
+    """
+    diff = solve_instance_live(
+        issue=issue, file_path=file_path, original=original, hunk_start=hunk_start, gen_fn=gen_fn, n=n
+    )
+    if not diff:
+        return ""
+    passed, failure = run_test_fn(diff)
+    if passed:
+        return diff
+    region_s, region_e = locate_region(original, hunk_start)
+    region = "\n".join(original.split("\n")[region_s:region_e])
+    last = diff
+    for _ in range(max_repairs):
+        sr = parse_search_replace(gen_fn(build_repair_prompt(issue, file_path, region, last, failure), 0.0))
+        if not sr:
+            continue
+        new = apply_search_replace(original, sr[0], sr[1])
+        if new is None:
+            continue
+        cand = make_unified_diff(file_path, original, new)
+        if not cand:
+            continue
+        last = cand
+        passed, failure = run_test_fn(cand)
+        if passed:
+            return cand
+    return last

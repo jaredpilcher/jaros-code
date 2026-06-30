@@ -9,7 +9,16 @@ from harness.swebench_live import (
     apply_search_replace,
     build_solve_prompt,
     solve_instance_live,
+    build_repair_prompt,
+    solve_with_repair,
 )
+
+_BUGGY = '                return "%s.%s" % (module, self.value.__name__), {"import %s" % module}'
+def _sr(replacement_attr):
+    return (
+        "<<<<<<< SEARCH\n" + _BUGGY + "\n=======\n"
+        + _BUGGY.replace("__name__", replacement_attr) + "\n>>>>>>> REPLACE\n"
+    )
 
 # A django-12125-shaped fixture: TypeSerializer.serialize with the buggy __name__ line.
 SERIALIZER = (
@@ -109,3 +118,46 @@ def test_solve_instance_live_returns_empty_when_no_edit_applies():
         gen_fn=lambda prompt, t: "no search/replace block here",
     )
     assert diff == ""
+
+
+def test_build_repair_prompt_includes_failure_and_prev():
+    p = build_repair_prompt("issue", "f.py", "region", "PREV_PATCH_TEXT", "AssertionError: boom")
+    assert "STILL FAIL" in p and "PREV_PATCH_TEXT" in p and "AssertionError: boom" in p
+
+
+def test_solve_with_repair_passes_first_try_no_repair():
+    calls = {"n": 0}
+    def gen_fn(prompt, t):
+        calls["n"] += 1
+        return _sr("__qualname__")
+    diff = solve_with_repair(
+        issue="inner class path", file_path="serializer.py", original=SERIALIZER,
+        hunk_start=BUG_LINE, gen_fn=gen_fn, run_test_fn=lambda d: (True, ""),
+    )
+    assert "__qualname__" in diff
+    assert calls["n"] == 1  # solved on first try, no repair calls
+
+
+def test_solve_with_repair_fixes_after_test_failure():
+    # solve emits a WRONG edit (__module__) that applies but fails tests; repair emits the right one.
+    def gen_fn(prompt, t):
+        return _sr("__qualname__") if "STILL FAIL" in prompt else _sr("__module__")
+    def run_test_fn(diff):
+        return (True, "") if "__qualname__" in diff else (False, "AssertionError: got Inner want Outer.Inner")
+    diff = solve_with_repair(
+        issue="inner class path", file_path="serializer.py", original=SERIALIZER,
+        hunk_start=BUG_LINE, gen_fn=gen_fn, run_test_fn=run_test_fn,
+    )
+    assert "__qualname__" in diff  # the repair round corrected it
+    assert "__module__" not in diff
+
+
+def test_solve_with_repair_returns_last_when_never_passes():
+    def gen_fn(prompt, t):
+        return _sr("__module__")  # always the wrong-but-applies edit
+    diff = solve_with_repair(
+        issue="x", file_path="serializer.py", original=SERIALIZER, hunk_start=BUG_LINE,
+        gen_fn=gen_fn, run_test_fn=lambda d: (False, "still failing"), max_repairs=2,
+    )
+    assert diff  # returns the last attempted patch (non-empty), not a false success
+    assert "__module__" in diff

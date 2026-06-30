@@ -157,3 +157,16 @@ routing IMPRACTICAL at this scaffolding. The slice rate STANDS at 2/8. The lever
 misses is DEEPER SCAFFOLDING — a test-feedback REPAIR loop (apply, read the FAIL_TO_PASS pytest error, feed
 it back, retry — the honest multiplier) — NOT a slower stronger model. Routing's validated value remains the
 HARD-CLASS crack (task #34, commit 8e2ef8a), not these easy-slice line/logic misses.
+
+## REPAIR LOOP mechanism (2026-06-30) — the deeper-scaffolding lever (harness/swebench_live.py)
+The routing test showed the easy-slice MISSES need deeper scaffolding, not a slower model. Built the
+honest multiplier into the productionized core: `solve_with_repair` — solve, and if the patch APPLIES but
+the gated tests FAIL, feed the REAL failure back (`build_repair_prompt`: previous patch + the actual
+pytest error + the region) and retry up to max_repairs. The deterministic test-gate teaches the fallible
+model. `run_test_fn(patch) -> (passed, failure_text)` is INJECTED (applies the patch in the instance
+container + runs FAIL_TO_PASS in production; canned in tests). Two-plane: model emits inert edits, the
+harness runs the tests + applies. 4 offline tests (14 total in test_swebench_live.py) cover: pass-first-try
+(no repair), fix-after-failure (wrong __module__ edit -> test fails -> repair to __qualname__ -> passes),
+and never-passes (returns last attempt, no false success). NEXT (live): wire run_test_fn to a WSL/Docker
+test-runner + re-run the applied-but-failed misses (django-10924, django-11964) through the repair loop to
+measure whether the rate lifts past 2/8.
