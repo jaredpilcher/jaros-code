@@ -186,3 +186,18 @@ NET SWE-bench frontier (banked, all honest): first resolve django-12125; SLICE R
 + repair, 14 tests); routing bound; repair-loop live-validated (doesn't lift these misses). The 2 resolved
 were within the 3B's reach; the 6 misses need a STRONGER roster model (staged path) or much deeper
 per-instance context (the 6-line localized region may be too thin) — NOT more iteration at this scaffolding.
+
+## ROSTER-GROWTH TEST (2026-06-30): a bigger Jetson model fits but doesn't lift the misses
+Tested the strongest AVAILABLE Jetson model — DeepSeek-R1-Distill-Qwen-7B (already on the Jetson, 4.4GB
+GGUF, config existed, classes=[] never profiled) — on django-10924 (a miss the 3B AND qwen3-4B both
+failed). FEASIBILITY: the 7B FITS (loaded at 5.1GB RSS, 1.9GB free) — but serving it DESYNCS the
+model-manager 'current' on the slow load; recovery needed a hard reset of model-manager.service (always
+verify /current + a coherent gen after). RESULT: the 7B did NOT resolve django-10924 (applied True,
+resolved False) — its patch added `if callable(value): return str(value())` in the WRONG method, not the
+gold's deconstruct 'path' fix. So the ENTIRE Jetson roster (3B/4B/7B) fails django-10924 the SAME way:
+WRONG LOCATION. KEY INSIGHT (no-ceiling probe): the failure is LOCALIZATION, not raw capability — the
+models keep editing the wrong place, which suggests the ~6-line localized region is too THIN to show them
+the right method. The next lever is RICHER LOCALIZATION (give the model the whole enclosing method / more
+surrounding context), a SCAFFOLDING fix testable with the FAST 3B — NOT a bigger/slower model. Honest
+bound: bigger Jetson-fitting models don't trivially lift these misses; localization is the more promising
+lever. (DeepSeek-7B is also a slow reasoner -> impractical for best-of-N anyway.)
