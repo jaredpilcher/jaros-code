@@ -106,7 +106,17 @@ def solve_instance_live(
     """
     region_s, region_e = locate_region(original, hunk_start)
     region = "\n".join(original.split("\n")[region_s:region_e])
-    prompt = build_solve_prompt(issue, file_path, region)
+    new = _gen_edit(build_solve_prompt(issue, file_path, region), original, gen_fn, n)
+    return make_unified_diff(file_path, original, new) if new is not None else ""
+
+
+def _gen_edit(prompt: str, original: str, gen_fn: Callable[[str, float], str], n: int):
+    """Best-of-N: up to n samples (t=0 then rising temps) for an APPLICABLE search/replace edit.
+
+    Returns the new file content, or None if no sample produced a parseable + applicable edit.
+    Used by BOTH the initial solve and each repair round — a single mis-formatted sample no longer
+    kills a round (the repair loop's original 1-shot-at-t=0 silently dropped valid repairs).
+    """
     for i in range(n):
         t = 0.0 if i == 0 else round(0.3 + 0.1 * i, 2)
         sr = parse_search_replace(gen_fn(prompt, t))
@@ -114,8 +124,8 @@ def solve_instance_live(
             continue
         new = apply_search_replace(original, sr[0], sr[1])
         if new is not None:
-            return make_unified_diff(file_path, original, new)
-    return ""
+            return new
+    return None
 
 
 def build_repair_prompt(
@@ -165,10 +175,7 @@ def solve_with_repair(
     region = "\n".join(original.split("\n")[region_s:region_e])
     last = diff
     for _ in range(max_repairs):
-        sr = parse_search_replace(gen_fn(build_repair_prompt(issue, file_path, region, last, failure), 0.0))
-        if not sr:
-            continue
-        new = apply_search_replace(original, sr[0], sr[1])
+        new = _gen_edit(build_repair_prompt(issue, file_path, region, last, failure), original, gen_fn, n)
         if new is None:
             continue
         cand = make_unified_diff(file_path, original, new)
