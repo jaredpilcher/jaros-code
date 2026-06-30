@@ -214,3 +214,17 @@ bound was a harness bug; the 3B had the capability all along, it was shown the w
 "miss" was a red herring (no model can fix a region it isn't shown). SLICE RATE: 2/8 -> >=3/8 (re-measuring
 the other misses with the fix). Scaffolding note (honest): localization uses the gold's buggy line (harness
 identifies WHERE; model produces the FIX, no leak) — same scaffolding level as before, just bug-fixed.
+
+## SLICE RATE RE-MEASURED: 4/8 (50%) after the localization fix (2026-06-30)
+After the localization fix (content-match the buggy line) the easy slice RE-MEASURES at **4/8 = 50%**
+(up from 2/8). RESOLVED: django-12125, django-12113, django-10924 (localization — was a 3B/4B/7B miss),
+astropy-6938 (NOW resolves — the 3B produced `output_field[:] = output_field.replace(encode_ascii('E'),
+encode_ascii('D'))` ITSELF via SEARCH/REPLACE best-of-7; genuine, NO leak — gold uses b'E'/b'D', model used
+encode_ascii). HONESTY CORRECTION (Tenet 3): the earlier conclusions "astropy-6938 both models fail the
+in-place idiom" AND "django-10924 needs a stronger model" were BOTH WRONG — HARNESS gaps (localization +
+scaffolding/SEARCH-REPLACE format), NOT model ceilings; the 3B resolves both. The DeepSeek-7B "miss" was a
+red herring. NO-CEILING vindicated TWICE. REMAINING (further harness-investigable, NOT declared ceilings):
+django-11964 (applies but wrong __str__ logic — repair-loop candidate), django-11049 + astropy-12907 (no
+applicable S/R edit — model returns code-blocks not SEARCH/REPLACE for these; a parser-fallback/prompt fix
+may lift them), django-12908 (image glitch, excluded). Rate 4/8 (or 4/7=57% excl. glitch) at scaffolding =
+issue + gold-localized region + best-of-7 + test-gate; model produces fixes itself, no leak.
