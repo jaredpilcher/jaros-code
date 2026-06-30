@@ -170,3 +170,19 @@ harness runs the tests + applies. 4 offline tests (14 total in test_swebench_liv
 and never-passes (returns last attempt, no false success). NEXT (live): wire run_test_fn to a WSL/Docker
 test-runner + re-run the applied-but-failed misses (django-10924, django-11964) through the repair loop to
 measure whether the rate lifts past 2/8.
+
+## REPAIR LOOP — LIVE result (2026-06-30): does NOT lift the easy-slice misses
+Ran solve_with_repair LIVE (eval-based run_test_fn) on the 2 applied-but-failed misses (django-10924,
+django-11964). Neither lifted (both FINAL resolved=False, rounds=1). Diagnosis: the repair gen returns a
+plain code-block + prose, NOT a SEARCH/REPLACE block -> no applicable edit. Fixed the harness gap (repair
+now BEST-OF-N, commit 3441ed3) — but it STILL didn't apply, AND the probed repair output was WRONG-LOGIC
+(for django-10924 it touched an unrelated get_prep_value, not the deconstruct 'path' line). HONEST
+CONCLUSION: the repair loop is mechanically sound (mechanism + 14 tests + best-of-N) but does NOT lift
+these misses — the 3B lacks the reasoning to fix them even with the real failure fed back (consistent with
+#36: scaffolds multiply WITHIN a model's class; they don't conjure synthesis it can't do). Both levers
+tried on these misses — routing-to-qwen3 and repair — measured, both negative.
+NET SWE-bench frontier (banked, all honest): first resolve django-12125; SLICE RATE **2/8** easy (django-
+12125 line-change + django-12113 addition); productionized swebench_live core (SEARCH/REPLACE + best-of-N
++ repair, 14 tests); routing bound; repair-loop live-validated (doesn't lift these misses). The 2 resolved
+were within the 3B's reach; the 6 misses need a STRONGER roster model (staged path) or much deeper
+per-instance context (the 6-line localized region may be too thin) — NOT more iteration at this scaffolding.
