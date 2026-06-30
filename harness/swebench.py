@@ -80,6 +80,17 @@ def load_instances(path, n: int | None = None) -> list[dict]:
             continue  # skip malformed line — defensive
         if not isinstance(obj, dict):
             continue
+        # Real SWE-bench data encodes FAIL_TO_PASS / PASS_TO_PASS as JSON STRINGS
+        # (e.g. '["pkg/test.py::test_a", ...]'); normalize to list[str] so
+        # score_resolved iterates test names, not string characters.
+        for _k in ("FAIL_TO_PASS", "PASS_TO_PASS"):
+            _v = obj.get(_k)
+            if isinstance(_v, str):
+                try:
+                    parsed = json.loads(_v)
+                    obj[_k] = parsed if isinstance(parsed, list) else _v
+                except json.JSONDecodeError:
+                    obj[_k] = []
         instances.append(obj)
         if n is not None and len(instances) >= n:
             break

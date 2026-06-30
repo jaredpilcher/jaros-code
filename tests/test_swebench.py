@@ -418,3 +418,23 @@ def test_swebench_eval_wilson95_is_valid_interval() -> None:
     assert lo <= hi
     assert hi <= 1.0
 # #EXT-034-REQ-2 End
+
+
+def test_load_instances_normalizes_json_string_test_fields(tmp_path):
+    """Regression (real-data validation 2026-06-29): real SWE-bench-Lite encodes
+    FAIL_TO_PASS / PASS_TO_PASS as JSON STRINGS, not lists; load_instances must
+    normalize them to list[str] so score_resolved iterates test names, not chars."""
+    from harness.swebench import load_instances as _load
+    inst = {
+        "instance_id": "x__y-1", "repo": "x/y", "base_commit": "abc",
+        "problem_statement": "fix it",
+        "FAIL_TO_PASS": '["pkg/test.py::test_a", "pkg/test.py::test_b"]',
+        "PASS_TO_PASS": '["pkg/test.py::test_c"]',
+        "test_patch": "", "patch": "GOLD",
+    }
+    f = tmp_path / "real.jsonl"
+    f.write_text(json.dumps(inst) + "\n", encoding="utf-8")
+    got = _load(str(f))
+    assert len(got) == 1
+    assert got[0]["FAIL_TO_PASS"] == ["pkg/test.py::test_a", "pkg/test.py::test_b"]
+    assert got[0]["PASS_TO_PASS"] == ["pkg/test.py::test_c"]
