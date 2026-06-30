@@ -60,15 +60,12 @@ def make_unified_diff(path: str, original: str, edited: str) -> str:
     # Normalise path: strip any leading slash so diff headers are clean.
     clean_path = path.lstrip("/")
 
-    orig_lines = original.splitlines(keepends=True)
-    edit_lines = edited.splitlines(keepends=True)
-
-    # Ensure trailing newlines: difflib silently produces a "\ No newline at end of
-    # file" marker when lines lack them; we normalise to avoid false positives.
-    if orig_lines and not orig_lines[-1].endswith("\n"):
-        orig_lines[-1] += "\n"
-    if edit_lines and not edit_lines[-1].endswith("\n"):
-        edit_lines[-1] += "\n"
+    # splitlines() WITHOUT keepends: lines carry no trailing "\n", so joining the
+    # unified_diff output with "\n" yields exactly ONE newline per line. Using
+    # keepends=True here doubled every content line ("\n".join over lines that
+    # already end in "\n") -> "malformed patch" when git apply runs it.
+    orig_lines = original.splitlines()
+    edit_lines = edited.splitlines()
 
     diff_lines = list(
         difflib.unified_diff(
