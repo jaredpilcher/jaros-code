@@ -62,6 +62,12 @@ def test_parse_search_replace_strips_think_and_returns_none_when_absent():
     assert parse_search_replace("<think>reasoning here</think>\nno block") is None
 
 
+def test_parse_search_replace_fallback_missing_divider():
+    # some models omit the ======= divider (measured: django-11049) — still recover the edit
+    txt = "<<<<<<< SEARCH\nold line\n>>>>>>> REPLACE\nnew line"
+    assert parse_search_replace(txt) == ("old line", "new line")
+
+
 def test_apply_search_replace_exact():
     out = apply_search_replace("a\nb\nc\n", "b", "B")
     assert out == "a\nB\nc\n"

@@ -228,3 +228,15 @@ django-11964 (applies but wrong __str__ logic — repair-loop candidate), django
 applicable S/R edit — model returns code-blocks not SEARCH/REPLACE for these; a parser-fallback/prompt fix
 may lift them), django-12908 (image glitch, excluded). Rate 4/8 (or 4/7=57% excl. glitch) at scaffolding =
 issue + gold-localized region + best-of-7 + test-gate; model produces fixes itself, no leak.
+
+## PARSER ROBUSTNESS + residual misses (2026-06-30)
+Probing the 2 "no applicable S/R" misses found django-11049's model output was the CORRECT format-string
+fix but in a near-miss format (OMITTED the ======= divider). Added a parse_search_replace FALLBACK for
+that shape (generalizable; 15 tests green). Rate STAYS 4/8 honestly though: with the fallback django-11049
+now produces an applicable edit, but best-of-N SELECTED a wrong-but-applies sample (a strftime edit) over
+the correct format-string fix — whose multi-line SEARCH block doesn't match the original exactly (a FURTHER
+lever: more robust multi-line SEARCH matching / prefer-gold-ish samples). RESIDUAL MISSES (all
+harness-investigable, NONE declared ceilings): django-11049 (correct fix produced but multi-line SEARCH
+won't apply), django-11964 (applies, wrong __str__ logic — repair-loop candidate), astropy-12907 (matrix
+reasoning — genuinely no applicable edit yet). SLICE RATE banked at 4/8 (50%) — the localization fix was
+the big lift (2/8->4/8); further harness work (multi-line match, repair loop) may reach 5-6/8.

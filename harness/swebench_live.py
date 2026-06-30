@@ -52,10 +52,20 @@ def locate_region(original: str, hunk_start: int, max_lines: int = 70) -> Tuple[
 
 
 def parse_search_replace(text: str) -> Optional[Tuple[str, str]]:
-    """Extract the (search, replace) pair from a model reply, or None if absent."""
+    """Extract the (search, replace) pair from a model reply, or None if absent.
+
+    Strict form first (SEARCH / ======= / REPLACE).  Fallback: some models OMIT the ``=======``
+    divider, emitting ``<<<<<<< SEARCH\\n<search>\\n>>>>>>> REPLACE\\n<replace>`` — a correct edit
+    in a near-miss format.  Accepting that shape recovers genuine fixes (measured: django-11049).
+    """
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
     m = _SR_RE.search(text)
-    return (m.group(1), m.group(2)) if m else None
+    if m:
+        return (m.group(1), m.group(2))
+    m2 = re.search(r"<<<<<<< SEARCH\n(.*?)\n>>>>>>> REPLACE\n(.*)", text, re.S)
+    if m2 and m2.group(1).strip() and m2.group(2).strip():
+        return (m2.group(1), m2.group(2).rstrip("\n"))
+    return None
 
 
 def apply_search_replace(original: str, search: str, replace: str) -> Optional[str]:
