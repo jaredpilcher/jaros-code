@@ -128,3 +128,20 @@ applies it deterministically. Side effects (Docker file-extract, model gen, WSL 
 the logic is unit-tested with no Docker/WSL/Jetson — tests/test_swebench_live.py (10 tests) reproduce
 the django-12125 __name__->__qualname__ resolve with a canned reply. The live wiring (extract-from-image
 + WSL eval) stays in the gitignored grind scripts; this module is the reusable test-gated core.
+
+## SLICE RATE (2026-06-30) — 2/8 on the easy slice (honest; local 3B, $0)
+Ran the 8 easiest SWE-bench-Lite instances through harness.swebench_live (issue + localized region +
+best-of-7 qwen2.5-coder SEARCH/REPLACE + the WSL test-gate; the model produces the fix ITSELF, no leak).
+RESULT: **2 RESOLVED** — django-12125 (__name__->__qualname__, line-change) and django-12113 (an
+ELSE-BRANCH ADDITION; the SEARCH/REPLACE core generalizes beyond single-line, as designed). Breakdown
+of the 8: 2 resolved; 3 applied-but-tests-fail (django-10924, django-11964, astropy-6938 — model logic
+wrong/incomplete); 2 no-applicable-edit (astropy-12907 separability-matrix fix, django-11049 datetime
+format-string — too hard for the 3B to emit a matching edit); 1 image-build glitch (django-12908,
+excluded/retryable). So **2/8 = 25%** (or 2/7 ≈ 29% excluding the glitch).
+HONEST CALIBRATION (Tenet 3): NOT a novelty claim — small models resolving easy SWE-bench-Lite instances
+is established. This is the local/$0/edge SYSTEM placing on the gold-standard bar at a STATED scaffolding
+level (issue + gold-localized region + best-of-7 + test-gate; the model writes the fix, no answer leak).
+The misses are genuine capability limits of the 3B at this scaffolding — the harness extracts what the
+model has; harder fixes (matrix reasoning, exact format strings) need a stronger roster model (qwen3) or
+deeper scaffolding, which is the staged multi-model path. The django-12113 ADDITION resolve validates
+the productionized SEARCH/REPLACE core (harness/swebench_live.py) on a non-line-change fix.
