@@ -12,6 +12,14 @@ implementation:
     ranges:
       - - 1
         - 220
+  - file: harness/swebench_solve.py
+    ranges:
+      - - 1
+        - 280
+  - file: tests/test_swebench_solve.py
+    ranges:
+      - - 1
+        - 280
 ---
 
 ### [REQ-1] Instance loader and inert solve-input (honesty: gold patch never in solve input)
@@ -79,3 +87,53 @@ rate for 2-4B models; the bar is mapped honestly, not flattered (Tenet 3).
 - [x] Offline test (c): score_resolved resolved=True/False cases for FAIL_TO_PASS and PASS_TO_PASS.
 - [x] Offline test (d): test_fn sole-arbiter case (patch "claims" success but test_fn returns fail).
 - [x] Offline test (e): swebench_eval resolves-rate over 2-instance fixture.
+
+### [REQ-3] Patch-solve adapter: solve_input -> candidate unified-diff patch
+
+Given an inert solve_input (produced by build_solve_input — gold patch NEVER leaked), produce
+a candidate unified-diff patch that score_resolved can score.
+
+DESIGN: A 2-4B model cannot reliably emit raw unified-diff syntax. The robust approach:
+  1. LOCATE the target file(s) — deterministic (navigate / multi_file / hints).
+  2. READ the original source — deterministic file I/O.
+  3. Model produces the EDITED file body — single model call.
+  4. DETERMINISTICALLY form the unified diff via difflib (original vs edited).
+
+All callables (locate_fn, read_fn, gen_fn) are INJECTABLE for offline testability.
+The live path (_make_live_fns) is a documented factory stub (deferred).
+
+`make_unified_diff(path, original, edited) -> str` — deterministic: produce a valid
+git-style unified diff (--- a/path / +++ b/path / @@ hunks) via difflib.unified_diff.
+Returns "" if original == edited. Must round-trip: applying the diff to original yields edited.
+
+`solve_swebench_instance(instance, *, locate_fn, read_fn, gen_fn) -> str` — candidate-patch
+producer with injectable callables:
+  - locate_fn(solve_input) -> list[str]: which file(s) the issue touches.
+  - read_fn(path) -> str: original source.
+  - gen_fn(solve_input, path, original) -> str: model's fix (edited source).
+Calls make_unified_diff for each file; concatenates into one multi-file patch.
+NEVER sees the gold patch (build_solve_input guarantees this; asserted defensively).
+
+`_make_live_fns(registry, repo_dir) -> dict` — factory for the LIVE path (deferred):
+locate_fn via navigate/multi_file, read_fn reads the repo file, gen_fn = routed solve
+(qwen3-4b-thinking for hard-multi-step-repo class). Documented; not run in offline tests.
+
+`swebench_eval_with_solve(instances, *, locate_fn, read_fn, gen_fn, apply_fn, test_fn) -> dict`
+— convenience wrapper composing solve_swebench_instance -> score_resolved -> aggregate.
+Returns the same shape as swebench_eval: {n, resolved, resolved_rate, wilson95, per_instance}.
+
+#### Acceptance Criteria
+- [x] `make_unified_diff(path, original, edited) -> str` implemented; returns "" for no-op.
+- [x] make_unified_diff round-trips: applying diff to original yields edited (difflib).
+- [x] Diff header uses git-style "--- a/path" / "+++ b/path" prefixes.
+- [x] `solve_swebench_instance(instance, *, locate_fn, read_fn, gen_fn) -> str` implemented.
+- [x] locate_fn, read_fn, gen_fn are injectable (offline-testable via mocks).
+- [x] solve_swebench_instance asserts gold patch not in solve_input (honesty invariant).
+- [x] Multi-file: two located files -> two-file patch concatenated.
+- [x] `_make_live_fns(registry, repo_dir) -> dict` documented stub (deferred, not called in tests).
+- [x] `swebench_eval_with_solve(...)` convenience wrapper implemented; same result shape as swebench_eval.
+- [x] Offline test (a): make_unified_diff round-trips (multiple cases: add, delete, from-empty).
+- [x] Offline test (b): make_unified_diff("", x, x) == "" and ("", "", "") == "".
+- [x] Offline test (c): solve_swebench_instance with mocks produces non-empty multi-file diff.
+- [x] Offline test (d): gold patch sentinel absent from candidate (honesty — gen_fn never sees it).
+- [x] Offline test (e): no-op gen (edited==original) -> empty patch -> score_resolved unresolved.

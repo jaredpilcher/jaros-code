@@ -74,3 +74,57 @@ fixture JSONL in tmp_path and mock apply_fn/test_fn. No Docker, no download, no 
 #### Implements
 - [REQ-1] Instance loader and inert solve-input (honesty: gold patch never in solve input)
 - [REQ-2] Deterministic resolve check and deferred live-slice protocol
+
+### [TASK-3] Implement harness/swebench_solve.py + tests/test_swebench_solve.py
+
+Patch-solve adapter: given an inert solve_input, produce a candidate unified-diff patch
+via deterministic difflib (never raw model-emitted diff). Pure offline: no Docker, no
+dataset download, no live Jetson in tests.
+
+#### Steps
+1. Create `harness/swebench_solve.py` with module docstring explaining the design
+   rationale (why difflib instead of model-emitted diff), honesty invariant, and
+   deferred live path.
+2. Implement `make_unified_diff(path, original, edited) -> str`:
+   - Use `difflib.unified_diff` with `fromfile="a/{path}"`, `tofile="b/{path}"`.
+   - Strip leading slash from path to avoid double-slash in headers.
+   - Return `""` if original == edited.
+   - Normalise trailing newlines on both sides before diffing.
+3. Implement `solve_swebench_instance(instance, *, locate_fn, read_fn, gen_fn) -> str`:
+   - Import `build_solve_input` from `harness.swebench` (local import to avoid circularity).
+   - Call `build_solve_input(instance)` to get solve_input.
+   - Assert `"patch" not in solve_input` (defensive honesty invariant).
+   - Loop: `locate_fn(solve_input)` -> list[str] of file paths.
+   - For each path: `read_fn(path)` -> original; `gen_fn(solve_input, path, original)` -> edited.
+   - `make_unified_diff(path, original, edited)` -> diff; accumulate non-empty diffs.
+   - Return concatenated multi-file patch.
+4. Implement `_make_live_fns(registry, repo_dir) -> dict`:
+   - `locate_fn`: hint_files first; fallback to `harness.multi_file.candidate_files`.
+   - `read_fn`: `Path(path).read_text(encoding="utf-8")`.
+   - `gen_fn`: raise NotImplementedError documenting EXT-021 dependency.
+   - Return `{"locate_fn": ..., "read_fn": ..., "gen_fn": ...}`.
+5. Implement `swebench_eval_with_solve(instances, *, locate_fn, read_fn, gen_fn, apply_fn, test_fn) -> dict`:
+   - Loop over instances: `solve_swebench_instance` -> `score_resolved` -> accumulate.
+   - Import `_wilson95`, `score_resolved` from `harness.swebench`.
+   - Return `{n, resolved, resolved_rate, wilson95, per_instance}`.
+6. Add `_apply_unified_diff(original, diff_text) -> str` helper (pure-Python patch applier
+   for round-trip tests only — not a public API).
+7. Wrap all public functions in `# #EXT-034-REQ-3 Start/End` comments.
+8. Create `tests/test_swebench_solve.py` with:
+   - TestMakeUnifiedDiff: round-trip for add/delete/from-empty; git-style headers;
+     no-op returns ""; leading-slash stripping.
+   - TestSolveSwebenchInstance: non-empty diff; covers located files; multi-file
+     concatenation; gen_fn/locate_fn called with correct args.
+   - TestHonestyGoldPatchAbsent: sentinel absent from candidate; "patch" key absent
+     from solve_input in gen_fn; second instance variant.
+   - TestNoOpGen: no-op gen -> empty candidate; empty candidate -> unresolved;
+     reason mentions FAIL_TO_PASS; empty locate -> empty candidate.
+   - TestSwebenchEvalWithSolve: one-instance resolved; two-instances aggregation;
+     required keys; wilson95 bounds.
+9. Run `python -m pytest tests/test_swebench_solve.py -v` (all green) and
+   `python -m pytest tests/ -q` (full suite green) before committing.
+10. Update `.jarify/EXT-034/index.json` with harness/swebench_solve.py and
+    tests/test_swebench_solve.py line ranges under REQ-3.
+
+#### Implements
+- [REQ-3] Patch-solve adapter: solve_input -> candidate unified-diff patch

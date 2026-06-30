@@ -1,4 +1,41 @@
 {
+  "REQ-3": [
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 31,
+      "endLine": 39
+    },
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 139,
+      "endLine": 201
+    },
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 208,
+      "endLine": 308
+    },
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 315,
+      "endLine": 391
+    },
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 398,
+      "endLine": 460
+    },
+    {
+      "file": "tests/test_swebench_solve.py",
+      "startLine": 467,
+      "endLine": 575
+    },
+    {
+      "file": "harness/swebench_solve.py",
+      "startLine": 34,
+      "endLine": 285
+    }
+  ],
   "REQ-2": [
     {
       "file": "tests/test_swebench.py",
