@@ -145,3 +145,15 @@ The misses are genuine capability limits of the 3B at this scaffolding — the h
 model has; harder fixes (matrix reasoning, exact format strings) need a stronger roster model (qwen3) or
 deeper scaffolding, which is the staged multi-model path. The django-12113 ADDITION resolve validates
 the productionized SEARCH/REPLACE core (harness/swebench_live.py) on a non-line-change fix.
+
+## ROUTING TEST on the easy-slice MISSES (2026-06-30) — honest bound
+Retried 3 qwen2.5-coder misses on qwen3-4b-thinking (the stronger roster model) to test whether routing
+harder problems UP lifts the rate. RESULT: qwen3 did NOT lift them. django-10924: qwen3 produced an edit
+but it FAILED the tests (applied True, resolved False — same failure mode as qwen2.5). django-11964 +
+astropy-12907: qwen3 TIMED OUT (>700s/sample; 8000-token thinking at ~10 tok/s exceeds a practical
+timeout) — INCONCLUSIVE, a harness/speed limit not a model verdict (Tenet-3 sanity-check, do not count as
+model-0). NET: 0/1 real routing attempt resolved; qwen3's SLOWNESS makes per-instance best-of-N SWE-bench
+routing IMPRACTICAL at this scaffolding. The slice rate STANDS at 2/8. The lever for the applied-but-failed
+misses is DEEPER SCAFFOLDING — a test-feedback REPAIR loop (apply, read the FAIL_TO_PASS pytest error, feed
+it back, retry — the honest multiplier) — NOT a slower stronger model. Routing's validated value remains the
+HARD-CLASS crack (task #34, commit 8e2ef8a), not these easy-slice line/logic misses.
