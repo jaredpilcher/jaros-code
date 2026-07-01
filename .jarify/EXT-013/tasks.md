@@ -67,3 +67,18 @@ Point the eval at the Jaros-native solve and confirm it matches the proven numbe
 
 #### Implements
 - [REQ-5] Preserve the proven held-out number through the migration
+
+### [TASK-7] Orchestrator WHERE-to-act: grounded locate agent + resolver tool
+
+Give the orchestrator the first design-axis variable — decide WHERE to act — as a single-purpose,
+grounded Jaros agent, reusing the proven SWE-bench localization primitive. Pure/offline-testable; no
+network, no Jetson needed for the unit tests (inject the model via a callable).
+
+#### Steps
+1. Add `.jaros-data/agents/locate_agent.py` with a `LocateBoundary.decide(context)` where `context` carries the solve intent + a list of candidate targets `[{file, function, anchor_line}]`. It builds a grounded prompt that NUMBERS the candidates and asks the local 3B for the SINGLE index whose function the intent refers to, then returns an inert `orchestrate.locate` Decision (`create_decision(type="orchestrate.locate", payload={file, function, anchor_line})`) for the chosen candidate. No host effect.
+2. Degeneracy-guard: parse the model reply for a single candidate index; if it drifts / abstains / returns out-of-range, fall back deterministically to the candidate whose `anchor_line` best content-matches the intent (never a no-op, never free-text).
+3. Add a deterministic resolver: a small function/tool that, given the chosen candidate's file text + `anchor_line`, reuses `harness/swebench_live.py::locate_region` (content-match) to return the concrete `(start, end)` line range — do NOT write a fresh ad-hoc scan.
+4. Add `tests/test_ext013_locate.py` (offline, inject a canned model callable): (a) the agent returns an `orchestrate.locate` Decision naming the correct candidate for a synthetic intent+candidate set; (b) the degeneracy-guard falls back to the content-match candidate when the model reply is garbage; (c) the resolver reuses `locate_region` and returns the right `(start,end)`. Run the full suite green.
+
+#### Implements
+- [REQ-6] Orchestrator variable — decide WHERE to act (localization)
