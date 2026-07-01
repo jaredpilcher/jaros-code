@@ -81,6 +81,24 @@ non-existent path creates a new file.
 - [ ] Apply the replacement and report `{applied, path, bytesBefore, bytesAfter}`
 - [ ] Support new-file creation when `old` is empty and the file is absent
 
+### [REQ-13] code.search_replace — apply a RESILIENT SEARCH/REPLACE edit
+
+A tool named `code.search_replace` applies a `search`→`replace` block edit to a file using
+the RESILIENT match strategy proven in the SWE-bench-Lite slice (see memory
+`jaros-code-swebench`): exact match first, then rstrip-tolerant match (the model's block has
+trailing-whitespace drift), then a difflib line-level fallback (the model hallucinated
+surrounding lines but the CHANGED line is present verbatim). This is the resilient counterpart
+to `code.apply_patch`'s brittle exact-unique match — those three tiers are what lifted the slice
+past a one-shot exact editor. To keep a SINGLE source of truth (Tenet 3 — no divergent copy),
+the tool DELEGATES to the already-tested `harness.swebench_live.apply_search_replace`; it does
+not re-implement the matching. Effectful: the Decision is recorded before the edit (Tenet 3).
+
+#### Acceptance Criteria
+- [ ] Reject a payload lacking a `path` string or a `search`/`replace` pair
+- [ ] Apply via `harness.swebench_live.apply_search_replace` (exact → rstrip-tolerant → difflib line-level), not a re-implementation
+- [ ] Report `{applied, path, bytesBefore, bytesAfter, matchedBy}` on success; a clear error when NO tier matches (no silent no-op)
+- [ ] Route generated `replace` text through the same generated-code safety gate as `code.apply_patch`
+
 ### [REQ-12] json.check — validate JSON
 
 A read-only tool named `json.check` validates JSON (file or text), the config analogue
