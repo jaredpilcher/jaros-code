@@ -105,6 +105,85 @@ best-model-per-problem** on the same bar (Tenet 3): routed ≤ best-single ⇒ t
 the router is the bottleneck; the routed-vs-oracle gap localizes the deficit to routing *accuracy* vs
 genuine *coverage*. This is the standing check that a swap-costly roster is worth its serial-Jetson price.
 
+## The Pursuit architecture (owner directive, 2026-07-01)
+
+The intent's PURSUIT block lands in the architecture as five additions. Everything below
+is **Jaros-native**: judgments are single-purpose agents emitting inert Decisions;
+watchers, schedulers, trainers, indexers, and deployments are deterministic tools with
+`validate()`/`execute()`, hash-chain logged and replayable. A lever that cannot be placed
+this way is a signal to extend Jaros (new tool/flow primitives), never to bypass it.
+
+### 1. The instruments (scoreboard as harness components)
+- **daily-driver runner** — executes the 80+ frequency-weighted tasks END-TO-END through
+  `harness.cli` (not internals); deterministic oracles; records per-task latency;
+  dev/holdout discipline enforced in the runner itself (holdout reads are logged).
+- **shadow-mode parity logger** — a local, private log of the owner's real Claude Code
+  tasks + a replayer that runs them against jcode; produces side-by-side rows. As it
+  accumulates it becomes the headline parity instrument.
+- **gap map** — `docs/GAP-MAP.md`, updated by the governance loop every tick; the
+  state machine per row is data, not prose (`unmeasured → … → wall(dated, evidence)`).
+- **amortization telemetry** — every serve path tags its source (memory hit /
+  deterministic / precomputed / full-solve); the ratio is reported weekly.
+- **Foundry ship-log** — projects started/shipped + per-project gap lists.
+
+### 2. The training plane (execution-plane tools; models never touch it directly)
+```text
+  verified-solution store ──► dataset-builder tool ──► LoRA-trainer tool (owned HW)
+   (every test-gated solve;     (curates (problem,        │ config = inert Decision
+    every verified think-        verified-solution)       ▼
+    trace; nothing thrown        pairs per class)      adapter/micro-model artifact
+    away)                                                 │
+                                                          ▼
+                                            roster ADMISSION (same rule as any model:
+                                            marginal coverage on held-out — training
+                                            grants no exemption from measurement)
+```
+Tiers: LoRA grain-specialists (S/R emitter, localizer, test-writer) · micro-models
+(router classifier, patch ranker, calibrator — trained on eval exhaust) ·
+self-distillation (bare model absorbs what needed scaffolding). The store schema
+persists `(problem, attempts, outcomes, winner, model, scaffold-config)` from every run.
+
+### 3. The retrieval + analysis planes (inference-free fact sources)
+- **embedder service** — a tiny embedding model resident beside the roster; index tools
+  (build/refresh) run as scheduled deterministic jobs; queries serve semantic code
+  search, semantic recall over the solution store, and API/doc lookup.
+- **knowledge compiler** — at repo setup, compile each dependency's API surface
+  (signatures, docstrings, examples mined from the dep's own tests) into a local
+  fact-base; fact-injection (ladder L3) draws from it deterministically.
+- **program-analysis tools** — type inference, dataflow, coverage localization,
+  property-test generation, mutation operators, AST-diff mining. Each is a fact source
+  for precise injection and an ingredient for reductions.
+- **decode control** — the llm client supports grammar-constrained generation (GBNF):
+  Decision-JSON, SEARCH/REPLACE blocks, and skeleton-constrained fills are enforced at
+  decode time, making format-failure classes unemittable rather than repaired.
+
+### 4. The always-on flows (structural advantages of a sovereign device)
+- **overnight brain** — a scheduled Jaros flow: during idle hours, pre-build indexes,
+  pre-generate+verify tests for uncovered functions, pre-solve TODO/FIXMEs into a
+  **drawer** of test-verified candidate patches, run training jobs.
+- **speculative drawer** — a watcher tool observes the working repo (saves, failing
+  tests) and enqueues background solves through the NORMAL inbox path; verified results
+  wait in the drawer and are offered, clearly labeled, when the operator asks.
+- Both flows are ordinary Jaros jobs: gated, logged, replayable; they never write to
+  the working tree without the operator's accept.
+
+### 5. The Foundry (real builds as a standing instrument)
+A sandboxed workspace where jaros-code builds diverse real software end-to-end the
+jarify way (each project gets its own prime directive → specs → tasks → build →
+validate). Safety gates are architectural, not advisory: dedicated workspace root,
+localhost-only binding for services, resource caps, the EXT-001 shell/network gates
+unchanged; any exception exists only as a per-project owner-approved manifest read by
+the gate itself.
+
+### The flywheel, end to end
+```text
+  gaps (Gap Map) ─► levers (IDEA-BANK / IDEA-PLAYBOOK) ─► probe ─► build (Jaros-native)
+        ▲                                                             │
+        │                                                             ▼
+   re-measure ◄── distill into weights ◄── verified-solution store ◄── test gate
+   (scoreboard)    (training plane)         (nothing thrown away)      (the judge)
+```
+
 ## Why many small agents beat one big one
 
 A single `gemma2:2b` prompt asked to "fix this bug across the repo" fails. The same
@@ -327,6 +406,16 @@ except in service of a written requirement that serves the prime directive.
      ├── EXT-014  model-reference honesty → founding profile of the model roster
      └── EXT-021  MULTI-MODEL routing harness (registry + router judge + rewire +
                   per-model adaptation + best-first roster profiling)
+
+  Standing operational companions of this directive (owner, 2026-07-01):
+     docs/PURSUIT.md        the indefinite maximum-velocity doctrine (single entry point)
+     docs/IDEA-BANK.md      queued novel levers, each with probe + kill criterion
+     docs/IDEA-PLAYBOOK.md  the mechanical operators that refill the bank
+     docs/GAP-MAP.md        the living steering artifact (created at bootstrap)
+     .launch/PUBLISHED.md   provenance for every publicly-stated figure
+  New pursuit capabilities (instruments, training plane, retrieval plane, always-on
+  flows, the Foundry) are specced as new EXTs under the tenet they serve as they are
+  built — spec + code in the same commit, per Tenet 4.
 ```
 
 Every `EXT` serves exactly one tenet of the Intent and must never contradict a

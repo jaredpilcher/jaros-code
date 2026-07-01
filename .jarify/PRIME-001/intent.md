@@ -77,6 +77,101 @@ only earns its cost when routed performance is measured against **(a) the best s
 **(b) the oracle best-model-per-problem** on the same bar: when routed ≤ best-single the roster is
 **not paying yet** and the router is the bottleneck — a gap to close, never a win to claim.
 
+**THE PURSUIT (owner directive, 2026-07-01 — the standing operational doctrine; also
+mirrored in `docs/PURSUIT.md`, `docs/IDEA-BANK.md`, `docs/IDEA-PLAYBOOK.md`).**
+The deadline framing is retired. The pursuit is **indefinite and maximum-velocity**:
+*"Can a Jetson-tier system reach Claude-Code-comparable capability?" is an OPEN EMPIRICAL
+QUESTION* — answered by construction (close the gaps) or by evidence (map the walls),
+never by assumption in either direction. The bar never lowers. Its standing elements:
+
+- **The scoreboard — progress is these instruments and nothing else:** (1) the
+  **daily-driver suite** — 80+ tasks through the CLI end-to-end, frequency-weighted by
+  real usage, deterministic oracles, dev/holdout split — the parity number; (2) the
+  **external hard bar** (SWE-bench-Live, growing stratified slice); (3) the
+  **routed-system triple** (routed vs best-single vs oracle-per-task); (4) the **latency
+  budget** (p50/p95 per command class, Jetson-measured); (5) the **amortization ratio** —
+  % of tasks served from memory/deterministic paths/precomputation WITHOUT a full model
+  solve (the measured signature that jigs compound); (6) the **shadow-mode parity log** —
+  the owner's REAL Claude Code tasks logged locally and replayed against jcode, which as
+  it accumulates becomes the headline parity instrument; (7) the living **Gap Map**
+  (`docs/GAP-MAP.md`) — the full Claude-Code capability surface, every gap in exactly one
+  state (`unmeasured → probed → lever-named → in-progress → closed(number) →
+  wall(dated, evidence)`), steering all work by impact × tractability; (8) the **Foundry
+  ship-log** (below).
+
+- **The velocity doctrine — "as fast as possible" means mechanically:** the budget is
+  *information gained per Jetson-hour*. Probe before build (every hypothesis gets its
+  cheapest falsifier first); **pre-registered kill criteria** (success/kill thresholds
+  written BEFORE an experiment runs — no post-hoc rationalization); kill fast and log the
+  negative (negatives are map data); parallel non-inference tracks while the device
+  crunches (corpus building, spec work, tools, training-data curation, research); batch
+  by model to avoid swap thrash; the experiment chain never idles.
+
+- **The escalation ladder — for ANY failing class, escalate in cost order; a wall claim
+  requires evidence at EVERY rung below it:** L0 prompt/format jig → L1 decomposition /
+  deterministic control flow → L2 plane-shift (deterministic tool replaces the judgment)
+  → L3 precise retrieval / single-fact injection → L4 experience recall (nearest verified
+  solved analogue) → L5 reduction to a covered class → L6 routing / admit a new model
+  (marginal coverage) → L7 LoRA specialist → L8 train a micro-model or distill → **L9 a
+  DATED wall**: the evidence trail recorded, the missing capability class named, revisited
+  on every new model release or method — **L9 is a bookmark, never a conclusion.**
+
+- **The expanded arsenal (methods are unconstrained; acceptance criteria are not — every
+  adoption passes the held-out gate):** the proven levers (deterministic control flow,
+  test-gate as judge, plane-placement, generate-and-test, reductions, gold-free
+  localization, SEARCH/REPLACE editing, verified-solution memory, gated reasoning,
+  collaborative draft→critique→revise); a **semantic retrieval plane** (tiny embedders
+  beside the roster — semantic code search, semantic recall over the solution store,
+  API/doc retrieval — PRECISE injection only; generic context measured net-negative);
+  **program-analysis deepening** (type inference, dataflow, coverage localization,
+  property-test generation, mutation testing, AST-diff mining — inference-free
+  fact-sources); **training our own models** (commitment 2, above); **decode control**
+  (grammar-constrained generation — format-failure classes made unemittable);
+  **always-on levers** no metered cloud tool can copy (overnight precomputation, a
+  speculative drawer of pre-verified patches, per-repo adapters trained on the working
+  repo's own history); and **novel orchestration**, invented freely and gated ruthlessly.
+
+- **The self-distillation flywheel — how the same hardware gets indefinitely more
+  capable:** the test gate turns compute into free VERIFIED training data (every solved
+  task, every verified reasoning trace). Harness discovers → tests verify → the store
+  accumulates → training distills into weights → the bare model absorbs the jig → the
+  harness budget moves to the next gap. Nothing verified is ever thrown away: every
+  (problem, attempts, outcomes, winning solution, model, scaffold-config) tuple persists.
+
+- **The Foundry — build real systems, not just benchmark scores:** a standing portfolio
+  of diverse real software (CLI tools, localhost services, data pipelines, a telemetry
+  dashboard for jaros-code itself) built end-to-end BY jaros-code, the jarify way, on the
+  owner's laptop and the Jetson. It measures what benchmarks cannot (bootstrap, config,
+  long-horizon coherence, "did it ship"), yields verified solutions in new domains
+  (flywheel fuel) and the true task distribution. Grading is binary and honest: it ships
+  and runs, or it doesn't, plus a logged gap-list. **Safety envelope, non-negotiable:**
+  dedicated sandbox workspace, localhost-only binding, containerized/resource-capped where
+  possible, the existing shell gates stay (no external egress, no destructive ops, no
+  secrets); any exception is a per-project owner-approved manifest, never a default.
+
+- **The idea machinery — the pursuit never runs out of levers:** `docs/IDEA-BANK.md`
+  holds the queued novel levers, each with its cheapest probe and pre-registered kill
+  criterion; when the bank runs low (<5 live ideas), a wall stands, or monthly, the
+  supervisor runs `docs/IDEA-PLAYBOOK.md` — nine MECHANICAL generation operators
+  (asymmetry mining, failure-class inversion, boundary shifting, exhaust mining, analogy
+  transplant, recombination, extremization, constraint tightening, research-raid
+  translation) applied to artifacts the loop already maintains. Every generated card
+  passes the filter: Jaros-native placement, sovereignty, cheapest probe named, kill
+  criterion pre-registered, honesty check. Per-operator yield is tracked; the playbook
+  itself is self-improving under the same rules.
+
+- **Jaros-native, always:** every lever above lands AS Jaros — judgments as
+  single-purpose agents emitting inert Decisions; every side effect (watchers,
+  schedulers, training runs, index builds, Foundry deployments) as a deterministic tool
+  with validate()/execute(), hash-chain logged and replayable. If a lever seems to need
+  to escape Jaros, that is a signal to EXTEND Jaros, never to bypass it.
+
+- **Reflexivity — jarify itself is an improvement target:** jaros-code is jarify's
+  proving ground. When the loop exposes weakness in jarify's own mechanisms (spec
+  formats, traceability, the skills, the governance heartbeat, Jaros primitives), fixing
+  THAT is in-scope pursuit work under the same convergence discipline. The tool that
+  converges the system is converged BY the system.
+
 **And the 100% must itself be 100% honest** (commitment 3 binds the whole pursuit). The
 number counts only if it is GENUINE generic solving, measured on **held-out** problems
 the harness was never tuned on, from the **visible spec** (pass@1, or iteration against
@@ -110,6 +205,32 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    runs on the Jetson** (within its ~8 GB budget). The constraint was never a specific parameter
    count; it is the device and the zero-cost, no-cloud rule. **No cloud model, no paid API,
    ever** — not as a fallback, not "just for the hard parts."
+
+   **The constraint is the Jetson TIER, not this specific board (owner directive,
+   2026-07-01).** "Jetson-fitting" means *inference on a ~$250-class owned edge device* —
+   today the Orin Nano 8 GB. Sovereignty (local, owned, free, private) is the invariant;
+   the silicon in that price class improves over time, and when the tier's hardware
+   refreshes, the system re-baselines **honestly and labeled** (commitment 3) — never
+   silently mixing numbers across devices. Published latency figures come from the
+   Jetson-tier device only.
+
+   **TRAINING OUR OWN MODELS is authorized and encouraged (owner directive, 2026-07-01) —
+   it is MORE sovereignty, not less.** The zero-cost/no-cloud rule binds *inference*;
+   *training* may use ANY owned hardware (the Jetson, the owner's PC/laptop). Three tiers,
+   all first-class methods: **(a) LoRA/QLoRA specialists** fine-tuned on roster models for
+   our exact grains and formats (a SEARCH/REPLACE emitter, a localizer, a test-writer — the
+   adapter serves on the same Jetson base model); **(b) micro-models** (1–100M params:
+   classifiers, rankers, calibrators) trained on the labeled data our own evals already
+   produce for free; **(c) self-distillation** — training roster models on our own
+   test-VERIFIED solutions and verified reasoning traces, so the bare model absorbs what
+   yesterday needed scaffolding (the flywheel, below). Data sovereignty binds throughout:
+   open datasets, our own verified-solution store, and synthetic data our system generates
+   and test-verifies — nothing leaves the machines. A trained adapter/model enters the
+   roster by the SAME admission rule as any candidate (marginal coverage, held-out proof) —
+   training grants no exemption from measurement. **Dev-time parallelism** on owned
+   hardware (extra copies of Jetson-fit models on the owner's PC to parallelize evals and
+   training) is allowed and encouraged — the product's inference target stays the Jetson
+   tier; latency truth stays Jetson-measured.
 
    **The system is a MULTI-MODEL harness (owner directive, 2026-06-28).** It maintains a
    **registry of Jetson-fitting models**, explored best-first (strongest-that-fits first). Each
@@ -298,7 +419,9 @@ replacing Claude Code on Opus 4.8.* The loop, run forever:
    *which grain* failed and *why* before changing anything.
 3. **Discover the next type of sand** — name the missing grain the failure demands.
    The mountain needs *many distinct grain types*, not many copies of one; a new failure
-   class is a new grain to invent.
+   class is a new grain to invent. Pull first from the IDEA-BANK's queued levers; when
+   the bank is dry or the class resists its named levers, run the IDEA-PLAYBOOK's
+   generation operators — discovery is mechanical, never blocked on inspiration.
 4. **Place it on the right plane** — apply plane-placement triage: a judgement the 2B
    can make → a tiny agent; computation/search/arithmetic it cannot → a deterministic
    tool (often generate-and-test). Wire it so it actually fires (no orphans).
@@ -307,8 +430,10 @@ replacing Claude Code on Opus 4.8.* The loop, run forever:
 
 The supervisor **watches the system closely and corrects it** — the wiring, the agents,
 the deterministic tools, the evals, **the model-router's class profiles, each model's
-harness adaptation, and the Jetson-fitting model roster** — and treats the convergence
-trend (not activity) as the sole proof of progress. When a class is failing, the loop now
+harness adaptation, the Jetson-fitting model roster, the trained adapters and
+micro-models, the verified-solution store and its distillation pipeline, the Gap Map,
+the Foundry portfolio, and the idea bank's health** — and treats the convergence
+trend on THE PURSUIT's scoreboard (not activity) as the sole proof of progress. When a class is failing, the loop now
 also asks: is this a gap in *this model's* adaptation, in the *router's* profile for it, or
 does it need a *stronger roster model* — and measures the answer rather than guessing. This loop, and the supervisor's ownership of it, is itself
 part of the intent: the system is never "done" until parity is proven on genuinely hard,
