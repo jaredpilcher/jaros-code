@@ -76,6 +76,26 @@ def locate_target_line(file_text: str, anchors, hint_line: Optional[int] = None)
     return hint
 
 
+_TB_FRAME = re.compile(r'File "([^"]+)", line (\d+)')
+
+
+def locate_from_traceback(traceback: str, target_file: str) -> Optional[int]:
+    """Deterministic localization from a FAILURE SIGNAL — the strong signal #9's measurement points
+    to.  Returns the line of the DEEPEST traceback frame that lands in ``target_file``, else None.
+
+    Model-driven localization-from-prose measured weak (~1/5); a traceback names the exact failing
+    line.  The orchestrator's WHERE-to-act should prefer this deterministic signal when a test/run
+    failure is available, and only fall back to a model judgement when it is not.
+    """
+    tf = target_file.replace("\\", "/").lstrip("/")
+    last = None
+    for m in _TB_FRAME.finditer(traceback or ""):
+        path = m.group(1).replace("\\", "/")
+        if path.endswith(tf):
+            last = int(m.group(2))
+    return last
+
+
 def locate_from_patch(file_text: str, patch: str) -> int:
     """Localize from a unified diff: use its removed lines (then context lines) as content anchors
     and its ``@@ -L`` header as the proximity hint.  Returns the 1-based target line in file_text.

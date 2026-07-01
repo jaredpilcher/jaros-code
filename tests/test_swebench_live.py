@@ -7,6 +7,7 @@ from harness.swebench_live import (
     locate_region,
     locate_target_line,
     locate_from_patch,
+    locate_from_traceback,
     parse_search_replace,
     apply_search_replace,
     build_solve_prompt,
@@ -96,6 +97,32 @@ def test_locate_from_patch_disambiguates_generic_anchor():
         "     '''docs'''\n-    pass\n+    def __str__(self):\n+        return str(self.value)\n"
     )
     assert locate_from_patch(_MULTIPASS, patch) == 6
+
+
+_TRACEBACK = (
+    "Traceback (most recent call last):\n"
+    '  File "/testbed/tests/runtests.py", line 20, in run\n'
+    "    result = suite()\n"
+    '  File "/testbed/django/db/models/query.py", line 1044, in distinct\n'
+    "    clone.query.add_distinct_fields(*field_names)\n"
+    '  File "/testbed/django/db/models/query.py", line 1138, in add_distinct_fields\n'
+    "    raise TypeError(...)\n"
+    "TypeError: boom\n"
+)
+
+
+def test_locate_from_traceback_deepest_frame_in_target():
+    # two frames in query.py -> return the DEEPEST (last) one, where the error actually is
+    assert locate_from_traceback(_TRACEBACK, "django/db/models/query.py") == 1138
+
+
+def test_locate_from_traceback_other_file():
+    assert locate_from_traceback(_TRACEBACK, "tests/runtests.py") == 20
+
+
+def test_locate_from_traceback_none_when_file_absent():
+    assert locate_from_traceback(_TRACEBACK, "django/db/models/fields.py") is None
+    assert locate_from_traceback("", "x.py") is None
 
 
 def test_parse_search_replace_basic():
