@@ -11,6 +11,18 @@
       "endLine": 118
     }
   ],
+  "REQ-6": [
+    {
+      "file": "tests/test_ext013_locate.py",
+      "startLine": 16,
+      "endLine": 209
+    },
+    {
+      "file": ".jaros-data/agents/locate_agent.py",
+      "startLine": 26,
+      "endLine": 184
+    }
+  ],
   "REQ-4": [
     {
       "file": "tests/test_ext013_jaros_solve.py",
@@ -20,7 +32,7 @@
     {
       "file": "harness/behavioral_solve.py",
       "startLine": 116,
-      "endLine": 334
+      "endLine": 361
     }
   ],
   "REQ-2": [
@@ -30,38 +42,38 @@
       "endLine": 298
     },
     {
-      "file": "harness/jaros_solve_ops.py",
-      "startLine": 34,
-      "endLine": 114
-    },
-    {
       "file": ".jaros-data/tools/repair_tool.py",
       "startLine": 36,
       "endLine": 125
+    },
+    {
+      "file": "harness/jaros_solve_ops.py",
+      "startLine": 34,
+      "endLine": 114
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/code_agent.py",
+      "startLine": 16,
+      "endLine": 106
+    },
+    {
+      "file": ".jaros-data/agents/gherkin_agent.py",
+      "startLine": 15,
+      "endLine": 60
     }
   ],
   "REQ-5": [
     {
       "file": "harness/commit_replay.py",
-      "startLine": 547,
-      "endLine": 694
+      "startLine": 581,
+      "endLine": 759
     },
     {
       "file": "harness/behavioral_solve.py",
-      "startLine": 298,
-      "endLine": 302
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": ".jaros-data/agents/gherkin_agent.py",
-      "startLine": 15,
-      "endLine": 60
-    },
-    {
-      "file": ".jaros-data/agents/code_agent.py",
-      "startLine": 16,
-      "endLine": 106
+      "startLine": 324,
+      "endLine": 328
     }
   ]
 }

@@ -96,10 +96,10 @@ SWE-bench localization primitive (`harness/swebench_live.py::locate_region` + co
 line), which was the single biggest lever in the SWE-bench slice (2/8 -> 4/8; memory jaros-code-swebench).
 
 #### Acceptance Criteria
-- [ ] A single-purpose locate agent emits an inert `orchestrate.locate` Decision (file + function/region) from the intent + candidate list; no direct host effect (Tenet 1)
-- [ ] A deterministic tool resolves the Decision to a concrete line range, reusing `locate_region` (content-match), not a fresh ad-hoc scan
-- [ ] Grounded/degeneracy-guarded: the 3B returns one candidate from the GIVEN set (no free-text drift, no no-op), with a deterministic fallback when it abstains
-- [ ] Measured on a held-out set (localization accuracy: does it pick the region the fix belongs in?) and integrated-or-pruned forward-only, test-gated
+- [x] A single-purpose locate agent emits an inert `orchestrate.locate` Decision (file + function/region) from the intent + candidate list; no direct host effect (Tenet 1) — `.jaros-data/agents/locate_agent.py::LocateBoundary.decide`
+- [x] A deterministic tool resolves the Decision to a concrete line range, reusing `locate_region` (content-match), not a fresh ad-hoc scan — `.jaros-data/agents/locate_agent.py::resolve_location` (imports `harness.swebench_live.locate_region`)
+- [x] Grounded/degeneracy-guarded: the 3B returns one candidate from the GIVEN set (no free-text drift, no no-op), with a deterministic fallback when it abstains — index-parse + content-match fallback, covered by `tests/test_ext013_locate.py`
+- [ ] Measured on a held-out set (localization accuracy: does it pick the region the fix belongs in?) and integrated-or-pruned forward-only, test-gated (follow-on: not part of TASK-7's unit build)
 
 ### [REQ-7] Orchestrator variable — tune the AMOUNT of decisions (the dial)
 
