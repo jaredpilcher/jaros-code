@@ -4,10 +4,6 @@ title: Behavioral Gherkin-Driven Alignment Loop (2B-authored, all layers)
 status: partial
 priority: high
 implementation:
-  - file: harness/gherkin_loop.py
-    ranges:
-      - - 1
-        - 1
   - file: .jaros-data/tools/selftest_augmenter_tool.py
     ranges:
       - - 1
