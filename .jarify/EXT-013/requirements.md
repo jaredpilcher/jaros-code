@@ -84,12 +84,38 @@ migration is form, not capability change.
 - [x] No regression vs the multi-function baseline (4/37); reported honestly with Wilson CI [9.5–34.2%]
 - [x] The eval invokes the Jaros-native solve path (--jaros flag -> attempt_gherkin_jaros, the eval is a client of the runtime-native system)
 
-### [REQ-6] Orchestrator design-axis variables (deferred — after the migration)
+### [REQ-6] Orchestrator variable — decide WHERE to act (localization)
 
-The three tunable axes from the owner are pursued only AFTER REQ-1..REQ-5 land: where-to-act
-(localization choice + recommendations), amount-of-decisions (the dial), richer observe loop
-(reason over actual spec/code/diff). Tracked as blocked work.
+With the migration (REQ-1..REQ-5) landed, the first design-axis variable is now ACTIVE. Instead of being
+handed a fixed function `name`, the orchestrator decides WHERE to act: given the solve intent and the
+candidate files/functions in scope, a single-purpose locate agent emits an inert `orchestrate.locate`
+Decision naming the target (file + function/region); a deterministic tool then resolves it to an actual
+line range. The judgement is one narrow classification — "which function does this intent refer to?" —
+grounded so the small local 3B picks reliably rather than degenerating. This REUSES the already-proven
+SWE-bench localization primitive (`harness/swebench_live.py::locate_region` + content-match the target
+line), which was the single biggest lever in the SWE-bench slice (2/8 -> 4/8; memory jaros-code-swebench).
 
 #### Acceptance Criteria
-- [ ] Each axis is its own task, blocked by the migration completing
-- [ ] Each is measured on held-out and integrated-or-pruned (forward-only)
+- [ ] A single-purpose locate agent emits an inert `orchestrate.locate` Decision (file + function/region) from the intent + candidate list; no direct host effect (Tenet 1)
+- [ ] A deterministic tool resolves the Decision to a concrete line range, reusing `locate_region` (content-match), not a fresh ad-hoc scan
+- [ ] Grounded/degeneracy-guarded: the 3B returns one candidate from the GIVEN set (no free-text drift, no no-op), with a deterministic fallback when it abstains
+- [ ] Measured on a held-out set (localization accuracy: does it pick the region the fix belongs in?) and integrated-or-pruned forward-only, test-gated
+
+### [REQ-7] Orchestrator variable — tune the AMOUNT of decisions (the dial)
+
+The second axis, pursued after REQ-6: how many judgement points the orchestrator inserts versus
+deterministic steps — a dial from mostly-deterministic to mostly-judged. The smoke showed a free judge
+degenerates, so the dial must be measured, not assumed.
+
+#### Acceptance Criteria
+- [ ] The decision density is a tunable parameter, measured across at least two settings on held-out
+- [ ] The chosen setting is integrated-or-pruned (forward-only, test-gated); no net-negative dial shipped
+
+### [REQ-8] Orchestrator variable — richer observe loop
+
+The third axis, pursued after REQ-6: the orchestrator reasons over the ACTUAL spec/code/diff/test-output
+(a richer observation) at each judgement point, rather than a thin state summary.
+
+#### Acceptance Criteria
+- [ ] The orchestrator's context at the judgement point includes the real artifacts (spec/code/diff/failure), not just a state token
+- [ ] Measured on held-out and integrated-or-pruned (forward-only, test-gated)
