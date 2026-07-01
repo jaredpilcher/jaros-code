@@ -41,7 +41,14 @@ everything:
    multi-model system pays; localizes whether gaps are routing or coverage.
 4. **Latency budget** — p50/p95 per command class, measured ON THE JETSON (nav <2s,
    bounded edit <30s, fix-iteration <90s as current targets; tighten over time).
-5. **The Gap Map** (`docs/GAP-MAP.md`, living) — the full Claude-Code capability
+5. **Amortization ratio** — % of daily tasks served from memory, deterministic
+   paths, or precomputed results WITHOUT a full model solve (IDEA-BANK N17). The
+   measured signature of "jigs compound"; if the thesis is right this climbs forever.
+6. **Shadow-mode parity log** (IDEA-BANK N3) — the owner's REAL Claude Code tasks,
+   logged locally and replayed against jcode. As it accumulates, this replaces the
+   authored suite as the headline parity instrument: measured against the actual
+   thing, on the actual workload.
+7. **The Gap Map** (`docs/GAP-MAP.md`, living) — the full Claude-Code capability
    surface, each gap in exactly one state:
    `unmeasured → probed → lever-named → in-progress → closed(number) → wall(dated, evidence)`.
    Surface skeleton: repo navigation/understanding · bounded edits · multi-file edits ·
@@ -76,7 +83,10 @@ The Jetson is serial; the loop's true budget is **information gained per Jetson-
 
 ## 4. The sovereignty boundary (what Tenet 2 means now)
 
-- **Inference:** Jetson-fit, local, forever. No cloud, no paid API, not as fallback.
+- **Inference:** local, forever, on the **Jetson tier** — a ~$250-class owned device,
+  not this specific 2023 board eternally (IDEA-BANK N19). Sovereignty is the
+  invariant; the silicon improves. Re-baseline honestly when the tier refreshes.
+  No cloud, no paid API, not as fallback.
 - **Training:** allowed and encouraged on ANY owned hardware (Jetson, owner's PC).
   Training our own weights is MORE sovereignty, not less.
 - **Data:** open datasets, our own verified-solution store, synthetic data generated
@@ -132,6 +142,14 @@ ruthlessly.
 **F. External knowledge (standing).** At any plateau: papers, competing harnesses,
 model releases. Every new small-model release is a potential roster candidate —
 audition by marginal coverage within days of release.
+
+**G. The idea bank (`docs/IDEA-BANK.md`).** Twenty pre-probed novel levers beyond the
+current playbook — decode-time grammar constraints, execution-grounded
+exemplification, the overnight brain, speculative solving, per-repo adapters,
+mutation task factories, property oracles, calibration, cost-model planning,
+federation formats. Each carries its cheapest probe and pre-registered kill
+criterion. Pull from it whenever the Gap Map needs a new lever; add to it whenever a
+new idea survives first contact.
 
 ## 6. The escalation ladder (the "find the limit, then fill it" doctrine)
 
