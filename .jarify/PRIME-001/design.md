@@ -86,11 +86,24 @@ the CLASS from deterministic features (*not* a model); a **deterministic coverag
 models cover a class, the **deterministic test gate** picks the winner — try them best-measured-first,
 keep the first whose output passes the given test. **No model ever routes or chooses between models**
 (model-as-judge was measured net-negative; the test, not a meta-model, harvests the decorrelated errors
-of diverse small models). The roster grows **forever**: profile a model across all known classes, then
-admit + profile the next most capable Jetson-fitting model; a **new class re-profiles every prior model**
-(go back, don't forget them) so the tally stays complete. Per-model adaptation includes that model's own
-evals. All escalation stays on **local Jetson-fitting** models — never cloud (Tenet 2). See EXT-021
-REQ-5/REQ-6.
+of diverse small models). The roster grows **forever**, and admission is gated by **MARGINAL
+COVERAGE, not general quality** (external review, 2026-07-01): a candidate is FIRST auditioned on the
+exact problems the current roster *fails* — the shared failure set — and earns a slot ONLY if it covers
+a class no roster member covers (its errors are **decorrelated** from the roster's). This decorrelation
+gate is the **cheapest, first** step of admission, run *before* any broad profiling, because the Jetson
+is serial and every slot costs a model swap; a candidate that fails the same instances earns nothing,
+however high its MBPP score. Only once admitted is a model profiled across all known classes; then the
+next most capable Jetson-fitting candidate is auditioned the same way, and a **new class re-profiles every
+prior model** (go back, don't forget them) so the tally stays complete. Per-model adaptation includes that
+model's own evals. All escalation stays on **local Jetson-fitting** models — never cloud (Tenet 2). See
+EXT-021 REQ-5/REQ-6.
+
+**The roster only earns its cost when the SYSTEM pays (external review, 2026-07-01).** Because per-model
+profiles can each improve while the routed system does not, the honest system-level metric reports
+end-to-end **routed** performance against **(a) the best single model** and **(b) the oracle
+best-model-per-problem** on the same bar (Tenet 3): routed ≤ best-single ⇒ the roster is not paying and
+the router is the bottleneck; the routed-vs-oracle gap localizes the deficit to routing *accuracy* vs
+genuine *coverage*. This is the standing check that a swap-costly roster is worth its serial-Jetson price.
 
 ## Why many small agents beat one big one
 

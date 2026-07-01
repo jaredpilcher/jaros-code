@@ -68,6 +68,15 @@ reachable-class map — and every layer's claims stay **generic** (general mecha
 proof, never benchmark-fitting) and **honest** (commitment 3): a dishonest score is worse than an
 honest one, and a denied ceiling is worse than a mapped one.
 
+**The system-level no-ceiling is a *reachability* principle, not a performance claim (external
+review, 2026-07-01).** That some Jetson-fitting model *can* reach a class NEVER means the
+*current routed system* beats the best single model — that is a separate fact and must be
+**measured end-to-end**, not assumed (commitment 3). Left unmeasured, "the system has no ceiling"
+becomes the very unmeasured crutch that "no 2B ceiling" was before it was probed. So the roster
+only earns its cost when routed performance is measured against **(a) the best single model** and
+**(b) the oracle best-model-per-problem** on the same bar: when routed ≤ best-single the roster is
+**not paying yet** and the router is the bottleneck — a gap to close, never a win to claim.
+
 **And the 100% must itself be 100% honest** (commitment 3 binds the whole pursuit). The
 number counts only if it is GENUINE generic solving, measured on **held-out** problems
 the harness was never tuned on, from the **visible spec** (pass@1, or iteration against
@@ -133,11 +142,44 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    prompt reproduced the bug unchanged across 5 seeds), and a model-free boundary
    mutation-repair cracked it on the first candidate, byte-identically reproducibly.
 
+   A third form of this same move is a **reduction**: a deterministic transform that maps a
+   hard-class instance into a class the roster already covers — the covered model solves the
+   reduced form and the clerk maps the answer back. Reductions are a **first-class grain
+   type** (external review, 2026-07-01): building a library of them is a distinct lever for a
+   class no current model reaches, alongside deepening a model's adaptation and growing the
+   roster. Before reaching for a reduction or a bigger model, one cheap diagnostic settles
+   which is needed: hand a failing instance the single missing fact it got wrong (the real
+   contract/type/behavior) and see if it flips — if it flips, the wall is *comprehension* and
+   a deterministic fact-injection grain fixes the class; if not, it is a *generation* wall
+   that only a different-distribution model or a reduction can clear.
+
 3. **Reproducible & honest.**
    Every run is hash-chain logged and replayable to byte-identical state with zero
    model calls. The harness never hides, rounds away, or fabricates a result. A
    failing test is reported as failing; a skipped step is reported as skipped. The
    decision log is the auditable truth of what the system did and why.
+
+   **Honesty is measured at the SYSTEM level, not just per model (external review,
+   2026-07-01).** In a multi-model system every per-model profile can improve while the
+   system does not, so the honest headline metric is **end-to-end routed performance**,
+   reported against **(a) the best single model on the same bar** and **(b) the oracle
+   best-model-per-problem**. Routed ≤ best-single means the roster is not paying and the
+   router is the bottleneck; the routed-vs-oracle gap says whether the deficit is routing
+   *accuracy* or genuine *coverage*. This is the honest guard on the system-level
+   no-ceiling (commitment 2): reachability is not a performance claim.
+
+   **Held-out sets wear out; expand the denominator and keep a never-read tier.** A scored
+   corpus read on every decision is quietly tuned to, even under discipline, and a small n
+   cannot carry the next claim. So the held-out discipline is two-tiered: a working
+   held-out set AND a **never-read final-gate tier** — a repo or commit range left wholly
+   untouched until a claim is final, then read once. As the corpus is exhausted it is
+   **expanded** (more repos through the same red→green pipeline); too small an n is itself a
+   defect to fix before publishing a number.
+
+   **Published claims are part of this surface.** Once a figure is stated publicly it must
+   stay reproducible: every published number records the exact commit/run behind it
+   (`.launch/PUBLISHED.md`), added in the same commit that states it, and a figure that
+   later fails to reproduce is a defect to fix or disclose — never to ignore.
 
 4. **Spec-first, the jarify way — all the way down.**
    Behavior is governed by `.jarify` specifications. Code traces back to
