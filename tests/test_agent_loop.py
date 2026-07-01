@@ -57,6 +57,47 @@ def test_agent_checkpoint_undo(tmp_path, monkeypatch):
     assert "nothing to undo" in cli.cmd_undo("").lower()
 
 
+# #EXT-009-REQ-1 Start
+def test_execute_step_edit_accepts_apply_patch(tmp_path, monkeypatch):
+    """TASK-11 bug fix: the routed .py editor emits code.apply_patch — the edit branch
+    must accept it (not just code.write_file), and actually apply it via the tool plane."""
+    f = tmp_path / "m.py"
+    f.write_text("x = 1\n", encoding="utf-8")
+    import harness.coding_loop as cl
+    from jaros.core import create_decision
+
+    class _FakeEditor:
+        def decide(self, context):
+            return [create_decision(
+                id="edit-apply-patch", source="editor", type="code.apply_patch",
+                payload={"path": str(f), "old": "x = 1", "new": "x = 2"})]
+
+    monkeypatch.setattr(cl, "_load_agent", lambda filename, llm: _FakeEditor())
+    ok, obs = execute_step(Step("edit", "m.py: change x"), str(tmp_path))
+    assert ok, obs
+    assert f.read_text(encoding="utf-8") == "x = 2\n"
+
+
+def test_execute_step_edit_accepts_search_replace(tmp_path, monkeypatch):
+    """Locks in the resilient code.search_replace type too (opt-in editor emission)."""
+    f = tmp_path / "m.py"
+    f.write_text("x = 1\n", encoding="utf-8")
+    import harness.coding_loop as cl
+    from jaros.core import create_decision
+
+    class _FakeEditor:
+        def decide(self, context):
+            return [create_decision(
+                id="edit-search-replace", source="editor", type="code.search_replace",
+                payload={"path": str(f), "search": "x = 1", "replace": "x = 3"})]
+
+    monkeypatch.setattr(cl, "_load_agent", lambda filename, llm: _FakeEditor())
+    ok, obs = execute_step(Step("edit", "m.py: change x again"), str(tmp_path))
+    assert ok, obs
+    assert f.read_text(encoding="utf-8") == "x = 3\n"
+# #EXT-009-REQ-1 End
+
+
 def test_repo_files_grounding(tmp_path):
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "sub").mkdir()

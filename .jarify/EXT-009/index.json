@@ -1,21 +1,26 @@
 {
+  "REQ-1": [
+    {
+      "file": "tests/test_agent_loop.py",
+      "startLine": 60,
+      "endLine": 98
+    },
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 78,
+      "endLine": 157
+    }
+  ],
   "REQ-6": [
     {
       "file": "harness/build_eval.py",
-      "startLine": 20,
-      "endLine": 307
+      "startLine": 19,
+      "endLine": 308
     },
     {
       "file": "harness/agentic_eval.py",
       "startLine": 29,
       "endLine": 292
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": "harness/agent_loop.py",
-      "startLine": 79,
-      "endLine": 159
     }
   ]
 }

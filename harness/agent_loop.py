@@ -91,7 +91,7 @@ def execute_step(step: Step, cwd: str) -> tuple[bool, str]:
         agent_file = _editor_for(fname)
         [d] = _load_agent(agent_file, build_llm()).decide(
             {"path": str(p), "content": content, "instruction": instr, "feedback": ""})
-        if d.type != "code.write_file":
+        if d.type not in ("code.write_file", "code.apply_patch", "code.search_replace"):
             return (False, f"{agent_file.replace('_agent.py', '')} produced no edit")
         Runtime().apply(d)                           # two-plane: the tool performs the write
         return (True, f"edited {fname} via {agent_file.replace('_agent.py', '')}")

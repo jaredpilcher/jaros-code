@@ -123,3 +123,30 @@ in when it has fewer stubs); no-regression by construction (fires only on a per-
 
 #### Implements
 - [REQ-6] Multi-step eval: measure the agentic capability (close the boolchecks trade)
+
+### [TASK-11] Fix the master loop's `edit` action: accept surgical-edit Decisions (bug)
+
+The `edit` action in `harness/agent_loop.py::execute_step` routes regular `.py` files to
+`editor_agent.py`, which emits a `code.apply_patch` (or, opt-in, `code.search_replace`) Decision — but
+the handler only accepts `code.write_file` (`if d.type != "code.write_file": return (False, "... produced
+no edit")`), so it REJECTS the surgical editor's valid Decision before `Runtime().apply`. Result: `/edit
+<regular.py>: <instruction>` ALWAYS fails for `.py` files (the specialized config/dockerfile/markdown
+editors work because they emit `code.write_file`). Pre-existing + untested (REQ-1's tests cover
+find/read/run/fix, not edit). Fixing it also unblocks task #38 (the resilient `code.search_replace` path
+can then apply through the master loop). Offline + test-gated (inject a fake editor — no Jetson).
+
+#### Steps
+1. In `harness/agent_loop.py::execute_step`'s `edit` branch, change the guard to accept ALL applicable
+   two-plane edit Decision types: `if d.type not in ("code.write_file", "code.apply_patch",
+   "code.search_replace"): return (False, f"{...} produced no edit")`. Leave everything else (routing via
+   `_editor_for`, `Runtime().apply(d)`, the success message) unchanged — `apply_patch_tool` /
+   `search_replace_tool` already handle those types, so applying them is correct.
+2. Add an offline test in `tests/test_agent_loop.py` that exercises the `edit` action end-to-end WITHOUT
+   the model: monkeypatch `harness.coding_loop._load_agent` (or `build_llm`) so the routed editor returns
+   a canned `code.apply_patch` Decision (`payload={path, old, new}`) for a real temp `.py` file, then call
+   `execute_step(Step("edit", "m.py: <instr>"), str(tmp_path))` and assert it returns `(True, ...)` AND
+   the file on disk now contains the replacement. Add a second case with a canned `code.search_replace`
+   Decision to lock in the resilient type too. Run the full suite green.
+
+#### Implements
+- [REQ-1] Master loop: plan → act → observe → replan (the `edit` act-step correctly applies surgical edits)
