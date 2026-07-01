@@ -25,3 +25,18 @@ gracefully to the bounded model guess otherwise — no net-negative. REMAINING (
 wire locate_where into a general GOLD-FREE repo-solve (run the failing test -> traceback -> locate_where ->
 solve) — the realistic SWE-bench path without the gold. All localization LOGIC is offline + test-gated;
 only the run-the-test step needs Docker.
+
+## REQ-6 (#9) locate_where tiers — MEASURED (2026-07-01, honest, incl. a correction)
+locate_where is 3-tier: traceback (strong) -> failing-test-name deterministic token-match (medium?) ->
+model (weak, ~1/5). MEASURED the test-name tier OFFLINE on 5 easy-slice instances (deterministic, no
+model): **0/5** — WEAK. NOISY measurement (some enclosing-def targets ill-computed; the astropy
+FAIL_TO_PASS is a file PATH not a test-method name so it didn't extract), but the django cases are clear:
+test names describe the SCENARIO (test_callable_path, test_str, test_invalid_string), NOT the function, so
+token-overlap doesn't localize. HONEST CORRECTION: I shipped the tier on a hypothesis (test-name->function)
+then measured — should have measured first. The tier stays (backward-compatible, deterministic, no worse
+than the equally-weak model tier) but is NOT a validated strong signal. NET FINDING: gold-free localization
+for WRONG-OUTPUT bugs is genuinely HARD — traceback localizes only CRASH bugs; test-name and the model are
+both weak. That is precisely why the SWE-bench solve used the GOLD to content-match the known buggy line.
+The one strong deterministic gold-free signal is the traceback (crash class); wrong-output localization
+remains the open problem (candidate directions: retrieval by the issue's named symbols; the test BODY's
+called symbols, not its name).
