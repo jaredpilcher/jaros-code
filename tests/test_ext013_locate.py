@@ -206,4 +206,31 @@ def test_build_returns_agent_with_decide():
     agent = mod.build(_FakeLlm())
     assert hasattr(agent, "decide") and callable(agent.decide)
 
+
+# --- locate_where: deterministic-signal-first WHERE-to-act (honest REQ-6 design) ---
+
+def test_locate_where_prefers_traceback_signal():
+    mod = _load_agent()
+    tb = ('Traceback:\n  File "/testbed/pkg/serializers.py", line 14, in serialize_type\n'
+          "    raise TypeError\n")
+    dec = mod.locate_where({"target_file": "pkg/serializers.py", "traceback": tb,
+                            "candidates": _CANDIDATES, "intent": _INTENT}, llm=_FakeLlm("1"))
+    # deterministic: the exact failing line, no reliance on the (weak) model judgement
+    assert dec.payload["matched_by"] == "traceback"
+    assert dec.payload["anchor_line"] == 14
+
+
+def test_locate_where_falls_back_to_model_without_signal():
+    mod = _load_agent()
+    dec = mod.locate_where({"candidates": _CANDIDATES, "intent": _INTENT}, llm=_FakeLlm("2"))
+    assert dec.payload["matched_by"] == "model"
+    assert dec.payload["function"] == "serialize_type"
+
+
+def test_locate_where_no_signal_no_llm_is_inert():
+    mod = _load_agent()
+    dec = mod.locate_where({"target_file": "x.py"})  # no traceback, no llm -> inert, never crashes
+    assert dec.type == "orchestrate.locate" and dec.payload["matched_by"] == "none"
+
+
 # #EXT-013-REQ-6 End

@@ -167,7 +167,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from harness.swebench_live import locate_region  # noqa: E402
+from harness.swebench_live import locate_region, locate_from_traceback  # noqa: E402
 
 
 def resolve_location(file_text: str, anchor_line: int, max_lines: int = 70) -> tuple[int, int]:
@@ -181,4 +181,33 @@ def resolve_decision(decision, file_text: str, max_lines: int = 70) -> tuple[int
     """Convenience wrapper: resolve directly from an ``orchestrate.locate`` Decision."""
     payload = decision.payload if isinstance(decision.payload, dict) else {}
     return resolve_location(file_text, int(payload.get("anchor_line", 0)), max_lines=max_lines)
+
+
+def locate_where(context, llm=None):
+    """Choose WHERE to act, DETERMINISTIC-SIGNAL-FIRST — the honest design from the REQ-6
+    measurement (model-driven localization-from-prose scored ~1/5; a real failure signal names the
+    exact line).  ``context`` may carry ``target_file`` + ``traceback`` (a failure signal) and/or
+    ``candidates`` (for the model fallback).
+
+    Strategy: if a traceback names the target file, emit an ``orchestrate.locate`` Decision at that
+    exact line (matched_by="traceback") — no model call.  Otherwise fall back to the grounded model
+    judgement ``LocateBoundary`` (bounded, but weak) when an ``llm`` is supplied.  Two-plane: still
+    only ever emits an inert Decision.
+    """
+    ctx = context if isinstance(context, dict) else {}
+    tb = ctx.get("traceback")
+    tf = ctx.get("target_file")
+    if tb and tf:
+        line = locate_from_traceback(tb, tf)
+        if line:
+            return create_decision(
+                id=f"loc-{uuid.uuid4().hex}", source=NAME, type="orchestrate.locate",
+                payload={"file": tf, "function": "", "anchor_line": int(line),
+                         "matched_by": "traceback"})
+    if llm is not None:
+        return LocateBoundary(llm).decide(ctx)[0]
+    return create_decision(
+        id=f"loc-{uuid.uuid4().hex}", source=NAME, type="orchestrate.locate",
+        payload={"file": tf or "", "function": "", "anchor_line": 0,
+                 "matched_by": "none", "note": "no failure signal and no llm"})
 # #EXT-013-REQ-6 End
