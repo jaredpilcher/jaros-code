@@ -75,6 +75,22 @@ class EditorBoundary:
             )]
 
         old, new = parsed
+
+        # #EXT-002-REQ-8 Start
+        # Opt-in resilient emission: only when the caller explicitly sets
+        # ctx["resilient"] truthy do we emit the resilient code.search_replace
+        # Decision (EXT-001 REQ-13). When absent/falsey, the emitted Decision
+        # below is byte-for-byte the original code.apply_patch behavior --
+        # strict backward-compat with the proven default path.
+        if ctx.get("resilient"):
+            return [create_decision(
+                id=f"edit-{uuid.uuid4().hex}",
+                source=NAME,
+                type="code.search_replace",
+                payload={"path": path, "search": old, "replace": new},
+            )]
+        # #EXT-002-REQ-8 End
+
         return [create_decision(
             id=f"edit-{uuid.uuid4().hex}",
             source=NAME,

@@ -1,0 +1,14 @@
+{
+  "REQ-8": [
+    {
+      "file": "tests/test_ext002_editor_resilient.py",
+      "startLine": 15,
+      "endLine": 174
+    },
+    {
+      "file": ".jaros-data/agents/editor_agent.py",
+      "startLine": 79,
+      "endLine": 92
+    }
+  ]
+}

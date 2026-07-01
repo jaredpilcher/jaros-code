@@ -36,6 +36,26 @@ delimited block contract (not JSON) because a 2B model produces it reliably.
 - [ ] On success emit a `code.apply_patch` Decision with the parsed `old`/`new`
 - [ ] On unparseable output emit an honest `advance` Decision (events start, fail) — never crash
 
+### [REQ-8] editor — OPT-IN resilient SEARCH/REPLACE emission
+
+The `editor` agent can OPTIONALLY emit a `code.search_replace` Decision (the resilient
+execution-plane tool from EXT-001 REQ-13, which applies via exact → rstrip-tolerant → difflib
+line-level tiers) instead of the brittle `code.apply_patch`, so an edit still applies when the
+model's `old` block has trailing-whitespace drift or a hallucinated surrounding line. This is
+the emitter that makes the resilient tool FIRE in the Jaros-native solve path. STRICTLY
+BACKWARD-COMPATIBLE, mirroring EXT-013 REQ-8's opt-in discipline: the resilient branch is taken
+ONLY when the context explicitly opts in (e.g. `ctx["resilient"] is True`); when absent, the
+agent's prompt, parse, and emitted `code.apply_patch` Decision are byte-for-byte unchanged, so
+the proven default path (and the 5/8 SWE-bench slice) cannot regress. The lift from using the
+resilient emitter is to be MEASURED on the Jetson before the caller opts in by default
+(forward-only, test-gated).
+
+#### Acceptance Criteria
+- [ ] When `ctx["resilient"]` is truthy and an edit parses, emit a `code.search_replace` Decision with `{path, search, replace}` (the parsed old→new)
+- [ ] When `ctx["resilient"]` is absent/falsey, the emitted Decision, prompt, and parse are byte-for-byte the existing `code.apply_patch` behavior (backward-compat)
+- [ ] The unparseable-output path still emits the honest `advance` Decision in both modes
+- [ ] Offline unit tests (canned llm) cover both modes; the full suite stays green
+
 ### [REQ-2] commander — propose one shell command
 
 An agent named `commander` is given a task and proposes exactly one shell command to
