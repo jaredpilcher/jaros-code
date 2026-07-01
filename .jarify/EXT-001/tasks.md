@@ -29,3 +29,29 @@ Offline-testable; no network / Jetson / Docker (inject file content on disk in a
 
 #### Implements
 - [REQ-13] code.search_replace — apply a RESILIENT SEARCH/REPLACE edit
+
+### [TASK-2] code.search_replace — end-to-end two-plane coverage through the Runtime
+
+Strengthen REQ-13 coverage: exercise `code.search_replace` through the REAL Jaros Runtime two-plane
+path (agent-emitted inert Decision → `Runtime.apply` → deterministic tool effect + DecisionLog entry +
+replay), not only as an isolated unit. This proves the wiring that unit tests cannot — the tool's
+registration via `load_custom_tools`, the `NAME`/payload contract match between an emitting agent and
+the tool, gate rejection, and Tenet-3 logging/replay. Fully offline (no model / Jetson / Docker):
+mirror the existing `tests/test_ext013_jaros_ops.py` pattern (`Runtime(data_dir=tmp_path)`,
+`create_decision`, `rt.apply`).
+
+#### Steps
+1. Add `tests/test_ext001_search_replace_e2e.py`. Mirror `tests/test_ext013_jaros_ops.py`: build
+   `Runtime(data_dir=tmp_path)` (from `harness.coding_loop`), ensure the tools dir is loaded
+   (`load_custom_tools` / the same fixture the ops test uses so `code.search_replace` is registered).
+2. Test (a): write a fixture file into `tmp_path`, `create_decision(type="code.search_replace",
+   payload={path, search, replace})` for an exact-match edit, `rt.apply(decision)`, assert the file on
+   disk now contains `replace` and not `search`, and that a `code.search_replace` entry is in the
+   DecisionLog. Test (b): the same through the Runtime but with a rstrip-drift `search` (resilient tier
+   still applies end-to-end). Test (c): the gate/tool path surfaces a clear error for an unmatchable
+   edit (assert `rt.apply` raises, mirroring the ops test's rejection assertions). Test (d): a payload
+   missing `search`/`replace` is rejected by the gate before any file write.
+3. Do NOT modify the tool or any agent — this task is TEST-ONLY (pure coverage). Run the full suite green.
+
+#### Implements
+- [REQ-13] code.search_replace — apply a RESILIENT SEARCH/REPLACE edit (end-to-end Runtime coverage)

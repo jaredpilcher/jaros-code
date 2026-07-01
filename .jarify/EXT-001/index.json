@@ -1,18 +1,4 @@
 {
-  "REQ-12": [
-    {
-      "file": ".jaros-data/tools/json_check_tool.py",
-      "startLine": 15,
-      "endLine": 41
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": ".jaros-data/tools/fs_list_tool.py",
-      "startLine": 13,
-      "endLine": 41
-    }
-  ],
   "REQ-6": [
     {
       "file": ".jaros-data/tools/write_file_tool.py",
@@ -20,11 +6,58 @@
       "endLine": 58
     }
   ],
+  "REQ-5": [
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 37,
+      "endLine": 130
+    }
+  ],
+  "REQ-13": [
+    {
+      "file": ".jaros-data/tools/search_replace_tool.py",
+      "startLine": 35,
+      "endLine": 91
+    },
+    {
+      "file": "tests/test_ext001_search_replace_e2e.py",
+      "startLine": 22,
+      "endLine": 209
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": ".jaros-data/tools/py_symbols_tool.py",
+      "startLine": 14,
+      "endLine": 46
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": ".jaros-data/tools/py_check_tool.py",
+      "startLine": 14,
+      "endLine": 41
+    }
+  ],
+  "REQ-12": [
+    {
+      "file": ".jaros-data/tools/json_check_tool.py",
+      "startLine": 15,
+      "endLine": 41
+    }
+  ],
   "REQ-1": [
     {
       "file": ".jaros-data/tools/fs_read_tool.py",
       "startLine": 13,
       "endLine": 45
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/fs_list_tool.py",
+      "startLine": 13,
+      "endLine": 41
     }
   ],
   "REQ-3": [
@@ -46,34 +79,6 @@
       "file": ".jaros-data/tools/apply_patch_tool.py",
       "startLine": 23,
       "endLine": 76
-    }
-  ],
-  "REQ-5": [
-    {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 37,
-      "endLine": 130
-    }
-  ],
-  "REQ-13": [
-    {
-      "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 35,
-      "endLine": 91
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": ".jaros-data/tools/py_symbols_tool.py",
-      "startLine": 14,
-      "endLine": 46
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": ".jaros-data/tools/py_check_tool.py",
-      "startLine": 14,
-      "endLine": 41
     }
   ]
 }
