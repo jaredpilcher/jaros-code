@@ -5,12 +5,27 @@ validated django-12125 resolve (__name__ -> __qualname__) with a canned model re
 """
 from harness.swebench_live import (
     locate_region,
+    locate_target_line,
+    locate_from_patch,
     parse_search_replace,
     apply_search_replace,
     build_solve_prompt,
     solve_instance_live,
     build_repair_prompt,
     solve_with_repair,
+)
+
+# django-11964-shaped: three `pass` lines, the target is the middle one (the Choices class).
+_MULTIPASS = (
+    "class Meta:\n"          # 1
+    "    pass\n"             # 2  pass #1 (wrong)
+    "\n"                     # 3
+    "class Choices:\n"       # 4
+    "    '''docs'''\n"       # 5
+    "    pass\n"             # 6  pass #2 — the TARGET
+    "\n"                     # 7
+    "class Other:\n"         # 8
+    "    pass\n"             # 9  pass #3
 )
 
 _BUGGY = '                return "%s.%s" % (module, self.value.__name__), {"import %s" % module}'
@@ -51,6 +66,36 @@ def test_locate_region_finds_enclosing_method():
     assert "self.value.__name__" in region
     # must stop before the next top-level def
     assert "def other()" not in region
+
+
+def test_locate_target_line_unique_anchor():
+    assert locate_target_line(_MULTIPASS, ["class Choices:"]) == 4
+
+
+def test_locate_target_line_ambiguous_uses_hint():
+    # generic anchor `pass` occurs 3x; hint near the Choices class -> pick line 6, not line 2
+    assert locate_target_line(_MULTIPASS, ["pass"], hint_line=6) == 6
+    # without a hint, the ambiguous anchor takes the first occurrence
+    assert locate_target_line(_MULTIPASS, ["pass"]) == 2
+
+
+def test_locate_target_line_fallback_to_hint_when_no_match():
+    assert locate_target_line(_MULTIPASS, ["nonexistent line"], hint_line=5) == 5
+    assert locate_target_line(_MULTIPASS, ["nonexistent"]) == 1  # no hint -> 1, never None
+
+
+def test_locate_target_line_prefers_earlier_anchors():
+    # a unique later anchor is only used if the earlier ones miss
+    assert locate_target_line(_MULTIPASS, ["nope", "class Other:"]) == 8
+
+
+def test_locate_from_patch_disambiguates_generic_anchor():
+    # a unified diff replacing the Choices class's `pass`; @@ -5 hint disambiguates the 3 `pass`
+    patch = (
+        "--- a/enums.py\n+++ b/enums.py\n@@ -5,2 +5,3 @@ class Choices:\n"
+        "     '''docs'''\n-    pass\n+    def __str__(self):\n+        return str(self.value)\n"
+    )
+    assert locate_from_patch(_MULTIPASS, patch) == 6
 
 
 def test_parse_search_replace_basic():

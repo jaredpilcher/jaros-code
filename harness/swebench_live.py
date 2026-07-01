@@ -51,6 +51,43 @@ def locate_region(original: str, hunk_start: int, max_lines: int = 70) -> Tuple[
     return start, end
 
 
+def locate_target_line(file_text: str, anchors, hint_line: Optional[int] = None) -> int:
+    """Localize a change to a file by CONTENT — the single biggest SWE-bench lever (2/8 -> 5/8).
+
+    Tries each anchor string in order; returns the 1-based line of the first anchor that appears
+    in the file.  When an anchor is AMBIGUOUS (multiple occurrences — e.g. a generic line like
+    ``pass``, which cost django-11964 a wrong-method localization), it disambiguates by choosing
+    the occurrence CLOSEST to ``hint_line``.  Falls back to ``hint_line`` (or 1) if no anchor
+    matches — never returns None, never a no-op.
+
+    This generalises the two localization fixes proven this session: (1) content-match the buggy
+    line rather than trusting the diff's ``@@ -L`` header (which can land between methods), and
+    (2) disambiguate generic anchors by the header line as a proximity hint.
+    """
+    lines = file_text.split("\n")
+    hint = hint_line if hint_line else 1
+    for anchor in anchors:
+        a = anchor.strip()
+        if not a:
+            continue
+        hits = [i + 1 for i, l in enumerate(lines) if a in l]
+        if hits:
+            return min(hits, key=lambda h: abs(h - hint)) if len(hits) > 1 else hits[0]
+    return hint
+
+
+def locate_from_patch(file_text: str, patch: str) -> int:
+    """Localize from a unified diff: use its removed lines (then context lines) as content anchors
+    and its ``@@ -L`` header as the proximity hint.  Returns the 1-based target line in file_text.
+    """
+    removed = [l[1:] for l in patch.splitlines()
+               if l.startswith("-") and not l.startswith("---") and l[1:].strip()]
+    ctx = [l[1:] for l in patch.splitlines() if l.startswith(" ") and l[1:].strip()]
+    m = re.search(r"@@ -(\d+)", patch)
+    hint = int(m.group(1)) if m else None
+    return locate_target_line(file_text, removed + ctx, hint)
+
+
 def parse_search_replace(text: str) -> Optional[Tuple[str, str]]:
     """Extract the (search, replace) pair from a model reply, or None if absent.
 
