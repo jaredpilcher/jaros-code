@@ -143,7 +143,37 @@ ruthlessly.
 model releases. Every new small-model release is a potential roster candidate —
 audition by marginal coverage within days of release.
 
-**G. The idea bank (`docs/IDEA-BANK.md`).** Twenty pre-probed novel levers beyond the
+**G. The Foundry — build real systems, not just benchmark scores (owner directive,
+2026-07-01).** Benchmarks measure the middle of the distribution; they cannot measure
+project bootstrap, configuration, deployment, long-horizon coherence, or "did it
+actually ship." So the pursuit maintains a standing PORTFOLIO OF REAL BUILDS: many
+different kinds of software built end-to-end BY jaros-code, the jarify way (intent →
+spec → build → validate), on the owner's laptop and the Jetson. Examples: CLI tools,
+localhost web services, data pipelines, a telemetry dashboard for jaros-code itself
+(self-serving dogfood), small games, file utilities — deliberately diverse domains.
+Each Foundry project yields: (1) the true long-horizon gap data no benchmark shows,
+(2) verified solutions in new domains (flywheel fuel), (3) real daily-driver task
+distribution, (4) actually useful artifacts. Grading is binary and honest: it ships
+and runs, or it doesn't — plus a logged gap-list per project.
+**Safety envelope (non-negotiable):** dedicated sandbox workspace; services bind
+localhost-only; containerized or resource-capped where possible; the existing shell
+gates stay (no external network egress, no destructive ops, no secrets) — any
+exception is a per-project owner-approved manifest, never a default. Scoreboard
+instrument #8: the Foundry ship-log (projects started / shipped / gap discoveries).
+
+**H. Jaros-native rule (owner directive, 2026-07-01 — binds every lever above).**
+jaros-code is BUILT ON JAROS, and everything new lands AS Jaros: judgments become
+single-purpose agents emitting inert Decisions; every side effect — including
+watchers, schedulers, training runs, index builds, Foundry deployments — is a
+deterministic Jaros tool with validate()/execute(), hash-chain logged and replayable.
+No side-channel scripts that bypass the two planes. Concretely: the overnight brain
+is a scheduled Jaros flow; the speculative drawer's watcher emits work through the
+normal submission path; LoRA training is an execution-plane tool whose config is an
+inert Decision; the knowledge compiler and mutation factory are tools. If a lever
+seems to need to escape Jaros, that is a signal to extend Jaros (new tool/flow
+primitives), not to bypass it — flag it, don't fork it.
+
+**I. The idea bank (`docs/IDEA-BANK.md`).** Twenty pre-probed novel levers beyond the
 current playbook — decode-time grammar constraints, execution-grounded
 exemplification, the overnight brain, speculative solving, per-repo adapters,
 mutation task factories, property oracles, calibration, cost-model planning,
