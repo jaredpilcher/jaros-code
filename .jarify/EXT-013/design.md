@@ -40,3 +40,14 @@ both weak. That is precisely why the SWE-bench solve used the GOLD to content-ma
 The one strong deterministic gold-free signal is the traceback (crash class); wrong-output localization
 remains the open problem (candidate directions: retrieval by the issue's named symbols; the test BODY's
 called symbols, not its name).
+
+## gold-free wrong-output localization — EXPLORATION CLOSED (2026-07-01, honest)
+Measured 4 deterministic signals for localizing WRONG-OUTPUT bugs without the gold: traceback (STRONG but
+crash-class only — the failing frame is in the buggy file), failing-test-NAME token-match (0/5, weak),
+failing-test-BODY called-symbols (1/5, weak), model-from-prose (~1/5, weak). The name/body measurements are
+CONFOUNDED by noisy target computation (enclosing-def of the gold anchor is unreliable when the fix is
+class-level or in a large method), but the direction is clear: NO strong deterministic gold-free signal for
+wrong-output bugs. Contrast: gold-BASED localization (content-match the KNOWN buggy line) is proven at 5/8.
+CONCLUSION: solve_from_failure is a genuine gold-free path for the CRASH class (traceback signal); general
+gold-free wrong-output localization stays OPEN (would need richer repo retrieval / symbol-graph, not a
+one-line heuristic). This bounds the gold-free capability honestly. Localization exploration CLOSED here.
