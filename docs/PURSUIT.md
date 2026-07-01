@@ -3,8 +3,33 @@
 Supersedes and replaces the 3-week roadmap (deleted). This is the standing strategy for
 reaching a **real, Claude-Code-comparable CLI whose inference runs entirely on a Jetson
 Orin Nano** — pursued as fast as honest measurement allows, for as long as it takes.
-The supervisor agent should reconcile PRIME-001 and the specs with this directive
-through the normal jarify flow (spec-first; this document is direction, specs are law).
+This file is the SINGLE ENTRY POINT — everything the agent needs is here or one hop
+away.
+
+---
+
+## 0. How to use this document (read first, act immediately)
+
+**Where everything lives:**
+- Doctrine, scoreboard, velocity rules, sovereignty, arsenal, escalation ladder,
+  flywheel, engine, bootstrap: THIS file.
+- Twenty novel levers, each with probe + kill criterion: `docs/IDEA-BANK.md`.
+- How to GENERATE new levers when the bank runs dry: `docs/IDEA-PLAYBOOK.md`.
+- Provenance of every public figure: `.launch/PUBLISHED.md`.
+- The living steering artifact you will create and maintain: `docs/GAP-MAP.md`.
+
+**Mandatory first act — reconcile governance (spec-first, BEFORE any building):**
+1. Update `.jarify/PRIME-001/intent.md` AND `.jarify/PRIME-001/design.md` to reflect
+   this directive in full: the open-question framing (§1), the scoreboard as the sole
+   definition of progress (§2), the Jetson TIER (§4), training-our-own-models as an
+   authorized sovereign method (§5D), the Foundry (§5G), the Jaros-native rule (§5H),
+   the escalation ladder with dated walls (§6), the self-distillation flywheel (§7),
+   and the convergence-loop engine (§8).
+2. Sweep EVERY `.jarify/EXT-*` spec: update anything this directive supersedes or
+   reframes (single-model assumptions, deadline framings, stale metric definitions);
+   mark superseded requirements honestly. Stale specs are defects (Tenet 4).
+3. Refresh all traceability indexes. Spec + doc changes land in the same commits.
+4. Only then proceed to the bootstrap sequence (§9).
 
 ---
 
@@ -218,7 +243,27 @@ indefinitely more capable, and it is fully sovereign. Standing orders:
   weakest roster member on it, measure bare-model lift held-out. Even a small win
   validates the flywheel; a null result is map data.
 
-## 8. Cadence, reporting, honesty plumbing
+## 8. The engine: the jarify convergence loop (reflexive), cadence, honesty plumbing
+
+**The pursuit RUNS AS the jarify convergence loop — the same loop that built this
+system (owner directive, 2026-07-01).** Every cycle: MEASURE (the §2 scoreboard,
+honestly) → DIAGNOSE (probe the raw output) → DISCOVER (name the missing grain; pull
+from the IDEA-BANK; when the bank is dry, run the IDEA-PLAYBOOK) → PLACE (plane-
+placement triage, Jaros-native per §5H) → WIRE (no orphans) → RE-MEASURE (held-out)
+→ PRUNE (revert net-negatives). Every change flows through the jarify workflow — no
+ad-hoc edits: `jarify-manage-specs` / `jarify-manage-tasks` / `jarify-manage-links`
+for the docs and traceability, the **jarify-builder** implements one scoped task, the
+**jarify-architect** validates and commits, the **jarify-governance-loop** heartbeat
+audits spec↔code compliance and auto-steers between owner messages.
+
+**And reflexively: jarify itself is an improvement target.** jaros-code is jarify's
+proving ground. When the loop exposes a weakness in jarify's own mechanisms — spec
+formats, traceability, the skills, the governance heartbeat, Jaros tool/flow
+primitives — fixing THAT is in-scope pursuit work under the same convergence
+discipline (spec-first, held-out-gated where measurable, committed). The tool that
+converges the system is also converged BY the system. This reflexivity is PRIME-001
+Tenet 4 taken to its logical end, and it is how the whole stack — Jaros, jarify,
+jaros-code — compounds together.
 
 - Continuous operation (existing runner + governance loop). Weekly full scoreboard:
   all five instruments, deltas, CIs, Gap-Map state changes, kills and their evidence.
@@ -233,6 +278,8 @@ indefinitely more capable, and it is fully sovereign. Standing orders:
 ## 9. Bootstrap sequence (first moves under this directive)
 
 Order matters only here; after this, the Gap Map steers.
+0. **Governance reconciliation (§0 mandatory first act)** — PRIME-001 intent + design
+   updated, every EXT spec swept, traceability refreshed. Nothing builds before this.
 1. **State census + `baseline-pursuit` tag** — roster, wiring (no silent orphans),
    all current numbers. One day.
 2. **Daily-driver suite** (§2.1) — the parity instrument. Two days. Baseline both
