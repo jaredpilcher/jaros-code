@@ -91,7 +91,6 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
     # for the intent (comprehension step pins the exact case), derives its OWN tests, implements, and
     # fixes against them — the same system proven on held-out real commits. The eval and this product
     # path now share ONE solve; here the env adapter is local pytest.
-    import subprocess
     from harness.behavioral_solve import behavioral_solve
     module = Path(target).stem
     func = func or module
@@ -103,12 +102,11 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
     def run_tests(code: str, test_code: str) -> tuple[bool, str]:
         tp.write_text(code, encoding="utf-8", newline="\n")
         testp.write_text(test_code, encoding="utf-8", newline="\n")
-        try:
-            r = subprocess.run(f"python -m pytest -q {test_name}", cwd=cwd, shell=True,
-                               capture_output=True, text=True, timeout=60)
-            return r.returncode == 0, (r.stdout + r.stderr)[-700:]
-        except subprocess.TimeoutExpired:
-            return False, "timeout"
+        # #EXT-005-REQ-12 Start
+        from harness.proc_treekill import run_with_treekill
+        ok, output = run_with_treekill(f"python -m pytest -q {test_name}", cwd, timeout=60, capture=True)
+        return ok, (output[-700:] if output else "timeout")
+        # #EXT-005-REQ-12 End
 
     r = behavioral_solve(intent, func, current, "", module, run_tests, max_fix=max_iters)
     tp.write_text(r["code"] or (current or _stub(signature or "", func)), encoding="utf-8", newline="\n")

@@ -167,17 +167,24 @@ the pytest grandchild alive and the caller hanging on a broken pipe. The fix is 
 `os.killpg(os.getpgid(pid), SIGKILL)` with `start_new_session=True`), followed by a
 short `communicate(timeout=5)` reap before returning `ok=False`.
 
-This applies to every `shell=True` + timeout test-exec site in the harness:
-`run_pass1`, `run_gated` (both in `harness/pass1_eval.py`) and `_run` in
-`harness/multi_file.py`.
+This applies to every `shell=True` + timeout test-exec site in the harness. The
+eval-harness sites `run_pass1`, `run_gated` (both in `harness/pass1_eval.py`) and
+`_run` in `harness/multi_file.py` are already covered. The SAME guarantee must hold
+for the remaining local `shell=True` + timeout pytest sites in the behavioral-solve /
+CLI paths — `harness/agent_loop.py`, `harness/cli.py`, `harness/intent_loop.py`,
+`harness/build_eval.py` — which today use a bare `subprocess.run(..., timeout=...)`
+and orphan the pytest grandchild on a Windows timeout. To avoid divergent copies
+(Tenet 3), the proven `_run_with_treekill` logic is extracted into a SHARED helper
+that every such site imports.
 
 #### Acceptance Criteria
-- [ ] `_run_with_treekill` helper in `harness/pass1_eval.py` uses Popen + tree-kill on timeout
-- [ ] `run_pass1` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
-- [ ] `run_gated` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
-- [ ] `harness/multi_file.py` `_run()` uses Popen + tree-kill on timeout
-- [ ] `tests/test_pass1_treekill.py` asserts `run_pass1([infinite_loop_task])` returns within 15 s
-- [ ] The fix is cross-platform: Windows uses `taskkill /F /T`, POSIX uses SIGKILL to process group
+- [x] `_run_with_treekill` helper in `harness/pass1_eval.py` uses Popen + tree-kill on timeout
+- [x] `run_pass1` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
+- [x] `run_gated` uses `_run_with_treekill` instead of bare `subprocess.run(..., timeout=...)`
+- [x] `harness/multi_file.py` `_run()` uses Popen + tree-kill on timeout
+- [x] `tests/test_pass1_treekill.py` asserts `run_pass1([infinite_loop_task])` returns within 15 s
+- [x] The fix is cross-platform: Windows uses `taskkill /F /T`, POSIX uses SIGKILL to process group
+- [x] A SHARED tree-kill helper (single source of truth) is applied to the remaining local `shell=True`+timeout pytest sites: `harness/agent_loop.py`, `harness/cli.py`, `harness/intent_loop.py`, `harness/build_eval.py` — none of them orphans the pytest grandchild on a Windows timeout
 
 ### [REQ-5] Real public benchmark integration
 

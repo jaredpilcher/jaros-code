@@ -8,7 +8,6 @@ a HIDDEN ORACLE (a held-out test the system never saw) exercising ALL functions 
 """
 from __future__ import annotations
 
-import subprocess
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -156,11 +155,13 @@ def _oracle_pass(solution_code: str, oracle_test: str) -> bool:
     with tempfile.TemporaryDirectory() as od:
         (Path(od) / "solution.py").write_text(solution_code, encoding="utf-8", newline="\n")
         (Path(od) / "test_oracle.py").write_text(oracle_test, encoding="utf-8", newline="\n")
+        # #EXT-005-REQ-12 Start
+        from harness.proc_treekill import run_with_treekill
         try:
-            return subprocess.run("python -m pytest -q test_oracle.py", cwd=od, shell=True,
-                                  capture_output=True, text=True, timeout=60).returncode == 0
+            return run_with_treekill("python -m pytest -q test_oracle.py", od, timeout=60)
         except Exception:
             return False
+        # #EXT-005-REQ-12 End
 
 
 def run_build_eval(verbose: bool = False, persist: bool = True,

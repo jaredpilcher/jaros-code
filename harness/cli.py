@@ -445,16 +445,17 @@ class JcodeCli:
         file:line:function, DEEPEST FRAME FIRST — so a fix can target the exact function, not the
         whole file. Deterministic (the traceback names the function). Composes
         harness/multi_file.localize_fault."""
-        import subprocess
+        # #EXT-005-REQ-12 Start
+        from harness.proc_treekill import run_with_treekill
         from harness.multi_file import localize_fault
         try:
-            r = subprocess.run("python -m pytest -q", cwd=".", shell=True,
-                               capture_output=True, text=True, timeout=60)
+            ok, output = run_with_treekill("python -m pytest -q", ".", timeout=60, capture=True)
         except Exception as e:
             return f"locate: could not run tests: {e}"
-        if r.returncode == 0:
+        # #EXT-005-REQ-12 End
+        if ok:
             return "tests pass — nothing to localize"
-        frames = localize_fault(r.stdout + r.stderr)
+        frames = localize_fault(output)
         if not frames:
             return "tests failed but no traceback frames found"
         return "fault localization (deepest frame first):" + "".join(
