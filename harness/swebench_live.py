@@ -84,7 +84,18 @@ def apply_search_replace(original: str, search: str, replace: str) -> Optional[s
     if ns and ns in no:
         new = no.replace(ns, norm(replace), 1)
         return new if new != no else None
-    return None
+    # Line-level fallback: the model often reproduces the surrounding block imperfectly (e.g.
+    # hallucinates a `self.` prefix) but gets the CHANGED line(s) right. Apply the aligned
+    # line-replacements from the search/replace diff whose OLD line is present verbatim in the file.
+    import difflib
+    sl, rl = search.split("\n"), replace.split("\n")
+    new = original
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, sl, rl).get_opcodes():
+        if tag == "replace" and (i2 - i1) == (j2 - j1):
+            for old, rep in zip(sl[i1:i2], rl[j1:j2]):
+                if old != rep and old.strip() and old in new:
+                    new = new.replace(old, rep, 1)
+    return new if new != original else None
 
 
 def build_solve_prompt(issue: str, file_path: str, region: str, issue_chars: int = 1300) -> str:

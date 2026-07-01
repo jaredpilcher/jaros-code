@@ -83,6 +83,16 @@ def test_apply_search_replace_no_match_returns_none():
     assert apply_search_replace("a\nb\nc\n", "zzz", "Z") is None
 
 
+def test_apply_search_replace_line_level_fallback():
+    # block doesn't match (model hallucinated a `self.` prefix) but the CHANGED line is right
+    # and present verbatim in the file -> line-level fallback applies just that edit.
+    orig = "class F:\n    default_error_messages = {\n        'x': 'old format str',\n    }\n"
+    search = "    self.default_error_messages = {\n        'x': 'old format str',\n    }"
+    replace = "    self.default_error_messages = {\n        'x': 'new format str',\n    }"
+    out = apply_search_replace(orig, search, replace)
+    assert out is not None and "new format str" in out and "old format str" not in out
+
+
 def test_apply_search_replace_noop_returns_none():
     assert apply_search_replace("a\nb\n", "b", "b") is None
 

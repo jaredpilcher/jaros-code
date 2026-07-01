@@ -240,3 +240,16 @@ harness-investigable, NONE declared ceilings): django-11049 (correct fix produce
 won't apply), django-11964 (applies, wrong __str__ logic — repair-loop candidate), astropy-12907 (matrix
 reasoning — genuinely no applicable edit yet). SLICE RATE banked at 4/8 (50%) — the localization fix was
 the big lift (2/8->4/8); further harness work (multi-line match, repair loop) may reach 5-6/8.
+
+## SLICE RATE 5/8 (62.5%) — line-level apply fallback (2026-06-30)
+django-11049's CORRECT format-string fix was produced but its multi-line SEARCH block didn't match (the
+model hallucinated a `self.` prefix on the surrounding lines). FIX: a LINE-LEVEL fallback in
+apply_search_replace — when the whole block doesn't match, apply the aligned changed line(s) from the
+search/replace diff whose OLD line is present verbatim in the file (difflib opcodes). django-11049 NOW
+RESOLVES (exact gold `[DD] [[HH:]MM:]ss...`). SLICE RATE 4/8 -> **5/8 (62.5%)**: django-12125, django-12113,
+django-10924, astropy-6938, django-11049. 16 tests green. THIRD harness gap this session turned a "miss"
+into a resolve (localization, parser-divider, now block-match) — every one was OURS, not the 3B's.
+REMAINING: django-11964 (applies but wrong __str__ logic — REPAIR-loop candidate, re-test now that
+localization+parser+apply are all fixed), astropy-12907 (matrix reasoning — hardest, still no applicable
+edit), django-12908 (image glitch). Honest scaffolding: issue + gold-localized region + best-of-N +
+robust-apply + test-gate; model produces the fixes, no leak.
