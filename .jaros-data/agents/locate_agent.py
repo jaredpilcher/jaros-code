@@ -204,6 +204,18 @@ def locate_where(context, llm=None):
                 id=f"loc-{uuid.uuid4().hex}", source=NAME, type="orchestrate.locate",
                 payload={"file": tf, "function": "", "anchor_line": int(line),
                          "matched_by": "traceback"})
+    # Tier 2: failing-test-name -> candidate function by DETERMINISTIC token overlap (medium signal,
+    # for WRONG-OUTPUT bugs where the traceback lands in the test assertion, not the code).  Stronger
+    # than the ~1/5 model guess: a failing test like `test_serialize_nested_class` names `serialize`.
+    test_name = ctx.get("test_name")
+    candidates = ctx.get("candidates") or []
+    if test_name and candidates:
+        i = _best_content_match_index(str(test_name), candidates)
+        c = candidates[i] if isinstance(candidates[i], dict) else {}
+        return create_decision(
+            id=f"loc-{uuid.uuid4().hex}", source=NAME, type="orchestrate.locate",
+            payload={"file": c.get("file", tf or ""), "function": c.get("function", ""),
+                     "anchor_line": int(c.get("anchor_line", 0)), "matched_by": "test_name"})
     if llm is not None:
         return LocateBoundary(llm).decide(ctx)[0]
     return create_decision(
