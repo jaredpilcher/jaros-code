@@ -1,4 +1,33 @@
 {
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/repair_tool.py",
+      "startLine": 36,
+      "endLine": 125
+    },
+    {
+      "file": "tests/test_ext013_jaros_ops.py",
+      "startLine": 18,
+      "endLine": 298
+    },
+    {
+      "file": "harness/jaros_solve_ops.py",
+      "startLine": 34,
+      "endLine": 114
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": "tests/test_swebench_live.py",
+      "startLine": 135,
+      "endLine": 215
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 113,
+      "endLine": 181
+    }
+  ],
   "REQ-3": [
     {
       "file": "tests/test_ext013_orchestrator_judge.py",
@@ -37,7 +66,7 @@
     {
       "file": ".jaros-data/agents/locate_agent.py",
       "startLine": 26,
-      "endLine": 213
+      "endLine": 216
     }
   ],
   "REQ-4": [
@@ -52,35 +81,6 @@
       "endLine": 361
     }
   ],
-  "REQ-2": [
-    {
-      "file": "tests/test_ext013_jaros_ops.py",
-      "startLine": 18,
-      "endLine": 298
-    },
-    {
-      "file": ".jaros-data/tools/repair_tool.py",
-      "startLine": 36,
-      "endLine": 125
-    },
-    {
-      "file": "harness/jaros_solve_ops.py",
-      "startLine": 34,
-      "endLine": 114
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": ".jaros-data/agents/gherkin_agent.py",
-      "startLine": 15,
-      "endLine": 60
-    },
-    {
-      "file": ".jaros-data/agents/code_agent.py",
-      "startLine": 16,
-      "endLine": 106
-    }
-  ],
   "REQ-5": [
     {
       "file": "harness/commit_replay.py",
@@ -91,6 +91,18 @@
       "file": "harness/behavioral_solve.py",
       "startLine": 324,
       "endLine": 328
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/code_agent.py",
+      "startLine": 16,
+      "endLine": 106
+    },
+    {
+      "file": ".jaros-data/agents/gherkin_agent.py",
+      "startLine": 15,
+      "endLine": 60
     }
   ]
 }

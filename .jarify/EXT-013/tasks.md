@@ -107,3 +107,30 @@ behavior are byte-for-byte unchanged.
 
 #### Implements
 - [REQ-8] Orchestrator variable — richer observe loop
+
+### [TASK-9] locate_from_coverage — runtime-trace localization for wrong-output bugs
+
+Implement REQ-9: a deterministic runtime-coverage localization signal in `harness/swebench_live.py`,
+using the stdlib `sys.settrace` (coverage.py is NOT installed — do not add a dependency). Offline +
+test-gated; no Docker/Jetson.
+
+#### Steps
+1. In `harness/swebench_live.py` add `locate_from_coverage(run_fn, target_file)` where `run_fn` is a
+   zero-arg callable that EXECUTES the failing test in-process (so `sys.settrace` sees it). Install a
+   trace function (`sys.settrace`) that records `(filename, lineno)` for `line` events whose filename
+   matches `target_file` (match by basename or endswith to be path-robust); run `run_fn()` inside a
+   try/finally that restores the previous trace; return the sorted set of executed line numbers in
+   `target_file` (empty set if none). Keep it pure/deterministic — the caller supplies `run_fn`.
+2. Add `locate_target_line_traced(file_text, anchors, executed_lines, hint_line=None)` (or extend the
+   existing disambiguation): among the content-match anchor hits, PREFER one whose line is in
+   `executed_lines`; if none intersect (or executed_lines empty), fall back to the existing
+   `locate_target_line` behavior (hint/first). Never a no-op.
+3. Add tests in `tests/test_swebench_live.py`: (a) a synthetic module string with two functions `buggy`
+   and `unrelated`, written to a temp file + imported; a `run_fn` that calls `buggy(...)` (which is the
+   failing path) → `locate_from_coverage` returns line numbers inside `buggy`'s body and NOT inside
+   `unrelated`; (b) `locate_target_line_traced` picks the anchor on an executed line over an identical
+   anchor on a non-executed line; (c) empty executed_lines → falls back to plain content-match. Run the
+   full suite green.
+
+#### Implements
+- [REQ-9] WHERE-to-act via RUNTIME coverage trace (gold-free wrong-output localization)

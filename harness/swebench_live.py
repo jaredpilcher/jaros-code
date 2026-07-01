@@ -12,7 +12,9 @@ this module deterministically parses + applies it.  The model never touches the 
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from typing import Callable, Optional, Tuple
 
 from harness.swebench_solve import make_unified_diff
@@ -106,6 +108,77 @@ def locate_from_patch(file_text: str, patch: str) -> int:
     m = re.search(r"@@ -(\d+)", patch)
     hint = int(m.group(1)) if m else None
     return locate_target_line(file_text, removed + ctx, hint)
+
+
+# #EXT-013-REQ-9 Start
+def locate_from_coverage(run_fn: Callable[[], None], target_file: str) -> list:
+    """Deterministic RUNTIME localization signal for WRONG-OUTPUT (non-crash) bugs.
+
+    Runs ``run_fn()`` (a zero-arg callable that executes the failing test IN-PROCESS) under a
+    ``sys.settrace`` line tracer and returns the sorted list of 1-based line numbers EXECUTED in
+    ``target_file``.  Uses only the stdlib (coverage.py is NOT installed / not a dependency).
+
+    Static signals were MEASURED weak for wrong-output bugs (test-name 0/5, test-body-symbols
+    1/5), and ``locate_from_traceback`` only helps CRASH bugs (the failing frame lands in the
+    buggy file).  For a wrong-output bug the test passes through the buggy code without raising,
+    so the executed-line SET (not a single traceback frame) is the deterministic signal: the fix
+    is almost always on a line that ran.  Two-plane-clean — no model, purely mechanical tracing.
+
+    ``target_file`` is matched by ``os.path.basename`` equality OR ``str.endswith`` against the
+    traced frame's ``co_filename``, since the frame's filename may be an absolute (e.g. temp)
+    path rather than the caller's ``target_file`` string.  Robust to ``run_fn`` raising (a failing
+    test typically raises/asserts) — the exception is swallowed so tracing still returns whatever
+    executed before the raise.  A global ``sys.settrace`` trace only fires per-line if installed
+    BEFORE the call, so this saves/restores the prior tracer (``sys.gettrace()``) around the call.
+    """
+    target_base = os.path.basename(target_file.replace("\\", "/"))
+    target_norm = target_file.replace("\\", "/")
+    executed: set = set()
+
+    def _tracer(frame, event, arg):
+        if event == "line":
+            fname = frame.f_code.co_filename.replace("\\", "/")
+            if os.path.basename(fname) == target_base or fname.endswith(target_norm):
+                executed.add(frame.f_lineno)
+        return _tracer
+
+    prev_trace = sys.gettrace()
+    sys.settrace(_tracer)
+    try:
+        try:
+            run_fn()
+        except Exception:
+            pass
+    finally:
+        sys.settrace(prev_trace)
+    return sorted(executed)
+
+
+def locate_target_line_traced(
+    file_text: str, anchors, executed_lines, hint_line: Optional[int] = None
+) -> int:
+    """Disambiguate ``locate_target_line`` anchor hits with the runtime executed-line set.
+
+    Reuses the same content-match anchor logic as ``locate_target_line``, but among the hits for
+    the FIRST matching anchor, PREFERS a hit whose line number is in ``executed_lines`` (the
+    ``locate_from_coverage`` signal) — the fix is almost always on a line that ran.  If no hit
+    intersects ``executed_lines`` (or ``executed_lines`` is empty), falls back to the existing
+    ``locate_target_line`` behavior (hint-proximity, then hint/1).  Never a no-op.
+    """
+    lines = file_text.split("\n")
+    executed = set(executed_lines or [])
+    if executed:
+        hint = hint_line if hint_line else 1
+        for anchor in anchors:
+            a = anchor.strip()
+            if not a:
+                continue
+            hits = [i + 1 for i, l in enumerate(lines) if a in l]
+            traced_hits = [h for h in hits if h in executed]
+            if traced_hits:
+                return min(traced_hits, key=lambda h: abs(h - hint)) if len(traced_hits) > 1 else traced_hits[0]
+    return locate_target_line(file_text, anchors, hint_line)
+# #EXT-013-REQ-9 End
 
 
 def parse_search_replace(text: str) -> Optional[Tuple[str, str]]:

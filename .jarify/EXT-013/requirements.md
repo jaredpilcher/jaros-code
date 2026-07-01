@@ -119,3 +119,22 @@ The third axis, pursued after REQ-6: the orchestrator reasons over the ACTUAL sp
 #### Acceptance Criteria
 - [ ] The orchestrator's context at the judgement point includes the real artifacts (spec/code/diff/failure), not just a state token
 - [ ] Measured on held-out and integrated-or-pruned (forward-only, test-gated)
+
+### [REQ-9] WHERE-to-act via RUNTIME coverage trace (gold-free wrong-output localization)
+
+Extends the REQ-6 localization family with a RUNTIME-execution signal for WRONG-OUTPUT (non-crash) bugs —
+the class where static signals were MEASURED weak (test-name 0/5, test-body-symbols 1/5) and the
+traceback only helps CRASH bugs (the failing frame is in the buggy file). Research-derived (arXiv
+"codebase understanding via runtime execution" / test-time-scaling SWE literature): RUN the failing test
+under line tracing (Python stdlib ``sys.settrace`` — NO new dependency, coverage.py is absent) and take
+the set of lines EXECUTED in the target file as a deterministic localization signal. The fix is almost
+always on an executed line, so the executed set narrows the whole-file search enormously and can
+disambiguate content-match anchors (intersect candidate anchors with the executed set). Deterministic,
+two-plane-clean (execution-plane, no model, no training), composing with the existing
+``locate_from_traceback`` / ``locate_from_patch`` / ``locate_where`` toolkit.
+
+#### Acceptance Criteria
+- [x] ``harness/swebench_live.py`` gains ``locate_from_coverage`` that runs a failing test under ``sys.settrace`` and returns the executed line numbers (or (start,end) ranges) within a given target file — `harness/swebench_live.py::locate_from_coverage`
+- [x] A helper intersects the executed line-set with content-match candidate anchors to disambiguate (executed ∩ candidates), falling back to the plain content-match when the trace is empty — `harness/swebench_live.py::locate_target_line_traced`
+- [x] Offline-tested (no Docker/Jetson): a synthetic two-function buggy module + a failing test → the traced lines include the buggy function's body and EXCLUDE the unrelated function — `tests/test_swebench_live.py::test_locate_from_coverage_executed_lines_in_buggy_not_unrelated`
+- [x] Honest scope: works for WRONG-OUTPUT bugs where the test executes the buggy file (documents that a test which never imports the target yields an empty trace → fall back) — tested by `test_locate_target_line_traced_empty_executed_falls_back_to_content_match`; docstrings note the empty-set/robust-to-raise behavior
