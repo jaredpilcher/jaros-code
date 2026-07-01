@@ -8,19 +8,36 @@
     {
       "file": ".jaros-data/agents/orchestrator_judge_agent.py",
       "startLine": 30,
-      "endLine": 118
+      "endLine": 151
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "tests/test_ext013_orchestrator_judge.py",
+      "startLine": 257,
+      "endLine": 404
+    },
+    {
+      "file": ".jaros-data/agents/orchestrator_judge_agent.py",
+      "startLine": 58,
+      "endLine": 76
+    },
+    {
+      "file": ".jaros-data/agents/orchestrator_judge_agent.py",
+      "startLine": 116,
+      "endLine": 129
     }
   ],
   "REQ-6": [
     {
       "file": "tests/test_ext013_locate.py",
       "startLine": 16,
-      "endLine": 209
+      "endLine": 236
     },
     {
       "file": ".jaros-data/agents/locate_agent.py",
       "startLine": 26,
-      "endLine": 184
+      "endLine": 213
     }
   ],
   "REQ-4": [
@@ -54,14 +71,14 @@
   ],
   "REQ-1": [
     {
-      "file": ".jaros-data/agents/code_agent.py",
-      "startLine": 16,
-      "endLine": 106
-    },
-    {
       "file": ".jaros-data/agents/gherkin_agent.py",
       "startLine": 15,
       "endLine": 60
+    },
+    {
+      "file": ".jaros-data/agents/code_agent.py",
+      "startLine": 16,
+      "endLine": 106
     }
   ],
   "REQ-5": [

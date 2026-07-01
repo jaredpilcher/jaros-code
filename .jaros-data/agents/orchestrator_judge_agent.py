@@ -55,6 +55,26 @@ _PROMPT = (
     "Answer with ONLY one word."
 )
 
+# #EXT-013-REQ-8 Start
+# Richer-observe template (REQ-8): OPT-IN — only used when ``ctx["code"]`` is
+# non-empty.  Adds the ACTUAL current code (truncated to a safe budget) before
+# the "Diagnose" line so the judge can SEE whether the bug is a LOGIC error
+# (-> code) or BROKEN SYNTAX/indentation (-> repair), rather than inferring it
+# from the failure text alone.  Same action space, same menu, same one-word
+# answer contract as ``_PROMPT`` — only the observation is richer.
+_CODE_BUDGET = 800
+
+_RICH_PROMPT = (
+    "You are building the Python function `{name}`.\n"
+    "GOAL: {intent}\n"
+    "Current code:\n{code}\n\n"
+    "Its self-tests FAILED with:\n{feedback}\n\n"
+    "Diagnose the cause and pick the SINGLE next action:\n"
+    "{menu}\n"
+    "Answer with ONLY one word."
+)
+# #EXT-013-REQ-8 End
+
 DEFAULT_MAX_STEPS = 8
 
 
@@ -92,8 +112,21 @@ class OrchestratorJudgeBoundary:
 
         # --- Short LLM call: pick the revision layer ---
         menu = "\n".join(f"  {a} = {d}" for a, d in _REV_DESCRIPTIONS.items())
-        prompt = _PROMPT.format(
-            name=name, intent=intent, feedback=feedback, menu=menu)
+
+        # #EXT-013-REQ-8 Start
+        # Richer-observe (OPT-IN): only when ctx["code"] is non-empty do we
+        # switch to the richer template.  When absent, the prompt below is
+        # byte-for-byte identical to the original _PROMPT.format(...) call —
+        # strict backward-compat with the proven solve loop.
+        code = str(ctx.get("code", ""))
+        if code:
+            prompt = _RICH_PROMPT.format(
+                name=name, intent=intent, feedback=feedback, menu=menu,
+                code=code[:_CODE_BUDGET])
+        else:
+            prompt = _PROMPT.format(
+                name=name, intent=intent, feedback=feedback, menu=menu)
+        # #EXT-013-REQ-8 End
 
         params: dict = {"temperature": 0.0, "max_tokens": 8}
         if "seed" in ctx:

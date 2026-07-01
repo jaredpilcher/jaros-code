@@ -249,3 +249,156 @@ def test_build_returns_agent_with_decide():
     assert hasattr(agent, "decide") and callable(agent.decide)
 
 # #EXT-013-REQ-3 End
+
+
+# ---------------------------------------------------------------------------
+# EXT-013 / REQ-8 — richer-observe: the judge reasons over the actual code
+# ---------------------------------------------------------------------------
+# #EXT-013-REQ-8 Start
+
+class _RecordingLlm:
+    """Stub LLM that records the LlmRequest it receives (for prompt assertions)."""
+
+    def __init__(self, response: str = "code") -> None:
+        self._response = response
+        self.call_count = 0
+        self.last_request = None
+
+    def complete(self, request):  # noqa: ANN001
+        self.call_count += 1
+        self.last_request = request
+        return _FakeCompletion(self._response)
+
+
+def test_with_code_the_code_text_appears_in_the_prompt():
+    """(a) When ctx['code'] is present the code text must appear in the recorded prompt."""
+    mod = _load_agent()
+    llm = _RecordingLlm("repair")
+    agent = mod.build(llm)
+
+    code_text = "def cached_lookup(x):\n    return x + 1  # UNIQUE_MARKER_42"
+    ctx = {
+        "intent": "add caching to the function",
+        "name": "cached_lookup",
+        "step": 1,
+        "feedback": "IndentationError: unexpected indent",
+        "code": code_text,
+    }
+    decisions = agent.decide(ctx)
+
+    assert llm.last_request is not None
+    assert "UNIQUE_MARKER_42" in llm.last_request.prompt, (
+        "the actual current code must appear in the richer prompt")
+    assert decisions[0].payload["action"] == "repair"
+
+
+def test_without_code_the_prompt_equals_the_existing_template_backward_compat():
+    """(b) WITHOUT ctx['code'] the recorded prompt must equal the ORIGINAL _PROMPT output
+    exactly — byte-for-byte backward-compat with the proven solve loop."""
+    mod = _load_agent()
+    llm = _RecordingLlm("code")
+    agent = mod.build(llm)
+
+    ctx = {
+        "intent": "sort descending",
+        "name": "sort_desc",
+        "step": 0,
+        "feedback": "AssertionError: list not sorted descending",
+    }
+    agent.decide(ctx)
+
+    menu = "\n".join(f"  {a} = {d}" for a, d in mod._REV_DESCRIPTIONS.items())
+    expected_prompt = mod._PROMPT.format(
+        name=ctx["name"], intent=ctx["intent"], feedback=ctx["feedback"], menu=menu)
+
+    assert llm.last_request.prompt == expected_prompt, (
+        "prompt without 'code' in ctx must be byte-for-byte identical to the "
+        "existing _PROMPT template output (backward-compat)"
+    )
+
+
+def test_empty_string_code_also_uses_existing_template():
+    """An explicit empty-string ctx['code'] must be treated the same as absent (backward-compat)."""
+    mod = _load_agent()
+    llm = _RecordingLlm("code")
+    agent = mod.build(llm)
+
+    ctx = {
+        "intent": "sort descending",
+        "name": "sort_desc",
+        "step": 0,
+        "feedback": "AssertionError: list not sorted descending",
+        "code": "",
+    }
+    agent.decide(ctx)
+
+    menu = "\n".join(f"  {a} = {d}" for a, d in mod._REV_DESCRIPTIONS.items())
+    expected_prompt = mod._PROMPT.format(
+        name=ctx["name"], intent=ctx["intent"], feedback=ctx["feedback"], menu=menu)
+
+    assert llm.last_request.prompt == expected_prompt
+
+
+def test_code_is_truncated_to_safe_budget():
+    """The code text embedded in the richer prompt must be truncated (no unbounded prompt growth)."""
+    mod = _load_agent()
+    llm = _RecordingLlm("code")
+    agent = mod.build(llm)
+
+    long_code = "x = 1\n" * 1000  # far larger than the safe budget
+    ctx = {
+        "intent": "fix it",
+        "name": "fn",
+        "step": 0,
+        "feedback": "fail",
+        "code": long_code,
+    }
+    agent.decide(ctx)
+
+    assert len(llm.last_request.prompt) < len(long_code), (
+        "the embedded code must be truncated, not dumped in full")
+
+
+def test_action_selection_unchanged_with_richer_observe():
+    """(c) Action-selection behavior is unchanged when code is supplied — same constrained
+    set, same degeneracy-guard fallback."""
+    mod = _load_agent()
+
+    for raw_response, expected in (
+        ("code\n", "code"),
+        (" GHERKIN ", "gherkin"),
+        ("repair it now", "repair"),
+        ("done.", "done"),
+        ("gibberish nonsense", mod._DEFAULT_ACTION),
+    ):
+        llm = _RecordingLlm(raw_response)
+        agent = mod.build(llm)
+        ctx = {
+            "intent": "fix it", "name": "fn", "step": 0, "feedback": "fail",
+            "code": "def fn():\n    pass",
+        }
+        decisions = agent.decide(ctx)
+        action = decisions[0].payload["action"]
+        assert action == expected, (
+            f"response {raw_response!r} with code present produced {action!r}, "
+            f"expected {expected!r}")
+        assert action in mod._ACTIONS
+
+
+def test_step_budget_guard_unchanged_with_richer_observe():
+    """(c) The step-budget guard still short-circuits (no model call) even when code is present."""
+    mod = _load_agent()
+    max_steps = 3
+    llm = _RecordingLlm("code")
+    agent = mod.build(llm, max_steps=max_steps)
+
+    ctx = {
+        "intent": "fix it", "name": "fn", "step": max_steps, "feedback": "fail",
+        "code": "def fn():\n    pass",
+    }
+    decisions = agent.decide(ctx)
+
+    assert decisions[0].payload["action"] == "done"
+    assert llm.call_count == 0, "model must NOT be called when budget is exhausted, even with code present"
+
+# #EXT-013-REQ-8 End
