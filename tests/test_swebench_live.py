@@ -14,6 +14,7 @@ from harness.swebench_live import (
     solve_instance_live,
     build_repair_prompt,
     solve_with_repair,
+    solve_from_failure,
 )
 
 # django-11964-shaped: three `pass` lines, the target is the middle one (the Choices class).
@@ -238,6 +239,32 @@ def test_solve_with_repair_fixes_after_test_failure():
     )
     assert "__qualname__" in diff  # the repair round corrected it
     assert "__module__" not in diff
+
+
+def test_solve_from_failure_localizes_from_traceback_and_solves():
+    # gold-free: WHERE comes from the traceback (line 14 of the serializer), FIX from the model
+    tb = ('Traceback:\n  File "django/db/migrations/serializer.py", line 14, in serialize\n'
+          "    return ...\n")
+    sr = (
+        "<<<<<<< SEARCH\n"
+        "                return \"%s.%s\" % (module, self.value.__name__), {\"import %s\" % module}\n"
+        "=======\n"
+        "                return \"%s.%s\" % (module, self.value.__qualname__), {\"import %s\" % module}\n"
+        ">>>>>>> REPLACE\n"
+    )
+    diff = solve_from_failure(
+        file_text=SERIALIZER, traceback=tb,
+        target_file="django/db/migrations/serializer.py", gen_fn=lambda p, t: sr,
+    )
+    assert diff and "__qualname__" in diff and "-" in diff
+
+
+def test_solve_from_failure_empty_when_traceback_misses_file():
+    diff = solve_from_failure(
+        file_text=SERIALIZER, traceback='Traceback:\n  File "other.py", line 3, in x\n',
+        target_file="serializer.py", gen_fn=lambda p, t: "irrelevant",
+    )
+    assert diff == ""
 
 
 def test_solve_with_repair_returns_last_when_never_passes():

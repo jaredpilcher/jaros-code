@@ -264,3 +264,29 @@ def solve_with_repair(
         if passed:
             return cand
     return last
+
+
+def solve_from_failure(
+    *,
+    file_text: str,
+    traceback: str,
+    target_file: str,
+    gen_fn: Callable[[str, float], str],
+    issue: str = "",
+    n: int = 7,
+) -> str:
+    """Gold-FREE repo solve: localize WHERE from the FAILURE traceback (not a gold diff), then solve.
+
+    The realistic SWE-bench path — the failing line comes from running the test (the strong signal
+    #9's measurement pointed to), and the model produces only the FIX.  This is the honest general
+    solve: no gold patch is used to find the location.  Returns a unified-diff patch, or "" if the
+    traceback names no line in ``target_file`` or no sample yields an applicable edit.  The only
+    non-offline step (running the test to produce ``traceback``) is the caller's responsibility.
+    """
+    line = locate_from_traceback(traceback, target_file)
+    if not line:
+        return ""
+    return solve_instance_live(
+        issue=issue or traceback, file_path=target_file, original=file_text,
+        hunk_start=line, gen_fn=gen_fn, n=n,
+    )
