@@ -82,3 +82,28 @@ network, no Jetson needed for the unit tests (inject the model via a callable).
 
 #### Implements
 - [REQ-6] Orchestrator variable — decide WHERE to act (localization)
+
+### [TASK-8] Orchestrator richer-observe: the judge reasons over the actual code
+
+Enrich ``OrchestratorJudgeBoundary`` (the REQ-3 judge) so it observes the ACTUAL current code (and
+optionally the gherkin spec), distinguishing a LOGIC bug (-> code) from BROKEN SYNTAX (-> repair) by
+SEEING the artifact, not only the failure text.  STRICTLY BACKWARD-COMPATIBLE — zero regression to the
+proven solve: the enrichment is OPT-IN; when the richer fields are absent the existing prompt and
+behavior are byte-for-byte unchanged.
+
+#### Steps
+1. In ``.jaros-data/agents/orchestrator_judge_agent.py::OrchestratorJudgeBoundary.decide``, read
+   ``code = str(ctx.get("code", ""))`` (and ``spec = str(ctx.get("spec", ""))``).  When ``code`` is
+   non-empty, build the prompt from a RICHER template that includes the current code (truncate to a
+   safe budget, e.g. 800 chars) before the "Diagnose the cause" line; when it is empty, use the
+   EXISTING ``_PROMPT`` unchanged (backward-compat).
+2. Do NOT change the action space, the degeneracy-guard (first recognised token -> default), or the
+   deterministic step-budget guard — only the OBSERVATION is richer.  Tag the new code
+   ``# #EXT-013-REQ-8`` for traceability (this is a REQ-8 enrichment of the REQ-3 agent).
+3. Add offline tests in ``tests/test_ext013_orchestrator_judge.py`` (canned llm; capture the prompt via
+   a stub that records the request): (a) with ``ctx["code"]`` the code text appears in the prompt;
+   (b) WITHOUT code the prompt equals the existing one (backward-compat); (c) action-selection +
+   step-budget behavior is unchanged.  Run the full suite green.
+
+#### Implements
+- [REQ-8] Orchestrator variable — richer observe loop
