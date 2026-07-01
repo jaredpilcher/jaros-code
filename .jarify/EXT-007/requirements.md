@@ -18,6 +18,17 @@ improving in quality over time** (toward the thousands/tens-of-thousands swarm),
 pruning whatever does not help, with the metric trend (pass rate up, Wilson CI down)
 as proof.
 
+**Pursuit reconciliation (2026-07-01).** This self-improvement loop IS now the jarify
+convergence engine of THE PURSUIT (`docs/PURSUIT.md` §8). Two framings appearing later
+in this spec are SUPERSEDED and read historically only: **(1)** any "accept them as the
+model's ceiling / the 2B ceiling" language — a per-model ceiling is now MEASURED and
+ROUTED around (multi-model, EXT-021), and a *wall* is a **dated** bookmark claimable only
+with evidence across the full escalation ladder L0–L9 (PURSUIT §6), never a per-model
+acceptance; **(2)** "success = agent/tool/eval counts increasing" is retained as a growth
+signal but is **no longer the headline** — progress is the eight-instrument scoreboard
+headlined by the daily-driver suite (EXT-005 REQ-13). Historical findings below are
+preserved (Tenet 3), not rewritten.
+
 ### [REQ-1] Backlog-driven improvement (jarify loop)
 
 Improvement is driven by `EXT-007/tasks.md`: each supervisor cycle picks the next
