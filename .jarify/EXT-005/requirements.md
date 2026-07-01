@@ -197,3 +197,27 @@ external. The adapter reads the standard benchmark format and runs a subset or a
 - [ ] Each problem runs in isolation; solved iff the official test passes (exit 0)
 - [ ] Results feed the same scorecard/trend, labelled as the external benchmark
 - [ ] If the dataset is absent, the runner reports clearly how to obtain it (no silent pass)
+
+### [REQ-13] The Pursuit scoreboard is the parity instrument (supersedes authored-suite pass-rate as the headline)
+
+THE PURSUIT (`docs/PURSUIT.md` §2; PRIME-001 intent) redefines "progress" as an
+eight-instrument **scoreboard**, headlined by the **daily-driver suite** — 80+
+frequency-weighted, CLI-end-to-end tasks with deterministic oracles and a
+dev/holdout split (holdout read ≤1×/week) — which is the parity number measured
+against Claude-Code-on-Opus-4.8. The earlier authored coding-task suite
+(REQ-1..REQ-4) and the generative self-vs-oracle metric (REQ-10) are RETAINED as
+components/diagnostics but are no longer THE headline. This requirement reconciles
+EXT-005 to the pursuit; it does not rewrite any historical number (Tenet 3 — past
+authored-suite results stay as recorded, and `.launch/PUBLISHED.md` holds public
+provenance). The routed-system triple lands here as the system-level honesty guard
+(PRIME-001 Tenet 3): a per-model number improving while the routed system does not
+is caught only by measuring routed vs best-single vs oracle-per-task. The living
+`docs/GAP-MAP.md` is the steering artifact whose row-states this report tracks.
+
+#### Acceptance Criteria
+- [ ] The daily-driver suite (80+ frequency-weighted CLI-end-to-end tasks, deterministic oracles, dev/holdout, holdout read ≤1×/week) is the HEADLINE parity number
+- [ ] The report renders the full scoreboard: daily-driver %, external-hard-bar % (SWE-bench-Live), routed triple, Jetson latency p50/p95, amortization ratio, shadow-mode parity, Gap-Map state deltas
+- [ ] The routed-system triple (routed vs best-single vs oracle-best-per-task) is computed and reported on the same bar (system-level honesty)
+- [ ] Latency is measured ON the Jetson tier (p50/p95 per command class); published latency figures are Jetson-only
+- [ ] `docs/GAP-MAP.md` row-state changes are surfaced on each full scoreboard run
+- [ ] Authored-suite (REQ-1..4) and generative (REQ-10) metrics are retained as components; their historical numbers are never rewritten
