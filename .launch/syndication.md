@@ -11,7 +11,8 @@
 >
 > The harness was throwing away right answers. ~60% of my failures were correct logic
 > with broken indentation. Fixing that (deterministically, only when the code fails to
-> parse) was worth +12% on a held-out set. The model was better than my scaffolding.
+> parse) was worth +12 points on a 100-problem bar, and the gain held on the half I'd
+> never tuned against. The model was better than my scaffolding.
 >
 > Small models are decent writers and terrible judges. Letting the 2B review its own
 > passing solution against the spec made results *worse* — it rewrote working code into

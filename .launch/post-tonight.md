@@ -32,7 +32,8 @@ wouldn't even import, so it scored as a fail. The right answer was sitting there
 harness was discarding it over whitespace.
 
 The fix: only when the output fails to parse, ask the model to re-indent its own code,
-logic untouched. That one change was worth +12% on a held-out set (64 to 76 out of 100).
+logic untouched. That one change took my bar from 64 to 76 out of 100 — and the gain
+held on the 50 problems I'd never tuned against (31 to 38), which is the half I trust.
 
 If you take one thing from this post: before you conclude a small model can't do
 something, check whether your harness is throwing away the times it did.
@@ -85,22 +86,27 @@ project's git history, keep only commits where the repo's own tests go red-to-gr
 and ask the harness to reproduce the change from the commit message alone. Test hidden,
 no leakage, scored in Docker.
 
-One-shot result: about 3%. After a structural fix (apply every function the commit
-changed, not just the first): about 11%. On the hard cases I ran a sampling probe —
-twenty samples at fair temperature, zero correct. The right answer isn't in the model's
-distribution at all. That's not a selection problem or a prompting problem. It's a
-genuine generation wall.
+Mining one library's last 400 commits left 37 that were cleanly checkable this way
+(most commits don't come with a test that pins the change — that filter ratio was a
+finding in itself). One-shot result: 1 of 37, call it 3%. A second repo came in at 0
+for 11, so it's not a quirk of one codebase. After a structural fix (apply every
+function the commit changed, not just the first): 4 of 37, about 11%. On seven of the
+hard cases I ran a sampling probe — twenty samples each at fair temperature, zero
+correct. The right answer isn't in the model's distribution at all. That's not a
+selection problem or a prompting problem. It's a genuine generation wall.
 
 That gap — 80%+ on single functions, ~10% on real commits — is the actual frontier for
-small models, and I don't see anyone publishing it honestly.
+small models, and I don't see anyone publishing it honestly. (If anything, benchmark
+contamination inflates the first number, which makes the real gap wider.)
 
 ## So now it's a multi-model system
 
 If one 2B has a wall, maybe several small models with different walls can cover for
 each other. I added Qwen's 3B coder and profiled both per problem class. On standalone
-function generation it genuinely beats Gemma (65% vs 25% on MBPP, which I picked
-specifically after checking for contamination). Routing that class to Qwen is the first
-clean multi-model win.
+function generation it genuinely beats Gemma — 65% vs 48% on MBPP (48% is Gemma's best
+mode; 25% without its reasoning gate). I used MBPP for this specifically after checking
+that the edge wasn't just HumanEval contamination. Routing that class to Qwen is the
+first clean multi-model win.
 
 But here's the finding that matters more: on the hard repo class, Qwen fails the exact
 same problems Gemma does. Two similar models have correlated failures. Adding a second
