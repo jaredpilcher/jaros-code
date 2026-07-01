@@ -51,3 +51,15 @@ wrong-output bugs. Contrast: gold-BASED localization (content-match the KNOWN bu
 CONCLUSION: solve_from_failure is a genuine gold-free path for the CRASH class (traceback signal); general
 gold-free wrong-output localization stays OPEN (would need richer repo retrieval / symbol-graph, not a
 one-line heuristic). This bounds the gold-free capability honestly. Localization exploration CLOSED here.
+
+### RE-MEASURED with CLEAN targets (2026-07-01) — confound removed, finding FIRMED
+The name/body measurements above were confounded by noisy target computation. Redid them using the PROVEN
+localizer for ground truth: locate_from_patch(file, gold) -> the true buggy line -> its enclosing def =
+clean target. Clean result: test-name 0/5, test-body-call 1/5 (unchanged verdict, now UNconfounded). The
+clean targets reveal WHY: the true fix sites are DurationField / Choices (class-level) and _scale_back_ascii
+/ _cstack (internal helpers) — the failing test exercises the PUBLIC behaviour, but the fix is DEEP
+(class-level or internal), so no surface signal (test name or called-symbol) points at it. A general
+gold-free wrong-output localizer must REASON from a public-behaviour failure to a deep internal site — a
+reasoning task, not a heuristic. CONSEQUENCE: the failing-test-NAME tier that had been added to locate_where
+measured 0/5 and was REMOVED (forward-only: don't ship an unvalidated signal); locate_where is now
+traceback (validated, crash-class) -> model (weak fallback). Exploration FIRMLY closed.

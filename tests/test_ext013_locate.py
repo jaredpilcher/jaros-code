@@ -233,13 +233,4 @@ def test_locate_where_no_signal_no_llm_is_inert():
     assert dec.type == "orchestrate.locate" and dec.payload["matched_by"] == "none"
 
 
-def test_locate_where_uses_test_name_tier_without_traceback():
-    mod = _load_agent()
-    # no traceback -> deterministic failing-test-name -> function match, beats the (weak) model tier
-    dec = mod.locate_where({"test_name": "test_serialize_type_qualified_name",
-                            "candidates": _CANDIDATES}, llm=_FakeLlm("1"))
-    assert dec.payload["matched_by"] == "test_name"
-    assert dec.payload["function"] == "serialize_type"
-
-
 # #EXT-013-REQ-6 End
