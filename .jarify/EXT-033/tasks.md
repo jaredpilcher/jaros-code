@@ -70,3 +70,17 @@
 2. Create `.jarify/EXT-033/design.md` with ASCII flow diagrams.
 3. Create `.jarify/EXT-033/tasks.md` (this file).
 4. Create `.jarify/EXT-033/index.json` with traceability links.
+
+### [TASK-7] CLI auto-restore default model after routed eval (REQ-7)
+
+Fix the real operational bug: `python -m harness.eval_routed` leaves a non-default model (qwen/etc.) serving.
+
+#### Steps
+1. `harness/eval_routed.py`: add `_restore_default_model(registry)` — calls `harness.model_rewire.rewire(registry.default_model(), registry)` inside try/except (best-effort, log on failure, never raise). Tag `# #EXT-033-REQ-7`.
+2. In the `if __name__ == "__main__"` block, wrap the `compare_routed_vs_single(...)` call in `try/finally`; call `_restore_default_model(_registry)` in the `finally`. Tag `# #EXT-033-REQ-7`.
+3. `tests/test_ext033_restore_default.py` (offline, no Jetson): fake registry with `default_model()->"gemma-4-e2b"`; monkeypatch `harness.model_rewire.rewire`; assert `_restore_default_model` calls it with `"gemma-4-e2b"`; and that a raising `rewire` is swallowed (no exception propagates). Tag `# #EXT-033-REQ-7`.
+4. `python -m pytest -q` (root pytest.ini → tests/); full suite green, report counts.
+5. Add the REQ-7 traceability entry to `.jarify/EXT-033/index.json` (preserve existing). Do NOT touch sibling specs.
+
+#### Implements
+- [REQ-7] CLI auto-restores the default model after a routed eval

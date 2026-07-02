@@ -612,6 +612,29 @@ def compare_routed_vs_single(
 
 
 # ---------------------------------------------------------------------------
+# #EXT-033-REQ-7 Start
+# Auto-restore the registry default model after a routed eval (operational
+# safety net: compare_routed_vs_single rewires the Jetson to routed models
+# during the eval; without this the CLI leaves a non-default model serving).
+# ---------------------------------------------------------------------------
+
+def _restore_default_model(registry: Any) -> None:
+    """Best-effort: rewire the Jetson back to ``registry.default_model()``.
+
+    Called from the CLI's ``finally`` block so the default model (gemma) is
+    ALWAYS restored after a routed eval, success or exception. Never raises —
+    a restore failure must not mask the eval result (Tenet 3).
+    """
+    try:
+        from harness.model_rewire import rewire  # noqa: PLC0415
+        rewire(registry.default_model(), registry)
+    except Exception as exc:  # noqa: BLE001 - best-effort, never propagate
+        print(f">>> WARNING: failed to restore default model: {exc}", flush=True)
+
+# #EXT-033-REQ-7 End
+
+
+# ---------------------------------------------------------------------------
 # #EXT-033-REQ-2 Start
 # Active-hours __main__ entry point (deferred; operator-invoked live run)
 # ---------------------------------------------------------------------------
@@ -655,10 +678,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _registry = load_registry()
-    compare_routed_vs_single(
-        args.n, args.bar,
-        registry=_registry,
-        single_model=args.single_model,
-    )
+    # #EXT-033-REQ-7 Start (auto-restore in finally — no dangling non-default serve)
+    try:
+        compare_routed_vs_single(
+            args.n, args.bar,
+            registry=_registry,
+            single_model=args.single_model,
+        )
+    finally:
+        _restore_default_model(_registry)
+    # #EXT-033-REQ-7 End
 
 # #EXT-033-REQ-2 End

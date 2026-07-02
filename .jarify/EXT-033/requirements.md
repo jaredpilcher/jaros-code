@@ -70,3 +70,25 @@ this default run (it is slow); this capstone focuses on the tractable synthesis-
 - [x] "Restore gemma after" instruction documented in both the module docstring and `__main__` help text.
 - [x] qwen3-4b-thinking excluded from default run with explanation (separate validated path).
 - [x] Module imports are fully lazy (no Jetson/LLM call at import time — verified by import smoke test).
+
+### [REQ-7] CLI auto-restores the default model after a routed eval (no dangling non-default serve)
+
+The `python -m harness.eval_routed` CLI runs `compare_routed_vs_single`, which rewires the Jetson to
+routed models (qwen2.5-coder, qwen3-thinking, etc.) during the eval — but it NEVER restores the registry
+default (gemma-4-e2b) afterward. The docstring merely TELLS the operator to run
+`python -m harness.model_rewire gemma-4-e2b` manually. So the CLI leaves a non-default model serving,
+which (per the roster notes) desyncs the model-manager and starves RAM for the next default-model work.
+This is a real operational bug (repeatedly hit). The deterministic plane must restore the default itself.
+
+#### Acceptance Criteria
+- [x] A small helper `harness/eval_routed.py::_restore_default_model(registry)` rewires the Jetson back to
+      `registry.default_model()` (the gemma default), swallowing/logging any rewire error (best-effort; never
+      raises — a restore failure must not mask the eval result). Tag `# #EXT-033-REQ-7`.
+- [x] The CLI `__main__` block wraps the `compare_routed_vs_single(...)` call in `try/finally` and calls
+      `_restore_default_model(_registry)` in the `finally`, so the default model is ALWAYS restored after a
+      routed eval (success or exception). No behavior change to `compare_routed_vs_single`/`eval_routed`
+      themselves (offline tests that inject solve_fns and never rewire are unaffected).
+- [x] Offline unit test (`tests/`, NO Jetson): `_restore_default_model` with a fake registry (whose
+      `default_model()` returns "gemma-4-e2b") and a monkeypatched `rewire` asserts `rewire` was called with
+      `"gemma-4-e2b"`; and a variant where `rewire` raises confirms `_restore_default_model` does NOT propagate.
+      Full suite stays green.

@@ -1,4 +1,21 @@
 {
+  "REQ-7": [
+    {
+      "file": "tests/test_ext033_restore_default.py",
+      "startLine": 23,
+      "endLine": 60
+    },
+    {
+      "file": "harness/eval_routed.py",
+      "startLine": 615,
+      "endLine": 634
+    },
+    {
+      "file": "harness/eval_routed.py",
+      "startLine": 681,
+      "endLine": 690
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/eval_routed.py",
@@ -19,18 +36,13 @@
       "file": "harness/eval_routed.py",
       "startLine": 432,
       "endLine": 611
-    },
-    {
-      "file": "tests/test_eval_routed.py",
-      "startLine": 1,
-      "endLine": 799
     }
   ],
   "REQ-2": [
     {
       "file": "harness/eval_routed.py",
-      "startLine": 615,
-      "endLine": 664
+      "startLine": 638,
+      "endLine": 692
     }
   ]
 }
