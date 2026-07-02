@@ -66,3 +66,35 @@ REQ-2
 `harness/intent_loop.py` gained `IntentResult.code` so the built module content is
 capturable; `tests/test_ext027_autocapture.py` proves capture-only, no recall/inject
 wired; full suite green)
+
+### [TASK-3] Test hygiene: daily-driver tests must not pollute the real flywheel store (REQ-3)
+
+test_ext005_daily_driver.py's run_daily tests fake the solve (monkeypatched fix_loop/build_from_intent)
+but leave `record_verified` REAL, so every pytest run appends fixture solves (Stack/clamp/word_freq)
+to the real corpus `.jaros-data/artifacts/solution_memory.jsonl` — polluting the §7 distillation data
+with non-genuine, heavily-duplicated test entries.
+
+#### Steps
+1. In tests that call `run_daily` with a faked/passing solve and do NOT already control capture
+   (test_ext005_daily_driver.py: the run_daily scorecard tests + build-module route/score tests),
+   prevent real-store writes — either monkeypatch `harness.daily_driver.record_verified` to a no-op
+   collector, or monkeypatch `harness.solution_memory._DEFAULT_PATH` (and daily_driver's imported ref
+   if bound) to a `tmp_path` file. Do NOT change production capture behavior; tests only.
+2. Do NOT weaken test_ext027_autocapture.py (it already controls record_verified correctly) — only add
+   store isolation where missing.
+3. Clear the currently-polluted real store once (it is gitignored runtime state, all test-fixture
+   noise, no genuine pursuit solves): truncate `.jaros-data/artifacts/solution_memory.jsonl`.
+4. Run `python -m pytest tests/test_ext005_daily_driver.py tests/test_ext027_autocapture.py -q` (pass)
+   + full suite (no NEW failures); confirm a full pytest run leaves the real store file empty/absent
+   (no fixture writes). Tag any test changes; no index.json change needed (tests-only, no new REQ code).
+
+#### Implements
+- [REQ-3] Auto-capture verified solves — test-hygiene: capture must not pollute the corpus from tests
+
+**Status: DONE** (implemented in this session — `tests/test_ext005_daily_driver.py`'s five
+`run_daily` callers now monkeypatch `harness.daily_driver.record_verified` to a no-op before
+calling `run_daily`; `test_ext027_autocapture.py` left unchanged; the polluted real store
+`.jaros-data/artifacts/solution_memory.jsonl` (gitignored runtime state) was truncated once;
+`pytest tests/test_ext005_daily_driver.py tests/test_ext027_autocapture.py -q` (23 passed) and
+the full suite (1090 passed, 1 pre-existing unrelated failure in untracked `logs/`) both leave
+the real store at 0 lines afterward — tests only, no production code or index.json changed)

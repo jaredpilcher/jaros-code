@@ -172,6 +172,9 @@ def test_run_daily_scorecard_has_weighted_and_per_category_and_split_fields(monk
         return LoopResult(success=True, attempts=1, final_output="faked")
 
     monkeypatch.setattr("harness.coding_loop.fix_loop", _fake_fix_loop)
+    # Isolate the real flywheel store (EXT-027 REQ-3 test hygiene): this test fakes a
+    # passing solve, which would otherwise append fixture noise to the real corpus.
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
 
     # NOTE: filter to the two ORIGINAL seeds by id — the dev/ suite has since grown
     # (more fix/edit/build-module tasks added by later work); a pre-existing staleness
@@ -206,6 +209,9 @@ def test_run_daily_default_answer_fn_is_an_offline_stub(monkeypatch):
         return LoopResult(success=False, attempts=1, final_output="faked")
 
     monkeypatch.setattr("harness.coding_loop.fix_loop", _fake_fix_loop)
+    # Isolate the real flywheel store (EXT-027 REQ-3 test hygiene) even though this
+    # test's fake solve is unsolved (no capture expected) -- keep it robust to change.
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
 
     # NOTE: filter to the two ORIGINAL seeds by id — the dev/ suite has since grown
     # (more fix/edit/build-module tasks added by later work); a pre-existing staleness
@@ -330,6 +336,9 @@ def test_build_module_task_not_misrouted_to_the_pytest_path(monkeypatch):
     monkeypatch.setattr(
         "harness.intent_loop.build_from_intent",
         lambda task, max_iters=3, verbose=False: IntentResult(task["id"], True, True, 1))
+    # Isolate the real flywheel store (EXT-027 REQ-3 test hygiene): this fake solve is
+    # solved, which would otherwise append fixture noise to the real corpus.
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
 
     tasks = _build_seed_tasks()
     scorecard = run_daily(tasks, max_iters=1)
@@ -345,6 +354,9 @@ def test_build_module_tasks_route_through_build_from_intent_and_score_by_held_ou
     fix_loop_calls: list = []
     _install_offline_build_from_intent(monkeypatch, solutions=_KNOWN_SOLUTIONS,
                                        fix_loop_calls=fix_loop_calls, writer_calls=writer_calls)
+    # Isolate the real flywheel store (EXT-027 REQ-3 test hygiene): both build seeds
+    # solve here, which would otherwise append fixture noise to the real corpus.
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
 
     tasks = _build_seed_tasks()
     scorecard = run_daily(tasks, max_iters=2)
@@ -379,6 +391,9 @@ def test_build_module_task_scored_unsolved_when_the_built_solution_fails_the_ora
     _install_offline_build_from_intent(
         monkeypatch, solutions={"stack.py": _WRONG_STACK},
         fix_loop_calls=fix_loop_calls, writer_calls=writer_calls)
+    # Isolate the real flywheel store (EXT-027 REQ-3 test hygiene) even though this
+    # test's fake solve is unsolved (no capture expected) -- keep it robust to change.
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
 
     tasks = [t for t in _build_seed_tasks() if t["id"] == "build_stack"]
     scorecard = run_daily(tasks, max_iters=1)
