@@ -39,6 +39,20 @@ Escalation ladder rungs referenced below: L0 prompt/format · L1 decompose/contr
 
 - **wall(2026-07-01) — hard multi-step-repo algorithm synthesis** for the 2–4B Jetson-fit roster. Evidence: pass@k 0/7 (`9856d52`), decomposition 0/8 (`ff7726f`), maximal-help 0/6 (`5006e42`), decorrelated-reasoner 0/6, collaboration 0/6, experiment-loop 0/6; cell #35 un-throttled qwen3+repair **1/2 NEUTRAL** (`baseline-pursuit`, task #35 — task2's 3-function running-median all fail). **Revisit** on: any new Jetson-fit reasoning-distilled model (L6), a LoRA specialist (L7), a reduction library (L5), or the comprehension-vs-generation probe flipping (L3). NOT yet L8 (distillation untried on this class).
 
+## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
+
+**External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
+GENERAL coder does NOT help — **Qwen2.5-Coder-7B = 4.33% on SWE-bench Lite, WORSE than our 3B+harness ~13.3% uncurated.**
+The small-model winners are SWE-SPECIALIZED fine-tunes (SWE-AGILE-8B 14.77%, SWE-smith-7B 11.7%, R2E-Gym 11.0%),
+all 7-8B trained on SWE trajectories. So **jaros-code's ~13.3% (qwen-coder-3b + our harness, $0) is ALREADY competitive
+with the specialized 7-8B SWE frontier** — we are AT the small-model frontier, not behind a tractable harness gap; the
+gap to Claude (62.7%) is fundamental small-vs-large, not harness deficiency. CONSEQUENCES for steering: (1) do NOT swap
+in a naive general 7B (measured-worse, would regress); (2) the ONLY lever to exceed ~13% is SWE-SPECIALIZATION — either
+ADMIT a downloadable SWE-specialist (SWE-smith-7B/R2E-Gym, 7B-4bit fits the Jetson ~4.5GB; thin expected margin +0-2%
+since we're already ~13%), or a trajectory-trained specialist (heavier than the 1.5B SFT probed tonight). This VALIDATES
+the training axis's DIRECTION (specialization is the lever, not size) while confirming near-term budget is thin. Sources:
+swebench.com, pricepertoken SWE-bench-Lite, SWE-AGILE/SWE-smith/SWE-Dev papers.
+
 ## Steering note
 
 **Measured 2026-07-01 (daily-driver instrument, live gemma):** the **fix-single-file-to-pass-a-given-failing-test** category is a HARNESS STRENGTH — 9/9 on authored tasks up to moderate algorithmic difficulty (merge-intervals, deep-flatten, dedup-order), because `fix_loop`'s test-gated best-of-N iteration extracts the solution (same mechanism as SWE-bench 5/8). This is NOT a CC-parity claim (authored, single-file, a failing test handed in) — it is a calibration: **authoring more fix-with-test tasks no longer discriminates.**
