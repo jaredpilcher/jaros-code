@@ -78,7 +78,11 @@ def candidate_files(cwd: str, test_output: str, test_file: str) -> list[str]:
             add(cand if cand.is_absolute() else root / cand.name)
 
     # 2) import graph reachable from the failing test (BFS over local modules)
-    seen, frontier = set(), [test_file]
+    # #EXT-010-REQ-5 Start
+    # Seed with the test file resolved against root (not the bare test_file), so the seed
+    # read below succeeds regardless of the process cwd (every isolated eval/SWE-bench run).
+    seen, frontier = set(), [str(root / Path(test_file).name)]
+    # #EXT-010-REQ-5 End
     while frontier:
         cur = frontier.pop()
         try:

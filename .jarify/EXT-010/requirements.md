@@ -1,7 +1,7 @@
 ---
 id: EXT-010
 title: Real-world robustness — hardening for real repos + real input
-status: complete
+status: covered
 priority: high
 implementation:
   - file: harness/multi_file.py    # REQ-1/REQ-2 test-run timeout handling + configurable budget
@@ -59,3 +59,27 @@ as a test**, call it with no args, and error the whole suite — scoring correct
 - [x] MBPP/HumanEval run the real test explicitly (`pytest test_solution.py::test_mbpp` /
   `::test_humaneval`) so the imported entry point isn't collected
 - [x] verified: mbpp_19 (`test_duplicate`) flips FAIL → PASS; no regression at the 40-task slice
+
+### [REQ-5] Multi-file fault localization must resolve candidates against the target root, not the process CWD  (DONE)
+
+`harness/multi_file.candidate_files` finds the files that could hold a fault by walking the
+import graph reachable from the failing test. But it seeds the BFS frontier with the *bare*
+`test_file` name and reads it with `Path(cur).read_text()` — relative to the PROCESS cwd, not
+the target repo `cwd`/`root`. When the harness runs a repo in an isolated dir (every eval, every
+SWE-bench/daily-driver run — process cwd ≠ target root), the seed read raises `OSError`, the
+import closure is never walked, and `candidate_files` returns `[]`. For the common case of an
+ASSERTION failure — where the traceback names ONLY the test file (which is correctly excluded) —
+the import closure is the *sole* path to the culprit, so `multi_file_fix` finds no candidates
+and reports "no candidate fixed it" in ~1s WITHOUT EVER CALLING THE MODEL. This silently
+mislabels a fixable cross-file fault as unsolved and blocks the entire multi-file capability on
+any isolated run. Root the closure walk at `root`.
+
+#### Acceptance Criteria
+- [x] `candidate_files` seeds its import-closure BFS with the test file resolved against `root`
+  (e.g. `root / Path(test_file).name`), so the seed is readable regardless of process cwd
+- [x] For a cross-file assertion fault (bug in `geometry.py`, failing test in `test_shapes.py`
+  importing `shapes.py` importing `geometry.py`), `candidate_files` returns the import-closure
+  files (`shapes.py`, `geometry.py`) — not `[]`
+- [x] A regression test (`tests/test_ext010_multifile_localize.py`) sets up that 3-file scenario
+  in a temp dir, runs from a DIFFERENT process cwd, and asserts the closure files are found
+- [x] No regression to existing multi_file behavior; full suite stays green
