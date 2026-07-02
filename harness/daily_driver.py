@@ -131,6 +131,26 @@ def _write_files(workdir: Path, files: dict) -> None:
         (workdir / name).write_text(content, encoding="utf-8")
 
 
+def _run_build_module_task(task: dict, *, max_iters: int) -> bool:
+    """Route a ``build-module`` task through the proven generative spine
+    (``harness.intent_loop.build_from_intent``, EXT-008) and score it by its HELD-OUT
+    ``oracle_test`` — the first DISCRIMINATING category (a spec, not a failing test, is
+    handed to the model; contrast fix/edit which lean on a given failing test).
+
+    HONESTY (Tenet 3): ``build_from_intent`` builds the solution in its own isolated temp
+    dir using only ``intent``/``target``/``func``/``signature``/``test_cmd`` for the
+    model-facing steps (the test-writer agent + ``fix_loop``) — ``task["oracle_test"]`` is
+    read only by its separate, POST-build ``_run_oracle`` step, which writes the oracle into
+    a FRESH temp dir distinct from the build dir and runs it there. The oracle is therefore
+    never written into the build dir nor shown to any agent/prompt while building; it is
+    written + run only to grade, after the build. ``solved`` is exactly the held-out
+    oracle-pass verdict — the same un-gameable metric EXT-008 already proves out.
+    """
+    from harness.intent_loop import build_from_intent
+    result = build_from_intent(task, max_iters=max_iters)
+    return bool(result.oracle_pass)
+
+
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
     """Run the daily-driver suite, routing each task by its oracle mechanism.
 
@@ -152,7 +172,12 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
         oracle = task.get("oracle")
         with tempfile.TemporaryDirectory(prefix=f"jcode-daily-{task['id']}-") as tmp:
             workdir = Path(tmp)
-            if task.get("test_cmd"):
+            if task.get("category") == "build-module":
+                try:
+                    solved = _run_build_module_task(task, max_iters=max_iters)
+                except Exception:  # a single task failure never sinks the suite
+                    solved = False
+            elif task.get("test_cmd"):
                 t = Task(id=task["id"], instruction=task["instruction"],
                          target=task.get("target", ""), test_cmd=task["test_cmd"],
                          files=task.get("files", {}), tier=1)

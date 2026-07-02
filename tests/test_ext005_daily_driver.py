@@ -19,6 +19,7 @@ from harness.daily_driver import (
     load_daily_tasks,
     run_daily,
 )
+from jaros.core import create_decision
 
 DAILY_ROOT = Path(__file__).resolve().parents[1] / "evals" / "daily_driver"
 
@@ -28,11 +29,17 @@ DAILY_ROOT = Path(__file__).resolve().parents[1] / "evals" / "daily_driver"
 # ---------------------------------------------------------------------------
 
 def test_load_daily_tasks_loads_seed_dev_tasks():
+    # NOTE: the dev/ suite has since grown (more fix/edit/build-module tasks added by
+    # later work) — assert the two ORIGINAL seeds are present with the right category,
+    # not an exact/closed set (a pre-existing staleness bug fixed in passing; unrelated
+    # to build-module routing).
     tasks = load_daily_tasks(root=DAILY_ROOT, split="dev")
-    ids = {t["id"] for t in tasks}
-    assert ids == {"nav_callers_of_load_config", "edit_clamp_bounds"}
+    by_id = {t["id"]: t for t in tasks}
+    assert {"nav_callers_of_load_config", "edit_clamp_bounds"} <= set(by_id)
+    assert by_id["edit_clamp_bounds"]["category"] == "edit"
+    assert by_id["nav_callers_of_load_config"]["category"] == "navigate"
     # sorted by (category, id): "edit" < "navigate" alphabetically
-    assert [t["category"] for t in tasks] == ["edit", "navigate"]
+    assert tasks.index(by_id["edit_clamp_bounds"]) < tasks.index(by_id["nav_callers_of_load_config"])
 
 
 def test_load_daily_tasks_default_root_loads_both_seed_tasks():
@@ -166,7 +173,11 @@ def test_run_daily_scorecard_has_weighted_and_per_category_and_split_fields(monk
 
     monkeypatch.setattr("harness.coding_loop.fix_loop", _fake_fix_loop)
 
-    tasks = load_daily_tasks(root=DAILY_ROOT, split="dev")
+    # NOTE: filter to the two ORIGINAL seeds by id — the dev/ suite has since grown
+    # (more fix/edit/build-module tasks added by later work); a pre-existing staleness
+    # bug fixed in passing, unrelated to build-module routing.
+    tasks = [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+             if t["id"] in ("nav_callers_of_load_config", "edit_clamp_bounds")]
 
     def _stub_answer(task: dict) -> str:
         return "start and reload"
@@ -196,10 +207,182 @@ def test_run_daily_default_answer_fn_is_an_offline_stub(monkeypatch):
 
     monkeypatch.setattr("harness.coding_loop.fix_loop", _fake_fix_loop)
 
-    tasks = load_daily_tasks(root=DAILY_ROOT, split="dev")
+    # NOTE: filter to the two ORIGINAL seeds by id — the dev/ suite has since grown
+    # (more fix/edit/build-module tasks added by later work); a pre-existing staleness
+    # bug fixed in passing, unrelated to build-module routing. (build-module tasks need
+    # their own build_from_intent mock — see the dedicated build-module tests below —
+    # so they must not leak into this navigate/edit-only test.)
+    tasks = [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+             if t["id"] in ("nav_callers_of_load_config", "edit_clamp_bounds")]
     scorecard = run_daily(tasks, max_iters=1)
 
     assert scorecard["perCategory"]["navigate"]["passed"] == 0
     assert scorecard["perCategory"]["edit"]["passed"] == 0
     assert scorecard["weighted"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# build-module routing (generative build_from_intent + held-out oracle_test)
+# ---------------------------------------------------------------------------
+
+# Known-CORRECT solutions for the two build seeds (test data, not model output) — used
+# to prove the routing/grading is genuine (a real held-out oracle run), not rubber-stamped.
+_KNOWN_SOLUTIONS = {
+    "stack.py": (
+        "class Stack:\n"
+        "    def __init__(self):\n"
+        "        self._items = []\n\n"
+        "    def push(self, x):\n"
+        "        self._items.append(x)\n\n"
+        "    def pop(self):\n"
+        "        if not self._items:\n"
+        "            raise IndexError('empty')\n"
+        "        return self._items.pop()\n\n"
+        "    def peek(self):\n"
+        "        if not self._items:\n"
+        "            raise IndexError('empty')\n"
+        "        return self._items[-1]\n\n"
+        "    def is_empty(self):\n"
+        "        return len(self._items) == 0\n\n"
+        "    def __len__(self):\n"
+        "        return len(self._items)\n"
+    ),
+    "wf.py": (
+        "import re\n\n\n"
+        "def word_frequencies(text):\n"
+        "    freq = {}\n"
+        "    for w in re.findall(r'[A-Za-z]+', text):\n"
+        "        w = w.lower()\n"
+        "        freq[w] = freq.get(w, 0) + 1\n"
+        "    return freq\n"
+    ),
+}
+
+# A deliberately WRONG "solution" (compiles, some methods missing/broken) used to prove
+# the held-out oracle grading is genuine, not rubber-stamped.
+_WRONG_STACK = "class Stack:\n    def __init__(self):\n        self._items = []\n"
+
+
+def _build_seed_tasks():
+    return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+            if t["category"] == "build-module"]
+
+
+class _FakeTestWriter:
+    """Stand-in for the real test-writer agent: no model call, just hands back a
+    trivially-passing self-test so build_from_intent's fix_loop step has something to
+    run against (fix_loop itself is also faked below, so the content is never executed)."""
+
+    def __init__(self, captured: list) -> None:
+        self._captured = captured
+
+    def decide(self, payload):
+        self._captured.append(dict(payload))
+        return [create_decision(
+            id="tw-fake", source="test-writer", type="code.write_file",
+            payload={"path": payload["test_path"],
+                     "content": "def test_placeholder():\n    assert True\n"})]
+
+
+def _install_offline_build_from_intent(monkeypatch, *, solutions: dict, fix_loop_calls: list,
+                                       writer_calls: list):
+    """Monkeypatch the two MODEL-FACING touchpoints build_from_intent calls internally
+    (the test-writer agent and fix_loop) so the real, unmodified build_from_intent runs
+    end-to-end with NO live model call, while its own post-build ``_run_oracle`` step
+    still genuinely grades the written solution against the REAL held-out oracle_test.
+    """
+    from harness.coding_loop import LoopResult
+
+    def _fake_load_agent(filename, llm):
+        assert filename == "test_writer_agent.py"
+        return _FakeTestWriter(writer_calls)
+
+    def _fake_fix_loop(target, instruction, test_cmd, **kwargs):
+        fix_loop_calls.append({"instruction": instruction, "test_cmd": test_cmd, **kwargs})
+        name = Path(target).name
+        Path(target).write_text(solutions[name], encoding="utf-8")
+        return LoopResult(success=True, attempts=1, final_output="known-correct (test fixture)")
+
+    monkeypatch.setattr("harness.intent_loop._load_agent", _fake_load_agent)
+    monkeypatch.setattr("harness.intent_loop.build_llm", lambda: None)
+    monkeypatch.setattr("harness.intent_loop.fix_loop", _fake_fix_loop)
+
+
+def test_load_daily_tasks_loads_build_module_seed_tasks():
+    build_tasks = _build_seed_tasks()
+    assert {t["id"] for t in build_tasks} == {"build_stack", "build_word_freq"}
+    for t in build_tasks:
+        assert t["category"] == "build-module"
+        for field in ("intent", "target", "func", "signature", "test_cmd", "oracle_test"):
+            assert field in t and t[field]
+
+
+def test_build_module_task_not_misrouted_to_the_pytest_path(monkeypatch):
+    """Build-module tasks also carry test_cmd (needed for the oracle's own run), but must
+    route through the generative build path — never eval_runner.setup_task/fix_loop's
+    Task-based pytest path, which would KeyError on the missing 'instruction'/'files'."""
+    def _boom(*a, **kw):
+        raise AssertionError("build-module task misrouted to eval_runner.setup_task")
+
+    monkeypatch.setattr("harness.eval_runner.setup_task", _boom)
+
+    from harness.intent_loop import IntentResult
+    monkeypatch.setattr(
+        "harness.intent_loop.build_from_intent",
+        lambda task, max_iters=3, verbose=False: IntentResult(task["id"], True, True, 1))
+
+    tasks = _build_seed_tasks()
+    scorecard = run_daily(tasks, max_iters=1)
+    assert scorecard["solved"] == len(tasks) == 2
+
+
+def test_build_module_tasks_route_through_build_from_intent_and_score_by_held_out_oracle(monkeypatch):
+    """Offline: real build_from_intent, its two model-facing calls faked to write a
+    KNOWN-correct solution (no live model). Proves routing + genuine held-out grading,
+    plus the anti-leak invariant: oracle_test content never reaches the model-facing
+    calls (test-writer / fix_loop) build_from_intent makes."""
+    writer_calls: list = []
+    fix_loop_calls: list = []
+    _install_offline_build_from_intent(monkeypatch, solutions=_KNOWN_SOLUTIONS,
+                                       fix_loop_calls=fix_loop_calls, writer_calls=writer_calls)
+
+    tasks = _build_seed_tasks()
+    scorecard = run_daily(tasks, max_iters=2)
+
+    assert scorecard["total"] == 2
+    assert scorecard["solved"] == 2  # the known-correct solutions genuinely pass the oracle
+    assert "build-module" in scorecard["perCategory"]
+    bm = scorecard["perCategory"]["build-module"]
+    assert bm["passed"] == 2 and bm["total"] == 2 and bm["rate"] == 1.0
+    assert scorecard["bySplit"]["dev"]["total"] >= 2
+
+    # ANTI-LEAK (Tenet 3): oracle_test content is not in the args passed to the
+    # model-facing calls build_from_intent makes (test-writer / fix_loop) — the ONLY
+    # place it appears in run_daily's call graph is inside build_from_intent's own
+    # separate, post-build, non-model _run_oracle step (proven in test_ext008_intent.py),
+    # never in a prompt or in the build dir while building.
+    assert writer_calls, "the fake test-writer must have been invoked"
+    assert fix_loop_calls, "the fake fix_loop must have been invoked"
+    for task in tasks:
+        oracle_text = task["oracle_test"]
+        for call in writer_calls:
+            assert oracle_text not in json.dumps(call)
+        for call in fix_loop_calls:
+            assert oracle_text not in json.dumps(call)
+
+
+def test_build_module_task_scored_unsolved_when_the_built_solution_fails_the_oracle(monkeypatch):
+    """Proves the grading is a GENUINE held-out check, not rubber-stamped: a wrong/
+    incomplete solution scores unsolved."""
+    writer_calls: list = []
+    fix_loop_calls: list = []
+    _install_offline_build_from_intent(
+        monkeypatch, solutions={"stack.py": _WRONG_STACK},
+        fix_loop_calls=fix_loop_calls, writer_calls=writer_calls)
+
+    tasks = [t for t in _build_seed_tasks() if t["id"] == "build_stack"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["build-module"]["passed"] == 0
 # #EXT-005-REQ-13 End

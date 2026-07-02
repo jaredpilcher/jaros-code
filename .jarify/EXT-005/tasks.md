@@ -72,3 +72,37 @@ seed tasks exist under `evals/daily_driver/dev/`.
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (daily-driver runner: loader, category oracle router, weighted scoring)
+
+### [TASK-3] Daily-driver runner: build-module routing (generative, held-out oracle)
+
+Extend `harness/daily_driver.py` so the **build-module** category is scored end-to-end — the first
+DISCRIMINATING category (generative build from a spec, no failing test handed to the model; contrast
+the fix/edit categories which lean on `fix_loop`'s given failing test). Reuse the proven
+`harness/intent_loop.build_from_intent` + a HELD-OUT oracle. Offline + test-gated. Two seed
+build-module tasks already exist: `evals/daily_driver/dev/build_stack.json`, `.../build_word_freq.json`
+(schema: `{id, category:"build-module", split, intent, target, func, signature, test_cmd, oracle_test}`
+— `intent` is shown to the model; `oracle_test` is the held-out grader, NEVER shown).
+
+#### Steps
+1. `load_daily_tasks`: accept build-module tasks — they carry `intent` + `oracle_test` (+ `target`,
+   `func`, `signature`, `test_cmd`) instead of a simple `test_cmd`-only or `oracle` block. Do NOT
+   misroute them as pytest-oracle tasks. Keep edit/fix (`test_cmd`) and navigate/state (`oracle`)
+   loading unchanged.
+2. `run_daily`: route `category == "build-module"` through `harness.intent_loop.build_from_intent(task,
+   max_iters=max_iters)` in an isolated temp dir (mirror how `build_eval`/`intent_loop` invoke it),
+   then grade by running the held-out `oracle_test` against the built solution (write `oracle_test` to
+   the temp dir as a test file and run `test_cmd`; solved = oracle passes). **HONESTY (critical, Tenet
+   3):** `oracle_test` must NEVER be written into the build dir before/while the model builds, and must
+   never be passed into `build_from_intent` / any prompt — verify `build_from_intent` only receives
+   `intent`/`signature`/`func`, not `oracle_test`. The oracle is written + run ONLY for grading, after
+   the build. Record per-task `solved` (oracle pass) exactly like the other categories.
+3. The weighted headline + per-category + dev/holdout scorecard must now include a `build-module` row
+   when such tasks are present. No change to edit/fix/navigate/state scoring.
+4. `tests/test_ext005_daily_driver.py`: add offline tests — monkeypatch `build_from_intent` to write a
+   KNOWN-correct solution (so no live model), load the two build seeds, assert `run_daily` routes them
+   to the build path, runs the held-out oracle, and scores them; AND an anti-leak assertion that the
+   oracle_test content is not passed into the (monkeypatched) `build_from_intent` call args. Full suite
+   stays green; the known-unrelated `logs/` doctest failure is not ours.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (build-module generative category routing + held-out oracle)
