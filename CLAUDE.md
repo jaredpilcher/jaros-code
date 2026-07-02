@@ -40,6 +40,26 @@ system-level routed-vs-best-single honesty), never activity or commit count.** W
 not move a scoreboard number, say so plainly and steer back to what does. Use the escalation ladder
 (L0→L9) in cost order for any failing class; a wall claim needs evidence at every rung below it.
 
+## 🔥 TRAINING IS THE #1 JETSON PRIORITY — THE JETSON IS MINE TO OWN (owner directive, 2026-07-02)
+
+**"There is no more important work than this [training] for the Jetson. You have priority. If you need it
+for training, do it. Take it. It's yours to own."** — owner, verbatim. This CLEARS the earlier
+"installing a training stack risks serving" hesitation: I am explicitly authorized to **commandeer the
+Jetson for training** — pause/stop the llama.cpp serving, free the RAM, install the ARM/JetPack torch+peft
+(or any) stack, and run LoRA/QLoRA/distill/micro-model training on-device. Training has **priority over
+serving** on the Jetson when I need it. This IS the highest-value work per PRIME-001 (commitment 2c: the
+self-distillation flywheel — the mechanism by which the same $250 hardware gets indefinitely more capable;
+and L7/L8 on the escalation ladder, the real lever for a MODEL-BOUND class like the ~13% uncurated
+SWE-bench number). Own it: set up the stack, generate/accumulate verified training data (flywheel capture
++ open datasets + test-verified synthetic — all sovereign per commitment 2), train, and MEASURE each
+adapter/model by the same held-out admission rule (training grants no exemption from measurement,
+commitment 3). Restore serving when a training run is idle so the harness stays usable, but never let the
+serving default block a training run. **The honest blockers to name + attack in order:** (1) the training
+stack (install on the Jetson — authorized); (2) training DATA (the verified store is empty — wire the
+SWE-bench/solve paths into `record_verified`, pull sovereign open datasets, generate test-verified
+synthetic); (3) start with the cheapest tier that pays (micro-models 1-100M, then a LoRA specialist),
+probe-gated with a pre-registered kill criterion.
+
 ## ⏰ NO QUIET HOURS FOR WORK — THE GRIND IS ALWAYS ON, 24/7 (owner directive, 2026-07-02)
 
 **There are NO quiet hours for WORK.** The convergence grind runs continuously, 24/7, **including the
