@@ -1,14 +1,26 @@
 {
-  "REQ-1": [
+  "REQ-2": [
     {
-      "file": "harness/cli_wrapper.py",
+      "file": "tests/test_ext035_foundry.py",
       "startLine": 14,
-      "endLine": 71
+      "endLine": 94
     },
+    {
+      "file": "harness/foundry.py",
+      "startLine": 23,
+      "endLine": 107
+    }
+  ],
+  "REQ-1": [
     {
       "file": "tests/test_ext035_cli_wrapper.py",
       "startLine": 14,
       "endLine": 112
+    },
+    {
+      "file": "harness/cli_wrapper.py",
+      "startLine": 14,
+      "endLine": 71
     }
   ]
 }
