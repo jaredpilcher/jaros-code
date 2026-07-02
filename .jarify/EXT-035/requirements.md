@@ -75,3 +75,31 @@ model so it is fully offline-testable, and appends the verdict to the ship-log (
 - [x] Offline unit test (`tests/test_ext035_foundry.py`, NO model, tmp_path): pass a CORRECT fixture
       `stats` lib string + 2 ship cases → `ship is True`; pass a WRONG lib string → `ship is False` with
       the failing case captured. Full suite stays green.
+
+### [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission
+
+MEASURED 2026-07-02 (docs/GAP-MAP.md #7, coordination axis): with dependency modules available in the
+build env (REQ-4 EXT-008), gemma still fails to reliably EMIT the cross-module import — it references a
+dep symbol without importing it (NameError) or guesses the wrong module name (`FITS_record` vs `FITS_rec`,
+`module_accumulator` vs `accumulator`, `codec.encode` not imported). Import-emission is model-choice-limited
+and name-dependent, so multi-module builds don't coordinate even when the dep is present. The FIX is
+two-plane (Tenet 1): the model writes the logic; the DETERMINISTIC plane resolves the import lines. A pure
+AST function injects `from <mod> import <name>` for each name the module USES but has not defined/imported,
+when that name is a known export of a supplied dependency — turning the model's import-omission into a
+non-issue. Wired into `build_from_intent`'s `deps` path so a generated module that merely *references* a
+dep symbol still passes its oracle.
+
+#### Acceptance Criteria
+- [x] `harness/import_wiring.py::resolve_imports(module_code: str, dep_exports: dict[str, list[str]]) -> str`
+      (pure, offline, AST, NO model): parse `module_code`; collect names that are USED but not bound
+      (not defined, not already imported, not a builtin); for each used-unbound name that is an exported
+      name of some dep in `dep_exports` (module-stem → [names]), prepend `from <stem> import <name>`.
+      Deterministic order (sorted), dedup, idempotent (re-running injects nothing new). Tag `# #EXT-035-REQ-3`.
+- [x] Does NOT inject for names already imported/defined/builtin, and does NOT touch the model's logic body
+- [x] Wired into `harness/intent_loop.py::build_from_intent`: when `deps` is supplied, run `resolve_imports`
+      on the model's generated code (with `dep_exports` derived from the `deps` sources via AST) BEFORE the
+      oracle runs — so a module that references a dep symbol without importing it still passes. Backward-
+      compatible: no-op when `deps` is falsy or the code already imports correctly.
+- [x] Offline tests (`tests/test_ext035_import_wiring.py`, NO model): (a) `resolve_imports("def pack(items):\n    return '|'.join(encode(i) for i in items)\n", {"codec": ["encode"]})`
+      injects `from codec import encode` and leaves `pack` intact + is idempotent; (b) an already-correct
+      import is unchanged; (c) an unrelated undefined name is NOT injected. Full suite stays green.

@@ -24,6 +24,28 @@ from pathlib import Path
 from harness.coding_loop import Runtime, build_llm, fix_loop, _load_agent
 from jaros.core import create_decision
 
+# #EXT-035-REQ-3 Start
+import ast as _ast
+
+
+def _derive_dep_exports(deps: dict) -> dict:
+    """AST-derive {dep-stem: [top-level def/class names]} from dep sources,
+    for resolve_imports to inject the correct cross-module import lines."""
+    exports: dict = {}
+    for fname, src in deps.items():
+        stem = Path(fname).stem
+        names: list = []
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                names.append(node.name)
+        exports[stem] = names
+    return exports
+# #EXT-035-REQ-3 End
+
 
 @dataclass
 class IntentResult:
@@ -83,6 +105,15 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False,
                        cwd=str(dp), verbose=verbose)
         self_pass = res.success
         final_impl = target_path.read_text(encoding="utf-8")
+
+        # #EXT-035-REQ-3 Start
+        # Deterministic fix for the MEASURED cross-module import-emission gap: the model
+        # may reference a dep symbol without importing it (or guess the wrong module name).
+        # Resolve the correct `from <stem> import <name>` lines before the oracle scores it.
+        if deps:
+            from harness.import_wiring import resolve_imports
+            final_impl = resolve_imports(final_impl, _derive_dep_exports(deps))
+        # #EXT-035-REQ-3 End
 
         # 3) Score against the HIDDEN oracle in a fresh dir (system never saw this test).
         # #EXT-008-REQ-4 Start

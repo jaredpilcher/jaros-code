@@ -50,3 +50,32 @@ build-oracle flake cannot sink a correct tool. Productionizes the end-to-end mec
 
 #### Implements
 - [REQ-2] Assemble + ship-gate loop (the Foundry runner, deterministic)
+
+### [TASK-3] Deterministic import-resolver + wire into build_from_intent (REQ-3)
+
+Build `harness/import_wiring.py::resolve_imports` (pure AST, no model) — the deterministic fix for the
+MEASURED cross-module import-emission gap — and wire it into `build_from_intent`'s `deps` path so a
+generated module that references a dep symbol without importing it still passes its oracle.
+
+#### Steps
+1. `harness/import_wiring.py`: `resolve_imports(module_code, dep_exports)`. AST-parse `module_code`;
+   compute the set of bound names (module-level defs/classes/assignments + already-imported names +
+   function params are local, so focus on module-level `ast.Name` loads not bound at module scope) and
+   the set of USED names (`ast.Name` in Load context anywhere). For each used-but-unbound name that is in
+   some dep's export list (`dep_exports`: stem → [names]), collect `from <stem> import <name>`. Prepend the
+   deduped, sorted import lines to `module_code`. Idempotent (skip a name already imported). Use `builtins`
+   to exclude builtin names. Keep it conservative — when unsure, do NOT inject (never break working code).
+   Tag `# #EXT-035-REQ-3`.
+2. `harness/intent_loop.py`: in `build_from_intent`, when `deps` is truthy, derive `dep_exports` from each
+   dep source via AST (top-level def/class names per dep stem), and run `resolve_imports(generated_code,
+   dep_exports)` on the model's output BEFORE `_run_oracle`. No-op when `deps` is falsy. Tag `# #EXT-035-REQ-3`.
+   Keep it minimal + backward-compatible (existing single-module builds unchanged).
+3. `tests/test_ext035_import_wiring.py` (offline, NO model): the three cases in REQ-3's last criterion
+   (inject-missing + idempotent; already-correct-unchanged; unrelated-name-not-injected). Plus a focused
+   check that the build_from_intent wiring calls resolve_imports on the deps path (can be a small unit test
+   of the derive-dep_exports helper if isolating the model call is hard). Tag `# #EXT-035-REQ-3`.
+4. Run `python -m pytest -q` (root pytest.ini scopes to tests/); confirm full suite green, report counts.
+5. Add the REQ-3 traceability entry to `.jarify/EXT-035/index.json` (preserve REQ-1/REQ-2). Do NOT touch sibling specs.
+
+#### Implements
+- [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission

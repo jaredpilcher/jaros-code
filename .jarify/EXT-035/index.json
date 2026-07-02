@@ -1,4 +1,26 @@
 {
+  "REQ-3": [
+    {
+      "file": "tests/test_ext035_import_wiring.py",
+      "startLine": 7,
+      "endLine": 74
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 27,
+      "endLine": 47
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 109,
+      "endLine": 116
+    },
+    {
+      "file": "harness/import_wiring.py",
+      "startLine": 16,
+      "endLine": 102
+    }
+  ],
   "REQ-2": [
     {
       "file": "tests/test_ext035_foundry.py",
