@@ -120,6 +120,14 @@ The third axis, pursued after REQ-6: the orchestrator reasons over the ACTUAL sp
 - [ ] The orchestrator's context at the judgement point includes the real artifacts (spec/code/diff/failure), not just a state token
 - [ ] Measured on held-out and integrated-or-pruned (forward-only, test-gated)
 
+> MEASURED NEGATIVE 2026-07-02 (one flavor ruled out): enriching the LOCALIZATION candidate list with
+> each candidate's docstring (not just its def line) did NOT change the WHERE-judge — identical 3/6 and
+> identical picks vs the def-line-only baseline (base-vs-subclass / near-synonym confusion persists:
+> chose `TextChoices` over base `Choices`, `FITS_record` over `FITS_rec`, even with docstrings shown).
+> So "richer CANDIDATE context" is not the lever for localization; if REQ-8 has value it is at the
+> SOLVE/repair judgement point (real diff/failure), not the locate candidate list. Deterministic-first
+> localization stands.
+
 ### [REQ-9] WHERE-to-act via RUNTIME coverage trace (gold-free wrong-output localization)
 
 Extends the REQ-6 localization family with a RUNTIME-execution signal for WRONG-OUTPUT (non-crash) bugs —
