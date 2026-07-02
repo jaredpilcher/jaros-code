@@ -1,0 +1,12 @@
+{
+  "id": "edit_clamp_bounds",
+  "category": "edit",
+  "split": "dev",
+  "instruction": "clamp(x, lo, hi) must return lo if x < lo, hi if x > hi, else x. It currently ignores hi. Fix it so clamp(5, 0, 3) == 3.",
+  "target": "clamp.py",
+  "test_cmd": "python -m pytest -q",
+  "files": {
+    "clamp.py": "def clamp(x, lo, hi):\n    if x < lo:\n        return lo\n    return x\n",
+    "test_clamp.py": "from clamp import clamp\n\n\ndef test_clamp():\n    assert clamp(5, 0, 3) == 3\n    assert clamp(-1, 0, 3) == 0\n    assert clamp(2, 0, 3) == 2\n"
+  }
+}

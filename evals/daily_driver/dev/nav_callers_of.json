@@ -1,0 +1,14 @@
+{
+  "id": "nav_callers_of_load_config",
+  "category": "navigate",
+  "split": "dev",
+  "instruction": "In util.py, which functions call load_config? Answer with just the function names that directly call load_config.",
+  "files": {
+    "util.py": "def load_config(path):\n    return {'path': path}\n\n\ndef start(path):\n    cfg = load_config(path)\n    return cfg\n\n\ndef reload(path):\n    return load_config(path)\n\n\ndef helper(x):\n    return x + 1\n\n\ndef status():\n    return 'ok'\n"
+  },
+  "oracle": {
+    "type": "answer",
+    "match": "set",
+    "expect": ["start", "reload"]
+  }
+}
