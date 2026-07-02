@@ -344,6 +344,21 @@ def test_solve_gated_falls_back_to_first_applicable_when_none_pass():
     assert calls["n"] >= 1  # it did try the test-gate
 
 
+def test_solve_gated_self_consistency_fallback_picks_majority_not_first():
+    # When NO candidate passes the test, fall back to the MOST FREQUENT applicable diff
+    # (Agentless self-consistency), NOT the arbitrary first-seen one.
+    orig = "class C:\n    pass\n"
+    first = "<<<<<<< SEARCH\n    pass\n=======\n    x = 1\n>>>>>>> REPLACE\n"   # seen once (t=0.0)
+    common = "<<<<<<< SEARCH\n    pass\n=======\n    x = 2\n>>>>>>> REPLACE\n"  # seen 3x (t>0)
+
+    def gen_fn(prompt, t):
+        return first if t == 0.0 else common
+
+    diff = solve_gated(issue="x", file_path="m.py", original=orig, hunk_start=2,
+                       gen_fn=gen_fn, run_test_fn=lambda d: (False, "fail"), n=4)
+    assert "x = 2" in diff and "x = 1" not in diff  # majority variant, not first-seen
+
+
 def test_solve_instance_live_returns_empty_when_no_edit_applies():
     diff = solve_instance_live(
         issue="x",

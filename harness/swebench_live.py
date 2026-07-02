@@ -331,17 +331,21 @@ def solve_gated(
     ``solve_instance_live`` returns the FIRST *applicable* candidate — but a model often emits BOTH
     a wrong-but-applicable edit and a correct one (measured: django-11964, ``return self.value`` vs
     the gold ``return str(self.value)``), and first-applicable-wins then loses the fix.  This
-    generates up to ``n`` candidates, collects the DISTINCT applicable diffs, and runs ``run_test_fn``
-    on each (up to ``test_budget``), returning the first diff that PASSES.  Falls back to the first
-    applicable diff if none pass (so a caller can still record it or hand off to repair).  Returns ""
-    if no candidate even applies.  This is the honest test-gated multiplier: the provided tests pick
-    the winner among genuine candidates.
+    generates up to ``n`` candidates, collects the DISTINCT applicable diffs (in first-seen order),
+    and runs ``run_test_fn`` on each (up to ``test_budget``), returning the first diff that PASSES.
+    If none pass, falls back to the SELF-CONSISTENCY winner — the most frequently generated applicable
+    diff (Agentless-style: count how often each patch occurs; ties keep first-seen order) — a
+    principled default for the realistic gold-free case, better than an arbitrary first-applicable
+    pick.  (Self-consistency is a FALLBACK only, never overriding the test-gate: it would mis-pick
+    cases like django-11964 where the correct variant is the minority, so the executed test wins when
+    available.)  Returns "" if no candidate even applies.  The honest test-gated multiplier.
     """
     region_s, region_e = locate_region(original, hunk_start)
     region = "\n".join(original.split("\n")[region_s:region_e])
     prompt = build_solve_prompt(issue, file_path, region)
-    seen = set()
-    diffs = []
+    from collections import Counter
+    counts: Counter = Counter()
+    order = []  # distinct diffs in first-seen order
     for i in range(n):
         t = 0.0 if i == 0 else round(0.3 + 0.1 * i, 2)
         sr = parse_search_replace(gen_fn(prompt, t))
@@ -351,16 +355,19 @@ def solve_gated(
         if new is None:
             continue
         d = make_unified_diff(file_path, original, new)
-        if d and d not in seen:
-            seen.add(d)
-            diffs.append(d)
-    if not diffs:
+        if not d:
+            continue
+        if d not in counts:
+            order.append(d)
+        counts[d] += 1
+    if not order:
         return ""
-    for d in diffs[:test_budget]:
+    for d in order[:test_budget]:
         passed, _ = run_test_fn(d)
         if passed:
             return d
-    return diffs[0]
+    # no candidate passed -> self-consistency: most frequent applicable diff (first-seen breaks ties)
+    return max(order, key=lambda d: (counts[d], -order.index(d)))
 
 
 def solve_with_repair(
