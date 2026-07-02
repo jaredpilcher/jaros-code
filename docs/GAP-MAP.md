@@ -32,7 +32,7 @@ Escalation ladder rungs referenced below: L0 prompt/format · L1 decompose/contr
 | 7 | **Long-horizon tasks (bootstrap→ship)** | unmeasured | no instrument yet — benchmarks can't measure it | **the Foundry** (§5G) — build real software end-to-end, binary ship/no-ship grading |
 | 8 | **Repo-scale context** | lever-named | generic context injection measured **net-negative** (do not repeat); precise dep-signature retrieval ~parity | semantic retrieval plane (§5B, PRECISE only) + program-analysis fact-sources (§5C) |
 | 9 | **git / shell tool breadth** | probed | deterministic tools exist (fs.read/list/write, shell.exec, grep, apply_patch, code.search_replace); breadth vs CC unmeasured | Gap-list vs CC's tool surface → fill by frequency |
-| 10 | **Interactivity / latency** | unmeasured | no Jetson latency budget instrumented yet (scoreboard #4) | instrument p50/p95 per command class on the Jetson (§9 census) |
+| 10 | **Interactivity / latency** | probed | Jetson gemma p50/p95 (small-n): navigate 0.6/0.6s (target<2 ✅), edit 4.4/5.0s (target<30 ✅), fix 5.9/13.5s max16 (target<90 ✅), build-module 64/82s (full generative build, no target). Latency is NOT a bottleneck at this scale. | widen n; capture per-model (qwen/reasoner slower); track as sizes grow |
 | 11 | **Robustness / recovery** | probed | test-gate + validate() gates + process-tree-kill guards; no held-out robustness number | error-recovery slice in daily-driver suite |
 
 ## Cross-cutting measured walls (dated bookmarks, never conclusions)
