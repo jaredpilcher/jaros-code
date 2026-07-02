@@ -20,6 +20,7 @@ from harness.swebench_live import (
     solve_instance_live,
     build_repair_prompt,
     solve_with_repair,
+    solve_gated,
     solve_from_failure,
 )
 
@@ -304,6 +305,43 @@ def test_solve_instance_live_resolves_django12125_shape():
     assert "+                return \"%s.%s\" % (module, self.value.__qualname__)" in diff
     # clean diff: no doubled blank lines (the make_unified_diff bug we fixed)
     assert "\n\n\n" not in diff
+
+
+def test_solve_gated_test_selects_correct_over_wrong_applicable():
+    # django-11964 shape: the model emits BOTH a wrong-but-applicable edit (return self.value) and
+    # the correct one (return str(self.value)); first-applicable would pick the wrong one, but the
+    # test-gate must select the candidate that PASSES.
+    orig = "class Choices:\n    pass\n"
+    wrong = ("<<<<<<< SEARCH\n    pass\n=======\n"
+             "    def __str__(self):\n        return self.value\n>>>>>>> REPLACE\n")
+    correct = ("<<<<<<< SEARCH\n    pass\n=======\n"
+               "    def __str__(self):\n        return str(self.value)\n>>>>>>> REPLACE\n")
+
+    def gen_fn(prompt, t):
+        return wrong if t == 0.0 else correct
+
+    def run_test_fn(diff):
+        return ("str(self.value)" in diff, "" if "str(self.value)" in diff else "wrong")
+
+    diff = solve_gated(issue="cast enum to str", file_path="m.py", original=orig,
+                       hunk_start=2, gen_fn=gen_fn, run_test_fn=run_test_fn, n=4)
+    assert "str(self.value)" in diff, "test-gate should have selected the correct variant"
+
+
+def test_solve_gated_falls_back_to_first_applicable_when_none_pass():
+    orig = "class Choices:\n    pass\n"
+    edit = ("<<<<<<< SEARCH\n    pass\n=======\n"
+            "    def __str__(self):\n        return self.value\n>>>>>>> REPLACE\n")
+    calls = {"n": 0}
+
+    def run_test_fn(diff):
+        calls["n"] += 1
+        return (False, "still failing")
+
+    diff = solve_gated(issue="x", file_path="m.py", original=orig, hunk_start=2,
+                       gen_fn=lambda p, t: edit, run_test_fn=run_test_fn, n=4)
+    assert diff and "return self.value" in diff  # fell back to the (only) applicable diff
+    assert calls["n"] >= 1  # it did try the test-gate
 
 
 def test_solve_instance_live_returns_empty_when_no_edit_applies():

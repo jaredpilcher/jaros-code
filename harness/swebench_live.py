@@ -315,6 +315,54 @@ def build_repair_prompt(
     )
 
 
+def solve_gated(
+    *,
+    issue: str,
+    file_path: str,
+    original: str,
+    hunk_start: int,
+    gen_fn: Callable[[str, float], str],
+    run_test_fn: Callable[[str], tuple],
+    n: int = 7,
+    test_budget: int = 6,
+) -> str:
+    """Best-of-N with the REAL TEST as the SELECTOR (not just applicability).
+
+    ``solve_instance_live`` returns the FIRST *applicable* candidate — but a model often emits BOTH
+    a wrong-but-applicable edit and a correct one (measured: django-11964, ``return self.value`` vs
+    the gold ``return str(self.value)``), and first-applicable-wins then loses the fix.  This
+    generates up to ``n`` candidates, collects the DISTINCT applicable diffs, and runs ``run_test_fn``
+    on each (up to ``test_budget``), returning the first diff that PASSES.  Falls back to the first
+    applicable diff if none pass (so a caller can still record it or hand off to repair).  Returns ""
+    if no candidate even applies.  This is the honest test-gated multiplier: the provided tests pick
+    the winner among genuine candidates.
+    """
+    region_s, region_e = locate_region(original, hunk_start)
+    region = "\n".join(original.split("\n")[region_s:region_e])
+    prompt = build_solve_prompt(issue, file_path, region)
+    seen = set()
+    diffs = []
+    for i in range(n):
+        t = 0.0 if i == 0 else round(0.3 + 0.1 * i, 2)
+        sr = parse_search_replace(gen_fn(prompt, t))
+        if not sr:
+            continue
+        new = apply_search_replace(original, sr[0], sr[1])
+        if new is None:
+            continue
+        d = make_unified_diff(file_path, original, new)
+        if d and d not in seen:
+            seen.add(d)
+            diffs.append(d)
+    if not diffs:
+        return ""
+    for d in diffs[:test_budget]:
+        passed, _ = run_test_fn(d)
+        if passed:
+            return d
+    return diffs[0]
+
+
 def solve_with_repair(
     *,
     issue: str,
