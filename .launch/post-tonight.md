@@ -90,10 +90,13 @@ Mining one library's last 400 commits left 37 that were cleanly checkable this w
 (most commits don't come with a test that pins the change — that filter ratio was a
 finding in itself). One-shot result: 1 of 37, call it 3%. A second repo came in at 0
 for 11, so it's not a quirk of one codebase. After a structural fix (apply every
-function the commit changed, not just the first): 4 of 37, about 11%. On seven of the
-hard cases I ran a sampling probe — twenty samples each at fair temperature, zero
-correct. The right answer isn't in the model's distribution at all. That's not a
-selection problem or a prompting problem. It's a genuine generation wall.
+function the commit changed, not just the first): 4 of 37, about 11%. Then a
+structured spec-first flow — the model writes a behavior spec from the intent, then
+its own tests from the spec, then code against those tests, with the real oracle
+still hidden — took it to 6 of 37, about 16%. On seven of the hard cases I ran a
+sampling probe — twenty samples each at fair temperature, zero correct. The right
+answer isn't in the model's distribution at all. That's not a selection problem or a
+prompting problem. It's a genuine generation wall.
 
 That gap — 80%+ on single functions, ~10% on real commits — is the actual frontier for
 small models, and I don't see anyone publishing it honestly. (If anything, benchmark

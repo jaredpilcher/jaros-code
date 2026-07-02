@@ -1,55 +1,45 @@
-# .launch — runbook (updated 2026-07-01)
+# .launch — runbook (updated 2026-07-02)
 
-The original two-week campaign (below the fold) is superseded for now. Current priority:
-get ONE findings post live before the interviews. Everything you need is copy-paste
-ready. Total effort tonight: ~20 minutes.
+Current priority: the self-contained LinkedIn post, TONIGHT. Everything is copy-paste
+ready and every figure is backed by `PUBLISHED.md` (the provenance ledger the
+supervisor agent maintains — any NEW figure that goes public must get a ledger entry
+in the same breath).
 
----
+## TONIGHT (~10 min)
 
-## TONIGHT (~20 min)
+1. Open `syndication.md` → section "LINKEDIN — TONIGHT". Paste it into a LinkedIn
+   post as-is. No hashtags needed (max two). Post between 7-9pm or save for 8-9am —
+   morning gets more reach, but posting tonight means it EXISTS before the interviews;
+   existence beats optimization right now.
+2. That's it. The post is self-contained — it does not depend on anything else being
+   published.
 
-1. Go to **dev.to** → "Sign in with GitHub" (2 min, no profile setup needed).
-2. Click "Create Post". Paste everything in `post-tonight.md` below the title lines.
-   Use the first title. Tags: `ai`, `llm`, `machinelearning`, `programming`.
-3. Hit Publish. Copy the URL.
+## OPTIONAL (any day this week)
 
-Why dev.to and not Substack/Medium: zero setup, developer-native audience (the same
-crowd you've seen asking for small-model harnesses on Reddit), markdown paste, and the
-post gets a clean permanent URL you can cite in interviews. Substack can come later
-when you run the full series.
-
-## TOMORROW MORNING (8–9am, ~5 min)
-
-Post the LinkedIn version (in `syndication.md`, section "LinkedIn — tomorrow morning"),
-with the dev.to URL filled in. Morning is when LinkedIn actually gets seen, and
-interviewers WILL look at your LinkedIn.
-
-## THIS WEEK (only if you feel like it)
-
-- Reply to every comment on both posts. That's it. No campaign while interviewing.
-- r/LocalLLaMA: hold until the repo is public — that crowd's first comment is "code?"
+- The full long-form (`post-tonight.md`, refreshed 2026-07-02 with the 6/37 result) →
+  dev.to (sign in with GitHub, paste, publish). If you do, add its URL to the LinkedIn
+  post as the FIRST COMMENT (not the post body — LinkedIn suppresses external links).
+- Reply to every comment on anything you post. That's the whole engagement strategy
+  while interviewing.
 
 ## IN THE INTERVIEWS
 
-When the agentic-workflows question comes up, tell the story, then: "I actually
-published a write-up on this last week — the measured failure modes of small models in
-agentic loops." Have the URL in your notes.
+After telling the agentic-workflows story: "I published a write-up on this — the
+measured failure modes of small models in agentic loops." Have the LinkedIn URL handy.
 
-## Rules that still bind (from the original kit)
+## Rules that still bind
 
-1. No unmeasured numbers. Every figure in post-tonight.md is from your actual runs,
-   with caveats stated in-line (n=3 flagged, HumanEval contamination flagged).
-2. Failures stay in. They're the credibility.
+1. No unmeasured numbers. Current ledgered set: 64→76/100 (held-out syntax-repair),
+   1/37 → 4/37 → 6/37 (commit-replay, oracle hidden), 65-vs-48 MBPP (fair baseline:
+   Gemma's best mode), the 2/17→1/17 judge regression, 2/3→3/3 (n=3, flagged).
+2. Failures stay in — they're the credibility.
 3. The agent-built-it story is an asset when asked, not a confession.
+4. Any figure that goes public for the first time → `PUBLISHED.md` entry, same day.
 
----
+## Later (series material)
 
-## Later (superseded material, keep for the series)
-
-- `post-1-the-genius-and-the-jig.md` — the economics thesis. Good series post #2 or #3.
-- `post-2-why-small-models-fail.md` — mostly absorbed into post-tonight.md; harvest
-  the leftovers later.
-- `jaros-release-kit.md` — for when Jaros goes public. Still needs: Apache-2.0 LICENSE,
-  README intro, and the repo actually being ready.
-- The full two-week schedule from the original kit is void; re-plan when the model map
-  v1 is done.
+- `post-1-the-genius-and-the-jig.md` — the economics thesis (series post #2/#3).
+- `post-2-why-small-models-fail.md` — mostly absorbed into post-tonight.md.
+- `jaros-release-kit.md` — for when the repo goes public (trigger: Model Map v1, per
+  the Pursuit). Still needs: Apache-2.0 LICENSE, README refresh, scrub the Jetson LAN
+  IP from CLAUDE.md/configs.
