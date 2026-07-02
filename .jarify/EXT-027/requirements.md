@@ -1,7 +1,7 @@
 ---
 id: EXT-027
 title: Verified-solution memory (a memory form, kill-test-gated)
-status: partial
+status: covered
 priority: medium
 implementation:
   - file: harness/solution_memory.py
@@ -87,9 +87,22 @@ pad context (the key distinction from the RAG negative).
 
 #### Acceptance Criteria
 
-- [ ] Kill-test protocol documented (above) and runnable in active hours
-- [ ] Kill-test result recorded faithfully (lift OR non-result) in this spec
-- [ ] Default solve path NOT modified until confirmed reproducible lift
+- [x] Kill-test protocol documented (above) and runnable in active hours
+- [x] Kill-test result recorded faithfully (lift OR non-result) in this spec
+- [x] Default solve path NOT modified until confirmed reproducible lift
+
+**KILL-TEST RESULT 2026-07-02 (NON-RESULT — injection NOT adopted).** Ran an A/B on HumanEval[:25]
+(temp=0, zero variance; `.jaros-data/req2_killtest.py`): baseline `solve_pass1` vs `solve_pass1` with
+`recall_similar` + `inject_verified_example` prepending a VERIFIED worked example. Store = the 10 dev-task
+verified solutions captured via REQ-3 (no HumanEval leakage — recall's honesty invariant excludes the
+target, and HumanEval sources aren't in the store). RESULT: **base 22/25 (88.0%) vs mem-inject 23/25
+(92.0%), delta +1, recall_fired 25/25.** The +1 is WITHIN the Wilson95 noise band at N=25 and does NOT
+meet the adoption bar (≥+2pp AND outside the overlap AND held-out-reproducible). Injection fired on every
+problem, so the mechanism was genuinely exercised — verified-memory injection did not clearly lift pass@1.
+Consistent with the prior behavior-keyed-RAG NEGATIVE (the 2-3B bottleneck is REASONING, not examples);
+also an 88% HumanEval ceiling leaves little headroom. VERDICT: hypothesis not confirmed; `inject_verified_example`
+stays UNWIRED from the default solve (capture-only REQ-3 remains on). Revisit only if a fuller/harder-matched
+store + a lower-ceiling bar shows a reproducible ≥+2pp lift. Kill-fast-log-the-negative: logged, moving on.
 
 ### [REQ-3] Auto-capture verified solves into the store (the flywheel corpus — start NOW)
 
