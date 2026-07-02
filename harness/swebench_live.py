@@ -181,20 +181,39 @@ def locate_target_line_traced(
 # #EXT-013-REQ-9 End
 
 
+def _strip_block_fence(block: str) -> str:
+    """Strip a wrapping ```lang ... ``` code fence from INSIDE a SEARCH/REPLACE block.
+
+    Some models (measured: qwen on django-11964) wrap the block CONTENT in a ```python fence, so the
+    SEARCH text literally contains the fence lines and can never match the source verbatim — a
+    CORRECT fix (the model emitted the right __str__) is silently dropped.  Removing a leading
+    ```lang line and a trailing ``` line recovers it.  A block that isn't fenced is unchanged (no
+    normal Python line is exactly a ``` fence), so this is safe and generic.
+    """
+    lines = block.split("\n")
+    if lines and lines[0].lstrip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
 def parse_search_replace(text: str) -> Optional[Tuple[str, str]]:
     """Extract the (search, replace) pair from a model reply, or None if absent.
 
     Strict form first (SEARCH / ======= / REPLACE).  Fallback: some models OMIT the ``=======``
     divider, emitting ``<<<<<<< SEARCH\\n<search>\\n>>>>>>> REPLACE\\n<replace>`` — a correct edit
     in a near-miss format.  Accepting that shape recovers genuine fixes (measured: django-11049).
+    Both blocks are then fence-stripped (see ``_strip_block_fence``) so a ```python-wrapped block
+    still matches the source verbatim (measured: django-11964).
     """
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
     m = _SR_RE.search(text)
     if m:
-        return (m.group(1), m.group(2))
+        return (_strip_block_fence(m.group(1)), _strip_block_fence(m.group(2)))
     m2 = re.search(r"<<<<<<< SEARCH\n(.*?)\n>>>>>>> REPLACE\n(.*)", text, re.S)
     if m2 and m2.group(1).strip() and m2.group(2).strip():
-        return (m2.group(1), m2.group(2).rstrip("\n"))
+        return (_strip_block_fence(m2.group(1)), _strip_block_fence(m2.group(2).rstrip("\n")))
     return None
 
 

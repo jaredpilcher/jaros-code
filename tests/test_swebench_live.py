@@ -230,6 +230,25 @@ def test_parse_search_replace_fallback_missing_divider():
     assert parse_search_replace(txt) == ("old line", "new line")
 
 
+def test_parse_search_replace_strips_wrapping_code_fence():
+    # measured (django-11964): qwen wraps the SEARCH/REPLACE block CONTENT in a ```python fence,
+    # so the search text can never match the source verbatim and a CORRECT fix is dropped.
+    # The parser must strip a leading ```lang line and trailing ``` line from each block.
+    txt = (
+        "<<<<<<< SEARCH\n```python\n    pass\n```\n=======\n"
+        "```python\n    def __str__(self):\n        return str(self.value)\n```\n>>>>>>> REPLACE"
+    )
+    search, replace = parse_search_replace(txt)
+    assert search == "    pass"
+    assert replace == "    def __str__(self):\n        return str(self.value)"
+
+
+def test_parse_search_replace_unfenced_block_unchanged():
+    # a normal (unfenced) block must be untouched by the fence-strip
+    txt = "<<<<<<< SEARCH\n    x = 1\n=======\n    x = 2\n>>>>>>> REPLACE"
+    assert parse_search_replace(txt) == ("    x = 1", "    x = 2")
+
+
 def test_apply_search_replace_exact():
     out = apply_search_replace("a\nb\nc\n", "b", "B")
     assert out == "a\nB\nc\n"
