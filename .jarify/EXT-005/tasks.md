@@ -33,3 +33,42 @@ Tenet 3) and rewire those four sites. Fully offline + test-gated; no Jetson / Do
 
 #### Implements
 - [REQ-12] Robust test-exec — hang-proof process tree kill (shared helper + remaining sites)
+
+### [TASK-2] Weighted daily-driver runner (loader + category oracle router + weighted scoring)
+
+Implement the daily-driver parity-suite runner (REQ-13), extending `harness/eval_runner` WITHOUT
+regressing the authored path. Fully offline + test-gated: the only model-calling piece (asking the
+CLI a navigate question) is INJECTABLE (`answer_fn`) so the core is testable with no Jetson. The
+schema + category weights are defined in `evals/daily_driver/README.md` (already committed) and two
+seed tasks exist under `evals/daily_driver/dev/`.
+
+#### Steps
+1. New `harness/daily_driver.py`:
+   - `load_daily_tasks(root="evals/daily_driver", split=None) -> list[dict]` — load every `*.json`
+     under `dev/` and `holdout/` (or just the given split); each task is `{id, category, split,
+     instruction, files, ...}` with EXACTLY ONE oracle: `test_cmd` (pytest) OR `oracle{type,match,
+     expect}` (answer/state). Sort by `(category, id)`. Tolerate a missing `holdout/` dir.
+   - `check_answer(answer: str, oracle: dict) -> bool` — deterministic answer-oracle. `match="set"`:
+     extract identifier-like tokens (`[A-Za-z_][A-Za-z0-9_]*`) from `answer`, compare as a SET to
+     `set(oracle["expect"])` (order-insensitive, must match exactly — no missing, no extra from the
+     expect universe; ignore stop-words/plain English by intersecting only against a candidate set is
+     NOT allowed — the model must name exactly the right identifiers). `match="exact"`: normalized
+     (strip/casefold) equality. `match="regex"`: every pattern in `expect` found in `answer`. Pure.
+   - `check_state(workdir, oracle) -> bool` — run the oracle's state assertion in `workdir`
+     deterministically (dispatch implemented even if no `ops` seed exists yet).
+   - `run_daily(tasks, *, answer_fn=None, max_iters=3) -> dict` — route by oracle: pytest-oracle tasks
+     (`test_cmd` present) reuse the PROVEN isolated `fix_loop` path (reuse `eval_runner.setup_task` +
+     `fix_loop`); answer-oracle tasks call `answer_fn(task) -> str` (INJECTABLE; default stub returns
+     `""` so the core runs offline) then `check_answer`; state-oracle tasks call `check_state`. Return a
+     scorecard: per-category `{passed,total,rate,wilson}`, the WEIGHTED headline
+     `Σ(wᵢ·rateᵢ)/Σwᵢ`, and a `dev` vs `holdout` breakdown.
+2. Category weights map in the module: navigate 20 · edit 20 · fix 15 · write-tests 10 · refactor 10 ·
+   build 10 · multi-file 10 · ops 5 (single source; matches the README table).
+3. `tests/test_ext005_daily_driver.py` (offline, no Jetson): load the two seed tasks; `check_answer`
+   TRUE on `"start and reload"` and FALSE on `"start"` alone and on `"start reload helper"`; the edit
+   seed routes to the pytest path; `run_daily(tasks, answer_fn=stub)` returns a scorecard carrying
+   per-category + weighted + dev/holdout fields. Full suite stays green.
+4. Do NOT change `run_task_list` / `run_suite` / the authored path (zero regression).
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (daily-driver runner: loader, category oracle router, weighted scoring)

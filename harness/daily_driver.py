@@ -1,0 +1,218 @@
+"""Daily-driver parity-suite runner (EXT-005 / REQ-13).
+
+The Pursuit scoreboard's HEADLINE instrument: a frequency-weighted, CLI-end-to-end
+task suite with deterministic oracles and a dev/holdout split (schema + weights in
+``evals/daily_driver/README.md``). This module loads the suite, routes each task to
+its oracle mechanism, and produces a weighted scorecard.
+
+Fully offline + test-gated (Tenet 3): the ONLY model-calling piece is asking the CLI
+a navigate/ops question, and it is injectable as ``answer_fn`` (default stub returns
+``""`` so the core runs with no Jetson / model reachable). The pytest-oracle path
+reuses the PROVEN isolated ``harness.eval_runner.setup_task`` + ``harness.coding_loop.
+fix_loop`` — it is not reimplemented here (Tenet 3: single source of truth).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import tempfile
+from pathlib import Path
+
+from harness.report import wilson_interval
+
+ROOT = Path(__file__).resolve().parents[1]
+DAILY_ROOT = ROOT / "evals" / "daily_driver"
+
+# #EXT-005-REQ-13 Start
+# Category weights (single source of truth — matches evals/daily_driver/README.md table).
+CATEGORY_WEIGHTS: dict[str, int] = {
+    "navigate": 20,
+    "edit": 20,
+    "fix": 15,
+    "write-tests": 10,
+    "refactor": 10,
+    "build-module": 10,
+    "multi-file": 10,
+    "ops": 5,
+}
+
+
+def load_daily_tasks(root: str | Path = DAILY_ROOT, split: str | None = None) -> list[dict]:
+    """Load every ``*.json`` task under ``dev/`` and ``holdout/`` (or just ``split``).
+
+    Sorted by ``(category, id)``. Tolerates a missing ``holdout/`` directory (the
+    suite starts dev-only).
+    """
+    root_path = Path(root)
+    if not root_path.is_absolute():
+        root_path = ROOT / root_path
+    splits = [split] if split else ["dev", "holdout"]
+    tasks: list[dict] = []
+    for sp in splits:
+        split_dir = root_path / sp
+        if not split_dir.is_dir():
+            continue  # tolerate a missing holdout/ dir
+        for path in sorted(split_dir.glob("*.json")):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            tasks.append(data)
+    tasks.sort(key=lambda t: (t.get("category", ""), t.get("id", "")))
+    return tasks
+
+
+_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# A small, GENERIC English connector/stop-word list (not task-specific, not derived
+# from any file's identifier universe — that would be a leaky "candidate set" and is
+# explicitly disallowed). It only strips ordinary prose glue words so a natural-language
+# answer like "start and reload" scores the same as "start, reload"; it never removes a
+# real identifier the model actually named (e.g. an extra, wrong function name still
+# counts against the match).
+_STOPWORDS = {
+    "a", "an", "the", "and", "or", "but", "is", "are", "was", "were", "be", "been",
+    "being", "to", "of", "in", "on", "at", "by", "with", "that", "which", "who",
+    "whom", "this", "these", "those", "it", "its", "as", "for", "from", "just",
+    "only", "directly", "call", "calls", "calling", "called", "function",
+    "functions", "method", "methods", "answer", "name", "names", "also",
+}
+
+
+def check_answer(answer: str, oracle: dict) -> bool:
+    """Deterministic answer-oracle check (navigate/ops answer tasks). Pure."""
+    match = oracle.get("match")
+    expect = oracle.get("expect")
+    if match == "set":
+        tokens = {t for t in _TOKEN_RE.findall(answer) if t.lower() not in _STOPWORDS}
+        return tokens == set(expect)
+    if match == "exact":
+        return str(answer).strip().casefold() == str(expect).strip().casefold()
+    if match == "regex":
+        patterns = expect if isinstance(expect, list) else [expect]
+        return all(re.search(p, answer) for p in patterns)
+    raise ValueError(f"unknown oracle match type: {match!r}")
+
+
+def check_state(workdir: str | Path, oracle: dict) -> bool:
+    """Deterministic state-oracle check (ops tasks): assert repo/file state in
+    ``workdir``. Dispatch is implemented even though no ``ops`` seed task exists yet.
+
+    Supports ``check``:
+      - ``file_exists``: ``oracle["path"]`` exists relative to ``workdir``
+      - ``file_contains``: ``oracle["path"]`` exists and contains every pattern in
+        ``oracle["expect"]`` (str or list of regex patterns)
+      - ``cmd_exit0``: run ``oracle["cmd"]`` in ``workdir`` and assert exit code 0
+    """
+    workdir = Path(workdir)
+    check = oracle.get("check")
+    if check == "file_exists":
+        return (workdir / oracle["path"]).exists()
+    if check == "file_contains":
+        target = workdir / oracle["path"]
+        if not target.is_file():
+            return False
+        content = target.read_text(encoding="utf-8")
+        patterns = oracle["expect"] if isinstance(oracle["expect"], list) else [oracle["expect"]]
+        return all(re.search(p, content) for p in patterns)
+    if check == "cmd_exit0":
+        import subprocess
+        res = subprocess.run(oracle["cmd"], shell=True, cwd=str(workdir),
+                             capture_output=True, text=True, timeout=oracle.get("timeout", 30))
+        return res.returncode == 0
+    raise ValueError(f"unknown state oracle check type: {check!r}")
+
+
+def _default_answer_fn(task: dict) -> str:
+    """Offline default: no model/CLI call, so the core runs with no Jetson reachable."""
+    return ""
+
+
+def _write_files(workdir: Path, files: dict) -> None:
+    for name, content in files.items():
+        (workdir / name).write_text(content, encoding="utf-8")
+
+
+def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
+    """Run the daily-driver suite, routing each task by its oracle mechanism.
+
+    - pytest-oracle tasks (``test_cmd`` present) reuse the proven isolated
+      ``eval_runner.setup_task`` + ``coding_loop.fix_loop`` path.
+    - answer-oracle tasks (``oracle.type == "answer"``) call ``answer_fn(task) -> str``
+      (injectable; default stub returns ``""``) then ``check_answer``.
+    - state-oracle tasks (``oracle.type == "state"``) call ``check_state``.
+
+    Returns a scorecard: per-category ``{passed,total,rate,wilson}``, the weighted
+    headline ``Σ(wᵢ·rateᵢ)/Σwᵢ``, and a dev vs holdout breakdown.
+    """
+    answer_fn = answer_fn or _default_answer_fn
+    from harness.eval_runner import Task, setup_task  # reuse proven pytest path
+    from harness.coding_loop import fix_loop
+
+    per_task: list[dict] = []
+    for task in tasks:
+        oracle = task.get("oracle")
+        with tempfile.TemporaryDirectory(prefix=f"jcode-daily-{task['id']}-") as tmp:
+            workdir = Path(tmp)
+            if task.get("test_cmd"):
+                t = Task(id=task["id"], instruction=task["instruction"],
+                         target=task.get("target", ""), test_cmd=task["test_cmd"],
+                         files=task.get("files", {}), tier=1)
+                target = setup_task(t, workdir)
+                try:
+                    res = fix_loop(str(target), t.instruction, t.test_cmd,
+                                   max_iters=max_iters, cwd=str(workdir), verbose=False)
+                    solved = bool(res.success)
+                except Exception:  # a single task failure never sinks the suite
+                    solved = False
+            elif oracle and oracle.get("type") == "answer":
+                _write_files(workdir, task.get("files", {}))
+                answer = answer_fn(task)
+                solved = check_answer(answer, oracle)
+            elif oracle and oracle.get("type") == "state":
+                _write_files(workdir, task.get("files", {}))
+                solved = check_state(workdir, oracle)
+            else:
+                raise ValueError(
+                    f"task {task.get('id')!r} has neither test_cmd nor a recognized oracle")
+        per_task.append({
+            "id": task.get("id"),
+            "category": task.get("category", "unknown"),
+            "split": task.get("split", "dev"),
+            "solved": solved,
+        })
+
+    per_category: dict[str, dict] = {}
+    for row in per_task:
+        cat = row["category"]
+        stats = per_category.setdefault(cat, {"passed": 0, "total": 0})
+        stats["total"] += 1
+        if row["solved"]:
+            stats["passed"] += 1
+    for stats in per_category.values():
+        stats["rate"] = round(stats["passed"] / stats["total"], 4) if stats["total"] else 0.0
+        lo, hi = wilson_interval(stats["passed"], stats["total"])
+        stats["wilson"] = {"low": round(lo, 4), "high": round(hi, 4)}
+
+    weighted_num = sum(CATEGORY_WEIGHTS.get(cat, 0) * stats["rate"]
+                       for cat, stats in per_category.items())
+    weighted_den = sum(CATEGORY_WEIGHTS.get(cat, 0) for cat in per_category)
+    weighted = round(weighted_num / weighted_den, 4) if weighted_den else 0.0
+
+    by_split: dict[str, dict] = {}
+    for row in per_task:
+        sp = row["split"]
+        stats = by_split.setdefault(sp, {"passed": 0, "total": 0})
+        stats["total"] += 1
+        if row["solved"]:
+            stats["passed"] += 1
+    for stats in by_split.values():
+        stats["rate"] = round(stats["passed"] / stats["total"], 4) if stats["total"] else 0.0
+
+    return {
+        "perCategory": per_category,
+        "weighted": weighted,
+        "bySplit": by_split,
+        "perTask": per_task,
+        "total": len(per_task),
+        "solved": sum(1 for r in per_task if r["solved"]),
+    }
+# #EXT-005-REQ-13 End

@@ -1,16 +1,6 @@
 {
   "REQ-12": [
     {
-      "file": "harness/agent_loop.py",
-      "startLine": 116,
-      "endLine": 119
-    },
-    {
-      "file": "harness/build_eval.py",
-      "startLine": 158,
-      "endLine": 164
-    },
-    {
       "file": "tests/test_ext005_proc_treekill.py",
       "startLine": 54,
       "endLine": 77
@@ -36,11 +26,6 @@
       "endLine": 102
     },
     {
-      "file": "harness/multi_file.py",
-      "startLine": 102,
-      "endLine": 128
-    },
-    {
       "file": "harness/intent_loop.py",
       "startLine": 105,
       "endLine": 109
@@ -49,6 +34,16 @@
       "file": "harness/cli.py",
       "startLine": 448,
       "endLine": 455
+    },
+    {
+      "file": "harness/build_eval.py",
+      "startLine": 158,
+      "endLine": 164
+    },
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 116,
+      "endLine": 119
     },
     {
       "file": "harness/proc_treekill.py",
@@ -69,6 +64,23 @@
       "file": "harness/pass1_eval.py",
       "startLine": 223,
       "endLine": 225
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 102,
+      "endLine": 128
+    }
+  ],
+  "REQ-13": [
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 25,
+      "endLine": 205
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 27,
+      "endLine": 218
     }
   ],
   "REQ-1": [
