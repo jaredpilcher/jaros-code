@@ -1,19 +1,14 @@
 {
   "REQ-3": [
     {
-      "file": "tests/test_ext027_autocapture.py",
-      "startLine": 22,
-      "endLine": 166
+      "file": "harness/intent_loop.py",
+      "startLine": 57,
+      "endLine": 59
     },
     {
       "file": "harness/intent_loop.py",
-      "startLine": 35,
-      "endLine": 37
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 85,
-      "endLine": 87
+      "startLine": 126,
+      "endLine": 128
     },
     {
       "file": "harness/daily_driver.py",
@@ -34,6 +29,11 @@
       "file": "harness/daily_driver.py",
       "startLine": 226,
       "endLine": 241
+    },
+    {
+      "file": "tests/test_ext027_autocapture.py",
+      "startLine": 22,
+      "endLine": 166
     }
   ],
   "REQ-1": [
@@ -41,6 +41,43 @@
       "file": "harness/solution_memory.py",
       "startLine": 27,
       "endLine": 263
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 318,
+      "endLine": 331
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 344,
+      "endLine": 346
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 393,
+      "endLine": 395
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 411,
+      "endLine": 413
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 433,
+      "endLine": 435
+    },
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 450,
+      "endLine": 452
+    },
+    {
+      "file": "tests/test_ext027_swebench_capture.py",
+      "startLine": 8,
+      "endLine": 204
     }
   ]
 }

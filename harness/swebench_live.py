@@ -315,6 +315,22 @@ def build_repair_prompt(
     )
 
 
+# #EXT-027-REQ-4 Start
+def _notify_verified(on_verified: Optional[Callable[[str], None]], diff: str) -> None:
+    """Best-effort invoke ``on_verified`` with the passing diff; never raises, never a no-op crash.
+
+    Mirrors ``solution_memory.record_verified``'s never-raise contract: a raising or misbehaving
+    callback must never change the returned diff or break the solve pipeline.
+    """
+    if on_verified is None:
+        return
+    try:
+        on_verified(diff)
+    except Exception:
+        pass
+# #EXT-027-REQ-4 End
+
+
 def solve_gated(
     *,
     issue: str,
@@ -325,6 +341,9 @@ def solve_gated(
     run_test_fn: Callable[[str], tuple],
     n: int = 7,
     test_budget: int = 6,
+    # #EXT-027-REQ-4 Start
+    on_verified: Optional[Callable[[str], None]] = None,
+    # #EXT-027-REQ-4 End
 ) -> str:
     """Best-of-N with the REAL TEST as the SELECTOR (not just applicability).
 
@@ -339,6 +358,12 @@ def solve_gated(
     pick.  (Self-consistency is a FALLBACK only, never overriding the test-gate: it would mis-pick
     cases like django-11964 where the correct variant is the minority, so the executed test wins when
     available.)  Returns "" if no candidate even applies.  The honest test-gated multiplier.
+
+    ``on_verified``, when given, is invoked with the winning diff ONLY in the test-PASS branch — the
+    one moment the candidate is REAL-test-verified — never on the self-consistency fallback (that
+    candidate did not pass the real test) and never on the empty-candidate return.  Best-effort: a
+    raising callback never changes the returned diff (see ``_notify_verified``).  Defaults to
+    ``None`` (no-op), so existing callers are unaffected.
     """
     region_s, region_e = locate_region(original, hunk_start)
     region = "\n".join(original.split("\n")[region_s:region_e])
@@ -365,6 +390,9 @@ def solve_gated(
     for d in order[:test_budget]:
         passed, _ = run_test_fn(d)
         if passed:
+            # #EXT-027-REQ-4 Start
+            _notify_verified(on_verified, d)
+            # #EXT-027-REQ-4 End
             return d
     # no candidate passed -> self-consistency: most frequent applicable diff (first-seen breaks ties)
     return max(order, key=lambda d: (counts[d], -order.index(d)))
@@ -380,6 +408,9 @@ def solve_with_repair(
     run_test_fn: Callable[[str], tuple],
     n: int = 7,
     max_repairs: int = 2,
+    # #EXT-027-REQ-4 Start
+    on_verified: Optional[Callable[[str], None]] = None,
+    # #EXT-027-REQ-4 End
 ) -> str:
     """Solve, then if the patch fails the gated tests, feed the real failure back and retry.
 
@@ -387,6 +418,10 @@ def solve_with_repair(
     ``run_test_fn(patch_diff) -> (passed: bool, failure_text: str)`` is injected — in production it
     applies the patch in the instance container and runs FAIL_TO_PASS; in tests it is canned.
     Returns the first patch that passes, else the last attempted patch, else "".
+
+    ``on_verified``, when given, fires with the passing diff at the verified moment — either the
+    initial solve or a repair round passing the gated test — never on the give-up (last-attempt)
+    return.  Best-effort (see ``_notify_verified``); defaults to ``None`` (no-op, unaffected).
     """
     diff = solve_instance_live(
         issue=issue, file_path=file_path, original=original, hunk_start=hunk_start, gen_fn=gen_fn, n=n
@@ -395,6 +430,9 @@ def solve_with_repair(
         return ""
     passed, failure = run_test_fn(diff)
     if passed:
+        # #EXT-027-REQ-4 Start
+        _notify_verified(on_verified, diff)
+        # #EXT-027-REQ-4 End
         return diff
     region_s, region_e = locate_region(original, hunk_start)
     region = "\n".join(original.split("\n")[region_s:region_e])
@@ -409,6 +447,9 @@ def solve_with_repair(
         last = cand
         passed, failure = run_test_fn(cand)
         if passed:
+            # #EXT-027-REQ-4 Start
+            _notify_verified(on_verified, cand)
+            # #EXT-027-REQ-4 End
             return cand
     return last
 

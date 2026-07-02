@@ -98,3 +98,35 @@ calling `run_daily`; `test_ext027_autocapture.py` left unchanged; the polluted r
 `pytest tests/test_ext005_daily_driver.py tests/test_ext027_autocapture.py -q` (23 passed) and
 the full suite (1090 passed, 1 pre-existing unrelated failure in untracked `logs/`) both leave
 the real store at 0 lines afterward — tests only, no production code or index.json changed)
+
+### [TASK-4] Auto-capture verified SWE-bench solves via a solve-pipeline callback (REQ-4)
+
+`record_verified` (REQ-1) still has no hook into the hardest-external-bar solve path
+(`harness/swebench_live.py`), so the highest-value flywheel fuel (real SWE-bench test-verified
+resolves) is not captured. Add a clean, decoupled `on_verified` callback fired ONLY at the
+real-test-verified moment.
+
+#### Steps
+1. Add `_notify_verified(on_verified, diff)` — a best-effort helper (never raises) that invokes
+   `on_verified(diff)` when given, mirroring `record_verified`'s never-raise contract.
+2. Add an optional `on_verified: Callable[[str], None] | None = None` param to `solve_gated`;
+   invoke it with the winning diff ONLY in the test-PASS branch, before returning — never on the
+   self-consistency fallback (unverified) and never on the empty-candidate return.
+3. Add the same `on_verified` param to `solve_with_repair`; invoke it with the passing diff at
+   the verified moment (initial solve or a repair round passing the gated test), never on the
+   give-up (last-attempt) return.
+4. Add `tests/test_ext027_swebench_capture.py` (offline, no live model, canned `gen_fn`/
+   `run_test_fn`): spy fires on pass, does not fire on self-consistency fallback or empty/give-up
+   returns, a raising callback never changes the returned diff, default `None` is unaffected.
+5. Tag the added lines `# #EXT-027-REQ-4 Start/End`; update `.jarify/EXT-027/index.json`.
+
+#### Implements
+- [REQ-4] Auto-capture verified SWE-bench solves via a solve-pipeline callback
+
+**Status: DONE** (implemented in this session — `harness/swebench_live.py` gained
+`_notify_verified` + `on_verified` params on `solve_gated`/`solve_with_repair`, invoked only at
+the real-test-verified moment, best-effort, default `None` (backward compatible — no caller is
+wired to it here per REQ-4 scope, the gitignored SWE-bench grind will pass
+`on_verified=lambda diff: record_verified(...)` itself); `tests/test_ext027_swebench_capture.py`
+(10 tests) proves fire-on-pass / no-fire-on-fallback / no-fire-on-give-up / raising-callback-safe
+/ default-None-unaffected; full suite 1122 passed)

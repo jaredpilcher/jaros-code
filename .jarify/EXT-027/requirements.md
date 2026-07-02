@@ -117,3 +117,37 @@ keep injection gated.
 **Status: DONE** (implemented in `harness/daily_driver.py` + `harness/intent_loop.py`
 [`IntentResult.code`, needed to expose the built module content for build-module capture];
 `tests/test_ext027_autocapture.py` — capture verified offline, no recall/inject wired)
+
+### [REQ-4] Auto-capture verified SWE-bench solves via a solve-pipeline callback (the hard-task flywheel fuel)
+
+REQ-3 captures the SATURATING daily-driver solves, but the flywheel's most valuable fuel is the HARD
+external-bar resolves (SWE-bench). Those flow through `harness/swebench_live.py::solve_gated` /
+`solve_with_repair`, which run the REAL test as the selector — the exact moment a candidate is
+test-VERIFIED. A clean two-plane hook lets that path capture without coupling `swebench_live` to
+`solution_memory`: an optional `on_verified` callback fired ONLY when a candidate passes the real
+test gate (NOT the self-consistency fallback, which is unverified). The SWE-bench driver supplies a
+callback that calls `record_verified`. Capture-only (per REQ-3's distinction): changes no prompt, no
+output, no returned diff; not REQ-2-kill-test-gated. This makes hard resolves accumulate as
+distillation/recall fuel — the sustaining mechanism named in docs/GAP-MAP.md #2 (empty-store blocker).
+
+#### Acceptance Criteria
+- [x] `solve_gated` gains an optional `on_verified: Callable[[str], None] | None = None`; it is invoked
+  with the winning diff EXACTLY in the test-PASS branch (the `if passed:` path), BEFORE returning —
+  never on the self-consistency fallback (unverified) and never when nothing applies (`""`)
+- [x] `solve_with_repair` gains the same `on_verified` param, invoked with the passing diff when a
+  solve or repair round passes the gated test (the verified moment), never on the give-up return
+- [x] `on_verified` is best-effort: wrapped so a raising callback NEVER changes the returned diff or
+  breaks the solve (mirrors `record_verified`'s never-raise contract); defaults to `None` (no-op) so
+  all existing callers are byte-for-byte unaffected (backward compatible)
+- [x] Offline tests (`tests/test_ext027_swebench_capture.py`, NO live model, canned `gen_fn`/`run_test_fn`):
+  (a) a spy `on_verified` fires with the passing diff when `run_test_fn` returns pass; (b) it does NOT
+  fire when no candidate passes (self-consistency fallback path); (c) a raising `on_verified` does not
+  change the returned diff. Full suite stays green.
+
+**Status: DONE** (implemented in this session — `harness/swebench_live.py` gained a
+`_notify_verified` best-effort helper plus `on_verified` params on `solve_gated` and
+`solve_with_repair`, invoked only at the real-test-verified moment; `on_verified=None` is the
+default so all existing callers are unaffected; `tests/test_ext027_swebench_capture.py` (10 new
+tests, offline, canned gen_fn/run_test_fn) proves fire-on-pass, no-fire-on-self-consistency-fallback,
+no-fire-on-empty/give-up, raising-callback-is-swallowed, and default-None backward compatibility;
+full suite 1122 passed)
