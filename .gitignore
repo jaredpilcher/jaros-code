@@ -29,3 +29,13 @@ evals/benchmarks/*.json
 # Claude Code runtime state (keep vendored skills/agents, ignore runtime locks)
 .claude/scheduled_tasks.lock
 .claude/*.lock
+
+# Grind / SWE-bench prediction output stragglers (runtime state, never commit) — the swebench
+# harness writes "<model_name_or_path>.<run_id>.json" to cwd (repo root); grind scripts likewise.
+/gold.*.json
+/jcode-*.json
+/qwen25coder*.json
+/qwen3-*.json
+/deepseek*.json
+/repair.*.json
+/r1*.json
