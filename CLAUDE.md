@@ -29,6 +29,31 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 When a change would violate a tenet, **STOP and flag the conflict** — do not
 silently resolve it.
 
+## ⭐ STANDING ORDER — AUTO-STEER FROM THE PRIME DIRECTIVE (owner directive, 2026-07-02)
+
+**Every cycle: read the PRIME-001 intent + design, and choose the BEST course of action to converge on
+it. Auto-steer.** Decide the next move from the intent + measured evidence — do not wait to be told, do
+not ask which fork when the intent + data already answer it. The Prime Directive's scoreboard is the
+compass: work always flows to the highest **impact × tractability** gap on `docs/GAP-MAP.md`, and
+**progress is the scoreboard trend (esp. the external hard bar / growing uncurated SWE-bench slice, and
+system-level routed-vs-best-single honesty), never activity or commit count.** When a "milestone" does
+not move a scoreboard number, say so plainly and steer back to what does. Use the escalation ladder
+(L0→L9) in cost order for any failing class; a wall claim needs evidence at every rung below it.
+
+## ⏰ NO QUIET HOURS FOR WORK — THE GRIND IS ALWAYS ON, 24/7 (owner directive, 2026-07-02)
+
+**There are NO quiet hours for WORK.** The convergence grind runs continuously, 24/7, **including the
+Jetson** — SWE-bench/Jetson/training runs, builds, and evals all proceed overnight exactly as in the
+day. The experiment chain never idles at any hour. This SUPERSEDES every earlier "quiet hours = offline
+only / defer Jetson grinds to active hours" instruction (in cron prompts or memory) — that was wrong;
+overnight is prime unattended compute and must be used at full intensity.
+
+**Quiet hours apply ONLY to PUSH NOTIFICATIONS, nothing else.** Do not send phone `PushNotification`
+between **02:00 and 07:59 local (America/Denver)** — "just don't wake me up in the middle of the night."
+Instead append `- HH:MM <event>` to `.jaros-data/artifacts/overnight_events.md`, and at the first watch
+with local hour ≥ 8 send ONE digest push of the night's events, then reset that file. Work does not
+stop; only the phone stays quiet. (A true unrecoverable breakage may still warrant a night push.)
+
 ## ⚠️ MULTI-MODEL PIVOT (owner directive, 2026-06-28) — supersedes the single-model founding assumption below
 
 jaros-code is now a **MULTI-MODEL harness.** We MEASURED a real single-model ceiling (the drastic
