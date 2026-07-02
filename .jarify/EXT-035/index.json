@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/cli_wrapper.py",
+      "startLine": 14,
+      "endLine": 71
+    },
+    {
+      "file": "tests/test_ext035_cli_wrapper.py",
+      "startLine": 14,
+      "endLine": 112
+    }
+  ]
+}
