@@ -44,7 +44,8 @@ def _stub(signature: str, func: str) -> str:
     return f"{sig}:\n    raise NotImplementedError\n"
 
 
-def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False) -> IntentResult:
+def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False,
+                      deps: dict | None = None) -> IntentResult:
     intent = task["intent"]
     target = task["target"]                       # e.g. "csv_parse.py"
     module = Path(target).stem                     # "csv_parse"
@@ -56,6 +57,13 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False) 
         dp = Path(d)
         target_path = dp / target
         target_path.write_text(_stub(signature, func), encoding="utf-8", newline="\n")
+        # #EXT-008-REQ-4 Start
+        # Write caller-supplied dependency modules into the build dir so a module
+        # can import an already-built sibling (multi-module Foundry builds).
+        if deps:
+            for fname, src in deps.items():
+                (dp / fname).write_text(src, encoding="utf-8", newline="\n")
+        # #EXT-008-REQ-4 End
 
         # 1) GENERATIVE grain: the system writes its own tests from intent.
         rt = Runtime()
@@ -77,7 +85,9 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False) 
         final_impl = target_path.read_text(encoding="utf-8")
 
         # 3) Score against the HIDDEN oracle in a fresh dir (system never saw this test).
-        oracle_pass = _run_oracle(module, target, final_impl, task["oracle_test"], test_cmd)
+        # #EXT-008-REQ-4 Start
+        oracle_pass = _run_oracle(module, target, final_impl, task["oracle_test"], test_cmd, deps=deps)
+        # #EXT-008-REQ-4 End
 
     return IntentResult(task["id"], self_pass, oracle_pass, res.attempts,
                         "self+oracle" if (self_pass and oracle_pass) else
@@ -122,11 +132,19 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
                      else "implemented via behavioral solve; did not pass its self-tests")}
 
 
-def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd: str) -> bool:
+def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd: str,
+                deps: dict | None = None) -> bool:
     with tempfile.TemporaryDirectory() as od:
         odp = Path(od)
         (odp / target).write_text(impl, encoding="utf-8", newline="\n")
         (odp / f"test_oracle_{module}.py").write_text(oracle_test, encoding="utf-8", newline="\n")
+        # #EXT-008-REQ-4 Start
+        # Write the same dependency modules into the oracle dir so an implementation
+        # that imports a dep does not ImportError. The oracle TEST itself stays hidden.
+        if deps:
+            for fname, src in deps.items():
+                (odp / fname).write_text(src, encoding="utf-8", newline="\n")
+        # #EXT-008-REQ-4 End
         rt = Runtime()
         res = rt.apply(create_decision(id=f"orc-{uuid.uuid4().hex}", source="oracle",
                        type="shell.exec", payload={"command": test_cmd, "timeout_s": 15, "cwd": str(odp)}))

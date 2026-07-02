@@ -52,6 +52,27 @@ implementation against a held-out oracle test in a fresh directory.
 - [ ] Run everything (tests, oracle) through the Runtime's deterministic tools
 - [ ] Distinguish "self-only (misread intent)" from "self+oracle" from "unsolved"
 
+### [REQ-4] Multi-module builds — dependency modules present in the build + oracle env
+
+`build_from_intent` builds one module in an isolated temp dir, and `_run_oracle` scores it in a
+SECOND isolated temp dir — each containing ONLY the target module + its test. This silently blocks
+multi-component (long-horizon Foundry) builds: a module that should `import` an already-built sibling
+FAILS its oracle with `ImportError`, so the loop iterates to a self-contained REIMPLEMENTATION and the
+dependency is orphaned (measured 2026-07-02: a 3-file mathops→calc→cli tool "shipped" but calc
+reimplemented the ops instead of importing mathops — verified via `calc_imports_mathops=False`). The
+fix is to let the caller supply already-built dependency modules that are written into BOTH the build
+dir and the oracle dir, so a module can genuinely import its siblings and pass its oracle.
+
+#### Acceptance Criteria
+- [x] `build_from_intent(task, *, max_iters=3, verbose=False, deps=None)` accepts `deps: dict[str,str]`
+      (filename → source); each dep file is written into the build temp dir before building
+- [x] The same `deps` are written into the `_run_oracle` temp dir, so an implementation that imports a
+      dep passes its held-out oracle (no ImportError)
+- [x] `deps=None` is fully backward-compatible — existing single-module builds are byte-for-byte unchanged
+- [x] Offline test (no model where possible, or a canned build): a module whose oracle imports a supplied
+      dep module PASSES with `deps` provided and FAILS (ImportError) without it — proving the dep is the cause
+- [x] Full suite stays green
+
 ### [REQ-3] Diversity of sand (future)
 
 The mountain needs many grain *types*, not many copies of one. This spec is the first
