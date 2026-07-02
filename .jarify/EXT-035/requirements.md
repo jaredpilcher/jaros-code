@@ -103,3 +103,12 @@ dep symbol still passes its oracle.
 - [x] Offline tests (`tests/test_ext035_import_wiring.py`, NO model): (a) `resolve_imports("def pack(items):\n    return '|'.join(encode(i) for i in items)\n", {"codec": ["encode"]})`
       injects `from codec import encode` and leaves `pack` intact + is idempotent; (b) an already-correct
       import is unchanged; (c) an unrelated undefined name is NOT injected. Full suite stays green.
+- [x] BOTH import forms handled: MEASURED 2026-07-02 — with REQ-3 wired, gemma wrote a CORRECT coordinating
+      `packer` that calls `codec.encode(item)` (module-qualified form) but omitted `import codec`; the
+      used-unbound name is the MODULE `codec` (referenced via `codec.<attr>`), which `resolve_imports`'
+      bare-name path did not inject. VERIFIED: prepending `import codec` makes it ship. So `resolve_imports`
+      must ALSO inject `import <stem>` when a used-unbound name equals a supplied dep's module STEM (detected
+      via `<stem>.<attr>` attribute access, i.e. an `ast.Attribute` whose `.value` is an unbound `ast.Name`
+      matching a dep stem). This unlocks genuine multi-component coordination for the (common) qualified form.
+      Offline test: a `packer` using `codec.encode(...)` + `dep_exports={"codec":[...]}` → `import codec`
+      injected, and idempotent; bare-name form still works. Full suite green.

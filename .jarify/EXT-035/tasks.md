@@ -79,3 +79,24 @@ generated module that references a dep symbol without importing it still passes 
 
 #### Implements
 - [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission
+
+### [TASK-4] resolve_imports: also inject `import <module>` for qualified `<stem>.attr` refs (REQ-3)
+
+MEASURED: with REQ-3 wired, gemma wrote a CORRECT coordinating `packer` using `codec.encode(item)` but
+omitted `import codec`; `resolve_imports` only injected bare-name `from X import name`, so the qualified
+form was missed. Extend it to handle BOTH import forms. Small, surgical extension to the tool built in TASK-3.
+
+#### Steps
+1. `harness/import_wiring.py::resolve_imports`: in addition to the existing bare-name path, detect
+   used-unbound MODULE references — walk for `ast.Attribute` nodes whose `.value` is an `ast.Name` in Load
+   context that is NOT bound (not defined/imported/builtin) and whose id equals a supplied dep's module STEM
+   (a key of `dep_exports`). For each such stem, inject `import <stem>` (deduped, sorted with the existing
+   `from`-imports, idempotent — skip if `import <stem>` already present). Keep conservative (only inject for
+   stems that are actual `dep_exports` keys). Tag `# #EXT-035-REQ-3` (same REQ).
+2. `tests/test_ext035_import_wiring.py`: add a case — `resolve_imports("def pack(items):\n    return '|'.join(codec.encode(i) for i in items)\n", {"codec": ["encode"]})` injects `import codec`, leaves `pack` intact,
+   is idempotent, and does NOT also add a spurious `from codec import ...`. Keep the existing bare-name tests green.
+3. `python -m pytest -q` (root pytest.ini → tests/); full suite green, report counts.
+4. Update the REQ-3 traceability ranges in `.jarify/EXT-035/index.json` if line numbers shift. Do NOT touch sibling specs.
+
+#### Implements
+- [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission (both import forms)

@@ -60,6 +60,23 @@ def test_derive_dep_exports_from_ast():
     assert exports == {"codec": ["encode", "decode"], "helpers": ["Thing"]}
 
 
+def test_injects_import_for_qualified_module_reference():
+    code = "def pack(items):\n    return '|'.join(codec.encode(i) for i in items)\n"
+    dep_exports = {"codec": ["encode"]}
+
+    out = resolve_imports(code, dep_exports)
+
+    assert "import codec" in out
+    assert "def pack" in out
+    # Only the module import is needed for the qualified form — no spurious
+    # bare-name import, since `encode` itself is never used as a bare name.
+    assert "from codec import" not in out
+
+    # Idempotent: running it again with the same deps injects nothing new.
+    out2 = resolve_imports(out, dep_exports)
+    assert out2 == out
+
+
 def test_derive_dep_exports_wires_into_resolve_imports():
     # Simulates the build_from_intent wiring point: derive dep_exports from
     # deps sources, then use it to resolve a missing cross-module import.

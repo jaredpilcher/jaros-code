@@ -66,16 +66,43 @@ def _used_names(tree: ast.Module) -> set[str]:
     return used
 
 
-def resolve_imports(module_code: str, dep_exports: dict[str, list[str]]) -> str:
-    """Inject `from <stem> import <name>` lines for names `module_code` USES
-    but has not bound, when that name is an exported name of some dep in
-    `dep_exports` (module-stem -> [exported names]).
+def _qualified_module_stems(tree: ast.Module, bound: set[str], dep_stems: set[str]) -> set[str]:
+    """Module stems referenced via the qualified form `<stem>.<attr>`, where
+    `<stem>` is an unbound `ast.Name` (not defined/imported/builtin) whose id
+    matches a supplied dep's module stem — the `codec.encode(...)` case,
+    which the bare-name path (`_used_names`) never sees since `encode` there
+    is an attribute string, not a `Name` node."""
+    stems: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and isinstance(node.value.ctx, ast.Load)
+        ):
+            stem = node.value.id
+            if stem in dep_stems and stem not in bound and stem not in _BUILTIN_NAMES:
+                stems.add(stem)
+    return stems
 
-    Conservative: if `module_code` fails to parse, or a used-unbound name is
-    not a known dep export, it is left alone (never break working code).
-    Deterministic: injected lines are deduped and sorted. Idempotent: a name
-    that is already imported is skipped, so re-running injects nothing new.
-    Does not touch the model's logic body — only prepends import lines.
+
+def resolve_imports(module_code: str, dep_exports: dict[str, list[str]]) -> str:
+    """Inject import lines for names `module_code` USES but has not bound,
+    when that name resolves against a supplied dep in `dep_exports`
+    (module-stem -> [exported names]). Handles BOTH forms the model may use:
+
+    - bare-name: `encode(...)` with `encode` an unbound name that is an
+      exported name of some dep -> injects `from <stem> import <name>`.
+    - qualified: `codec.encode(...)` with `codec` an unbound name that is
+      itself a dep's module stem -> injects `import <stem>` (never a
+      spurious `from <stem> import <attr>`, since the qualified attribute is
+      not a bare-name use).
+
+    Conservative: if `module_code` fails to parse, or a used-unbound name
+    doesn't resolve against a known dep, it is left alone (never break
+    working code). Deterministic: injected lines are deduped and sorted.
+    Idempotent: a name/module already imported or bound is skipped, so
+    re-running injects nothing new. Does not touch the model's logic body —
+    only prepends import lines. Tag `# #EXT-035-REQ-3`.
     """
     try:
         tree = ast.parse(module_code)
@@ -86,17 +113,22 @@ def resolve_imports(module_code: str, dep_exports: dict[str, list[str]]) -> str:
     used = _used_names(tree)
     unbound = used - bound - _BUILTIN_NAMES
 
-    to_inject: set[tuple[str, str]] = set()
+    to_inject_from: set[tuple[str, str]] = set()
     for name in unbound:
         for stem, exports in dep_exports.items():
             if name in exports:
-                to_inject.add((stem, name))
+                to_inject_from.add((stem, name))
                 break
 
-    if not to_inject:
+    to_inject_import = _qualified_module_stems(tree, bound, set(dep_exports.keys()))
+
+    import_lines: set[str] = set()
+    import_lines.update(f"from {stem} import {name}" for stem, name in to_inject_from)
+    import_lines.update(f"import {stem}" for stem in to_inject_import)
+
+    if not import_lines:
         return module_code
 
-    import_lines = sorted(f"from {stem} import {name}" for stem, name in to_inject)
-    return "\n".join(import_lines) + "\n" + module_code
+    return "\n".join(sorted(import_lines)) + "\n" + module_code
 
 # #EXT-035-REQ-3 End

@@ -3,7 +3,7 @@
     {
       "file": "tests/test_ext035_import_wiring.py",
       "startLine": 7,
-      "endLine": 74
+      "endLine": 91
     },
     {
       "file": "harness/intent_loop.py",
@@ -18,7 +18,7 @@
     {
       "file": "harness/import_wiring.py",
       "startLine": 16,
-      "endLine": 102
+      "endLine": 134
     }
   ],
   "REQ-2": [
