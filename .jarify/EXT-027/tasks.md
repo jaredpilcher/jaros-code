@@ -33,3 +33,36 @@ REQ-2
    If non-result: record faithfully; leave inject unwired; note the negative in REQ-2.
 
 **Status: NOT STARTED** (requires active hours + Jetson running)
+
+### [TASK-2] Wire auto-capture of verified solves into run_daily (REQ-3)
+
+`record_verified` is built+tested but called nowhere — the flywheel corpus is empty. Wire CAPTURE
+(persistence only; NOT injection) into the daily-driver runner so every verified solve is recorded.
+
+#### Steps
+1. In `harness/daily_driver.py::run_daily`, after a code-producing task (category in
+   {edit, fix, build-module, multi-file}) is marked SOLVED, call
+   `harness.solution_memory.record_verified(problem, code)` best-effort where:
+   - `problem = {"source": <the original buggy file content or the build spec/intent>,
+     "problem_class": <map category: edit/fix/build-module -> "standalone-fn-gen",
+     multi-file -> "multi-file">}` (pass problem_class explicitly so it's not misinferred),
+   - `code = <the winning solution>`: for fix_loop-path tasks read the solved target file's final
+     content from the isolated temp dir BEFORE it's cleaned; for build-module read the built module.
+   Wrap in try/except (record_verified is already best-effort, but never let capture affect the
+   task result or scorecard). Do NOT capture navigate/answer tasks (no code) or UNSOLVED tasks.
+2. Do NOT wire `recall_similar`/`inject_verified_example` anywhere (injection stays REQ-2-gated;
+   default solve prompt unchanged). Capture-only.
+3. `tests/test_ext027_autocapture.py` (offline, no model): monkeypatch `record_verified` to collect
+   calls; run `run_daily` with a stubbed solve (some solved, some not, incl. a navigate task); assert
+   record_verified was called ONLY for solved code-producing tasks, with `code` + `problem_class`
+   present, and NOT for the navigate task or unsolved tasks. Full suite stays green.
+4. Tag wired lines `# #EXT-027-REQ-3`; add the traceability entry to `.jarify/EXT-027/index.json`.
+
+#### Implements
+- [REQ-3] Auto-capture verified solves into the store (the flywheel corpus — start NOW)
+
+**Status: DONE** (implemented in this session — `harness/daily_driver.py` calls
+`record_verified` best-effort for solved edit/fix/multi-file/build-module tasks;
+`harness/intent_loop.py` gained `IntentResult.code` so the built module content is
+capturable; `tests/test_ext027_autocapture.py` proves capture-only, no recall/inject
+wired; full suite green)

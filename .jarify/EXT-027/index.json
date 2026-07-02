@@ -1,4 +1,41 @@
 {
+  "REQ-3": [
+    {
+      "file": "tests/test_ext027_autocapture.py",
+      "startLine": 22,
+      "endLine": 166
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 35,
+      "endLine": 37
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 85,
+      "endLine": 87
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 41,
+      "endLine": 51
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 169,
+      "endLine": 171
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 200,
+      "endLine": 214
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 226,
+      "endLine": 241
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/solution_memory.py",

@@ -90,3 +90,30 @@ pad context (the key distinction from the RAG negative).
 - [ ] Kill-test protocol documented (above) and runnable in active hours
 - [ ] Kill-test result recorded faithfully (lift OR non-result) in this spec
 - [ ] Default solve path NOT modified until confirmed reproducible lift
+
+### [REQ-3] Auto-capture verified solves into the store (the flywheel corpus — start NOW)
+
+`record_verified` (REQ-1) is fully built + tested but WIRED NOWHERE — nothing calls it, so the
+store is a fully-functional ORPHAN and the corpus is empty. THE PURSUIT (§9.4/§7) requires
+capturing every test-verified solve immediately: it is the self-distillation training corpus and
+the experience-recall (L4) memory, and it only grows if capture exists — retroactive harvest is
+lossy. CRITICAL DISTINCTION from REQ-2: this is CAPTURE (persistence only), NOT injection. Capture
+changes NO solve prompt and NO output — it is pure recording, so it is NOT gated by the REQ-2
+kill-test (which gates only `inject_verified_example` into the default solve). Wire capture on;
+keep injection gated.
+
+#### Acceptance Criteria
+- [x] `harness/daily_driver.run_daily` calls `record_verified` for each SOLVED code-producing task
+  (edit/fix/build-module/multi-file), capturing `{source: the original buggy file / spec, code: the
+  winning solution content, problem_class: from the task category, model}` — best-effort, never
+  raising, never affecting the task's pass/fail or the scorecard
+- [x] Navigate/answer tasks (no code artifact) are NOT captured; UNSOLVED tasks are NOT captured
+- [x] `record_verified` is capture-only: no `recall_similar`/`inject_verified_example` is wired into
+  any solve prompt (injection stays REQ-2-kill-test-gated; default solve unchanged)
+- [x] Offline test: `run_daily` with a stubbed solve records store entries for solved code tasks
+  (monkeypatched `record_verified`, assert called with the right shape for solved-not-unsolved),
+  no live model; full suite green
+
+**Status: DONE** (implemented in `harness/daily_driver.py` + `harness/intent_loop.py`
+[`IntentResult.code`, needed to expose the built module content for build-module capture];
+`tests/test_ext027_autocapture.py` — capture verified offline, no recall/inject wired)

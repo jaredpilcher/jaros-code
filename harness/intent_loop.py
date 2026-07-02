@@ -32,6 +32,9 @@ class IntentResult:
     oracle_pass: bool
     attempts: int
     note: str = ""
+    # #EXT-027-REQ-3 Start
+    code: str = ""  # the final built module content (for daily_driver auto-capture)
+    # #EXT-027-REQ-3 End
 
 
 def _stub(signature: str, func: str) -> str:
@@ -78,7 +81,10 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False) 
 
     return IntentResult(task["id"], self_pass, oracle_pass, res.attempts,
                         "self+oracle" if (self_pass and oracle_pass) else
-                        ("self-only (misread intent)" if self_pass else "unsolved"))
+                        ("self-only (misread intent)" if self_pass else "unsolved"),
+                        # #EXT-027-REQ-3 Start
+                        code=final_impl)
+                        # #EXT-027-REQ-3 End
 
 
 def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,

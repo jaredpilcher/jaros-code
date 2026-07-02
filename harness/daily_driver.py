@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 
 from harness.report import wilson_interval
+from harness.solution_memory import record_verified
 
 ROOT = Path(__file__).resolve().parents[1]
 DAILY_ROOT = ROOT / "evals" / "daily_driver"
@@ -36,6 +37,18 @@ CATEGORY_WEIGHTS: dict[str, int] = {
     "multi-file": 10,
     "ops": 5,
 }
+
+# #EXT-027-REQ-3 Start
+# Code-producing categories the flywheel corpus captures a verified solve for, mapped to
+# the solution_memory ``problem_class`` label (per EXT-027 REQ-3 — capture only, no recall/
+# inject wired anywhere here; injection stays REQ-2-kill-test-gated).
+_CAPTURE_PROBLEM_CLASS: dict[str, str] = {
+    "edit": "standalone-fn-gen",
+    "fix": "standalone-fn-gen",
+    "build-module": "standalone-fn-gen",
+    "multi-file": "multi-file",
+}
+# #EXT-027-REQ-3 End
 
 
 def load_daily_tasks(root: str | Path = DAILY_ROOT, split: str | None = None) -> list[dict]:
@@ -131,7 +144,7 @@ def _write_files(workdir: Path, files: dict) -> None:
         (workdir / name).write_text(content, encoding="utf-8")
 
 
-def _run_build_module_task(task: dict, *, max_iters: int) -> bool:
+def _run_build_module_task(task: dict, *, max_iters: int) -> tuple[bool, str]:
     """Route a ``build-module`` task through the proven generative spine
     (``harness.intent_loop.build_from_intent``, EXT-008) and score it by its HELD-OUT
     ``oracle_test`` — the first DISCRIMINATING category (a spec, not a failing test, is
@@ -145,10 +158,17 @@ def _run_build_module_task(task: dict, *, max_iters: int) -> bool:
     never written into the build dir nor shown to any agent/prompt while building; it is
     written + run only to grade, after the build. ``solved`` is exactly the held-out
     oracle-pass verdict — the same un-gameable metric EXT-008 already proves out.
+
+    Returns ``(solved, built_code)`` -- ``built_code`` is the final module content
+    (``IntentResult.code``, EXT-027 REQ-3) so ``run_daily`` can auto-capture it into the
+    verified-solution store on a solve, without reaching into ``build_from_intent``'s own
+    isolated temp dir (already torn down by the time this returns).
     """
     from harness.intent_loop import build_from_intent
     result = build_from_intent(task, max_iters=max_iters)
-    return bool(result.oracle_pass)
+    # #EXT-027-REQ-3 Start
+    return bool(result.oracle_pass), getattr(result, "code", "") or ""
+    # #EXT-027-REQ-3 End
 
 
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
@@ -174,9 +194,24 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
             workdir = Path(tmp)
             if task.get("category") == "build-module":
                 try:
-                    solved = _run_build_module_task(task, max_iters=max_iters)
+                    solved, built_code = _run_build_module_task(task, max_iters=max_iters)
                 except Exception:  # a single task failure never sinks the suite
-                    solved = False
+                    solved, built_code = False, ""
+                # #EXT-027-REQ-3 Start
+                # Auto-capture the verified solve into the flywheel corpus (persistence
+                # only -- NOT injection; recall_similar/inject_verified_example stay
+                # unwired, gated by REQ-2's kill-test). Best-effort: never affects solved.
+                if solved:
+                    try:
+                        record_verified(
+                            {"source": task.get("intent", ""),
+                             "problem_class": _CAPTURE_PROBLEM_CLASS.get(
+                                 task.get("category", ""), "standalone-fn-gen")},
+                            built_code,
+                        )
+                    except Exception:
+                        pass
+                # #EXT-027-REQ-3 End
             elif task.get("test_cmd"):
                 t = Task(id=task["id"], instruction=task["instruction"],
                          target=task.get("target", ""), test_cmd=task["test_cmd"],
@@ -188,6 +223,22 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
                     solved = bool(res.success)
                 except Exception:  # a single task failure never sinks the suite
                     solved = False
+                # #EXT-027-REQ-3 Start
+                # Auto-capture verified edit/fix/multi-file solves (read the solved target
+                # file's final content BEFORE this temp dir is cleaned up below). Only the
+                # code-producing categories the flywheel wants; navigate/ops/write-tests/
+                # refactor are out of scope for REQ-3 and are not captured here.
+                if solved and task.get("category") in _CAPTURE_PROBLEM_CLASS:
+                    try:
+                        final_code = target.read_text(encoding="utf-8")
+                        record_verified(
+                            {"source": task.get("files", {}).get(task.get("target", ""), ""),
+                             "problem_class": _CAPTURE_PROBLEM_CLASS[task.get("category")]},
+                            final_code,
+                        )
+                    except Exception:
+                        pass
+                # #EXT-027-REQ-3 End
             elif oracle and oracle.get("type") == "answer":
                 _write_files(workdir, task.get("files", {}))
                 answer = answer_fn(task)
