@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -134,16 +134,34 @@ The owner expanded the target: to build complex systems well, jaros-code must al
 work Claude Code does. Many gaps — recorded here, filled iteratively (each surfaces naturally as the
 sentence-to-system pipeline demands it). Cross-cutting ones (REQ-8..11) may spin out to their own specs.
 
-### [REQ-6] Multi-level test generation — unit / integration / performance  (GAP)
+### [REQ-6] Multi-level test generation — unit / integration / performance  (PARTIAL — integration_check/perf_check DONE, TASK-10)
 
 Beyond the unit-test capability (EXT-005 write-tests, mutation-graded): generate INTEGRATION tests (do the
 assembled modules work together across boundaries?) and PERFORMANCE tests (does it meet a throughput/latency
 bar?). Each honestly graded (integration: real cross-module behavior; performance: measured against a threshold).
 
 #### Acceptance Criteria
-- [ ] Integration-test generation for a multi-module system (exercises real cross-module flows, not just one unit)
-- [ ] Performance-test generation (measures + asserts a threshold; honest, not a trivially-passing stub)
-- [ ] Composed into the sentence-to-system pipeline: a built system gets unit + integration (+ perf where relevant) tests
+- [x] Integration-test generation for a multi-module system (exercises real cross-module flows, not just one unit)
+  — **DONE 2026-07-03** (`harness/multi_tests.py::integration_check(modules, root, flow_code=None, llm=None)`):
+  assembles the `{name: code}` modules onto `root` and RUNS a standalone cross-module scenario (a script
+  importing >=2 modules and asserting a real interaction between them, reusing the same guarded
+  `harness.multi_file._run` runner the acceptance checklist uses). When `flow_code` is omitted a narrow model
+  call (`_derive_flow_code`) proposes one best-effort; the RUN itself is always deterministic. Honest (Tenet 3):
+  a broken cross-module interaction genuinely fails, surfacing the real run output — never coerced to a pass.
+- [x] Performance-test generation (measures + asserts a threshold; honest, not a trivially-passing stub) —
+  **DONE 2026-07-03** (`harness/multi_tests.py::perf_check(modules, root, entry_cmd, threshold_s)`): runs
+  `entry_cmd` in `root` and MEASURES real wall-clock elapsed time (`time.perf_counter`); `passed` requires
+  both a real successful exit AND `elapsed <= threshold_s` — a genuinely slow (or failing) run genuinely fails,
+  never estimated or coerced to green. Proven OFFLINE with a real fast (`python -c "pass"`) vs. a real
+  deliberately slow (`sleep(2)` against a 0.5s threshold) subprocess run.
+- [ ] Composed into the sentence-to-system pipeline: a built system gets unit + integration (+ perf where
+  relevant) tests — open. `build_system` was intentionally left UNMODIFIED for this task (TASK-10's scope) to
+  keep the TASK-4/5/6 acceptance/repair-gate tests byte-identical; wiring `integration_check`/`perf_check` into
+  `build_system` as opt-in advisory fields is a follow-up, not yet done. Proven OFFLINE
+  (`tests/test_ext036_multitests.py`, no live model needed for the core; the flow-derivation path is exercised
+  with a canned stub `llm`): a cooperating 2-module integration flow passes and genuinely fails when a module is
+  broken, `perf_check` passes a fast entry and genuinely fails a deliberately slow one (real measured time), and
+  both functions never raise on bad/missing input (None modules, missing flow/entry, an unusable root).
 
 ### [REQ-7] Done-ness validation — is the system complete vs the spec, or not?  (GAP)
 

@@ -223,3 +223,25 @@ hypothesis. Mirrors TASK-8's store pattern; the "run" is a real deterministic su
 
 #### Implements
 - [REQ-19] Experiment creation + management (user-facing)
+
+### [TASK-10] Multi-level tests: integration + performance (REQ-6)
+
+Beyond unit tests (write-tests) + the acceptance checklist (which exercises the assembled system's API): explicit
+INTEGRATION tests (cross-module flows) + PERFORMANCE tests (measure + assert a threshold). Composes system_builder +
+the test-gen. Offline-testable with canned/deterministic runs.
+
+#### Steps
+1. `harness/system_builder.py` (or a small `harness/multi_tests.py`): `integration_check(modules, root, flows, llm)` —
+   for a multi-module system, derive/run a cross-module INTEGRATION scenario (calls spanning >=2 modules) as an
+   executable check; `perf_check(modules, root, entry, threshold_s)` — run the entry on a workload, MEASURE wall-time,
+   assert it's under `threshold_s` (a REAL measurement, honest — a slow system fails). Deterministic, guarded, never raises.
+2. HONESTY (Tenet 3): integration/perf results are REAL (actual cross-module execution / actual measured time) — never
+   fabricated; a failing integration or an over-threshold perf is recorded as a failure, not a pass.
+3. Optionally surface via `build_system` (add integration/perf to the returned dict, advisory — don't change `done`'s
+   acceptance gate unless the flows are part of the spec).
+4. Tests (`tests/test_ext036_multitests.py`, OFFLINE — canned modules): (a) an integration flow across 2 modules passes
+   when they cooperate, fails when one is broken; (b) perf_check passes a fast entry, fails a deliberately slow one
+   (real measured time, honest); (c) never raises on bad input. Full `tests/` stays green.
+
+#### Implements
+- [REQ-6] Multi-level test generation — integration + performance
