@@ -76,7 +76,7 @@ capability, EXT-005 TASK-6/8) so each module builds against a real test, not jus
 - [ ] For each planned module, derive a per-module oracle test from its responsibility+signature
 - [ ] `build_from_intent` builds each module gated on that oracle; sibling signatures supplied as context
 
-### [REQ-4] End-to-end: plan → ordered build → wire → assemble → acceptance  (GAP — the real test)
+### [REQ-4] End-to-end: plan → ordered build → wire → assemble → acceptance  (PARTIAL — productionized in build_system, TASK-4; live simple/medium ship; complex fast-fails at plan stage = 7B/reasoning frontier)
 
 Drive the full pipeline: planner → build each module in topological order (deps as context, imports wired
 deterministically via EXT-035 resolve_imports) → assemble → run the executable acceptance. This is where
@@ -163,7 +163,7 @@ bar?). Each honestly graded (integration: real cross-module behavior; performanc
   broken, `perf_check` passes a fast entry and genuinely fails a deliberately slow one (real measured time), and
   both functions never raise on bad/missing input (None modules, missing flow/entry, an unusable root).
 
-### [REQ-7] Done-ness validation — is the system complete vs the spec, or not?  (GAP)
+### [REQ-7] Done-ness validation — is the system complete vs the spec, or not?  (PARTIAL — build_system derives an acceptance checklist + reports DONE/unmet, TASK-4/6; caveat: model writes checks from same spec — independent-oracle rigor remains)
 
 A judgment + deterministic evidence that the built system SATISFIES the original sentence (all implied
 requirements covered), and an honest "NOT done — here's what's missing" when it doesn't. Builds on the
