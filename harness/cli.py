@@ -33,6 +33,7 @@ Commands (Claude-Code-style):
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /build <func> <intent>        behavioral solve: Gherkin(+comprehension)->self-tests->code (EXT-012 system)
   /buildsystem <sentence>        sentence-to-system: plan->build->assemble->acceptance (EXT-036)
+  /modifysystem [<dir> ::] <sentence>   modify an existing system, regression-gated (EXT-036)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
@@ -144,6 +145,11 @@ class JcodeCli:
         from harness.repo_memory import load_facts
         self.repo_facts = load_facts(".")
         # #EXT-036-REQ-16 End
+        # #EXT-036-REQ-14 Start
+        # Last system built via /buildsystem (REQ-14): /modifysystem defaults to it when no
+        # explicit dir is given. None until a /buildsystem call succeeds this session.
+        self._last_built_dir: "Path | None" = None
+        # #EXT-036-REQ-14 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -413,6 +419,10 @@ class JcodeCli:
         status = "shipped" if r.get("shipped") else "NOT shipped"
         doneness = "DONE" if r.get("done") else "NOT done"
         unmet = r.get("unmet") or []
+        # #EXT-036-REQ-14 Start
+        if r.get("shipped"):
+            self._last_built_dir = subdir
+        # #EXT-036-REQ-14 End
         out = [f"[buildsystem] {status}, {doneness} — into {subdir}", f"  modules: {mods}"]
         if unmet:
             out.append("  unmet: " + ", ".join(unmet))
@@ -420,6 +430,43 @@ class JcodeCli:
             out.append(f"  note: {r['note']}")
         return "\n".join(out)
     # #EXT-036-REQ-4 End
+
+    # #EXT-036-REQ-14 Start
+    def cmd_modifysystem(self, arg: str) -> str:
+        """Modify an EXISTING system from a sentence (EXT-036 TASK-7, REQ-14) — regression-
+        gated: existing acceptance behavior must survive, or the change is reverted. Operates
+        on the last /buildsystem output by default, or an explicit ``<dir> :: <sentence>``.
+        Usage: /modifysystem <sentence>   or   /modifysystem <dir> :: <sentence>."""
+        arg = arg.strip()
+        if not arg:
+            return "usage: /modifysystem [<dir> ::] <modification sentence>"
+        if "::" in arg:
+            dir_part, _, sentence = arg.partition("::")
+            target_dir, sentence = Path(dir_part.strip()), sentence.strip()
+        else:
+            target_dir, sentence = self._last_built_dir, arg
+        if not sentence:
+            return "usage: /modifysystem [<dir> ::] <modification sentence>"
+        if target_dir is None:
+            return ("no system to modify — build one first with /buildsystem, or give a dir: "
+                     "/modifysystem <dir> :: <modification sentence>")
+        if not target_dir.is_dir():
+            return f"no such system directory: {target_dir}"
+        modules = {p.name: p.read_text(encoding="utf-8") for p in sorted(target_dir.glob("*.py"))}
+        if not modules:
+            return f"no modules found in {target_dir}"
+        from harness.system_builder import modify_system
+        r = modify_system(modules, sentence, target_dir, llm=self.llm)
+        status = "applied" if r.get("applied") else "NOT applied (reverted)"
+        out = [f"[modifysystem] {status} — {target_dir}"]
+        regressed = r.get("regressed") or []
+        if regressed:
+            out.append("  regressed: " + ", ".join(regressed))
+        out.append(f"  new behavior: {'confirmed' if r.get('new_behavior_ok') else 'not confirmed'}")
+        if r.get("note"):
+            out.append(f"  note: {r['note']}")
+        return "\n".join(out)
+    # #EXT-036-REQ-14 End
 
     def cmd_agent(self, arg: str) -> str:
         """Agentic master loop (EXT-009): give ONE plain request; the system plans a TODO, runs the

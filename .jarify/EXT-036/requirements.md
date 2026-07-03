@@ -227,7 +227,7 @@ model, e.g. the queued Qwen2.5-Coder-7B, to be the lever for hard/highly-complex
 - [x] easy (proven, REQ-4) — [ ] medium — [ ] hard — [ ] highly-complex, each with a held-out sentence set + honest pass rate
 - [ ] The break-point tier is documented with the failing LEVEL (spec/arch/interface/body/integration) and the lever tried
 
-### [REQ-14] Modification from a sentence — evolve an existing system  (GAP, owner 2026-07-03)
+### [REQ-14] Modification from a sentence — evolve an existing system  (PARTIAL — regression-gated modify_system DONE, TASK-7)
 
 Not just create — MODIFY an existing codebase from a sentence ("add rate-limiting to the shortener", "make the CSV
 CLI also output median"). Compose the existing edit capabilities (fix/edit/refactor/multi_file + repo-context REQ-10):
@@ -235,9 +235,26 @@ locate the relevant code, plan the change, apply, re-validate (done-ness) that t
 break existing behavior (regression-gated).
 
 #### Acceptance Criteria
-- [ ] Given an existing system + a modification sentence, locate the change site(s) and apply the change
-- [ ] Re-run existing + new acceptance so the modification is validated AND nothing regressed (Tenet 3)
-- [ ] Measured across difficulty tiers, like REQ-13
+- [x] Given an existing system + a modification sentence, locate the change site(s) and apply the change — **DONE
+  2026-07-03** (`harness/system_builder.py::modify_system(modules, mod_sentence, root, *, llm=None)`, TASK-7):
+  composes the CREATE pipeline's PROVEN pieces (`syntax_ok`, `_derive_acceptance_checklist`, `_run_check`) — the
+  model (`_identify_targets`) judges which existing module(s) the sentence targets, then regenerates each one WITH
+  the change given its current source (`_regenerate_module`), syntax-gated + bounded-repaired (reusing
+  `REPAIR_PROMPT`, TASK-4's per-module gate).
+- [x] Re-run existing + new acceptance so the modification is validated AND nothing regressed (Tenet 3) — **DONE
+  2026-07-03**: a BASELINE acceptance checklist is derived + run on the CURRENT system BEFORE any change, recording
+  the set of checks that currently PASS; after the regenerated module(s) are assembled, those baseline-passing
+  checks are RE-RUN — mirroring TASK-5's `_repair_system` revert pattern — and ANY regression REVERTS the modified
+  module(s) to their pre-modification content (disk + the returned dict), reporting `applied=False` +
+  `regressed: [names]`. `applied=True` only when nothing that used to work broke. A best-effort NEW-behavior
+  checklist, derived from the mod sentence itself, is also run (`new_behavior_ok`) but is advisory — REQ-14 only
+  REQUIRES existing behavior preserved, since the model-authored new-behavior check could itself be wrong. Proven
+  OFFLINE (`tests/test_ext036_modify.py`, canned llm, no live model): a clean modification applies, a
+  regression-causing modification is reverted (asserted byte-identical to the pre-mod source, both in the returned
+  dict and on disk), and unparseable model output at every stage never raises. Wired as `/modifysystem [<dir> ::]
+  <sentence>` in `harness/cli.py` (operates on the last `/buildsystem` output by default, or an explicit dir).
+- [ ] Measured across difficulty tiers, like REQ-13 — open (this task proves the mechanism on a small canned/live
+  case; a held-out difficulty-tier sweep, like REQ-13's, has not been run)
 
 ## AGENTIC INFRASTRUCTURE (owner directive 2026-07-03) — the Claude-Code substrate (memory / tasks / experiments / project-file)
 

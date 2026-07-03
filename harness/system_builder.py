@@ -54,6 +54,15 @@ check (genuine import + assert) — it fails for real on a broken system, so fil
 the fallback can only relieve spurious pessimism, never manufacture a false pass (Tenet
 3). An empty checklist (only possible when there are no modules to check at all) still
 never counts as done.
+
+TASK-7 (REQ-14) adds ``modify_system(modules, mod_sentence, root, *, llm=None)`` — MODIFYING
+an already-built system from a sentence, not just creating one. It composes the same PROVEN
+pieces (``syntax_ok``, ``_derive_acceptance_checklist``, ``_run_check``) with TASK-5's
+non-degrading revert pattern: a BASELINE acceptance checklist records the system's currently-
+passing behavior, the model identifies + regenerates the targeted module(s) with the change
+(syntax-gated + repaired), and a REGRESSION GATE re-runs the baseline-passing checks — any
+regression REVERTS the modified module(s) (disk + dict) and reports ``applied=False``. Honest
+(Tenet 3): a modification is ``applied`` only when nothing that used to work broke.
 """
 
 from __future__ import annotations
@@ -636,3 +645,214 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         note += f" (after {rounds} repair round(s))"
     return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note, repairs=repairs)
 # #EXT-036-REQ-4 End
+
+
+# #EXT-036-REQ-14 Start
+# TASK-7 (REQ-14): modify an EXISTING system from a sentence ("add median to the CSV CLI").
+# Composes the CREATE pipeline's PROVEN pieces (``syntax_ok``, ``_derive_acceptance_checklist``,
+# ``_run_check``, ``REPAIR_PROMPT``) with the non-degrading revert pattern from TASK-5's
+# ``_repair_system``. Two-plane: the model judges WHICH module(s) the sentence targets and
+# writes their regenerated body; every baseline/regression/revert/assembly step is
+# deterministic. The HONESTY core (Tenet 3): a modification is only ``applied`` when the
+# system's PRE-EXISTING passing behavior survives it — a modification that breaks something
+# that used to work is REVERTED (disk + in-memory dict), never accepted.
+
+IDENTIFY_TARGET_PROMPT = (
+    "MODIFICATION TARGET: given the existing system's modules and a modification sentence, "
+    "identify which module(s) must change.\n\n"
+    "EXISTING MODULES:\n{sources}\n\n"
+    "MODIFICATION: {sentence}\n\n"
+    "Output ONLY a JSON list of the module name(s) to change, taken from the list above "
+    '(e.g. ["name.py"]). No prose.'
+)
+
+MODIFY_MODULE_PROMPT = (
+    "APPLY MODIFICATION to module `{name}`: change it to satisfy the MODIFICATION below "
+    "while preserving its existing behavior for anything the sentence does not touch.\n"
+    "MODIFICATION: {sentence}\n\n"
+    "CURRENT `{name}`:\n{code}\n\n"
+    "Output ONLY the COMPLETE modified module (no markdown fences, no prose)."
+)
+
+
+def _mods_from_code(modules: dict) -> list:
+    """Derive a plan-shaped module list (name + best-effort exports) from raw source code, so
+    the existing plan-oriented helpers (``_module_api``, ``_derive_acceptance_checklist``,
+    ``_smoke_checklist``) can be REUSED for a system that has no plan at all — an
+    already-built or externally-supplied system, as ``modify_system`` receives. Exports are
+    the module's top-level functions/classes (name only — no signature is fabricated). Never
+    raises: a module whose source fails to parse simply contributes no exports."""
+    mods = []
+    for name, code in (modules or {}).items():
+        exports = []
+        try:
+            tree = ast.parse(code or "")
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    exports.append({"name": node.name, "signature": f"def {node.name}(...):"})
+                elif isinstance(node, ast.ClassDef):
+                    exports.append({"name": node.name, "signature": f"class {node.name}:"})
+        except (SyntaxError, ValueError):
+            pass
+        mods.append({"name": name, "exports": exports, "imports": []})
+    return mods
+
+
+def _identify_targets(modules: dict, mod_sentence: str, llm) -> list:
+    """Model judgment (REQ-14): which existing module(s) does the modification sentence
+    target? Guarded — an unreachable model, unparseable JSON, or a name outside the known
+    module set yields ``[]`` (no target identified, no change attempted; never raises, never
+    guesses at a module that doesn't exist)."""
+    sources = "\n\n".join(f"# {name}:\n{code}" for name, code in (modules or {}).items())
+    try:
+        raw = _call(llm, IDENTIFY_TARGET_PROMPT.format(sources=sources, sentence=mod_sentence),
+                    max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    names = _extract_json(raw, "[", "]")
+    if not isinstance(names, list):
+        return []
+    return [n for n in names if isinstance(n, str) and n in modules]
+
+
+def _regenerate_module(name: str, code: str, mod_sentence: str, llm, *,
+                        max_repair: int = MAX_REPAIR_ATTEMPTS) -> tuple:
+    """Regenerate one existing module WITH the requested change (REQ-14), given its CURRENT
+    source + the modification sentence, then the SAME bounded syntax-gate/repair loop
+    ``_build_module`` uses for a freshly-planned module (reusing ``syntax_ok``/
+    ``REPAIR_PROMPT`` verbatim). Returns ``(code, syntax_ok)``."""
+    new_code = _strip_fences(_call(llm, MODIFY_MODULE_PROMPT.format(
+        name=name, sentence=mod_sentence, code=code), max_tokens=BUILD_MAX_TOKENS))
+    ok, err = syntax_ok(new_code)
+    for _ in range(max_repair):
+        if ok:
+            break
+        new_code = _strip_fences(_call(llm, REPAIR_PROMPT.format(name=name, err=err, code=new_code),
+                                        max_tokens=BUILD_MAX_TOKENS))
+        ok, err = syntax_ok(new_code)
+    return new_code, ok
+
+
+def _modify_result(*, modules, applied: bool, regressed=None, new_behavior_ok: bool = False,
+                    note: str = "") -> dict:
+    return {"modules": modules, "applied": applied, "regressed": regressed or [],
+            "new_behavior_ok": new_behavior_ok, "note": note}
+
+
+def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None) -> dict:
+    """Modify an EXISTING system (``modules``: ``{name: code}``) from a one-sentence change
+    request, regression-gated (REQ-14). NEVER raises — any stage failure or a modification
+    that regresses existing behavior returns ``applied=False`` with a diagnostic ``note``.
+
+    Pipeline:
+      1. BASELINE — assemble the current ``modules`` onto ``root``, derive + run the
+         acceptance checklist (reusing ``_derive_acceptance_checklist``/``_run_check``) on
+         the CURRENT system, and record the SET of checks that currently PASS — the existing
+         behavior this modification must preserve.
+      2. The model IDENTIFIES which module(s) ``mod_sentence`` targets (``_identify_targets``)
+         and REGENERATES each one with the change, given its current source (
+         ``_regenerate_module``), syntax-gated + bounded-repaired (reusing ``syntax_ok``/
+         ``REPAIR_PROMPT``, TASK-4's per-module gate).
+      3. ASSEMBLE the modified module(s) onto ``root``.
+      4. REGRESSION GATE (the honesty core, mirrors TASK-5's ``_repair_system`` revert): the
+         baseline-passing checks are re-run; if ANY of them now fails, the modified module(s)
+         are REVERTED to their pre-modification content (disk + the returned dict) and
+         ``applied`` is False. Non-degrading — a modification is only accepted when it does
+         not break anything that used to work.
+      5. Best-effort: a NEW-behavior checklist is derived from ``mod_sentence`` itself and run
+         against the (accepted) modified system; ``new_behavior_ok`` reports whether it passed
+         (advisory — ``applied`` never depends on it, since the model-authored new-behavior
+         check could itself be wrong, and REQ-14 only REQUIRES existing behavior preserved).
+
+    Returns ``{modules, applied, regressed: [names], new_behavior_ok, note}``. Uses
+    ``harness.coding_loop.build_llm()`` when ``llm`` is None (mirrors ``build_system``); an
+    injected ``llm`` (``.complete(LlmRequest) -> .text``) drives fully offline testing.
+    """
+    root = Path(root)
+    modules = dict(modules or {})
+    if llm is None:
+        try:
+            from harness.coding_loop import build_llm
+            llm = build_llm()
+        except Exception as exc:
+            return _modify_result(modules=modules, applied=False, note=f"llm unavailable: {exc}")
+
+    # 0. Assemble the CURRENT system onto disk before baselining — `modules` is the source of
+    # truth (a caller may pass a dict without `root` yet reflecting it).
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        for name, code in modules.items():
+            (root / name).write_text(code, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        return _modify_result(modules=modules, applied=False, note=f"could not assemble current system: {exc}")
+
+    mods = _mods_from_code(modules)
+
+    # 1. BASELINE — derive + run the acceptance checklist on the CURRENT system; the set of
+    # checks that PASS now is the existing behavior this modification must preserve.
+    try:
+        baseline_checks = _derive_acceptance_checklist("existing system", mods, llm)
+    except Exception:
+        baseline_checks = []
+    baseline_passing = {c.get("name", "?") for c in baseline_checks if _run_check(root, c)}
+
+    # 2. IDENTIFY + REGENERATE the targeted module(s) WITH the change.
+    targets = _identify_targets(modules, mod_sentence, llm)
+    if not targets:
+        return _modify_result(modules=modules, applied=False,
+                               note="could not identify a target module for the modification — no change made")
+
+    pre_mod = {name: modules[name] for name in targets}
+    changed_names = []
+    for name in targets:
+        try:
+            new_code, ok = _regenerate_module(name, modules[name], mod_sentence, llm)
+        except Exception:
+            continue
+        if not ok:
+            continue
+        modules[name] = new_code
+        changed_names.append(name)
+
+    if not changed_names:
+        return _modify_result(modules=modules, applied=False,
+                               note="modification produced no syntactically valid change — no change made")
+
+    # 3. ASSEMBLE the modified module(s).
+    try:
+        for name in changed_names:
+            (root / name).write_text(modules[name], encoding="utf-8", newline="\n")
+    except OSError as exc:
+        for name in changed_names:                # never leave a half-written system
+            modules[name] = pre_mod[name]
+            try:
+                (root / name).write_text(pre_mod[name], encoding="utf-8", newline="\n")
+            except OSError:
+                pass
+        return _modify_result(modules=modules, applied=False, note=f"assembly failed: {exc}")
+
+    # 4. REGRESSION GATE — re-run the baseline-passing checks; ANY regression -> REVERT.
+    regressed = [c.get("name", "?") for c in baseline_checks
+                 if c.get("name", "?") in baseline_passing and not _run_check(root, c)]
+    if regressed:
+        for name in changed_names:
+            modules[name] = pre_mod[name]
+            try:
+                (root / name).write_text(pre_mod[name], encoding="utf-8", newline="\n")
+            except OSError:
+                pass
+        return _modify_result(modules=modules, applied=False, regressed=regressed,
+                               note="modification regressed existing behavior — reverted: " + ", ".join(regressed))
+
+    # 5. Best-effort NEW-behavior check, derived from the mod_sentence itself.
+    try:
+        new_checks = _derive_acceptance_checklist(mod_sentence, _mods_from_code(modules), llm)
+    except Exception:
+        new_checks = []
+    new_behavior_ok = bool(new_checks) and all(_run_check(root, c) for c in new_checks)
+
+    note = "applied — existing behavior preserved"
+    if new_checks:
+        note += "; new behavior " + ("confirmed" if new_behavior_ok else "not confirmed")
+    return _modify_result(modules=modules, applied=True, new_behavior_ok=new_behavior_ok, note=note)
+# #EXT-036-REQ-14 End

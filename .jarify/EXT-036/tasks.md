@@ -154,3 +154,29 @@ pessimistic. Fix the derivation so a WORKING system can reach done. Two-plane: d
 
 #### Implements
 - [REQ-2] Executable acceptance — robust derivation (filter to runnable checks + deterministic smoke fallback)
+
+### [TASK-7] Modification from a sentence — modify_system, regression-gated (REQ-14)
+
+Owner-emphasized: not just CREATE but MODIFY an existing system from a sentence ("add median to the CSV CLI").
+Compose the CREATE pipeline's pieces (syntax_ok, _build_module, _derive_acceptance_checklist, _run_check) + the
+non-degrading pattern from TASK-5. The HONESTY core: a modification must PRESERVE existing behavior (regression-gated).
+
+#### Steps
+1. `harness/system_builder.py::modify_system(modules, mod_sentence, root, *, llm=None) -> dict` where `modules` is the
+   existing `{name: code}`: (a) BASELINE — derive + run the acceptance checklist on the CURRENT system, record the set
+   of checks that PASS (existing behavior); (b) the model identifies which module(s) the mod_sentence targets and
+   regenerates them WITH the change (given the current sources + the mod_sentence), syntax-gate + bounded repair;
+   (c) assemble the modified system; (d) REGRESSION GATE — re-run the baseline-passing checks; if ANY regressed
+   (previously-passing now fails), REVERT the modified module(s) to their pre-mod content and set `applied=False`
+   (non-degrading, mirrors TASK-5's revert); (e) best-effort NEW-behavior check derived from the mod_sentence.
+2. Return `{modules, applied: bool, regressed: [names], new_behavior_ok: bool, note}`. HONESTY (Tenet 3): `applied=True`
+   ONLY if no regression (existing behavior preserved). Never raises. A modification that breaks existing behavior is
+   reverted, not accepted.
+3. Add a `/modifysystem <sentence>` CLI command (operates on the last-built system dir or a given dir), reporting
+   applied/regressed/new_behavior. Additive; don't disturb existing commands.
+4. Tests (`tests/test_ext036_modify.py`, OFFLINE — canned llm): (a) a clean modification (adds a feature, existing
+   checks still pass) → applied=True; (b) a modification that BREAKS an existing check → reverted, applied=False,
+   regressed lists it, modules restored to pre-mod content; (c) never raises on unparseable model output. Full tests green.
+
+#### Implements
+- [REQ-14] Modification from a sentence (regression-gated modify_system)
