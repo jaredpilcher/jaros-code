@@ -4,12 +4,14 @@ title: Real-world robustness — hardening for real repos + real input
 status: covered
 priority: high
 implementation:
-  - file: harness/multi_file.py    # REQ-1/REQ-2 test-run timeout handling + configurable budget
+  - file: harness/multi_file.py    # REQ-1/REQ-2 test-run timeout handling + configurable budget; REQ-5 import-closure root; REQ-6 minimal-diff pass
   - file: harness/agent_loop.py    # REQ-1 run-action timeout guard
   - file: harness/agentic_eval.py  # REQ-1 _pytest_passes timeout guard
   - file: harness/cli.py           # REQ-1 handle() guards; REQ-3 /files + /grep arg parsing
   - file: harness/mbpp.py          # REQ-4 targeted test (test_* collection)
   - file: harness/humaneval.py     # REQ-4 targeted test (defensive)
+  - file: tests/test_ext010_multifile_localize.py  # REQ-5 regression test
+  - file: tests/test_ext010_minimal_diff.py        # REQ-6 regression test
 ---
 
 Serves **Tenet 5** (Claude-Code-like UX — never crash on the user) and **Tenet 3** (honest: the
@@ -83,3 +85,31 @@ any isolated run. Root the closure walk at `root`.
 - [x] A regression test (`tests/test_ext010_multifile_localize.py`) sets up that 3-file scenario
   in a temp dir, runs from a DIFFERENT process cwd, and asserts the closure files are found
 - [x] No regression to existing multi_file behavior; full suite stays green
+
+### [REQ-6] Minimal-diff pass — drop redundant edits after all-green (Claude-Code-parity clean diffs)  (DONE)
+
+MEASURED gap (docs/GAP-MAP.md #3): `multi_file_fix` keeps edits CUMULATIVELY — any candidate edit that
+strictly REDUCES the failing-test count is kept, and it returns the moment the suite goes all-green. So when
+a partial-progress edit (e.g. a symptom patch on a CALLER) is kept and a LATER edit (the ROOT-cause fix) then
+turns everything green, BOTH edits are kept even though the caller patch is now REDUNDANT. Claude Code emits a
+MINIMAL diff (just the root fix); jaros-code leaves the extra hunk. This is a pure two-plane DETERMINISTIC
+quality gap — no model, no reasoning — fixable by a test-gated minimization (delta-debugging) pass that removes
+any kept edit not necessary to keep the suite green.
+
+#### Acceptance Criteria
+- [x] `harness/multi_file.py::multi_file_fix` captures the ORIGINAL contents of the repo at the start (before
+  any edit) and, upon reaching all-green, runs a minimization pass BEFORE returning solved
+- [x] Minimization: for each KEPT file's edit (iterate in reverse-kept order), temporarily REVERT that file to
+  its original content and re-run `test_cmd`; if the suite is STILL all-green the edit was redundant → keep it
+  reverted and drop it from the kept set; otherwise restore the fixed content (the edit is necessary). The pass
+  is purely deterministic + test-gated (no model call)
+- [x] Invariant: the repo ALWAYS ends all-green with the MINIMAL necessary edit set — never leaves the repo
+  failing, never drops a necessary edit (each drop is re-verified by a green run)
+- [x] The returned dict reports the minimal `fixed` list plus a new `dropped` field naming any removed-redundant
+  edits (diagnosable); `solved` stays True
+- [x] Backward compatible: when only ONE edit was kept (the common case), minimization is a no-op that cannot
+  drop the sole necessary edit (reverting it fails the suite → restored)
+- [x] Offline test (`tests/test_ext010_minimal_diff.py`, NO model): construct a temp-dir scenario where
+  `multi_file_fix` (with a stubbed/canned fix_loop, or a direct minimization-helper test) ends with a redundant
+  caller edit AND the root edit both applied; assert the minimization DROPS the redundant caller edit, the suite
+  stays green, and the necessary root edit is retained. Full suite stays green.

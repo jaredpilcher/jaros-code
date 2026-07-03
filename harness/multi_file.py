@@ -148,12 +148,49 @@ def _fail_count(out: str) -> int:
     return sum(nums) if nums else 1
 
 
+# #EXT-010-REQ-6 Start
+def _minimize_edits(cwd: str, test_cmd: str, orig: dict[str, str],
+                     kept_paths: list[str]) -> tuple[list[str], list[str]]:
+    """Delta-debugging minimization pass (GAP-MAP #3, diff cleanliness): once the cumulative
+    loop in multi_file_fix has reached all-green, some of the KEPT edits may have become
+    redundant — a partial-progress "symptom patch" that was necessary before the root-cause fix
+    landed, but is no longer needed once it did. For each kept edit, in REVERSE (most-recently
+    -kept-first) order, temporarily revert that single file to its ORIGINAL (pre-edit) content
+    and re-run the suite:
+      - still all-green -> the edit was redundant; leave it reverted and record it as dropped
+      - not green -> the edit is necessary; restore its fixed content before moving on
+
+    Purely deterministic + test-gated, no model call. Invariant: the repo is all-green both
+    before and after every single probe in this loop (a redundant drop is confirmed green by the
+    very run that drops it; a non-green probe is always undone before the next probe), so the
+    final state is guaranteed all-green with the minimal necessary edit set — this can never
+    leave the repo failing, and can never drop an edit that the suite actually needs."""
+    kept_min = list(kept_paths)
+    dropped: list[str] = []
+    for path in reversed(kept_paths):
+        if path not in orig:
+            continue  # not part of the pre-edit snapshot (e.g. a new file) — keep it, don't touch
+        fixed_content = Path(path).read_text(encoding="utf-8")
+        Path(path).write_text(orig[path], encoding="utf-8", newline="\n")
+        ok, _ = _run(cwd, test_cmd)
+        if ok:
+            dropped.append(Path(path).name)
+            kept_min.remove(path)
+        else:
+            Path(path).write_text(fixed_content, encoding="utf-8", newline="\n")
+    return kept_min, dropped
+# #EXT-010-REQ-6 End
+
+
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
                    *, max_iters: int = 3, verbose: bool = False) -> dict:
     """Fix a failing multi-file test. Locate candidate files, then fix them CUMULATIVELY: try
     each candidate with fix_loop(keep_partial=True) so its best partial edit survives; KEEP the
     edit only if it strictly REDUCES the failing-test count (and build the next fix on top),
     else revert it. Resolves faults that span several files, not just a single-file fault.
+    Once all-green, a deterministic minimization pass (_minimize_edits, REQ-6) drops any kept
+    edit that turned out redundant (e.g. a caller-side symptom patch superseded by a later
+    root-cause fix), so the final result is the MINIMAL necessary edit set — a clean diff.
 
     No candidate-count cap: the candidates are only files in the IMPORT CLOSURE reachable from
     the failing test (naturally small for realistic tests), and a count cap can silently
@@ -163,11 +200,15 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
 
     ok, out = _run(cwd, test_cmd)
     if ok:
-        return {"solved": True, "file": None, "tried": [], "fixed": [], "note": "already passing"}
+        return {"solved": True, "file": None, "tried": [], "fixed": [], "dropped": [],
+                "note": "already passing"}
 
+    # #EXT-010-REQ-6 Start
+    orig = _snapshot(cwd)  # pre-edit contents of every repo .py, for the minimization pass below
+    # #EXT-010-REQ-6 End
     base = _fail_count(out)
     cands = candidate_files(cwd, out, test_file)
-    tried, kept = [], []
+    tried, kept, kept_paths = [], [], []
     for cand in cands:
         snap = _snapshot(cwd)
         tried.append(Path(cand).name)
@@ -176,11 +217,20 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
         ok, out = _run(cwd, test_cmd)
         if ok:
             kept.append(Path(cand).name)
-            return {"solved": True, "file": kept[-1], "tried": tried, "fixed": kept, "note": "fixed"}
+            kept_paths.append(cand)
+            # #EXT-010-REQ-6 Start
+            kept_paths, dropped = _minimize_edits(cwd, test_cmd, orig, kept_paths)
+            kept = [Path(p).name for p in kept_paths]
+            file = kept[-1] if kept else Path(cand).name
+            return {"solved": True, "file": file, "tried": tried, "fixed": kept,
+                    "dropped": dropped, "note": "fixed"}
+            # #EXT-010-REQ-6 End
         nf = _fail_count(out)
         if nf < base:                 # strict progress — keep this partial, build on it
             base = nf
             kept.append(Path(cand).name)
+            kept_paths.append(cand)
         else:                         # no progress (distractor / harmless rewrite) — revert
             _restore(snap)
-    return {"solved": False, "file": None, "tried": tried, "fixed": kept, "note": "no candidate fixed it"}
+    return {"solved": False, "file": None, "tried": tried, "fixed": kept, "dropped": [],
+            "note": "no candidate fixed it"}

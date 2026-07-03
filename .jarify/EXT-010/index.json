@@ -5,5 +5,22 @@
       "startLine": 81,
       "endLine": 85
     }
+  ],
+  "REQ-6": [
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 151,
+      "endLine": 182
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 206,
+      "endLine": 208
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 221,
+      "endLine": 227
+    }
   ]
 }
