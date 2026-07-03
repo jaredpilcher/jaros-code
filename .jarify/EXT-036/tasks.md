@@ -101,3 +101,28 @@ there. Productionize it into `harness/system_builder.py` as a real, tested capab
 #### Implements
 - [REQ-4] End-to-end plan→build→wire→assemble→acceptance (productionized)
 - [REQ-1] Planner (coherence-validated) + [REQ-3] per-module syntax-gate/repair, composed into the pipeline
+
+### [TASK-5] System-level repair — drive a built system from shipped→DONE (REQ-5)
+
+MEASURED (live TASK-4 run): `build_system` on the CSV spec SHIPS (runnable) but reports done=False with unmet acceptance
+checks (edge cases like "handle empty data gracefully"). REQ-5: when acceptance checks fail, REPAIR the responsible
+module(s) from the failure feedback and re-validate — the cross-level repair that turns shipped→DONE. Analog of the
+write-tests/syntax repair loops, at the acceptance level.
+
+#### Steps
+1. `harness/system_builder.py`: add a bounded repair loop inside (or wrapping) `build_system`. When the acceptance
+   checklist has unmet checks, for each unmet check feed (the failing check's code + its run error + the CURRENT module
+   sources) to the model asking for a TARGETED fix: which module file + its corrected complete content. Apply the fix
+   (deterministic write), re-assemble, re-run the FULL checklist. Repeat up to `max_repair` (default 2) rounds; stop
+   early when done=True. Deterministic guards: syntax-gate any repaired module (reuse `syntax_ok`+syntax-repair); if a
+   repair round reduces no unmet checks, stop (no infinite loop). Return the improved `{shipped, done, unmet, repairs}`.
+2. HONESTY (Tenet 3): `done` still requires the FULL acceptance checklist to PASS after repair — never mark done on a
+   partial fix. Non-degrading: repair can only improve or leave unmet unchanged; a system already done skips repair.
+   Never raises.
+3. Tests (`tests/test_ext036_system_repair.py`, OFFLINE — canned llm): (a) a build with 1 unmet check where the canned
+   repair fixes the module → done=True after 1 repair round, `repairs` records it; (b) a build where repair never fixes
+   it → stays done=False after exactly max_repair rounds (bounded, non-degrading); (c) an already-done build → 0 repair
+   rounds (skip). Full `tests/` stays green.
+
+#### Implements
+- [REQ-5] Cross-level repair (system-level acceptance-driven repair: shipped→DONE)

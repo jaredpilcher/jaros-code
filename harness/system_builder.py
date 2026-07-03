@@ -1,4 +1,5 @@
-"""EXT-036 TASK-4: productionize the sentence-to-system pipeline (REQ-1/REQ-3/REQ-4).
+"""EXT-036 TASK-4/TASK-5: productionize the sentence-to-system pipeline (REQ-1/REQ-3/REQ-4),
+plus system-level acceptance-driven repair (REQ-5, TASK-5).
 
 The end-to-end pipeline was PROVEN in probes:
   - ``.jaros-data/s2s_planner_probe.py`` — sentence -> JSON build plan, deterministic
@@ -23,6 +24,23 @@ Two-plane split:
 ``build_system`` NEVER raises: any stage failure returns ``shipped``/``done`` False with a
 diagnostic ``note``, never a traceback. ``done`` is only True when every derived acceptance
 check actually PASSES (Tenet 3 — the checklist is executed, not eyeballed).
+
+TASK-5 (REQ-5) adds a bounded SYSTEM-LEVEL repair loop: when the acceptance checklist has
+unmet checks, each unmet check's code + run error + the current module sources are fed to
+the model for a TARGETED fix (which module + its corrected complete content); the fix is
+syntax-gated (reusing the same ``syntax_ok``/repair-prompt machinery as the per-module
+build), applied, and the FULL checklist is re-run. Repeats up to ``max_repair`` rounds
+(default 2), stopping early on done or on a round that reduces no unmet checks. Non-
+degrading is ENFORCED, not incidental: because the repair prompt asks for a module's
+COMPLETE corrected content, a fix targeted at one failing check can incidentally break a
+DIFFERENT, previously-passing check (same unmet COUNT, different unmet SET). Each round
+snapshots the pre-round module sources + unmet SET; if any previously-passing check now
+fails, the round's module write(s) are REVERTED and the loop stops, rejecting that round.
+Best-seen ``(built, unmet)`` is tracked and returned — repair only ever improves or leaves
+``unmet`` unchanged, never regresses a previously-passing check — and an already-done build
+skips repair entirely. The result dict gains a ``repairs`` field recording every repair
+attempt (round, check, module, whether it was applied, and — for a rejected/reverted round
+— why).
 """
 
 from __future__ import annotations
@@ -270,10 +288,176 @@ def _run_check(root: Path, check: dict) -> bool:
         except OSError:
             pass
 
+# #EXT-036-REQ-4 End
+# #EXT-036-REQ-5 Start
+REPAIR_MODULE_PROMPT = (
+    "SYSTEM ACCEPTANCE REPAIR: an acceptance check for this system is FAILING and the "
+    "responsible module must be fixed.\n"
+    "SPEC: {spec}\n"
+    "FAILING CHECK: {check_name}\n"
+    "CHECK CODE:\n{check_code}\n"
+    "RUN ERROR:\n{error}\n\n"
+    "CURRENT MODULE SOURCES:\n{sources}\n\n"
+    "Identify which ONE module needs to change to fix this failure, and provide its COMPLETE "
+    "corrected content. Output ONLY a JSON object (no prose, no markdown fences): "
+    '{{"module": "<module_name>.py", "code": "<complete corrected module source>"}}'
+)
 
-def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "") -> dict:
+MAX_SYSTEM_REPAIR_ROUNDS = 2   # bounded system-level (acceptance-driven) repair loop, REQ-5
+
+
+def _run_check_verbose(root: Path, check: dict) -> tuple[bool, str]:
+    """Like ``_run_check`` but also returns the run output (stdout+stderr) so a failing
+    check can be fed back to the model as repair feedback (REQ-5). Reuses the same
+    execution path (``harness.multi_file._run``); never raises."""
+    from harness.multi_file import _run as _run_cmd
+
+    code = check.get("code", "")
+    if not code:
+        return False, "no check code"
+    chk_path = root / "_s2s_acceptance_check.py"
+    try:
+        chk_path.write_text(code, encoding="utf-8", newline="\n")
+        ok, out = _run_cmd(str(root), "python _s2s_acceptance_check.py")
+        return ok, out
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        try:
+            chk_path.unlink()
+        except OSError:
+            pass
+
+
+def _sources_blob(built: dict[str, str]) -> str:
+    return "\n\n".join(f"# {name}:\n{code}" for name, code in built.items())
+
+
+def _repair_module_for_check(spec: str, check: dict, error: str, built: dict[str, str], llm) -> "dict | None":
+    """Ask the model for a TARGETED fix for one failing acceptance check: which module +
+    its corrected COMPLETE content, given the check's code + its run error + the CURRENT
+    sources of every module (REQ-5). Returns ``{"module": name, "code": code}`` or ``None``
+    on any model/parse failure or an out-of-range module name (never raises, never a
+    fabricated fix)."""
+    try:
+        raw = _call(llm, REPAIR_MODULE_PROMPT.format(
+            spec=spec, check_name=check.get("name", "?"), check_code=check.get("code", ""),
+            error=(error or "")[:500], sources=_sources_blob(built)), max_tokens=BUILD_MAX_TOKENS)
+    except Exception:
+        return None
+    fix = _extract_json(raw, "{", "}")
+    if not isinstance(fix, dict):
+        return None
+    name, code = fix.get("module"), fix.get("code")
+    if not name or name not in built or not code:
+        return None
+    return {"module": name, "code": code}
+
+
+def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[dict],
+                    unmet: list[str], llm, *, max_repair: int = MAX_SYSTEM_REPAIR_ROUNDS
+                    ) -> tuple[dict[str, str], list[str], list[dict]]:
+    """Bounded system-level (acceptance-driven) repair loop, REQ-5 — the analog of the
+    write-tests/syntax repair loops at the acceptance level. For each currently-unmet
+    check: feed (check code + run error + current module sources) to the model for a
+    TARGETED fix, syntax-gate + repair the fix (reusing ``syntax_ok``/``REPAIR_PROMPT``),
+    apply it (deterministic write), then re-run the FULL checklist once per round.
+
+    REAL (not incidental) non-degrading guarantee: the repair prompt asks the model for a
+    module's COMPLETE corrected content, so a targeted fix for one failing check can
+    incidentally break a DIFFERENT, previously-passing check (same unmet COUNT, different
+    unmet SET — a silent swap the old count-only guard let through). Each round therefore
+    snapshots the pre-round module sources + unmet SET; after the round's fix(es) and a
+    full checklist re-run, if any check that PASSED before the round now FAILS (a
+    set-based regression, not just a count comparison), the round's module write(s) are
+    REVERTED to their pre-round content and the loop STOPS (that round is rejected, not
+    accepted). Best-seen `(built, unmet)` — fewest unmet, never a state where a
+    previously-passing check has regressed vs the pre-repair baseline — is tracked and
+    returned. Also stops early when done, or when an accepted (non-regressing) round makes
+    no further progress. Bounded, never raises."""
+    repairs: list[dict] = []
+    all_names = [c.get("name", "?") for c in checks]
+    # Best-seen state: current (built, unmet) is only ever updated by an ACCEPTED
+    # (non-regressing) round below, so it is always at least as good as the pre-repair
+    # baseline captured here.
+    best_built, best_unmet = dict(built), list(unmet)
+    try:
+        for round_no in range(1, max_repair + 1):
+            if not unmet:
+                break
+            pre_round_built = dict(built)
+            pre_round_unmet = set(unmet)
+            round_repairs: list[dict] = []
+            for check in [c for c in checks if c.get("name") in unmet]:
+                ok, err = _run_check_verbose(root, check)
+                if ok:
+                    continue   # an earlier fix this round already resolved it
+                record = {"round": round_no, "check": check.get("name", "?"), "applied": False, "module": None}
+                fix = _repair_module_for_check(spec, check, err, built, llm)
+                if fix:
+                    name, code = fix["module"], fix["code"]
+                    syn_ok, syn_err = syntax_ok(code)
+                    for _ in range(MAX_REPAIR_ATTEMPTS):
+                        if syn_ok:
+                            break
+                        code = _strip_fences(_call(llm, REPAIR_PROMPT.format(name=name, err=syn_err, code=code),
+                                                    max_tokens=BUILD_MAX_TOKENS))
+                        syn_ok, syn_err = syntax_ok(code)
+                    if syn_ok:
+                        try:
+                            (root / name).write_text(code, encoding="utf-8", newline="\n")
+                            built[name] = code
+                            record["applied"] = True
+                            record["module"] = name
+                        except OSError:
+                            pass
+                round_repairs.append(record)
+
+            new_unmet_list = [c.get("name", "?") for c in checks if not _run_check(root, c)]
+            new_unmet_set = set(new_unmet_list)
+            passed_before_round = set(all_names) - pre_round_unmet
+            regressed = passed_before_round & new_unmet_set
+            if regressed:
+                # SET-based regression (a swap, e.g. fix `sub` but break `add`): revert this
+                # round's module write(s) to their pre-round content and reject the round.
+                touched = {r["module"] for r in round_repairs if r["applied"] and r["module"]}
+                for name in touched:
+                    prev_code = pre_round_built.get(name)
+                    if prev_code is None:
+                        continue
+                    try:
+                        (root / name).write_text(prev_code, encoding="utf-8", newline="\n")
+                    except OSError:
+                        pass
+                    built[name] = prev_code
+                for r in round_repairs:
+                    if r["applied"]:
+                        r["applied"] = False
+                        r["reverted"] = "regressed a previously-passing check"
+                repairs.extend(round_repairs)
+                unmet = [n for n in all_names if n in pre_round_unmet]
+                break   # reject-and-stop: never build on a regressing round
+
+            repairs.extend(round_repairs)
+            unmet = new_unmet_list
+            if len(unmet) < len(best_unmet):
+                best_built, best_unmet = dict(built), list(unmet)
+            if len(unmet) >= len(pre_round_unmet):
+                break   # an accepted round that reduced no unmet checks -> stop (no infinite loop)
+    except Exception:
+        pass   # never raise -- fall through with whatever progress was made
+
+    # Final safety net: never return worse than the best-seen (non-regressing) state.
+    if len(unmet) > len(best_unmet):
+        built, unmet = best_built, best_unmet
+    return built, unmet, repairs
+# #EXT-036-REQ-5 End
+
+# #EXT-036-REQ-4 Start
+def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
+            repairs=None) -> dict:
     return {"modules": modules or {}, "shipped": shipped, "done": done,
-            "unmet": unmet or [], "plan": plan, "note": note}
+            "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or []}
 
 
 def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
@@ -344,7 +528,19 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
                         unmet=["no acceptance checklist derived"],
                         note="shipped, but no executable acceptance checklist could be derived")
     unmet = [c.get("name", "?") for c in checks if not _run_check(root, c)]
+    # #EXT-036-REQ-4 End
+    # #EXT-036-REQ-5 Start
+    # 5. SYSTEM-LEVEL REPAIR (REQ-5): drive shipped -> DONE from the acceptance-check
+    # feedback. Skipped entirely when already done (non-degrading, no wasted calls).
+    repairs: list[dict] = []
+    if unmet:
+        built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm)
+    # #EXT-036-REQ-5 End
+    # #EXT-036-REQ-4 Start
     done = not unmet
     note = "DONE (all acceptance checks pass)" if done else "NOT DONE — unmet: " + ", ".join(unmet)
-    return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note)
+    if repairs:
+        rounds = len({r["round"] for r in repairs})
+        note += f" (after {rounds} repair round(s))"
+    return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note, repairs=repairs)
 # #EXT-036-REQ-4 End

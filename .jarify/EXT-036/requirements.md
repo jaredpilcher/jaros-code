@@ -84,15 +84,35 @@ SEMANTIC (not structural) coherence gets tested: do the thin plans yield modules
   plan fixed the CLI interface (argv[1]=csv path) so a concrete acceptance could be written; medium/complex need the
   planner to EMIT a runnable acceptance matching the built interface, else validation is manual.
 
-### [REQ-5] Cross-level repair + scale  (FUTURE — discover as we build)
+### [REQ-5] Cross-level repair + scale  (PARTIAL — module-body-level repair DONE, TASK-5)
 
 When end-to-end fails, route the failure to the right level (re-plan vs re-interface vs re-implement vs
 re-integrate) and repair there. Then push scale (H) past 4 modules. Requirements here will be discovered by
 building REQ-1..4 and recording what breaks.
 
 #### Acceptance Criteria
-- [ ] (to be discovered) failure-level classifier + level-targeted repair
-- [ ] (to be discovered) scale past ~4 modules with sustained end-to-end pass
+- [x] MODULE-BODY-level repair driven by acceptance-check feedback — **DONE 2026-07-03, CORRECTED
+  2026-07-03** (`harness/system_builder.py::build_system`'s bounded system-level repair loop, TASK-5):
+  when the derived acceptance checklist has unmet checks, each failing check's code + run error + the
+  CURRENT module sources are fed to the model for a TARGETED fix (which module + its corrected complete
+  content); the fix is syntax-gated (reusing `syntax_ok`/the syntax-repair prompt), applied, and the
+  FULL checklist re-run, bounded to `max_repair=2` rounds. Honest (Tenet 3): `done` still requires the
+  full checklist to pass; an already-done build skips repair (0 rounds). CORRECTION (architect review
+  caught a Tenet-3 defect, not committed): "non-degrading" was documented but NOT enforced — the guard
+  compared unmet COUNT only, so a targeted fix for one check could silently SWAP in a regression on a
+  different, previously-passing check (same count, different set) and that regression would ship
+  unrolled-back. FIXED: each round now snapshots pre-round module sources + the unmet SET; if any
+  check that passed before the round now fails (a set-based regression), the round's module write(s)
+  are REVERTED to their pre-round content and the loop stops, rejecting that round — best-seen
+  `(built, unmet)` is tracked and returned, so repair now REALLY only improves or leaves `unmet`
+  unchanged, never regresses a previously-passing check. Proven OFFLINE
+  (`tests/test_ext036_system_repair.py`, canned llm incl. a dedicated swap-regression case, no live
+  model). CAVEAT: this always targets a module BODY — it is not yet a general failure-LEVEL classifier
+  that can instead route a failure to re-plan / re-interface / re-integrate; that broader classifier
+  remains open (below).
+- [ ] A failure-LEVEL classifier that routes a failure to re-plan vs re-interface vs re-implement vs
+  re-integrate (not just always module-body repair) — open
+- [ ] (to be discovered) scale past ~4 modules with sustained end-to-end pass — open
 
 ---
 

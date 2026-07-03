@@ -1,74 +1,58 @@
 {
-  "REQ-17": [
+  "REQ-1": [
     {
-      "file": "harness/cli.py",
-      "startLine": 71,
-      "endLine": 75
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 133,
-      "endLine": 139
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 696,
-      "endLine": 700
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 802,
-      "endLine": 804
-    },
-    {
-      "file": "harness/project_md.py",
-      "startLine": 10,
-      "endLine": 32
+      "file": "harness/system_builder.py",
+      "startLine": 55,
+      "endLine": 157
     }
   ],
-  "REQ-16": [
+  "REQ-3": [
     {
-      "file": "harness/cli.py",
-      "startLine": 76,
-      "endLine": 80
+      "file": "harness/system_builder.py",
+      "startLine": 160,
+      "endLine": 225
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 228,
+      "endLine": 291
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 456,
+      "endLine": 531
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 539,
+      "endLine": 546
     },
     {
       "file": "harness/cli.py",
-      "startLine": 140,
-      "endLine": 146
+      "startLine": 400,
+      "endLine": 422
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 292,
+      "endLine": 454
     },
     {
-      "file": "harness/cli.py",
-      "startLine": 457,
-      "endLine": 461
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 470,
-      "endLine": 475
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 664,
-      "endLine": 679
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 697,
-      "endLine": 699
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 798,
-      "endLine": 800
-    },
-    {
-      "file": "harness/repo_memory.py",
-      "startLine": 17,
-      "endLine": 109
+      "file": "harness/system_builder.py",
+      "startLine": 532,
+      "endLine": 538
     }
   ],
   "REQ-12": [
+    {
+      "file": "harness/session.py",
+      "startLine": 10,
+      "endLine": 87
+    },
     {
       "file": "harness/cli.py",
       "startLine": 61,
@@ -108,37 +92,75 @@
       "file": "harness/cli.py",
       "startLine": 881,
       "endLine": 886
-    },
-    {
-      "file": "harness/session.py",
-      "startLine": 10,
-      "endLine": 87
     }
   ],
-  "REQ-4": [
+  "REQ-16": [
+    {
+      "file": "harness/repo_memory.py",
+      "startLine": 17,
+      "endLine": 109
+    },
     {
       "file": "harness/cli.py",
-      "startLine": 400,
-      "endLine": 422
+      "startLine": 76,
+      "endLine": 80
     },
     {
-      "file": "harness/system_builder.py",
-      "startLine": 210,
-      "endLine": 350
+      "file": "harness/cli.py",
+      "startLine": 140,
+      "endLine": 146
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 457,
+      "endLine": 461
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 470,
+      "endLine": 475
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 664,
+      "endLine": 679
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 697,
+      "endLine": 699
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 798,
+      "endLine": 800
     }
   ],
-  "REQ-1": [
+  "REQ-17": [
     {
-      "file": "harness/system_builder.py",
-      "startLine": 37,
+      "file": "harness/project_md.py",
+      "startLine": 10,
+      "endLine": 32
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 71,
+      "endLine": 75
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 133,
       "endLine": 139
-    }
-  ],
-  "REQ-3": [
+    },
     {
-      "file": "harness/system_builder.py",
-      "startLine": 142,
-      "endLine": 207
+      "file": "harness/cli.py",
+      "startLine": 696,
+      "endLine": 700
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 802,
+      "endLine": 804
     }
   ]
 }
