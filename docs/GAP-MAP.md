@@ -62,6 +62,17 @@ lever, NOT roster grinding — no decorrelation to harvest): (i) grow the daily-
 the models + wire a real model answer_fn so answer-tasks are exercised (feeds #51 + #44), (ii) the model-split evidence
 must come from a harder bar since every current class saturates or is single-model-dominated.
 
+### ROUTER VERIFIED CORRECT (2026-07-02) — closes the "should we rewire routing?" question
+
+DIAGNOSE (read-only, live tally): the deterministic tally-argmax already routes `standalone-fn-gen → qwen2.5-coder-3b`
+(matches the measured 36>32 win), `hard-multi-step-repo → qwen3-4b-thinking` (specialist), and `single-file-repair →
+gemma` (a genuine TIE — both 10/10 on daily-driver fix; the tally is accuracy-only so the tie breaks to the heritage
+default). So the router already sends the class qwen WINS to qwen — there is NO wasted-dominance bug, nothing to rewire.
+The only uncaptured signal is qwen's ~18% latency edge on the fix tie (tally has no latency term) — a marginal,
+judgment-call optimization (route fix→qwen for speed) that trades against keeping-qwen-served/swap cost, NOT a defect.
+CONCLUSION: the roster-value arc is fully closed and the routing is correct as-is. This ENDS the measurement axis —
+switch to a capability/instrument axis (anti-rut).
+
 ### EFFICIENCY TRIPLE MEASURED (2026-07-02, scoreboard #4) — the roster's last hypothesis FAILS too
 
 Measured qwen per-task daily-driver latency (`dd_latency_qwen.sh`, restore-safe; gemma from `dd_latency.out`).
