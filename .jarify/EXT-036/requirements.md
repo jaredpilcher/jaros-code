@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -415,3 +415,60 @@ loop does at the meta level — exposed as a first-class user capability.
   "...sys.exit(N)"` run_cmds): define/list/run round-trip + per-repo isolation, a passing run_cmd records
   exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
   timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
+
+### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14, 2026-07-03)
+
+To honestly know whether jaros-code is *"really really good at building complex systems from a sentence"* we need a
+broad, DIVERSE, HELD-OUT benchmark of CREATION tasks spanning many classes × difficulty tiers — not the three sentences
+(jobqueue/kvstore/pipeline) that happened to be probed. Each task is one sentence + an AUTOMATED executable-acceptance
+check, never tuned-on (Tenet 3), so the score reflects GENUINE generic capability. This is THE scoreboard for the
+sentence→system frontier: ship-rate + done-rate per class × tier, measured gemma-alone vs the escalating system
+(REQ-13). Grow the suite relentlessly.
+
+#### Acceptance Criteria
+- [ ] A held-out task set covering many CREATION classes (e.g. CLI tool, REST/HTTP service, ETL/data pipeline, job
+  queue, state machine, parser/DSL, cache+eviction, scheduler, pub-sub/event system, plugin system, rate-limiter,
+  auth/permission, workflow engine, simulation/game-loop) across difficulty tiers (easy 1-module → medium 2-3 → hard
+  4-6 interdependent → highly-complex many-module + cross-cutting) — PARTIAL: first slice (TASK-14) covers 6 classes
+  (aggregator/text CLI, todo-list, unit-converter, kv-store+TTL, priority job-queue) across easy/medium/hard; the
+  broader class list above (REST service, state machine, parser/DSL, scheduler, pub-sub, plugin system, auth,
+  workflow engine, simulation, highly-complex tier) remains open growth.
+- [x] Each task = one sentence + a deterministic, automated executable-acceptance check (done / not-done), stored so it
+  is never leaked into the solving prompt (held-out; Tenet 3) — **DONE 2026-07-03** (`harness/system_suite.py`,
+  TASK-14): each `CreationTask`'s `checks` are BLACK-BOX CLI checks (`(argv, stdin, expected_substring)`, run as a
+  real subprocess against the build's declared entrypoint) or a `callable(root, plan)->bool`; the oracle is
+  INDEPENDENT of the system under test (never the model's own self-derived acceptance checklist from
+  `system_builder._derive_acceptance_checklist`) and only `task.sentence` is ever passed to `build_fn` — the checks
+  themselves are never part of the solving prompt.
+- [x] A runner that reports ship-rate + done-rate per class × tier, for gemma-alone AND the escalating system, honestly
+  — **PARTIAL/DONE (mechanism) 2026-07-03** (`harness/system_suite.py::run_creation_suite`, TASK-14): drives any
+  `build_fn` matching `build_system`'s signature (so it composes with `build_system` OR
+  `build_system_escalating` unmodified) and reports `{results: [...], aggregate: {overall, by_tier}}` with honest
+  ship-rate/done-rate/accept-rate; never raises (a per-task build/exec failure records `accepted=False` and the
+  suite continues). CAVEAT: this task builds+proves the runner OFFLINE only — an actual LIVE run measuring
+  gemma-alone vs. `build_system_escalating` against this suite has not been executed here; that live measurement
+  is an explicit follow-up.
+- [x] Starts with a first concrete slice (~5–8 classes across tiers) and is designed to grow — **DONE 2026-07-03**
+  (`harness/system_suite.py::FIRST_SLICE`, TASK-14): 6 tasks (2 easy / 2 medium / 2 hard) across 6 classes, each a
+  self-contained sentence + concrete deterministic checks (no wall-clock-dependent checks — e.g. the kv-store's TTL
+  expiry uses a `ttl=0` immediate-expiry case rather than a timed sleep). `CreationTask`/`run_creation_suite`
+  accept an arbitrary `tasks` list, so growing the slice is additive. Proven OFFLINE
+  (`tests/test_ext036_suite.py`, no live model): aggregation correctness, a passing stub → accepted, a
+  broken/missing-entrypoint stub → not accepted without raising, a raising `build_fn` → that task recorded
+  not-accepted and the suite continues, the callable-check path, and the first-slice registry's shape (6 tasks,
+  valid tiers/classes, unique names, at least one deterministic check each).
+
+### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (GAP, owner 2026-07-03)
+
+The harder, more realistic parity target: modify an EXISTING working complex system from a one-sentence change (most
+real dev is editing, not greenfield). For each (or a subset of) the CREATION-suite systems, a matching MODIFICATION
+task: start from a built system, apply a one-sentence change, verify via regression-gated automated acceptance (the new
+behavior holds AND nothing previously-working regressed). Reuses `modify_system` (REQ-14).
+
+#### Acceptance Criteria
+- [ ] A held-out set of MODIFICATION tasks covering many change classes (add a feature, change a behavior, add a
+  constraint/validation, add a new backend/adapter, extend an interface, add error handling, add a pipeline stage, swap
+  an algorithm, add caching, add a CLI subcommand) across difficulty
+- [ ] Each task = an existing working system + one sentence + an automated done-ness check AND a no-regression check
+  (Tenet 3, held-out)
+- [ ] A runner reports per-class modify-success rate + no-regression rate, gemma-alone vs escalating, honestly

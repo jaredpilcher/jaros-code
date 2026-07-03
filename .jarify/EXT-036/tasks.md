@@ -336,3 +336,42 @@ CLI/Jetson wiring (via `collaborative_solve._http_swap`) is an explicit OUT-OF-S
 #### Implements
 - [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation (offline
   escalation core toward the hard tier; live wiring + the difficulty-spectrum sweep remain open)
+
+### [TASK-14] Creation-suite framework + first slice (REQ-20)
+
+REQ-20 needs a broad, DIVERSE, HELD-OUT benchmark of sentence->system CREATION tasks with an
+INDEPENDENT oracle (Tenet 3 — the acceptance check must NOT be the model's own self-derived
+checklist, and must NEVER be leaked into the solving prompt). Build the framework + a first
+concrete slice, BLACK-BOX: each task's sentence specifies a CLI contract, and acceptance runs the
+built system's entrypoint as a subprocess with given args/stdin and asserts on stdout/exit-code —
+independent of module/function names the model chooses (API-agnostic).
+
+#### Steps
+1. New `harness/system_suite.py`: a `CreationTask` dataclass (`name, cls, tier ("easy"|"medium"|
+   "hard"), sentence, checks`), where `checks` is a list of either `(argv, stdin, expected_substring)`
+   black-box CLI checks or a `callable(root, plan) -> bool` for cases the black-box CLI contract
+   doesn't fit. Deterministic, no model involved in this module.
+2. `run_creation_suite(build_fn, tasks=None, python_exe=None) -> dict`: for each task, call
+   `build_fn(task.sentence, root)` (same signature as `harness.system_builder.build_system`) in an
+   isolated temp root, then run each check as a GUARDED subprocess (`python <root>/<entrypoint>
+   <argv...>` fed `stdin`, timeout + tree-safe kill, mirroring `harness/multi_file.py::_run`'s
+   pattern) and assert the expected substring appears in stdout. Record per-task
+   `{name, cls, tier, shipped, done, accepted, n_checks_passed}`. NEVER raise per task — a
+   build/exec failure records `accepted=False` and the suite continues to the next task. Return
+   `{results: [...], aggregate: {overall: {...}, by_tier: {...}}}` (ship-rate/done-rate/accept-rate).
+3. Define a FIRST SLICE of 6 `CreationTask`s (2 easy, 2 medium, 2 hard) across distinct classes
+   (aggregator/text CLI, todo-list, unit-converter, kv-store with TTL, priority job-queue), each
+   with a precisely-specified CLI contract in the sentence and concrete deterministic checks (no
+   real-time sleeps — e.g. TTL-expiry uses a `ttl=0` immediate-expiry case, not a timed wait).
+4. Tests `tests/test_ext036_suite.py` (OFFLINE — no model, no network): a stub `build_fn` writes a
+   known-correct tiny CLI system for one task and a deliberately-broken/missing-entrypoint one for
+   another; assert (a) aggregation (accept-rate, per-tier breakdown) is correct; (b) a passing stub
+   → `accepted=True`; (c) a broken/missing-entrypoint stub → `accepted=False`, no raise; (d) a
+   `build_fn` that raises for one task → that task records `accepted=False`, suite continues; (e)
+   the first-slice `CreationTask` registry has the expected tasks with valid tiers/classes. Full
+   `tests/` stays green.
+
+#### Implements
+- [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
+  classes (framework + first slice; live gemma-vs-escalating measurement and growing class
+  coverage remain open follow-ups)
