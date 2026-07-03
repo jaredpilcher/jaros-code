@@ -270,3 +270,28 @@ to ~30 facts, but real long transcripts exceed the window — this is the guard 
 
 #### Implements
 - [REQ-15] Short-term memory management + condensation
+
+### [TASK-12] Ask-the-user when ambiguous (REQ-8) — additive, safe
+
+Complete REQ-12's interaction loop: when a plain-language request is genuinely AMBIGUOUS/under-determined, ASK a
+targeted clarifying question rather than guessing. Additive + safe: no regression risk (worst case = an occasional
+unneeded question in interactive mode); headless/one-shot falls back to a sensible default (never blocks).
+
+#### Steps
+1. `harness/ask_user.py` (or a helper): `detect_ambiguity(request, llm) -> str|None` — ONE narrow, CONSERVATIVE model
+   judgment returning a single clarifying question ONLY when the request is genuinely ambiguous (missing a critical
+   choice), else None. Grounded/degeneracy-guarded so it does NOT over-ask (default to None on any doubt — under-asking
+   is safer than annoying over-asking). Deterministic parse; None on model failure.
+2. `harness/cli.py`: in the interactive REPL path only, before routing a plain request, if `detect_ambiguity` returns a
+   question, PRINT it + read the user's answer via input(), then fold the answer into the request. In headless/one-shot
+   mode (`main()` arg path) or non-interactive, SKIP asking entirely (fall back to the default = proceed with the
+   request as-is). Slash commands never ask. Session records the Q+A turn.
+3. HONESTY: only ask on GENUINE ambiguity (conservative); never fabricate a question to seem helpful; headless never
+   blocks waiting for input.
+4. Tests (`tests/test_ext036_ask.py`, OFFLINE — canned llm + stubbed input): (a) `detect_ambiguity` returns the canned
+   question for an ambiguous request, None for a clear one, None on model failure; (b) interactive path asks + folds
+   the stubbed answer into the routed request; (c) headless/non-interactive path NEVER asks (falls back); (d) slash
+   commands never trigger a question. Full `tests/` stays green.
+
+#### Implements
+- [REQ-8] Ask-the-user when needed — clarify ambiguity (interactive; headless falls back)

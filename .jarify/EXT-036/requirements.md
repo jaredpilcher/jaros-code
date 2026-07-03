@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -175,14 +175,35 @@ ship-gate + executable acceptance, but at the SPEC level (did we build what was 
 - [x] Validate each against the built system; report DONE only if all pass, else list unmet items — DONE (reports
   "DONE (all pass)" or "NOT DONE — unmet: <list>"). Same Tenet-3 caveat as REQ-2 (model-written checks; add independence).
 
-### [REQ-8] Ask-the-user when needed — clarify ambiguity  (GAP, cross-cutting)
+### [REQ-8] Ask-the-user when needed — clarify ambiguity  (DONE — EXT-036 TASK-12, 2026-07-03)
 
 When the spec is ambiguous or under-determined, ASK the user a targeted question rather than guessing (Claude
 Code's AskUserQuestion). Requires a judgment (is this genuinely ambiguous?) + an interaction channel.
 
 #### Acceptance Criteria
-- [ ] A grounded judgment that detects genuine ambiguity (not asking when a sensible default exists)
-- [ ] An interaction channel to surface the question + consume the answer into the plan
+- [x] A grounded judgment that detects genuine ambiguity (not asking when a sensible default exists) — **DONE
+  2026-07-03** (`harness/ask_user.py::detect_ambiguity(request, llm=None)`): ONE narrow, CONSERVATIVE model
+  judgment that emits a single clarifying question ONLY when the request is genuinely ambiguous, else the literal
+  token `NONE`. Deterministic parse (`_parse`): defaults to `None` on an empty request, a missing/failing model
+  (any exception), degenerate model output (`NONE`/`N/A`/`NA`/`NO`/empty text), or text that isn't shaped like a
+  real question (must end in `?` and be long enough) — under-asking is safer than over-asking (Tenet 3: never
+  fabricate a question to seem helpful).
+- [x] An interaction channel to surface the question + consume the answer into the plan — **DONE 2026-07-03**
+  (`harness/cli.py::JcodeCli._maybe_ask` + `handle(line, *, interactive=False)`): in the INTERACTIVE REPL path
+  only (`repl()` calls `cli.handle(line, interactive=True)`), before routing a plain request, `detect_ambiguity`
+  is checked; if it returns a question, `_maybe_ask` prints it, reads the answer via `input()`, records the Q+A
+  as session turns (best-effort), and folds the answer into the request
+  (`"{request}\n\nClarification: {answer}"`) that every downstream routing path (structured agent / deterministic
+  intent fast-path / orchestrator) then sees. Headless/one-shot callers (`main()`'s argument path) and `handle()`'s
+  default (`interactive=False`) skip the check entirely — never blocks waiting on input(). Slash commands never
+  reach this check (it only runs on the non-slash branch of `handle()`). Proven OFFLINE
+  (`tests/test_ext036_ask.py`, canned llm + monkeypatched `input()`, no live model, no network):
+  `detect_ambiguity` returns the canned question for an ambiguous request and `None` for a clear request / on
+  model failure / on empty or degenerate output; the interactive path asks, folds the stubbed answer into the
+  routed request, and records both turns in the session, and never raises on an interrupted/empty answer; the
+  headless path (default and explicit `interactive=False`) never calls `input()` and never augments the request;
+  slash-command dispatch (`handle("/help", interactive=True)` and `dispatch("/status")`) never triggers a
+  question.
 
 ### [REQ-9] Web research when needed  (GAP, cross-cutting — OWNER-AUTHORIZED 2026-07-03)
 

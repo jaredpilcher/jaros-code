@@ -53,6 +53,7 @@ Commands (Claude-Code-style):
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
+  (interactive mode) genuinely ambiguous plain requests get ONE clarifying question first (REQ-8)
   /clear  /quit
 """
 
@@ -798,6 +799,37 @@ class JcodeCli:
         return "experiments:" + "".join("\n" + line for line in lines)
     # #EXT-036-REQ-19 End
 
+    # #EXT-036-REQ-8 Start
+    def _maybe_ask(self, request: str) -> str:
+        """Interactive-only ambiguity check (REQ-8, Claude Code's AskUserQuestion analog):
+        if `detect_ambiguity` judges `request` genuinely ambiguous, PRINT its question, read
+        the user's answer via input(), record the Q+A as session turns (best-effort), and
+        fold the answer into the returned request (routing sees the augmented text). Any
+        doubt (no question, no/empty answer, an interrupt) -> `request` returned unchanged
+        -- conservative, never blocks headless callers (this is only ever invoked from the
+        interactive REPL path, see handle())."""
+        try:
+            from harness.ask_user import detect_ambiguity
+            question = detect_ambiguity(request, llm=self.llm)
+        except Exception:
+            question = None
+        if not question:
+            return request
+        print(f"\033[33m?\033[0m {question}")
+        try:
+            answer = input("\033[36m  > \033[0m").strip()
+        except (EOFError, KeyboardInterrupt):
+            return request
+        if not answer:
+            return request
+        try:
+            self.session.append("assistant", question)
+            self.session.append("user", answer)
+        except Exception:
+            pass
+        return f"{request}\n\nClarification: {answer}"
+    # #EXT-036-REQ-8 End
+
     # #EXT-036-REQ-16 Start
     def _recall_memory(self, request: str) -> list[str]:
         """Memory-AGENT recall (REQ-16): ask the narrow memory-selection judgment which of
@@ -906,7 +938,7 @@ class JcodeCli:
             return ("map", "")
         return None
 
-    def handle(self, line: str) -> str:
+    def handle(self, line: str, *, interactive: bool = False) -> str:
         """Top-level: slash commands run directly; plain language is ROUTED — first a
         deterministic intent fast-path (refactor/nav phrasings), then the orchestrator agent.
 
@@ -915,45 +947,60 @@ class JcodeCli:
         NL-fix branch) additionally sees a BOUNDED recent transcript as context, so it stays
         conversation-aware, plus a memory-agent-selected ``RELEVANT MEMORY:`` block (REQ-16)
         when the per-repo fact store has something relevant; slash-command dispatch is
-        unchanged — still direct/stateless."""
+        unchanged — still direct/stateless.
+
+        ``interactive`` (EXT-036 REQ-8) gates the ask-the-user check: ONLY the interactive
+        REPL (``repl()``) passes ``interactive=True``. Headless/one-shot callers (``main()``'s
+        argument path, and the default here) never ask -- they proceed with the request
+        as-is, so a headless run can never block waiting on input()."""
         line = line.strip()
         if not line:
             return ""
         if line.startswith("/"):
             out = self.dispatch(line)
-        elif self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
-            # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
-            out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
         else:
-            intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
-            if intent:
-                action, arg = intent
-                out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
+            # #EXT-036-REQ-8 Start
+            # Interactive-only: check + resolve genuine ambiguity BEFORE any routing below,
+            # folding the user's answer into `line` so every routing path downstream (the
+            # structured agent, the deterministic intent fast-path, and the orchestrator)
+            # sees the clarified request. Headless/non-interactive callers (the default)
+            # skip this entirely -- never blocks on input().
+            if interactive:
+                line = self._maybe_ask(line)
+            # #EXT-036-REQ-8 End
+            if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
+                # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
+                out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
             else:
-                # #EXT-036-REQ-12 Start
-                # #EXT-036-REQ-15 Start
-                # condense() is the raw recent() slice (byte-identical) for under-budget
-                # sessions, and a [summary] + recent-turns view once the transcript grows
-                # past the budget (REQ-15) — the router always gets ONE consistent shape.
-                from harness.session import condense
-                history = condense(self.session, llm=self.llm)
-                # #EXT-036-REQ-15 End
-                # #EXT-036-REQ-16 Start
-                memory = self._recall_memory(line)
-                # #EXT-036-REQ-16 End
-                orch = self._load_agent("orchestrator_agent.py", self.llm)
-                # #EXT-036-REQ-17 Start
-                augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory)
-                # #EXT-036-REQ-17 End
-                [d] = orch.decide({"request": augmented, "history": history})
-                action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
-                banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
-                if action == "fix":
-                    out = banner + "\n" + self._nl_fix(line, arg, history=history, memory=memory)
+                intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
+                if intent:
+                    action, arg = intent
+                    out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
                 else:
-                    handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
-                    out = banner + "\n" + handler(arg)
-                # #EXT-036-REQ-12 End
+                    # #EXT-036-REQ-12 Start
+                    # #EXT-036-REQ-15 Start
+                    # condense() is the raw recent() slice (byte-identical) for under-budget
+                    # sessions, and a [summary] + recent-turns view once the transcript grows
+                    # past the budget (REQ-15) — the router always gets ONE consistent shape.
+                    from harness.session import condense
+                    history = condense(self.session, llm=self.llm)
+                    # #EXT-036-REQ-15 End
+                    # #EXT-036-REQ-16 Start
+                    memory = self._recall_memory(line)
+                    # #EXT-036-REQ-16 End
+                    orch = self._load_agent("orchestrator_agent.py", self.llm)
+                    # #EXT-036-REQ-17 Start
+                    augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory)
+                    # #EXT-036-REQ-17 End
+                    [d] = orch.decide({"request": augmented, "history": history})
+                    action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
+                    banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
+                    if action == "fix":
+                        out = banner + "\n" + self._nl_fix(line, arg, history=history, memory=memory)
+                    else:
+                        handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
+                        out = banner + "\n" + handler(arg)
+                    # #EXT-036-REQ-12 End
         # #EXT-036-REQ-12 Start
         _record_turn(self, line, out)
         # #EXT-036-REQ-12 End
@@ -1003,7 +1050,9 @@ def repl(session_id: str | None = None) -> int:
             print("\033[2J\033[H", end="")
             continue
         try:
-            out = cli.handle(line)
+            # #EXT-036-REQ-8 Start
+            out = cli.handle(line, interactive=True)
+            # #EXT-036-REQ-8 End
         except Exception as exc:            # one bad command must NOT kill the interactive session
             out = f"\033[31merror:\033[0m {exc}"
         if out:
