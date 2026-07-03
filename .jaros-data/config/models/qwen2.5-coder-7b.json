@@ -1,0 +1,27 @@
+{
+  "_comment": "Qwen2.5-Coder-7B-Instruct profile. EXT-021 REQ-4/REQ-5. Admitted 2026-07-03 as a ROUTED complex-build specialist ONLY — narrow, measured marginal coverage (Tenet 3: honest, not a default). Follow-up (NOT this change): wire actual build_system routing to consult this class — needs separate build_system-routing analysis.",
+  "id": "qwen2.5-coder-7b",
+  "alias": "qwen2.5-coder-7b",
+  "serve": {
+    "_gguf_note": "Served on Jetson Orin Nano via llama-server. Path must match the operator's local layout. See scripts/jetson_models.json for the confirmed path used during the fit/head-to-head measurement.",
+    "gguf": "/home/jared/gemma-server/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+    "ctx": 4096,
+    "ngl": 99,
+    "fits_jetson": true,
+    "fit_note": "FIT-PROVEN 2026-07-03 at ctx=4096: 5.3GB used / 2.0GB free, no OOM, ~7 tok/s."
+  },
+  "classes": [
+    {
+      "name": "complex-system-build-specialist",
+      "bar": "Sentence-to-system BUILD (harness/system_builder.build_system) on the jobqueue complex-spec head-to-head: gemma-4-e2b ships 0/2 runs (impl fails the py_compile/build gate) vs Qwen2.5-Coder-7B ships 2/2 runs (reproducible positive decorrelation on this task).",
+      "score": "Totals across 3 matched complex BUILD sentences (jobqueue/kvstore/pipeline): gemma-4-e2b 2/3 shipped (1/3 fully done); Qwen2.5-Coder-7B 3/3 shipped (0/3 fully done).",
+      "date": "2026-07-03",
+      "caveat": "HONEST, NARROW: the marginal win is 1 of 3 sentences (jobqueue only — kvstore/pipeline both ship on either model); the 7B NEVER reaches done=True on any of the 3 (gemma reached done=True on 1); the 7B costs ~3x latency + ~2x RAM vs gemma. Admitted as a ROUTED SPECIALIST for the complex-build class where gemma's build gate fails — NOT a default, NOT a general capability upgrade. Requires re-measurement before any broader claim."
+    }
+  ],
+  "adaptation": {
+    "prompts": "qwen-instruct-direct",
+    "note": "Same direct instruct code-gen adaptation as qwen2.5-coder-3b (qwen-instruct-direct, no Gherkin scaffolding). Routed ONLY for the complex-system-build-specialist class above; actual build_system routing wiring is a separate follow-up task (needs build_system-routing analysis), NOT part of this admission change."
+  },
+  "status": "ADMITTED as a routed complex-build specialist — measured marginal coverage only (2026-07-03 jobqueue head-to-head). NOT a general/default model; classes[] holds exactly the one class earned by held-out evidence (Tenet 3, no invented classes)."
+}

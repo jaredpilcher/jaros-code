@@ -34,5 +34,13 @@
     "ctx": 16384,
     "ngl": 99,
     "extra_args": ["--threads", "4"]
+  },
+  "qwen2.5-coder-7b": {
+    "gguf": "/home/jared/gemma-server/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+    "alias": "qwen2.5-coder-7b",
+    "ctx": 4096,
+    "ngl": 99,
+    "extra_args": ["--threads", "4"],
+    "_note": "FIT-PROVEN 2026-07-03 at ctx=4096 (5.3GB used / 2.0GB free, no OOM, ~7 tok/s). Admitted as a ROUTED complex-build specialist (head-to-head vs gemma-4-e2b on 3 sentence->system BUILD tasks: jobqueue gemma 0/2 ships vs 7B 2/2 ships; totals 7B 3/3 vs gemma 2/3 shipped) — narrow marginal coverage, NOT a default. See .jaros-data/config/models/qwen2.5-coder-7b.json for the full evidence + honest caveats."
   }
 }

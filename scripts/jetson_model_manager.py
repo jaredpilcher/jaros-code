@@ -36,7 +36,12 @@ LOG_PATH = os.environ.get("JCODE_LLAMA_LOG", "/home/jared/gemma-server/llama-ser
 SERVE_PORT = int(os.environ.get("JCODE_SERVE_PORT", "8000"))
 CONTROL_PORT = int(os.environ.get("JCODE_CONTROL_PORT", "8001"))
 DEFAULT_MODEL = os.environ.get("JCODE_DEFAULT_MODEL", "gemma-4-e2b")
-READY_TIMEOUT_S = int(os.environ.get("JCODE_READY_TIMEOUT_S", "120"))
+# #EXT-021-REQ-4 Start
+# 300s (was 120s): a 7B load (e.g. qwen2.5-coder-7b) measurably exceeds 120s on the Jetson and left
+# `_current` desynced (the load was still in progress when the timeout fired and the manager gave up
+# tracking it) — measured 2026-07-03 admitting Qwen2.5-Coder-7B as a routed complex-build specialist.
+READY_TIMEOUT_S = int(os.environ.get("JCODE_READY_TIMEOUT_S", "300"))
+# #EXT-021-REQ-4 End
 # llama-server needs the CUDA runtime libs (libcudart.so.13) from the pip cu13 toolkit — the same
 # LD_LIBRARY_PATH the original serve.sh exported. Without it llama-server exits rc=127.
 LD_LIBRARY_PATH_EXTRA = os.environ.get(

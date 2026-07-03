@@ -101,3 +101,39 @@ like the core behavioral solve, so they are hash-chain logged and replayable.
 #### Implements
 - [REQ-2] Model-router judge (class → model Decision)
 - [REQ-3] Deterministic rewire to the selected model
+
+### [TASK-26] Admit Qwen2.5-Coder-7B as measured complex-build specialist
+
+Admit Qwen2.5-Coder-7B to the roster catalog + registry, honestly, with exactly the ONE class it
+has earned held-out evidence for. Owner greenlit "proceed with 7B if it fits" (it fits the Jetson at
+ctx=4096: 5.3GB used / 2.0GB free, no OOM, ~7 tok/s). A matched head-to-head of gemma-4-e2b vs
+Qwen2.5-Coder-7B on 3 complex sentence-to-system BUILD tasks (`harness/system_builder.build_system`,
+measured 2026-07-03) found: jobqueue — gemma ships 0/2 runs (fails the py_compile/build gate), 7B
+ships 2/2 runs (reproducible positive decorrelation); kvstore — both ship; pipeline — both ship
+(gemma reaches done=True, 7B done=False). Totals: gemma 2/3 shipped / 1 fully done; 7B 3/3 shipped /
+0 fully done — a real but NARROW marginal coverage win at ~3x latency + 2x RAM, never fully
+completing. This task ALSO fixes a real bug the measurement surfaced: the model-manager's
+`READY_TIMEOUT_S` default (120s) was too short for a 7B load and left `_current` desynced.
+
+**FOLLOW-UP, explicitly OUT of scope for this task:** wiring actual `build_system` routing to
+consult the new `complex-system-build-specialist` class (needs a separate build_system-routing
+analysis/task) — this task is admission + catalog + profile + the timeout bug fix only.
+
+#### Steps
+1. `scripts/jetson_model_manager.py`: raise the default `READY_TIMEOUT_S` from `"120"` to `"300"` —
+   a 7B load exceeds 120s and desyncs `_current` (real bug, measured 2026-07-03).
+2. `scripts/jetson_models.json`: add a `"qwen2.5-coder-7b"` catalog entry (gguf path, alias, ctx
+   4096, ngl 99, `extra_args: ["--threads","4"]`), with a `_note` recording the fit + admission
+   evidence, mirroring the existing entries' style.
+3. `.jaros-data/config/models/qwen2.5-coder-7b.json`: new `ModelProfile` mirroring
+   `qwen2.5-coder-3b.json` / `deepseek-r1-distill-qwen-7b.json` — `serve` (gguf, ctx 4096, ngl 99,
+   `fits_jetson: true`), `adaptation.prompts = "qwen-instruct-direct"`, `classes` holding EXACTLY
+   ONE earned class (`complex-system-build-specialist`) with the jobqueue head-to-head bar/score,
+   date 2026-07-03, and an explicit honest caveat (narrow — 1 of 3 sentences; 7B never reaches
+   done=True; ~3x latency + 2x RAM; routed specialist only, not a default). No invented classes
+   (Tenet 3).
+4. `docs/GAP-MAP.md`: record the measured admission (numbers + caveats) under the 7B roster-lever
+   section.
+
+#### Implements
+- [REQ-4] Per-model profiling / roster exploration loop

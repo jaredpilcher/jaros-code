@@ -183,6 +183,22 @@ expert to be genuinely stronger — our only local "expert" is the 4B reasoner (
 gain may not transfer without the 7B base first. Net: admit + measure the 7B coder BEFORE any collaboration/training
 work. Sources: arxiv.org/abs/2407.01489, arxiv.org/html/2602.22124v1.
 
+## 7B ADMITTED as a routed complex-build specialist — narrow, measured (2026-07-03, EXT-021)
+
+Owner greenlit "proceed with 7B if it fits" — it fits (ctx=4096: 5.3GB used / 2.0GB free, no OOM, ~7 tok/s).
+Matched head-to-head, gemma-4-e2b vs Qwen2.5-Coder-7B, on 3 complex sentence→system BUILD tasks
+(`harness/system_builder.build_system`): **jobqueue — gemma ships 0/2 runs (fails the py_compile/build gate), 7B
+ships 2/2 runs (reproducible positive decorrelation)**; kvstore — both ship; pipeline — both ship (gemma reaches
+done=True, 7B done=False). **Totals: gemma 2/3 shipped / 1 fully done; 7B 3/3 shipped / 0 fully done.** So the 7B
+gives REAL but NARROW marginal coverage (ships a complex system gemma's build gate can't) at ~3x latency + 2x RAM,
+never fully-completing. Admitted to the roster catalog + registry as a ROUTED SPECIALIST for the
+`complex-system-build-specialist` class ONLY (`.jaros-data/config/models/qwen2.5-coder-7b.json`,
+`scripts/jetson_models.json`) — honestly NOT a default (Tenet 3: exactly one earned class, caveats recorded in the
+profile). Also fixed a real bug this measurement surfaced: `scripts/jetson_model_manager.py`'s `READY_TIMEOUT_S`
+default (120s) was too short for a 7B load and left `_current` desynced — raised to 300s. FOLLOW-UP (not done here,
+scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
+analysis) — this change is admission + catalog + profile + the timeout fix only.
+
 ## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
 
 **External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
