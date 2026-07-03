@@ -215,6 +215,13 @@ contract-precise sentences → real numbers; a dishonest LOW rejected, Tenet 3).
 run the MODIFICATION suite live (gemma + 7B) for the first edit-from-a-sentence number. Per-task JSON in
 `.jaros-data/creation_suite_{results,gemma}.json`.
 
+**★ HEADLINE NUMBER = the ROUTED/ESCALATING SYSTEM, not gemma-alone (2026-07-03, owner steer "use the whole harness with routing"):**
+Measured the ACTUAL escalating harness (`build_system_escalating`: gemma default → escalate to 7B on ship-failure → restore gemma)
+live on the full **12-task** creation suite: **gemma-alone 3/12 (25%) → ESCALATING SYSTEM 7/12 (58%)** — a near-2× lift (the 7B
+rescued wordcount/todo-list/reverse-lines/pubsub). This is the honest PRIME-001 scoreboard-#3 figure — REPORT 58% (system), not 25%
+(gemma default). Residual 5/12 = genuine reasoning gaps (neither model). Follow-up: escalation triggers on SHIP-failure not
+ACCEPT-failure (kv-store-ttl shipped-but-wrong wasn't escalated — a rescue left on the table). Runner `.jaros-data/run_creation_suite_system.py`.
+
 **MODIFICATION suite first number → CREATE-vs-EDIT ASYMMETRY (2026-07-03):** ran the modification suite (5 tasks,
 regression-gated, same oracle) live: **gemma accepts 5/5 (100%)** — every edit applied + new behavior + no regression;
 VERIFIED real (a no-op modify_fn scores 0.0 — the gate genuinely requires the added behavior). So the honest picture:
