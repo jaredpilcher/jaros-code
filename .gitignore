@@ -13,6 +13,7 @@
 .jaros-data/status.json
 .jaros-data/*.log
 .jaros-data/daemon.log
+.jaros-data/sessions/
 
 # Real benchmark datasets (large / separately licensed — fetched, not vendored)
 evals/benchmarks/

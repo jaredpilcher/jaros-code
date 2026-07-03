@@ -1,9 +1,9 @@
 ---
 id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
-status: uncovered
+status: partial
 priority: high
-implementation: []
+implementation: ["harness/session.py", "harness/cli.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at

@@ -40,6 +40,9 @@ Commands (Claude-Code-style):
   /memory                       show the project memory
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
+  /new                          start a fresh conversational session (EXT-036)
+  /resume <id>                  resume a prior session by id (also: --resume <id> on the command line)
+  /sessions                     list recent saved sessions
   /clear  /quit
 """
 
@@ -53,10 +56,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# #EXT-036-REQ-12 Start
+def _augment_with_history(text: str, history: "list[dict] | None") -> str:
+    """Fold a BOUNDED recent transcript into `text` as conversation context (REQ-12).
+    Empty/no history leaves `text` byte-identical — a fresh session or one-shot call
+    (no prior turn to carry) behaves exactly like the old stateless routing."""
+    if not history:
+        return text
+    convo = "\n".join(f"{h.get('role', 'user')}: {h.get('text', '')}" for h in history)
+    return f"(recent conversation)\n{convo}\n\n(current request) {text}"
+
+
+def _record_turn(cli, user_text: str, assistant_text: str) -> None:
+    """Append the turn to the active session + persist it (best-effort — a missing/broken
+    session or a save failure must NEVER crash handle(), REQ-12)."""
+    try:
+        session = cli.session
+        session.append("user", user_text)
+        session.append("assistant", assistant_text)
+    except Exception:
+        return
+    try:
+        from harness.session import save_session
+        save_session(session)
+    except Exception:
+        pass
+# #EXT-036-REQ-12 End
+
+
 class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
-    def __init__(self) -> None:
+    def __init__(self, session_id: str | None = None) -> None:
         # #EXT-014-REQ-1 Start
         # Primary default is llama.cpp + Gemma 4 2B (e2b) via JCODE_LLM_BACKEND="llamacpp".
         # Legacy Ollama path (gemma2:2b) only activates when JCODE_LLM_BACKEND=ollama explicitly.
@@ -73,6 +104,13 @@ class JcodeCli:
         # Report the model that is ACTUALLY serving inference (Tenet 3 — honest).
         self.model = _active_model_label()
         # #EXT-014-REQ-1 End
+        # #EXT-036-REQ-12 Start
+        # Conversational session (REQ-12 backbone): resume a prior transcript when a
+        # session_id is given and found; otherwise start fresh (keeping the requested
+        # id, if any, so a later /resume of that same id finds it once persisted).
+        from harness.session import Session, load_session
+        self.session = (load_session(session_id) if session_id else None) or Session(id=session_id)
+        # #EXT-036-REQ-12 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -515,21 +553,62 @@ class JcodeCli:
                 out.append(f"  {i}. read -> " + (self.cmd_read(m.group(0))[:120] if m else "(no file named)"))
         return "\n".join(out)
 
-    def _nl_fix(self, request: str, arg: str) -> str:
+    # #EXT-036-REQ-12 Start
+    def cmd_new(self, _arg: str) -> str:
+        """Start a fresh conversational session (REQ-12): the in-memory transcript is
+        discarded; anything already persisted for the old session stays on disk (findable
+        later via /resume). Deterministic state reset — no model involved."""
+        from harness.session import Session
+        old_id = self.session.id
+        self.session = Session()
+        return f"started a new session {self.session.id} (previous: {old_id})"
+
+    def cmd_resume(self, arg: str) -> str:
+        """Resume a prior session by id (REQ-12): loads its transcript from
+        .jaros-data/sessions/<id>.json and continues it — the bounded recent-transcript
+        context (used by plain-language routing) now includes those prior turns."""
+        sid = arg.strip()
+        if not sid:
+            return "usage: /resume <session-id>   (see /sessions for recent ids)"
+        from harness.session import load_session
+        s = load_session(sid)
+        if s is None:
+            return f"no saved session found for id {sid!r}"
+        self.session = s
+        return f"resumed session {sid} ({len(s.turns)} turn(s))"
+
+    def cmd_sessions(self, _arg: str) -> str:
+        """List recently saved sessions (id + turn count), newest first (REQ-12)."""
+        from harness.session import list_sessions
+        rows = list_sessions(limit=10)
+        if not rows:
+            return "(no saved sessions yet)"
+        return "recent sessions:" + "".join(f"\n  {r['id']}  ({r['turns']} turn(s))" for r in rows)
+    # #EXT-036-REQ-12 End
+
+    def _nl_fix(self, request: str, arg: str, history: "list[dict] | None" = None) -> str:
         """Natural-language fix. If the request names a specific file, fix that file; if it
         names NONE (e.g. 'fix the failing tests'), fall back to the multi-file fixer, which
         LOCATES the faulty file(s) across the repo. The branch is a deterministic file-token
-        check — no fragile single-vs-repo judgement by the model."""
+        check — no fragile single-vs-repo judgement by the model.
+
+        ``history`` (EXT-036 REQ-12) is a BOUNDED recent transcript folded into the
+        instruction text so a follow-up like "now add error handling to that" resolves
+        against the prior turn; it does NOT change the file-detection regex above, and is a
+        no-op (byte-identical instruction) when there is no prior history."""
         m = re.search(r"[\w./\\-]+\.\w+", arg) or re.search(r"[\w./\\-]+\.\w+", request)
+        # #EXT-036-REQ-12 Start
+        instruction = _augment_with_history(request, history)
+        # #EXT-036-REQ-12 End
         if not m:   # no file named -> locate it across the repo
             import os
             from harness.multi_file import multi_file_fix
             test_file = next((f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
-            r = multi_file_fix(".", "python -m pytest -q", request, test_file, max_iters=3, verbose=True)
+            r = multi_file_fix(".", "python -m pytest -q", instruction, test_file, max_iters=3, verbose=True)
             where = f" (fixed {', '.join(r['fixed'])})" if r.get("fixed") else ""
             return f"{'solved' if r['solved'] else 'not solved'}{where} — multi-file"
         from harness.coding_loop import fix_loop
-        res = fix_loop(m.group(0), request, "python -m pytest -q", max_iters=3, verbose=True)
+        res = fix_loop(m.group(0), instruction, "python -m pytest -q", max_iters=3, verbose=True)
         return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
 
     _ACTION_VERBS = {"fix", "find", "implement", "add", "create", "run",
@@ -593,27 +672,42 @@ class JcodeCli:
 
     def handle(self, line: str) -> str:
         """Top-level: slash commands run directly; plain language is ROUTED — first a
-        deterministic intent fast-path (refactor/nav phrasings), then the orchestrator agent."""
+        deterministic intent fast-path (refactor/nav phrasings), then the orchestrator agent.
+
+        EXT-036 REQ-12: every turn (slash or plain) is appended to the session transcript
+        and persisted (best-effort). Plain-language routing (the orchestrator path and its
+        NL-fix branch) additionally sees a BOUNDED recent transcript as context, so it stays
+        conversation-aware; slash-command dispatch is unchanged — still direct/stateless."""
         line = line.strip()
         if not line:
             return ""
         if line.startswith("/"):
-            return self.dispatch(line)
-        if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
+            out = self.dispatch(line)
+        elif self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
             # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
-            return "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
-        intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
-        if intent:
-            action, arg = intent
-            return f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
-        orch = self._load_agent("orchestrator_agent.py", self.llm)
-        [d] = orch.decide({"request": line})
-        action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
-        banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
-        if action == "fix":
-            return banner + "\n" + self._nl_fix(line, arg)
-        handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
-        return banner + "\n" + handler(arg)
+            out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
+        else:
+            intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
+            if intent:
+                action, arg = intent
+                out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
+            else:
+                # #EXT-036-REQ-12 Start
+                history = self.session.recent()
+                orch = self._load_agent("orchestrator_agent.py", self.llm)
+                [d] = orch.decide({"request": _augment_with_history(line, history), "history": history})
+                action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
+                banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
+                if action == "fix":
+                    out = banner + "\n" + self._nl_fix(line, arg, history=history)
+                else:
+                    handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
+                    out = banner + "\n" + handler(arg)
+                # #EXT-036-REQ-12 End
+        # #EXT-036-REQ-12 Start
+        _record_turn(self, line, out)
+        # #EXT-036-REQ-12 End
+        return out
 
     # -- dispatch ----------------------------------------------------------
     _ALIASES = {"/exit": "/quit", "/q": "/quit", "/h": "/help"}
@@ -632,13 +726,20 @@ class JcodeCli:
         return handler(arg)
 
 
-def repl() -> int:
-    """Interactive Claude-Code-like prompt loop."""
-    cli = JcodeCli()
+def repl(session_id: str | None = None) -> int:
+    """Interactive Claude-Code-like prompt loop.
+
+    ``session_id`` (EXT-036 REQ-12) resumes a prior conversation (from --resume);
+    when omitted a fresh session starts (also resumable later via /resume)."""
+    cli = JcodeCli(session_id=session_id)
     # #EXT-014-REQ-1 Start
     # Banner reflects the active model (Gemma 4 2B e2b via llamacpp by default; gemma2:2b only if JCODE_LLM_BACKEND=ollama).
     print(f"\n\033[1m jaros-code \033[0m  local coding harness on {cli.model}")
     # #EXT-014-REQ-1 End
+    # #EXT-036-REQ-12 Start
+    print(f"  session {cli.session.id}"
+          + (f" — resumed, {len(cli.session.turns)} turn(s)" if session_id and cli.session.turns else " — new"))
+    # #EXT-036-REQ-12 End
     print("  slash-command REPL — type /help, /quit to exit\n")
     while True:
         try:
@@ -665,17 +766,25 @@ def main() -> int:
       python -m harness.cli                 # interactive REPL (Claude-Code-like)
       python -m harness.cli /status         # run one command and exit
       python -m harness.cli "fix the bug in foo.py"   # one plain-language request
+      python -m harness.cli --resume <id>   # resume a prior session (REPL, or with a
+                                             # trailing one-shot request after the id)
     """
     import sys
     args = sys.argv[1:]
+    # #EXT-036-REQ-12 Start
+    session_id = None
+    if args and args[0] == "--resume" and len(args) > 1:
+        session_id = args[1]
+        args = args[2:]
+    # #EXT-036-REQ-12 End
     if args:
         try:
-            print(JcodeCli().handle(" ".join(args)))
+            print(JcodeCli(session_id=session_id).handle(" ".join(args)))
         except Exception as exc:            # a one-shot must report cleanly, not dump a traceback
             print(f"\033[31merror:\033[0m {exc}")
             return 1
         return 0
-    return repl()
+    return repl(session_id=session_id)
 
 
 if __name__ == "__main__":

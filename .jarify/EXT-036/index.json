@@ -1,0 +1,49 @@
+{
+  "REQ-12": [
+    {
+      "file": "harness/session.py",
+      "startLine": 10,
+      "endLine": 87
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 59,
+      "endLine": 84
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 107,
+      "endLine": 113
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 556,
+      "endLine": 587
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 600,
+      "endLine": 602
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 695,
+      "endLine": 706
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 707,
+      "endLine": 709
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 739,
+      "endLine": 742
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 774,
+      "endLine": 779
+    }
+  ]
+}
