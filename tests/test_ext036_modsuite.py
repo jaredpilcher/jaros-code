@@ -188,11 +188,11 @@ def test_empty_task_list_aggregates_without_raising():
 # --- (e) the first-slice ModificationTask registry -------------------------------------------
 
 def test_first_slice_registry_shape():
-    assert len(FIRST_SLICE) == 5
+    assert len(FIRST_SLICE) == 10
     tiers = [t.tier for t in FIRST_SLICE]
-    assert tiers.count("easy") == 2
-    assert tiers.count("medium") == 2
-    assert tiers.count("hard") == 1
+    assert tiers.count("easy") == 3
+    assert tiers.count("medium") == 4
+    assert tiers.count("hard") == 3
     names = [t.name for t in FIRST_SLICE]
     assert len(names) == len(set(names))   # unique names
     for task in FIRST_SLICE:
@@ -297,6 +297,92 @@ def _correct_modify_fn_for(name: str):
             "if __name__ == '__main__':\n"
             "    main()\n"
         ),
+        # --- TASK-20 GROWTH: correct reference modifications for the 5 harder tasks -------
+        "sort-asc-to-desc": (
+            "import sys\n"
+            "def main():\n"
+            "    lines = [line.rstrip('\\n') for line in sys.stdin]\n"
+            "    for line in sorted(lines, reverse=True):\n"
+            "        print(line)\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
+        "keystore-reject-long-keys": (
+            "import sys\n"
+            "def main():\n"
+            "    store = {}\n"
+            "    for line in sys.stdin:\n"
+            "        line = line.rstrip('\\n')\n"
+            "        if not line or '=' not in line:\n"
+            "            continue\n"
+            "        key, value = line.split('=', 1)\n"
+            "        if len(key) > 8:\n"
+            "            print('error: key too long: ' + key)\n"
+            "            continue\n"
+            "        store[key] = value\n"
+            "        print('set ' + key)\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
+        "avg-to-median": (
+            "import sys\n"
+            "def main():\n"
+            "    line = sys.stdin.readline()\n"
+            "    nums = [float(x) for x in line.split()]\n"
+            "    seen = []\n"
+            "    for n in nums:\n"
+            "        seen.append(n)\n"
+            "        s = sorted(seen)\n"
+            "        m = len(s)\n"
+            "        if m % 2 == 1:\n"
+            "            median = s[m // 2]\n"
+            "        else:\n"
+            "            median = (s[m // 2 - 1] + s[m // 2]) / 2\n"
+            "        print(f'{median:.2f}')\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
+        "calc-add-operators": (
+            "import sys\n"
+            "def main():\n"
+            "    a = float(sys.argv[1])\n"
+            "    op = sys.argv[2]\n"
+            "    b = float(sys.argv[3])\n"
+            "    if op == '+':\n"
+            "        result = a + b\n"
+            "    elif op == '-':\n"
+            "        result = a - b\n"
+            "    elif op == '*':\n"
+            "        result = a * b\n"
+            "    elif op == '/':\n"
+            "        result = a / b\n"
+            "    else:\n"
+            "        raise ValueError('unsupported operator: ' + op)\n"
+            "    print(f'{result:.2f}')\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
+        "multicmd-add-verbose": (
+            "import sys\n"
+            "def main():\n"
+            "    verbose = '--verbose' in sys.argv[1:]\n"
+            "    for line in sys.stdin:\n"
+            "        raw = line.rstrip('\\n')\n"
+            "        if not raw:\n"
+            "            continue\n"
+            "        if verbose:\n"
+            "            print('LOG: ' + raw)\n"
+            "        parts = raw.split()\n"
+            "        cmd = parts[0]\n"
+            "        if cmd == 'add':\n"
+            "            a, b = int(parts[1]), int(parts[2])\n"
+            "            print(a + b)\n"
+            "        elif cmd == 'mul':\n"
+            "            a, b = int(parts[1]), int(parts[2])\n"
+            "            print(a * b)\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
     }
     code = fixed[name]
 
@@ -311,3 +397,47 @@ def test_first_slice_tasks_are_internally_coherent():
         result = run_modification_suite(_correct_modify_fn_for(task.name), tasks=[task])
         rec = result["results"][0]
         assert rec["accepted"] is True, f"{task.name}: {rec}"
+
+
+# --- TASK-20: the regression gate must hold on the HARDER (change/tighten/swap) classes too,
+# not just the TASK-16 add-a-feature fixture. A modify_fn that correctly adds the NEW
+# behavior (* and /) but silently BREAKS an existing operator (+) -- while dishonestly
+# self-reporting applied=True -- must still be rejected by the suite's own independent
+# oracle, regardless of the modify_fn's own claim.
+
+_CALC_ADD_OPERATORS_BREAKS_PLUS = (
+    "import sys\n"
+    "def main():\n"
+    "    a = float(sys.argv[1])\n"
+    "    op = sys.argv[2]\n"
+    "    b = float(sys.argv[3])\n"
+    "    if op == '+':\n"
+    "        result = a + b + 1\n"          # BROKEN: off-by-one regression on '+'
+    "    elif op == '-':\n"
+    "        result = a - b\n"
+    "    elif op == '*':\n"
+    "        result = a * b\n"
+    "    elif op == '/':\n"
+    "        result = a / b\n"
+    "    else:\n"
+    "        raise ValueError('unsupported operator: ' + op)\n"
+    "    print(f'{result:.2f}')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+
+def _calc_regression_breaking_modify_fn(modules, mod_sentence, root):
+    (Path(root) / "main.py").write_text(_CALC_ADD_OPERATORS_BREAKS_PLUS, encoding="utf-8")
+    return {"modules": {"main.py": _CALC_ADD_OPERATORS_BREAKS_PLUS}, "applied": True,
+            "note": "applied (but actually regressed '+')"}
+
+
+def test_harder_task_regression_breaking_modification_is_not_accepted():
+    calc_task = next(t for t in FIRST_SLICE if t.name == "calc-add-operators")
+    result = run_modification_suite(_calc_regression_breaking_modify_fn, tasks=[calc_task])
+    rec = result["results"][0]
+    assert rec["applied"] is True          # the modify_fn itself claimed success
+    assert rec["new_behavior_ok"] is True  # * and / genuinely work
+    assert rec["no_regression"] is False   # but '+' broke, and the oracle catches it
+    assert rec["accepted"] is False        # so it is correctly rejected overall

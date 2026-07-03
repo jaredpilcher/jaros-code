@@ -251,6 +251,110 @@ _KV_STORE_CLI = (
     "    main()\n"
 )
 
+# --- TASK-20 GROWTH (2026-07-03): +5 HARDER change classes ---------------------------------
+# The TASK-16 first slice above is all simple ADD-a-feature edits (append a line, add a
+# target unit, add a subcommand). PRIME-001's ratchet: an eval suite the harness can ace is
+# too easy and must be made harder to stay informative. These 5 tasks instead exercise
+# CHANGE/REPLACE/TIGHTEN classes -- the model must understand + precisely edit EXISTING
+# logic, not just append. Each start_system is genuinely correct and verifiably passes its
+# own regression_checks BEFORE any modification (Tenet 3). No check depends on wall-clock
+# timing.
+
+_SORT_ASC_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    lines = [line.rstrip(\"\\n\") for line in sys.stdin]\n"
+    "    for line in sorted(lines):\n"
+    "        print(line)\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_KEYSTORE_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    store = {}\n"
+    "    for line in sys.stdin:\n"
+    "        line = line.rstrip(\"\\n\")\n"
+    "        if not line or \"=\" not in line:\n"
+    "            continue\n"
+    "        key, value = line.split(\"=\", 1)\n"
+    "        store[key] = value\n"
+    "        print(f\"set {key}\")\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_RUNNING_AVG_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    line = sys.stdin.readline()\n"
+    "    nums = [float(x) for x in line.split()]\n"
+    "    total = 0.0\n"
+    "    for i, n in enumerate(nums, start=1):\n"
+    "        total += n\n"
+    "        avg = total / i\n"
+    "        print(f\"{avg:.2f}\")\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_CALC_ADD_SUB_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    a = float(sys.argv[1])\n"
+    "    op = sys.argv[2]\n"
+    "    b = float(sys.argv[3])\n"
+    "    if op == \"+\":\n"
+    "        result = a + b\n"
+    "    elif op == \"-\":\n"
+    "        result = a - b\n"
+    "    else:\n"
+    "        raise ValueError(f\"unsupported operator: {op}\")\n"
+    "    print(f\"{result:.2f}\")\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_MULTICMD_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    for line in sys.stdin:\n"
+    "        line = line.rstrip(\"\\n\")\n"
+    "        if not line:\n"
+    "            continue\n"
+    "        parts = line.split()\n"
+    "        cmd = parts[0]\n"
+    "        if cmd == \"add\":\n"
+    "            a, b = int(parts[1]), int(parts[2])\n"
+    "            print(a + b)\n"
+    "        elif cmd == \"mul\":\n"
+    "            a, b = int(parts[1]), int(parts[2])\n"
+    "            print(a * b)\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
 FIRST_SLICE: "list[ModificationTask]" = [
     ModificationTask(
         name="sum-add-count", cls="cli-tool", tier="easy",
@@ -345,6 +449,112 @@ FIRST_SLICE: "list[ModificationTask]" = [
         regression_checks=[
             ([], "set a 1\nget a\n", "1"),
             ([], "get missing\n", "none"),
+        ],
+    ),
+
+    # --- TASK-20 GROWTH: harder CHANGE classes (behavior change / constraint tightening /
+    # algorithm swap / branch addition / cross-cutting), not just ADD-a-feature.
+
+    ModificationTask(
+        name="sort-asc-to-desc", cls="sort-cli", tier="medium",
+        start_system={"main.py": _SORT_ASC_CLI},
+        mod_sentence=(
+            "The program in main.py reads lines from standard input until EOF and prints "
+            "them sorted in ASCENDING alphabetical order, one per line. Change it to sort "
+            "in DESCENDING alphabetical order instead. Keep reading all lines from standard "
+            "input exactly as before, including the case of empty input (in which case it "
+            "must still exit successfully and print nothing)."
+        ),
+        new_checks=[
+            ([], "banana\napple\ncherry\n", "cherry\nbanana\napple"),
+            ([], "b\na\nc\n", "c\nb\na"),
+        ],
+        regression_checks=[
+            ([], "onlyone\n", "onlyone"),
+            ([], "", ""),
+        ],
+    ),
+    ModificationTask(
+        name="keystore-reject-long-keys", cls="kv-store", tier="medium",
+        start_system={"main.py": _KEYSTORE_CLI},
+        mod_sentence=(
+            "The program in main.py reads lines of the form key=value from standard input "
+            "and, for each valid line, stores the value under the key and prints `set "
+            "<key>`. Add validation: if a key is LONGER than 8 characters, REJECT it -- do "
+            "not store it, and instead print `error: key too long: <key>`. Keys of 8 "
+            "characters or fewer must continue to be accepted and stored exactly as before."
+        ),
+        new_checks=[
+            ([], "averylongkey=1\n", "error: key too long: averylongkey"),
+            ([], "123456789=x\n", "error: key too long: 123456789"),
+        ],
+        regression_checks=[
+            ([], "short=1\n", "set short"),
+            ([], "abcdefgh=1\n", "set abcdefgh"),
+        ],
+    ),
+    ModificationTask(
+        name="avg-to-median", cls="stats-cli", tier="hard",
+        start_system={"main.py": _RUNNING_AVG_CLI},
+        mod_sentence=(
+            "The program in main.py reads one line of whitespace-separated numbers from "
+            "standard input and, after each number is read (in the order given), prints "
+            "the RUNNING AVERAGE of all numbers seen so far, formatted to exactly 2 decimal "
+            "places, one line per number. Change it to print the RUNNING MEDIAN of all "
+            "numbers seen so far instead (for an even count, the median is the average of "
+            "the two middle values when the numbers seen so far are sorted). Keep "
+            "everything else about the CLI unchanged: still one result per line, in the "
+            "same order the numbers were read, formatted to exactly 2 decimal places."
+        ),
+        new_checks=[
+            ([], "1 2 3 10\n", "2.50"),
+            ([], "10 1 2 3\n", "2.00"),
+        ],
+        regression_checks=[
+            ([], "5\n", "5.00"),
+            ([], "4 4 4\n", "4.00\n4.00\n4.00"),
+        ],
+    ),
+    ModificationTask(
+        name="calc-add-operators", cls="calculator", tier="easy",
+        start_system={"main.py": _CALC_ADD_SUB_CLI},
+        mod_sentence=(
+            "The program in main.py is run as `python main.py <num1> <op> <num2>` and "
+            "currently supports the operators + and -, printing the result rounded to "
+            "exactly 2 decimal places. Add support for the operators * (multiplication) "
+            "and / (ordinary floating-point division). Keep the existing + and - behavior "
+            "and output format exactly unchanged."
+        ),
+        new_checks=[
+            (["2", "*", "3"], None, "6.00"),
+            (["6", "/", "2"], None, "3.00"),
+        ],
+        regression_checks=[
+            (["2", "+", "3"], None, "5.00"),
+            (["5", "-", "3"], None, "2.00"),
+        ],
+    ),
+    ModificationTask(
+        name="multicmd-add-verbose", cls="multi-command-cli", tier="hard",
+        start_system={"main.py": _MULTICMD_CLI},
+        mod_sentence=(
+            "The program in main.py is run as `python main.py` and reads commands from "
+            "standard input, one per line: `add <x> <y>` prints the sum, `mul <x> <y>` "
+            "prints the product. Add support for an optional `--verbose` command-line "
+            "flag: when run as `python main.py --verbose`, for EVERY command processed, "
+            "ALSO print a log line immediately BEFORE that command's normal output, in the "
+            "exact format `LOG: <command line>` (echoing the raw command line that was "
+            "read). When run WITHOUT `--verbose` (`python main.py`, the default), the "
+            "output must remain EXACTLY as it is today -- no log lines, byte-identical to "
+            "the current default behavior."
+        ),
+        new_checks=[
+            (["--verbose"], "add 2 3\n", "LOG: add 2 3\n5"),
+            (["--verbose"], "mul 2 3\nadd 1 1\n", "LOG: mul 2 3\n6\nLOG: add 1 1\n2"),
+        ],
+        regression_checks=[
+            ([], "add 2 3\n", "5"),
+            ([], "add 1 1\nmul 2 2\nadd 3 3\n", "2\n4\n6"),
         ],
     ),
 ]

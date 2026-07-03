@@ -634,3 +634,57 @@ rather than needing a re-plan call), not a model reasoning failure.
   plan-repair for the MEASURED single-module/mismatched-entrypoint defect -- fills part of
   the "plan-repair loop... feed back for a coherent re-plan" acceptance criterion; a
   general re-plan-on-defect loop for OTHER defect classes remains open)
+
+### [TASK-20] Grow modification suite — harder change classes (REQ-21)
+
+PRIME-001 ratchet: the `harness/modification_suite.py` `FIRST_SLICE` (TASK-16) has 5 tasks
+that are all simple ADD-a-feature edits (append a line, add a target unit, add a
+subcommand) -- an eval suite the harness can ace with a straightforward append is too easy
+and MUST be made harder to stay an honest, informative parity instrument. Grow it with
+change CLASSES that require the model to genuinely UNDERSTAND and PRECISELY EDIT existing
+logic (change/replace/tighten), not just append new code at the end.
+
+#### Steps
+1. In `harness/modification_suite.py`, ADD 5 new HARDER `ModificationTask`s to
+   `FIRST_SLICE` (append after the existing 5, keeping them byte-for-byte unchanged),
+   each with a FIXED, genuinely-correct hand-written `start_system` (always a single
+   `main.py` following the established single-file CLI convention) across 5 distinct
+   harder change classes: (a) BEHAVIOR CHANGE -- a line-sorting CLI that sorts ascending
+   is changed to sort DESCENDING; (b) CONSTRAINT/VALIDATION TIGHTENING -- a `key=value`
+   store CLI is changed to reject (with an error message) any key longer than 8
+   characters while still accepting valid keys; (c) ALGORITHM SWAP -- a running-average
+   CLI is changed to compute a running MEDIAN instead; (d) ADD A BRANCH TO EXISTING LOGIC
+   -- a `+`/`-` calculator CLI gains `*`/`/` operator support; (e) CROSS-CUTTING EDIT -- a
+   multi-command CLI gains an optional `--verbose` flag that adds a log line before every
+   command's output, while the default (non-verbose) invocation's output stays
+   byte-identical. Each task's `new_checks` verify the new/changed behavior and
+   `regression_checks` verify what must NOT break (e.g. still reads all lines / handles
+   empty input; valid short keys still accepted; the CLI I/O contract/format unchanged;
+   the untouched operators still work; default output is byte-identical to today) --
+   deterministic, no wall-clock dependence, REUSING `harness.system_suite._run_single_check`
+   via the existing `run_modification_suite` plumbing (do not duplicate or weaken the
+   oracle).
+2. Every new `start_system` must genuinely, verifiably pass its OWN `regression_checks`
+   BEFORE any modification (Tenet 3 -- the regression gate must be honest: a fixture that
+   doesn't already satisfy what it claims must never regress is not a valid fixture). Do
+   NOT modify `run_modification_suite`/the existing 5 tasks/`harness/system_suite.py`/
+   `harness/system_builder.py` -- this task only grows `FIRST_SLICE`.
+3. Update `tests/test_ext036_modsuite.py`: bump `test_first_slice_registry_shape`'s
+   expected count to 10 (tiers as actually distributed). Extend
+   `test_first_slice_tasks_are_internally_coherent`'s reference-implementation map with a
+   genuinely correct modification for each of the 5 new tasks (a positive control proving
+   each new task's `new_checks` AND `regression_checks` are honestly satisfiable through
+   the REAL `run_modification_suite` oracle, not trivially-always-true). Add a dedicated
+   regression-gate test for at least one NEW task: a stub `modify_fn` that satisfies the
+   new behavior but BREAKS a regression check (while self-reporting `applied=True`) is
+   still `accepted=False` -- proving the honesty gate holds on the harder classes too, not
+   just the TASK-16 fixture.
+4. Run the FULL `python -m pytest tests/ -q` and confirm it stays green at the new count.
+   Update `.jarify/EXT-036/index.json`'s `REQ-21` range to the file's grown line count.
+
+#### Implements
+- [REQ-21] Parity instrument: matching sentence->system MODIFICATION classes (grows the
+  change-class coverage from 5 simple ADD-only tasks to 10 tasks spanning behavior-change,
+  constraint-tightening, algorithm-swap, branch-addition, and cross-cutting change
+  classes -- the harder, edit-precision-testing classes the requirement calls out; live
+  gemma-vs-escalating measurement against the grown suite remains an open follow-up)

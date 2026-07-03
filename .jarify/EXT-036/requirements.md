@@ -514,7 +514,7 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   full `tests/` 1359 green, no live model). CAVEAT: this task fixes the measured harness-precision bug; the actual
   LIVE gemma-alone / escalating-system re-measurement against the fixed suite remains the next follow-up.
 
-### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (PARTIAL — framework + first slice, EXT-036 TASK-16, 2026-07-03)
+### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (PARTIAL — framework + first slice, EXT-036 TASK-16; grown to 10 tasks/harder change classes, TASK-20, 2026-07-03)
 
 The harder, more realistic parity target: modify an EXISTING working complex system from a one-sentence change (most
 real dev is editing, not greenfield). For each (or a subset of) the CREATION-suite systems, a matching MODIFICATION
@@ -524,10 +524,16 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
 #### Acceptance Criteria
 - [ ] A held-out set of MODIFICATION tasks covering many change classes (add a feature, change a behavior, add a
   constraint/validation, add a new backend/adapter, extend an interface, add error handling, add a pipeline stage, swap
-  an algorithm, add caching, add a CLI subcommand) across difficulty — PARTIAL: first slice (TASK-16) covers 5 tasks
-  (add-a-derived-field, add-a-target-unit, add-a-CLI-subcommand ×2) across easy/medium/hard; the broader change-class
-  list above (constraint/validation, new backend/adapter, extend an interface, error handling, pipeline stage,
-  algorithm swap, caching) remains open growth, mirroring REQ-20's growth path.
+  an algorithm, add caching, add a CLI subcommand) across difficulty — PARTIAL: first slice (TASK-16) covered 5 tasks
+  (add-a-derived-field, add-a-target-unit, add-a-CLI-subcommand ×2), all simple ADD-a-feature edits. **GROWN 2026-07-03
+  (TASK-20)** per PRIME-001's ratchet (an eval suite the harness can ace with a simple append is too easy to stay
+  informative): `FIRST_SLICE` now has 10 tasks (3 easy / 4 medium / 3 hard) across 5 harder CHANGE classes not
+  covered before — behavior CHANGE (a line-sort CLI: ascending → descending), constraint/validation TIGHTENING (a
+  key=value store: reject keys >8 chars), algorithm SWAP (running average → running median), branch/stage ADDITION
+  to existing logic (a +/- calculator gains */÷), and a CROSS-CUTTING edit (a multi-command CLI gains an optional
+  `--verbose` flag whose default-mode output must stay byte-identical) — plus the original 5 ADD-a-feature tasks.
+  The remaining broader change-class list above (new backend/adapter, extend an interface, error handling, pipeline
+  stage, caching) remains open growth, mirroring REQ-20's growth path.
 - [x] Each task = an existing working system + one sentence + an automated done-ness check AND a no-regression check
   (Tenet 3, held-out) — **DONE 2026-07-03** (`harness/modification_suite.py`, TASK-16): `ModificationTask.start_system`
   is a small, hand-written, KNOWN-GOOD fixture (never model-built — isolates modification from creation), written onto
@@ -549,4 +555,7 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
   but a regression check broken) → not accepted even when the modify_fn dishonestly self-reports success, a
   failed-to-apply modify_fn → not accepted without raising, a raising modify_fn → that task recorded not-accepted and
   the suite continues, the first-slice registry's shape, and an internal-coherence sanity check (a straightforward
-  correct implementation of each first-slice task's own `mod_sentence` satisfies its own checks).
+  correct implementation of each first-slice task's own `mod_sentence` satisfies its own checks — now covering all 10
+  tasks including the 5 harder change classes added by TASK-20, plus a dedicated regression-gate test proving the
+  honesty gate rejects a dishonestly-self-reported `applied=True` modification on one of the harder tasks too, not
+  just the original TASK-16 fixture).
