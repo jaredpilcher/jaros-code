@@ -62,6 +62,26 @@ lever, NOT roster grinding — no decorrelation to harvest): (i) grow the daily-
 the models + wire a real model answer_fn so answer-tasks are exercised (feeds #51 + #44), (ii) the model-split evidence
 must come from a harder bar since every current class saturates or is single-model-dominated.
 
+### SYNTHESIS of the #3 arc (2026-07-02) — the roster's value is EFFICIENCY, not accuracy (and it's unmeasured)
+
+Two classes now measured, both +0 decorrelated headroom, with qwen weakly dominating (function-gen) or tying (fix/edit).
+The honest, fully-reasoned conclusion — carefully NOT overclaimed as "kill the roster":
+- **On ACCURACY, the multi-model roster adds nothing measurable.** qwen ≥ gemma on every class tested, so best-single
+  (just serve qwen) = routed = oracle. There is no accuracy-decorrelation to harvest on the coding workload to date.
+- **The roster's ONLY remaining value hypothesis is EFFICIENCY** — serve the cheaper/faster 2B gemma for the many tasks
+  it already handles (daily-driver: gemma solves 11/11) and escalate to the 3B qwen only where gemma fails (hard class,
+  e.g. SWE-bench where gemma≈0 and qwen resolves some). That value, IF it exists, shows up on scoreboard **#4 (latency)
+  and #5 (amortization)** — NOT on the #3 accuracy triple — and must be weighed against the **single-Jetson model-SWAP
+  cost** (only one model served at a time → each route-switch pays a ~10s reload; routing is not free like on a
+  multi-GPU host). Whether cheap-default+escalate nets POSITIVE after swap cost is **UNMEASURED**.
+- So the honest steering: STOP trying to prove roster value via accuracy decorrelation (measured +0 twice — that axis is
+  answered). The open, high-value question is the EFFICIENCY triple: does routing (gemma-default → qwen-on-failure) beat
+  always-serve-qwen on latency/cost at EQUAL accuracy, net of swap overhead? That's the measurement that either
+  justifies the multi-model architecture or honestly points to "a coding harness may only need the single best coder."
+  This does NOT contradict the owner's multi-model pivot (2026-06-28), which was driven by the HARD class (route what
+  gemma can't do to a specialist) — it sharpens it: the specialist-routing pays on COVERAGE of the hard class, while
+  within-class decorrelation on easy classes does not. Feeds #44 (admission by marginal coverage) + #4/#5 instruments.
+
 ## Scoreboard #3 — ROUTED-SYSTEM TRIPLE, first measurement (2026-07-02, intent honest-headline metric)
 
 The intent + external-review make the **routed vs best-single vs oracle** triple the honest headline (commitment 3):
