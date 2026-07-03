@@ -89,3 +89,75 @@ building REQ-1..4 and recording what breaks.
 #### Acceptance Criteria
 - [ ] (to be discovered) failure-level classifier + level-targeted repair
 - [ ] (to be discovered) scale past ~4 modules with sustained end-to-end pass
+
+---
+
+## EXPANDED CAPABILITY SUITE (owner directive 2026-07-03) — "be like Claude Code"
+
+The owner expanded the target: to build complex systems well, jaros-code must also do the surrounding agentic
+work Claude Code does. Many gaps — recorded here, filled iteratively (each surfaces naturally as the
+sentence-to-system pipeline demands it). Cross-cutting ones (REQ-8..11) may spin out to their own specs.
+
+### [REQ-6] Multi-level test generation — unit / integration / performance  (GAP)
+
+Beyond the unit-test capability (EXT-005 write-tests, mutation-graded): generate INTEGRATION tests (do the
+assembled modules work together across boundaries?) and PERFORMANCE tests (does it meet a throughput/latency
+bar?). Each honestly graded (integration: real cross-module behavior; performance: measured against a threshold).
+
+#### Acceptance Criteria
+- [ ] Integration-test generation for a multi-module system (exercises real cross-module flows, not just one unit)
+- [ ] Performance-test generation (measures + asserts a threshold; honest, not a trivially-passing stub)
+- [ ] Composed into the sentence-to-system pipeline: a built system gets unit + integration (+ perf where relevant) tests
+
+### [REQ-7] Done-ness validation — is the system complete vs the spec, or not?  (GAP)
+
+A judgment + deterministic evidence that the built system SATISFIES the original sentence (all implied
+requirements covered), and an honest "NOT done — here's what's missing" when it doesn't. Builds on the
+ship-gate + executable acceptance, but at the SPEC level (did we build what was asked?), not just per-module.
+
+#### Acceptance Criteria
+- [ ] Derive the acceptance criteria from the spec (spec-expansion → checklist of implied requirements)
+- [ ] Validate each against the built system; report DONE only if all pass, else list the unmet items honestly (Tenet 3)
+
+### [REQ-8] Ask-the-user when needed — clarify ambiguity  (GAP, cross-cutting)
+
+When the spec is ambiguous or under-determined, ASK the user a targeted question rather than guessing (Claude
+Code's AskUserQuestion). Requires a judgment (is this genuinely ambiguous?) + an interaction channel.
+
+#### Acceptance Criteria
+- [ ] A grounded judgment that detects genuine ambiguity (not asking when a sensible default exists)
+- [ ] An interaction channel to surface the question + consume the answer into the plan
+
+### [REQ-9] Web research when needed  (GAP, cross-cutting — OWNER-AUTHORIZED 2026-07-03)
+
+The system may research the web when it needs external knowledge (an API, a format, a library usage). Owner
+AUTHORIZED this 2026-07-03 — it supersedes the prior "no harness network" caution (task #32) FOR BUILD-TIME
+research. HARD Tenet-3 GUARD: web research must NEVER be used to fetch answers/tests for a held-out eval
+(that would corrupt the only honest signal); it is a build-time capability for real user tasks, gated off eval runs.
+
+#### Acceptance Criteria
+- [ ] A web-research tool (WebSearch/WebFetch) the system invokes when it judges it needs external knowledge
+- [ ] A judgment for WHEN research is needed; results grounded into the build
+- [ ] HARD guard: disabled/blocked on held-out eval paths (no leakage, Tenet 3)
+
+### [REQ-10] Repo-context search when needed  (GAP, cross-cutting — tools partly exist)
+
+Search the repo for relevant context (existing helpers, conventions, related code) when building/fixing, and
+inject it. Tools EXIST (`/grep`, `/files`, `harness/repo_map.py`); the gap is a judgment for WHEN to search +
+wiring the retrieved context into the solve/build loop (contrast the retrieval-negative finding — the lever is
+PRECISE API/helper injection, not noisy similar-code; see memory retrieval-fewshot-negative).
+
+#### Acceptance Criteria
+- [ ] A judgment that decides when repo context is needed + what to search for
+- [ ] Precise retrieved context (signatures/helpers) injected into the build/fix prompt; measured to help, not hurt
+
+### [REQ-11] Skills system — use skills when it judges it needs them  (GAP, cross-cutting — biggest new architecture)
+
+A Claude-Code-style skills system: a library of reusable skills (procedures/capabilities) the system SELECTS
+and invokes when it judges a task needs one. Requires: a skill registry, a skill-selection judgment (grounded
+for the small model), and skill execution wired into the two-plane architecture.
+
+#### Acceptance Criteria
+- [ ] A skill registry (named skills with descriptions/when-to-use)
+- [ ] A grounded skill-selection judgment (the small model picks the right skill for a task, or none)
+- [ ] Skill execution wired in; measured that skill-use helps on tasks that need it
