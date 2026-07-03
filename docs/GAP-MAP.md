@@ -71,8 +71,10 @@ answer_fn), build-module 1/2. The ONLY miss is one build-module task — a GENER
 is from-scratch generation, higher variance; gemma solved BOTH build-module tasks in the earlier dd_triple run), NOT a
 regression. HONEST CAVEATS: (1) this 94% is over EASY tasks — the suite still largely saturates for the roster (both
 small models ~ace it, per scoreboard #3); a high number here reflects task easiness, not CC-parity on hard work — the
-external hard bar (SWE-bench ~13%) remains the true parity gap. (2) 2 categories still empty (write-tests w10, ops w5)
-so the headline covers 85/100 declared weight. (3) build-module variance means single-run category rates are noisy;
+external hard bar (SWE-bench ~13%) remains the true parity gap. (2) UPDATE 2026-07-03: write-tests FILLED (TASK-6,
+`b581e3a`, mutation-oracle category — model writes tests, graded by killing seeded mutants; a NEW capability, not
+wiring; live gemma 1/2, oracle discriminates + degenerate assert-True→unsolved) → coverage now 95/100 (17 tasks); only
+ops (w5) remains empty. (3) build-module variance means single-run category rates are noisy;
 a multi-seed average would tighten them. This is the instrument's honest current output — useful as a REGRESSION guard
 and to measure future harder-task additions, not as a parity-achieved claim.
 
