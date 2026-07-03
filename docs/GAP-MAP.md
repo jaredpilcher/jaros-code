@@ -146,6 +146,20 @@ measured, the multi-model roster's cost is UNJUSTIFIED by evidence on the classe
 guard against the system-level no-ceiling crutch. NEXT: measure the triple on a class-DIVERSE bar (fix/edit/multi-file,
 where gemma's co-adaptation might win some) to find where — if anywhere — the roster earns its cost.
 
+## write-tests capability CHARACTERIZED (2026-07-03, offline probe) — 75%, misses are genuine model errors
+
+Offline diagnostic (`.jaros-data/writetests_probe.py`, gemma, 8 varied functions, mutation-graded): the NEW write-tests
+capability (TASK-6) is **6/8 = 75%** — passes on reference AND kills the mutant for is_even/max_of/reverse/factorial/
+gcd/word_count; misses is_palindrome + clamp. DIAGNOSED both (suspect-harness-first, then VERIFIED — honest correction):
+NOT a harness gap. The generated tests are complete (not truncated) and well-structured, but contain a GENUINE
+model-reasoning error — e.g. gemma asserts `clamp(-5, -10, -1) == -10`, but -5 is WITHIN [-10,-1] so clamp correctly
+returns -5; gemma's buggy assertion fails on the reference code, and the mutation oracle CORRECTLY scores it unsolved
+(part i: tests must pass on the reference). So the oracle works exactly as intended (rejects buggy tests), and 75% is an
+honest capability level; the 25% misses are real model test-assertion errors, not harness. PLAUSIBLE LEVER (queued, not
+built — uncertain value): a test-gen SELF-REPAIR loop — when generated tests fail on the reference, feed the actual-vs-
+expected failure back and ask the model to fix the assertion (the concrete output `-5` vs asserted `-10` is a strong
+hint; might lift 75%→higher on this exact error class). Worth a focused build, not a blind 02:xx attempt.
+
 ## Research-derived lever (plateau-exit 2026-07-03) — the SLM-SWE-bench base is a 7B CODER (roster-growth candidate)
 
 At a genuine plateau on internal levers (roster-value closed, parity categories 95% filled, hard-class reasoning
