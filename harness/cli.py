@@ -112,6 +112,33 @@ def _record_turn(cli, user_text: str, assistant_text: str) -> None:
 # #EXT-036-REQ-12 End
 
 
+# #EXT-036-REQ-13 Start
+# TASK-18: live CLI wiring for the offline hard-tier escalation core (harness.system_builder.
+# build_system_escalating). "Configured" = the model registry has MEASURED coverage of the
+# complex-system-build-specialist class (today: qwen2.5-coder-7b) AND a model-manager URL is
+# available to swap the Jetson's served model. Absent either, /buildsystem behaves exactly as
+# before (plain build_system, no swap_fn ever constructed) -- no regression when unconfigured.
+_BUILDSYSTEM_SPECIALIST_CLASS = "complex-system-build-specialist"
+
+
+def _buildsystem_escalation_config() -> "tuple[str, str, str] | None":
+    """Return ``(manager_url, fallback_model_id, primary_model_id)`` when hard-tier escalation
+    for ``/buildsystem`` is CONFIGURED, else ``None``. Never raises — any registry-load failure
+    or an empty (honest, evidence-gated) ``lookup_by_class`` result means "not configured", so
+    the caller falls back to plain ``build_system`` rather than escalating on a guess."""
+    try:
+        from harness.model_registry import load_registry
+        registry = load_registry()
+        candidates = registry.lookup_by_class(_BUILDSYSTEM_SPECIALIST_CLASS)
+        if not candidates:
+            return None
+        manager_url = os.environ.get("JCODE_MODEL_MANAGER_URL", "http://192.168.1.183:8001")
+        return manager_url, candidates[0], registry.default_model()
+    except Exception:
+        return None
+# #EXT-036-REQ-13 End
+
+
 class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
@@ -416,13 +443,35 @@ class JcodeCli:
         """Sentence-to-system (EXT-036): plan -> topological build (syntax-gated + repair) ->
         assemble -> run an executable acceptance checklist. A separate command from /build
         (which builds a single function) — this builds a whole multi-module system from one
-        sentence into a subdirectory of the current directory. Wires harness.system_builder."""
+        sentence into a subdirectory of the current directory. Wires harness.system_builder.
+        When hard-tier escalation is CONFIGURED (REQ-13, TASK-18 — a measured
+        complex-system-build-specialist is registered), routes through
+        build_system_escalating so gemma runs first and only pays for the stronger fallback
+        on a genuine ship-failure; otherwise behaves exactly as plain build_system (no
+        regression when escalation is unconfigured)."""
         sentence = arg.strip()
         if not sentence:
             return "usage: /buildsystem <one-sentence spec>"
-        from harness.system_builder import build_system
         subdir = Path(".") / ".jaros" / "built_systems" / f"sys_{uuid.uuid4().hex[:8]}"
-        r = build_system(sentence, subdir, llm=self.llm)
+        # #EXT-036-REQ-13 Start
+        escalation = _buildsystem_escalation_config()
+        model_label = None
+        if escalation is not None:
+            manager_url, fallback_model_id, primary_model_id = escalation
+            from harness.system_builder import build_system_escalating
+            from harness.collaborative_solve import _http_swap
+            r = build_system_escalating(
+                sentence, subdir,
+                primary_llm=self.llm, fallback_llm=self.llm,
+                swap_fn=_http_swap(manager_url),
+                fallback_model_id=fallback_model_id,
+                primary_model_id=primary_model_id,
+            )
+            model_label = fallback_model_id if r.get("model") == "fallback" else primary_model_id
+        else:
+            from harness.system_builder import build_system
+            r = build_system(sentence, subdir, llm=self.llm)
+        # #EXT-036-REQ-13 End
         mods = ", ".join(r.get("modules", {})) or "(none)"
         status = "shipped" if r.get("shipped") else "NOT shipped"
         doneness = "DONE" if r.get("done") else "NOT done"
@@ -431,7 +480,14 @@ class JcodeCli:
         if r.get("shipped"):
             self._last_built_dir = subdir
         # #EXT-036-REQ-14 End
-        out = [f"[buildsystem] {status}, {doneness} — into {subdir}", f"  modules: {mods}"]
+        # #EXT-036-REQ-13 Start
+        header = f"[buildsystem] {status}, {doneness}"
+        if model_label:
+            tag = " (escalated)" if r.get("escalated") else ""
+            header += f" via {model_label}{tag}"
+        header += f" — into {subdir}"
+        # #EXT-036-REQ-13 End
+        out = [header, f"  modules: {mods}"]
         if unmet:
             out.append("  unmet: " + ", ".join(unmet))
         if r.get("note"):

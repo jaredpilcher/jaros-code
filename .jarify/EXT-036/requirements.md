@@ -255,7 +255,7 @@ Tenet-5 UX and pairs with REQ-8 (the system asking the USER) — REQ-12 is the r
 - [ ] Familiar Claude-Code affordances: streaming output, clear turn markers, `/help` + slash commands still available,
   graceful interrupt — but UX NEVER overrides a higher tenet (Tenet 5 is the lowest-priority tenet)
 
-### [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation  (PARTIAL — offline escalation core DONE, TASK-13)
+### [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation  (PARTIAL — escalation core DONE + LIVE-WIRED into the CLI, TASK-13/TASK-18)
 
 Sentence→system must span the whole difficulty range, not just easy. SIMPLE/EASY is PROVEN (REQ-4). Push medium →
 hard → highly-complex; the honest break-point at each tier is the recorded gap (likely bites at the reasoning-heavy
@@ -279,9 +279,29 @@ the honest lever, and its offline core is now built.
   deterministic rule (shipped > done > module count, primary wins ties), and restores the primary model
   afterward in a `finally` block. Never raises: a `swap_fn`/fallback-build failure gracefully returns the
   primary result. Proven OFFLINE (`tests/test_ext036_escalate.py`, canned/fake llms + a stub `swap_fn`
-  recording calls, no live model/network/Jetson). CAVEAT (honest scope): this is the offline mechanism only —
-  live CLI/Jetson wiring (a real `swap_fn` via `collaborative_solve._http_swap`) and the medium/hard/
-  highly-complex held-out sweep above remain OPEN follow-ups.
+  recording calls, no live model/network/Jetson).
+- [x] LIVE CLI wiring -- the offline mechanism above is now genuinely reachable from the product path, not
+  just test-gated -- **DONE 2026-07-03** (`harness/cli.py::cmd_buildsystem` + `_buildsystem_escalation_config`,
+  TASK-18): `/buildsystem` calls `_buildsystem_escalation_config()` (registry-driven: "configured" =
+  `ModelRegistry.lookup_by_class("complex-system-build-specialist")` -- today qwen2.5-coder-7b -- returns a
+  MEASURED id AND a model-manager URL is available, default `http://192.168.1.183:8001`, overridable via
+  `JCODE_MODEL_MANAGER_URL`); when configured it routes through `build_system_escalating(sentence, subdir,
+  primary_llm=self.llm, fallback_llm=self.llm, swap_fn=collaborative_solve._http_swap(manager_url),
+  fallback_model_id=..., primary_model_id=registry.default_model())` -- the injected `swap_fn` re-pointing the
+  Jetson's SERVED model is what makes the shared `:8000` client's second call actually run the 7B, mirroring
+  the TASK-13 measurement runner. This carries the MEASURED 25%->58% (3/12->7/12) hard-tier ship-rate lift
+  into the actual product path. Output now reports which model shipped and whether it escalated (e.g.
+  "via qwen2.5-coder-7b (escalated)" vs "via gemma-4-e2b"). NO REGRESSION when unconfigured (no registry /
+  no specialist / no manager) -- `cmd_buildsystem` falls back to plain `build_system` byte-for-byte as before,
+  and no `swap_fn` is ever constructed on that path. Proven OFFLINE (`tests/test_ext036_buildsystem_escalate.py`,
+  no live model/network/Jetson): the configured path calls `build_system_escalating` with the right
+  primary/fallback llms + model ids + a real swap_fn (and plain `build_system` is never invoked); the
+  unconfigured path calls plain `build_system` and never constructs a swap_fn; CLI output reflects
+  escalated-vs-not and the shipping model in both branches; an unreachable-manager (raising) `swap_fn` against
+  the REAL `build_system_escalating` never crashes `cmd_buildsystem` (relies on that function's own proven
+  never-raise guarantee). CAVEAT (honest scope): the medium/hard/highly-complex held-out sweep, and an actual
+  LIVE gemma-vs-escalating measurement run against the grown `FIRST_SLICE` suite (REQ-20), remain OPEN
+  follow-ups -- this task wires the routing, it does not re-run the live measurement.
 
 ### [REQ-14] Modification from a sentence — evolve an existing system  (PARTIAL — regression-gated modify_system DONE, TASK-7)
 

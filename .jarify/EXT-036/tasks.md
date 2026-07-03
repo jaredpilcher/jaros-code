@@ -515,3 +515,67 @@ argv/stdin invocation, exact stdout format including the trailing newline, `if _
   classes (doubles the class/tier coverage to 12 tasks across 12 classes; live
   gemma-vs-escalating measurement against the grown suite and further class growth remain
   open follow-ups)
+
+### [TASK-18] Wire /buildsystem to the escalating harness (REQ-13)
+
+MEASURED (TASK-13, commit c182c33): the offline escalation core (`build_system_escalating`)
+lifts the hard-tier creation ship-rate from 25% -> 58% (3/12 -> 7/12) by escalating to
+Qwen2.5-Coder-7B ONLY when gemma-4-e2b fails to ship. Owner steer 2026-07-03: "use the whole
+harness with routing" -- today `harness/cli.py::cmd_buildsystem` still calls plain
+`build_system(sentence, subdir, llm=self.llm)` (gemma-alone), so the measured win is NOT yet
+live in the product. Wire the CLI to route through `build_system_escalating` whenever
+escalation is genuinely CONFIGURED (a model-manager URL is reachable in principle AND the
+model registry has MEASURED coverage for the `complex-system-build-specialist` class),
+falling back to plain `build_system` with NO behavior change when it is not -- so an
+unconfigured/offline environment (e.g. CI, a laptop with no Jetson) never regresses.
+
+#### Steps
+1. In `harness/cli.py`, add a small helper `_buildsystem_escalation_config()` that returns
+   `(manager_url, fallback_model_id, primary_model_id)` when escalation is CONFIGURED, else
+   `None`: load `harness.model_registry.load_registry()`, call
+   `registry.lookup_by_class("complex-system-build-specialist")` (the honest, evidence-gated
+   lookup already used elsewhere in the registry) and use its first id as
+   `fallback_model_id`, `registry.default_model()` as `primary_model_id`, and
+   `os.environ.get("JCODE_MODEL_MANAGER_URL", "http://192.168.1.183:8001")` as the manager
+   URL (the same LAN-default convention as `harness/model_rewire.py::_manager_base()`). Any
+   registry-load failure or an empty `lookup_by_class` result returns `None` (not
+   configured) -- never raises.
+2. In `harness/cli.py::cmd_buildsystem`, call `_buildsystem_escalation_config()`. When it
+   returns a config, build a `swap_fn` via `harness.collaborative_solve._http_swap(manager_url)`
+   and call `harness.system_builder.build_system_escalating(sentence, subdir,
+   primary_llm=self.llm, fallback_llm=self.llm, swap_fn=swap_fn,
+   fallback_model_id=fallback_model_id, primary_model_id=primary_model_id)` (both
+   `primary_llm`/`fallback_llm` point at the same `:8000` endpoint client -- the injected
+   `swap_fn` re-pointing the Jetson's SERVED model is what makes the second call actually
+   run the 7B, mirroring how the TASK-13 measurement runner drives it). When
+   `_buildsystem_escalation_config()` returns `None`, call plain
+   `build_system(sentence, subdir, llm=self.llm)` exactly as today -- no swap_fn is ever
+   constructed on this path.
+3. Extend `cmd_buildsystem`'s output to report which model actually shipped the result,
+   reading the `model`/`escalated` keys `build_system_escalating` already returns (e.g.
+   `"[buildsystem] shipped, DONE via qwen2.5-coder-7b (escalated) -- into <dir>"` vs
+   `"... via gemma-4-e2b -- into <dir>"`); when escalation isn't configured, keep today's
+   plain (unlabeled) output shape.
+4. Do NOT modify `build_system_escalating`/`build_system`/`ModelRegistry`/`_http_swap`
+   themselves, and do NOT change `cmd_modifysystem` or any other command -- this task is
+   `/buildsystem`'s wiring only.
+5. Tests `tests/test_ext036_buildsystem_escalate.py` (OFFLINE -- no network/Jetson; monkeypatch
+   `harness.system_builder.build_system_escalating`/`build_system` with recording stubs and
+   `harness.cli._buildsystem_escalation_config`/`harness.collaborative_solve._http_swap` with
+   canned/stub values, mirroring the stubbing patterns already used across the other
+   `tests/test_ext036_*.py` CLI tests): assert (a) when escalation is configured,
+   `cmd_buildsystem` calls `build_system_escalating` with the right `primary_llm`/
+   `fallback_llm`/`fallback_model_id`/`primary_model_id` and a real swap_fn callable; (b) when
+   `_buildsystem_escalation_config()` returns `None` (no specialist registered / disabled), it
+   falls back to plain `build_system` and never constructs a swap_fn; (c) the CLI output
+   reflects escalated-vs-not and which model shipped; (d) `build_system_escalating` raising or
+   an unreachable-manager `swap_fn` never crashes `cmd_buildsystem` (relies on
+   `build_system_escalating`'s own never-raise guarantee -- assert `cmd_buildsystem` still
+   returns a string). Run the FULL `python -m pytest tests/ -q` and confirm it stays green at
+   the new count.
+
+#### Implements
+- [REQ-13] Full difficulty spectrum -- easy / medium / hard / highly-complex creation (live
+  CLI wiring of the offline escalation core: `/buildsystem` now genuinely routes through
+  `build_system_escalating` when a hard-tier specialist is configured, carrying the measured
+  25%->58% ship-rate lift into the actual product path, not just the offline test-gated core)
