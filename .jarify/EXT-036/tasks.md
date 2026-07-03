@@ -427,3 +427,51 @@ still has to build a working system that satisfies it.
   classes (this task fixes a measured harness precision bug in the first slice's task
   definitions so ship/accept rates reflect genuine model capability, not sentence ambiguity;
   live gemma-vs-escalating re-measurement after this fix remains the follow-up)
+
+### [TASK-16] Modification-suite framework + first slice (REQ-21)
+
+REQ-21 needs the harder, more realistic parity instrument: MODIFYING an existing working
+system from a one-sentence change, isolated from the CREATION capability (REQ-20) by starting
+each task from a FIXED, known-good ``start_system`` (a small hand-written fixture) rather than
+a model-built one. Mirrors TASK-14's framework shape and REUSES its independent black-box CLI
+oracle rather than duplicating it, and pairs with REQ-14's ``modify_system``.
+
+#### Steps
+1. New `harness/modification_suite.py`: a `ModificationTask` dataclass (`name, cls, tier
+   ("easy"|"medium"|"hard"), start_system (dict[filename->code], a small KNOWN-GOOD system
+   always with a `main.py` entrypoint following the same single-file CLI contract convention
+   as `system_suite.FIRST_SLICE`), mod_sentence, new_checks (list of (argv, stdin,
+   expected_substring)), regression_checks (list of (argv, stdin, expected_substring))`.
+   Deterministic, no model involved in this module.
+2. `run_modification_suite(modify_fn, tasks=None, python_exe=None) -> dict`: for each task,
+   write `start_system` onto a fresh isolated temp root, call
+   `modify_fn(modules, mod_sentence, root)` (same positional signature as
+   `harness.system_builder.modify_system(modules, mod_sentence, root, *, llm=...)` — callers
+   pass a partial/wrapper binding `llm` so the suite stays model-agnostic and offline-testable),
+   then run the INDEPENDENT black-box CLI oracle against the resulting root for every
+   `new_check` AND every `regression_check`. REUSE `harness.system_suite._run_single_check`
+   (and transitively `_run_cli`/`_resolve_entry`) rather than duplicating that logic — one
+   shared oracle mechanism for both suites. Record per task `{name, cls, tier, applied,
+   new_behavior_ok (all new_checks pass), no_regression (all regression_checks still pass),
+   accepted (new_behavior_ok AND no_regression)}` — `accepted`/`no_regression` are decided by
+   THIS suite's own oracle, never by trusting a `modify_fn`'s self-reported `applied` flag
+   (the critical regression-gate honesty property). Aggregate accept-rate + new-behavior-rate +
+   no-regression-rate (+ applied-rate) overall and per tier. NEVER raise per task — a
+   modify/exec failure records `accepted=False` and the suite continues.
+3. Define a FIRST SLICE of 5 `ModificationTask`s across tiers (2 easy / 2 medium / 1 hard):
+   easy — sum-CLI + "also print the count"; easy — wordcount-CLI + "also print the char
+   count"; medium — C↔F temperature converter + "add Kelvin as a target unit"; medium —
+   todo-list (add/list) + "add a remove command"; hard — kv-store (set/get) + "add a delete
+   command". Each start_system genuinely correct + checks deterministic (no wall-clock).
+4. Tests `tests/test_ext036_modsuite.py` (OFFLINE — no model/network): stub `modify_fn`s that
+   (a) correctly apply a change → accepted=True; (b) apply the new behavior but BREAK a
+   regression check (while dishonestly self-reporting `applied=True`) → accepted=False (the
+   critical regression-gate test, proving the suite's oracle is independent of the thing under
+   test); (c) fail to apply → accepted=False, suite continues; (d) a raising modify_fn →
+   accepted=False, suite continues; (e) the first-slice registry's shape. Run the FULL
+   `python -m pytest tests/ -q` and confirm it stays green.
+
+#### Implements
+- [REQ-21] Parity instrument: matching sentence->system MODIFICATION classes (framework +
+  first slice + the regression-gate honesty property; live gemma-vs-escalating measurement
+  and growing change-class coverage remain open follow-ups)

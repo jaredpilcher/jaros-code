@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -476,7 +476,7 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   full `tests/` 1359 green, no live model). CAVEAT: this task fixes the measured harness-precision bug; the actual
   LIVE gemma-alone / escalating-system re-measurement against the fixed suite remains the next follow-up.
 
-### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (GAP, owner 2026-07-03)
+### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (PARTIAL — framework + first slice, EXT-036 TASK-16, 2026-07-03)
 
 The harder, more realistic parity target: modify an EXISTING working complex system from a one-sentence change (most
 real dev is editing, not greenfield). For each (or a subset of) the CREATION-suite systems, a matching MODIFICATION
@@ -486,7 +486,29 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
 #### Acceptance Criteria
 - [ ] A held-out set of MODIFICATION tasks covering many change classes (add a feature, change a behavior, add a
   constraint/validation, add a new backend/adapter, extend an interface, add error handling, add a pipeline stage, swap
-  an algorithm, add caching, add a CLI subcommand) across difficulty
-- [ ] Each task = an existing working system + one sentence + an automated done-ness check AND a no-regression check
-  (Tenet 3, held-out)
-- [ ] A runner reports per-class modify-success rate + no-regression rate, gemma-alone vs escalating, honestly
+  an algorithm, add caching, add a CLI subcommand) across difficulty — PARTIAL: first slice (TASK-16) covers 5 tasks
+  (add-a-derived-field, add-a-target-unit, add-a-CLI-subcommand ×2) across easy/medium/hard; the broader change-class
+  list above (constraint/validation, new backend/adapter, extend an interface, error handling, pipeline stage,
+  algorithm swap, caching) remains open growth, mirroring REQ-20's growth path.
+- [x] Each task = an existing working system + one sentence + an automated done-ness check AND a no-regression check
+  (Tenet 3, held-out) — **DONE 2026-07-03** (`harness/modification_suite.py`, TASK-16): `ModificationTask.start_system`
+  is a small, hand-written, KNOWN-GOOD fixture (never model-built — isolates modification from creation), written onto
+  a fresh temp root BEFORE `modify_fn` runs; `new_checks`/`regression_checks` are INDEPENDENT black-box CLI checks
+  (`(argv, stdin, expected_substring)`), run against the resulting root by REUSING
+  `harness.system_suite._run_single_check` (no duplicated oracle logic). `accepted`/`no_regression` are decided by the
+  suite's OWN oracle, never by trusting a `modify_fn`'s self-reported `applied` flag — proven with a dedicated test
+  where a stub `modify_fn` dishonestly claims `applied=True` while having broken a regression check, and the suite
+  correctly rejects it (`accepted=False`) regardless.
+- [x] A runner reports per-class modify-success rate + no-regression rate, gemma-alone vs escalating, honestly —
+  **PARTIAL/DONE (mechanism) 2026-07-03** (`harness/modification_suite.py::run_modification_suite`, TASK-16): drives
+  any `modify_fn` matching `modify_system`'s positional signature (`modify_fn(modules, mod_sentence, root)`, callers
+  bind `llm` via a partial/wrapper — model-agnostic), reports `{results: [...], aggregate: {overall, by_tier}}` with
+  honest accept-rate/new-behavior-rate/no-regression-rate/applied-rate; never raises (a per-task modify/exec failure
+  records `accepted=False` and the suite continues). CAVEAT: this task builds+proves the runner OFFLINE only — an
+  actual LIVE run measuring gemma-alone vs. an escalating modifier against this suite has not been executed here;
+  that live measurement is an explicit follow-up. Proven OFFLINE (`tests/test_ext036_modsuite.py`, no live model):
+  aggregation correctness, a correct modification → accepted, the critical regression-gate case (new behavior applied
+  but a regression check broken) → not accepted even when the modify_fn dishonestly self-reports success, a
+  failed-to-apply modify_fn → not accepted without raising, a raising modify_fn → that task recorded not-accepted and
+  the suite continues, the first-slice registry's shape, and an internal-coherence sanity check (a straightforward
+  correct implementation of each first-slice task's own `mod_sentence` satisfies its own checks).
