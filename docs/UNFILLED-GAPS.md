@@ -42,12 +42,20 @@ edit in the right place but with wrong logic, and neither more sampling, nor sel
 SWE frontier is ~11–15% (SWE-AGILE-8B 14.77%, SWE-smith-7B 11.7%); **our 3B+harness at ~13% is already AT that
 frontier.** The gap to Claude is fundamental **small-vs-large-model reasoning capacity**, not a harness or training-infra deficiency.
 
-**What we did NOT yet try (honest — the remaining threads, low-but-nonzero EV):**
-- A model whose differentiator is REASONING, with reasoning INTACT (e.g. base deepseek-r1-distill on the misses) —
-  training it on issue→diff would destroy the reasoning, so the informative test is the base reasoning model. UNTESTED.
+**Reasoning-model lever — TESTED 2026-07-02, BLOCKED by harness-format incompatibility:** base
+`deepseek-r1-distill-qwen-1.5b` (reasoning intact, the genuinely-different lever) run through the real harness on a
+control + a miss → **NO applicable edit from 7 samples on BOTH** — it emits prose/markdown explanations, NOT the
+SEARCH/REPLACE edit format the harness requires, so it produces ZERO parseable edits and can't be dropped in.
+(CAVEAT/harness-bug noted: `grow_one.sh` doesn't delete a stale `pred_<id>.jsonl` when swapping models, so a
+prior model's pred gets re-evaluated → a FALSE `resolved=True` on the control; the REAL deepseek signal is the
+"NO applicable edit". Fix: `rm` the pred at grind start.) So using a reasoning model needs a **new prose/diff-parsing
+solve path** (a harness build) AND its reasoning on hard SWE is itself uncertain — a larger, uncertain effort, deferred.
+
+**What we did NOT yet try (honest — remaining threads, low-but-nonzero EV):**
 - Reasoning-DISTILLED training data (reasoning traces → patch, not issue→patch) — we lack a sovereign source of
   correct reasoning traces for hard SWE (our best local reasoner is itself at the wall). Needs a data source.
-- A gemma-2B / other-family specialist (expected same null by the mechanism; not yet run).
+- A gemma-2B / other-family CODER specialist (expected same null by the mechanism; not run — the 3B+1.5B airtight nulls make it low-EV).
+- A prose/diff-parsing solve path so reasoning models (deepseek) become harness-usable (build + uncertain reasoning payoff).
 
 **REVISIT TRIGGERS (fill this gap when any fires):**
 1. A **stronger reasoning-capable model that fits the Jetson (~8GB)** appears (roster growth L6) — measured-better on SWE-bench.
