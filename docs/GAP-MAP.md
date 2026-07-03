@@ -262,3 +262,18 @@ the plan stage breaks for a genuinely complex spec (diagnose: parse vs validatio
 L1-decompose / L6-route-to-7B frontier). NEXT FILLS: robust acceptance-derivation (unblocks done across easy/medium),
 then diagnose+attack the complex-plan break. The "done" gate is honest (never false-passes) — it's just pessimistic
 because the derived checklist is low-quality; fixing derivation is what turns shipped→done for working systems.
+
+## Sentence-to-system done-ness — post-TASK-6 honest picture (2026-07-03)
+
+TASK-6 (robust executable-acceptance, `060a79a`) FIXED the vague-check bottleneck: derived checks are now filtered to
+real executable `assert`s (+ stricter retry + deterministic smoke fallback that genuinely fails a broken system, no
+false-pass). Live re-run of the easy CSV spec: shipped=True, done=False, unmet=["multiple entries", "handle empty data
+gracefully"] — now REAL executable checks. So the done=False residual is honest + TWO-fold: (1) the built system
+genuinely lacks EDGE-CASE completeness (the small model builds a basic version; repair couldn't reason the edge cases)
+— the reasoning/completeness frontier (L6 route-to-7B / L7 fine-tune lever); (2) the acceptance derivation is somewhat
+OVER-STRICT — it invents edge-case requirements ("handle empty data") the literal spec never asked for, so a
+spec-meeting system reports not-done. NET STATE of sentence->system: build SHIPS runnable multi-module systems (to 4
+modules), done-ness uses honest executable checks, and the two remaining levers are (a) acceptance-SCOPING (test the
+spec's stated requirements, not invented edge cases — a refinement) and (b) model completeness on edge cases (the 7B /
+fine-tune frontier). The CREATE path is functionally complete + honest; reaching done RELIABLY on the literal spec is
+the acceptance-scoping refinement; reaching done on IMPLIED edge cases is the reasoning-tier (7B) frontier.
