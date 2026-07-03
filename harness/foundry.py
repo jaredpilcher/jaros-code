@@ -32,6 +32,9 @@ class ShipResult:
     cli_code: str
     cases: list = field(default_factory=list)
     project: str = "foundry"
+    # #EXT-035-REQ-4 Start
+    incomplete_modules: list = field(default_factory=list)
+    # #EXT-035-REQ-4 End
 
 
 def _sandbox_dir(project: str, work_dir: str | None) -> Path:
@@ -45,12 +48,22 @@ def _sandbox_dir(project: str, work_dir: str | None) -> Path:
     return sandbox
 
 
-def _append_ship_log(project: str, ship: bool, cases: list) -> None:
+def _append_ship_log(
+    project: str,
+    ship: bool,
+    cases: list,
+    # #EXT-035-REQ-4 Start
+    incomplete_modules: list | None = None,
+    # #EXT-035-REQ-4 End
+) -> None:
     SHIP_LOG.parent.mkdir(parents=True, exist_ok=True)
     entry = {
         "project": project,
         "ship": ship,
         "cases": [{"argv": c["argv"], "ok": c["ok"]} for c in cases],
+        # #EXT-035-REQ-4 Start
+        "incomplete_modules": incomplete_modules or [],
+        # #EXT-035-REQ-4 End
     }
     with open(SHIP_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
@@ -65,6 +78,9 @@ def assemble_and_ship(
     arg_mode: str = "ints",
     work_dir: str | None = None,
     project: str = "foundry",
+    # #EXT-035-REQ-4 Start
+    module_oracles: dict[str, bool] | None = None,
+    # #EXT-035-REQ-4 End
 ) -> ShipResult:
     """Assemble `lib_code` + a synthesized CLI wrapper in a sandbox, RUN it on
     every `(argv, expected_stdout)` in `ship_cases`, and grade binary
@@ -100,8 +116,19 @@ def assemble_and_ship(
 
     ship = bool(cases) and all(c["ok"] for c in cases)
 
-    _append_ship_log(project, ship, cases)
+    # #EXT-035-REQ-4 Start
+    incomplete = sorted(m for m, ok in (module_oracles or {}).items() if not ok)
+    ship = ship and not incomplete
 
-    return ShipResult(ship=ship, cli_code=cli_code, cases=cases, project=project)
+    _append_ship_log(project, ship, cases, incomplete)
+
+    return ShipResult(
+        ship=ship,
+        cli_code=cli_code,
+        cases=cases,
+        project=project,
+        incomplete_modules=incomplete,
+    )
+    # #EXT-035-REQ-4 End
 
 # #EXT-035-REQ-2 End

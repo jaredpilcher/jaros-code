@@ -15,11 +15,15 @@ implementation:
   - file: harness/foundry.py
     ranges:
       - - 23
-        - 107
+        - 134
   - file: tests/test_ext035_foundry.py
     ranges:
       - - 14
         - 94
+  - file: tests/test_ext035_ship_completeness.py
+    ranges:
+      - - 12
+        - 89
 ---
 
 The **Foundry** (PURSUIT §5G/§7; scoreboard instruments #7 long-horizon + #8 ship-log) is where
@@ -112,3 +116,25 @@ dep symbol still passes its oracle.
       matching a dep stem). This unlocks genuine multi-component coordination for the (common) qualified form.
       Offline test: a `packer` using `codec.encode(...)` + `dep_exports={"codec":[...]}` → `import codec`
       injected, and idempotent; bare-name form still works. Full suite green.
+
+### [REQ-4] Ship-gate heeds module completeness (don't ship an incomplete build)
+
+MEASURED gap (docs/GAP-MAP.md #7, 4-module scale-test 2026-07-02): the ship-gate grades ship/no-ship purely on
+whether the assembled tool's CLI `ship_cases` produce the right stdout. But a dependency MODULE can be INCOMPLETE and
+still ship if the CLI cases don't exercise the missing part — measured: gemma built a codec with a correct `encode`
+but OMITTED `decode`; its `build_from_intent` oracle CAUGHT it (`oracle_pass=False`), yet the CLI cases (encode-path
+only) passed → SHIP=True on an incomplete module. Claude Code would ship a COMPLETE module. Deterministic two-plane
+fix: let the ship-gate account for per-module oracle results — a module that failed its own oracle must block/flag
+the ship, not pass on run-cases alone.
+
+#### Acceptance Criteria
+- [x] `assemble_and_ship` gains an optional keyword `module_oracles: dict[str, bool] | None = None` (module name →
+      did its build_from_intent oracle pass). Default `None` → behavior byte-identical to today (backward compatible)
+- [x] When `module_oracles` is provided and ANY value is False, `ship` is False regardless of the CLI cases — an
+      incomplete build does not ship. The CLI cases still RUN (diagnostic), so `cases` is still populated
+- [x] `ShipResult` gains `incomplete_modules: list[str]` (the module names whose oracle was False, sorted;
+      empty when `module_oracles` is None or all True). The ship-log line includes it
+- [x] Offline test (`tests/test_ext035_ship_completeness.py`, NO model): (a) a CORRECT single-module lib + passing
+      cases + `module_oracles={'lib': True}` → ship True, incomplete_modules []; (b) the SAME correct lib + passing
+      cases but `module_oracles={'lib': True, 'dep': False}` → ship False, incomplete_modules ['dep'], cases still
+      ran + all ok; (c) `module_oracles=None` → identical result to omitting it (backward compat). Full suite green
