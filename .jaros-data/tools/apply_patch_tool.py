@@ -20,6 +20,14 @@ except Exception:  # pragma: no cover
     def unsafe_reason(code):  # type: ignore
         return None
 
+# #EXT-037-REQ-1 Start
+try:
+    from _pathjail import path_escape_reason  # root-jail gate (EXT-037 / REQ-1)
+except Exception:  # pragma: no cover - fail safe if helper missing
+    def path_escape_reason(root, target):  # type: ignore
+        return None
+# #EXT-037-REQ-1 End
+
 # #EXT-001-REQ-4 Start
 
 
@@ -35,6 +43,13 @@ class ApplyPatchTool:
             return ValidationResult.reject("code.apply_patch requires 'old' and 'new' strings")
         if not isinstance(payload.get("old"), str) or not isinstance(payload.get("new"), str):
             return ValidationResult.reject("'old' and 'new' must be strings")
+        # #EXT-037-REQ-1 Start
+        root = payload.get("root")
+        if isinstance(root, str) and root:
+            escape = path_escape_reason(root, path)
+            if escape is not None:
+                return ValidationResult.reject(f"code.apply_patch refused path outside root: {escape}")
+        # #EXT-037-REQ-1 End
         hit = unsafe_reason(payload.get("new", ""))
         if hit is not None:
             return ValidationResult.reject(

@@ -2,8 +2,8 @@
   "REQ-6": [
     {
       "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 22,
-      "endLine": 58
+      "startLine": 30,
+      "endLine": 73
     }
   ],
   "REQ-5": [
@@ -16,8 +16,8 @@
   "REQ-13": [
     {
       "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 35,
-      "endLine": 91
+      "startLine": 43,
+      "endLine": 106
     },
     {
       "file": "tests/test_ext001_search_replace_e2e.py",
@@ -77,8 +77,8 @@
   "REQ-4": [
     {
       "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 23,
-      "endLine": 76
+      "startLine": 31,
+      "endLine": 91
     }
   ]
 }

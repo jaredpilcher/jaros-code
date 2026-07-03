@@ -19,6 +19,14 @@ except Exception:  # pragma: no cover - fail safe if helper missing
     def unsafe_reason(code):  # type: ignore
         return None
 
+# #EXT-037-REQ-1 Start
+try:
+    from _pathjail import path_escape_reason  # root-jail gate (EXT-037 / REQ-1)
+except Exception:  # pragma: no cover - fail safe if helper missing
+    def path_escape_reason(root, target):  # type: ignore
+        return None
+# #EXT-037-REQ-1 End
+
 # #EXT-001-REQ-6 Start
 _MAX_BYTES = 1_000_000
 
@@ -36,6 +44,13 @@ class WriteFileTool:
             return ValidationResult.reject("code.write_file requires a 'content' string")
         if len(content.encode("utf-8")) > _MAX_BYTES:
             return ValidationResult.reject("code.write_file content exceeds size cap")
+        # #EXT-037-REQ-1 Start
+        root = payload.get("root")
+        if isinstance(root, str) and root:
+            escape = path_escape_reason(root, path)
+            if escape is not None:
+                return ValidationResult.reject(f"code.write_file refused path outside root: {escape}")
+        # #EXT-037-REQ-1 End
         hit = unsafe_reason(content)
         if hit is not None:
             return ValidationResult.reject(

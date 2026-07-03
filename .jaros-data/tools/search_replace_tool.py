@@ -24,6 +24,14 @@ except Exception:  # pragma: no cover
     def unsafe_reason(code):  # type: ignore
         return None
 
+# #EXT-037-REQ-1 Start
+try:
+    from _pathjail import path_escape_reason  # root-jail gate (EXT-037 / REQ-1)
+except Exception:  # pragma: no cover - fail safe if helper missing
+    def path_escape_reason(root, target):  # type: ignore
+        return None
+# #EXT-037-REQ-1 End
+
 # Add the repo root to sys.path so `harness.swebench_live` imports cleanly
 # (mirrors `.jaros-data/agents/locate_agent.py`).
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,6 +67,13 @@ class SearchReplaceTool:
             return ValidationResult.reject("code.search_replace requires 'search' and 'replace' strings")
         if not isinstance(payload.get("search"), str) or not isinstance(payload.get("replace"), str):
             return ValidationResult.reject("'search' and 'replace' must be strings")
+        # #EXT-037-REQ-1 Start
+        root = payload.get("root")
+        if isinstance(root, str) and root:
+            escape = path_escape_reason(root, path)
+            if escape is not None:
+                return ValidationResult.reject(f"code.search_replace refused path outside root: {escape}")
+        # #EXT-037-REQ-1 End
         hit = unsafe_reason(payload.get("replace", ""))
         if hit is not None:
             return ValidationResult.reject(
