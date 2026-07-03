@@ -63,6 +63,22 @@ passing behavior, the model identifies + regenerates the targeted module(s) with
 (syntax-gated + repaired), and a REGRESSION GATE re-runs the baseline-passing checks — any
 regression REVERTS the modified module(s) (disk + dict) and reports ``applied=False``. Honest
 (Tenet 3): a modification is ``applied`` only when nothing that used to work broke.
+
+TASK-13 (REQ-13) adds ``build_system_escalating(spec, root, *, primary_llm, fallback_llm=None,
+swap_fn=None, fallback_model_id=None, primary_model_id=None)`` — an OFFLINE, test-gated
+ESCALATE-ONLY-ON-FAILURE core for the hard tier. MEASURED (2026-07-03): on complex builds
+gemma-4-e2b ships 2/3 (fully-completes 1) while Qwen2.5-Coder-7B ships 3/3 but never fully
+completes and costs ~3x latency — so routing everything to the 7B is a bad trade. The honest
+lever is to run the default (primary) model first and only pay for the stronger fallback when
+the primary actually failed to ship, capturing the marginal coverage without losing the
+primary's done-ness or latency on the common (shipped) case. Two-plane: the model does the
+build; the deterministic wrapper decides WHETHER to escalate, performs the serving swap via an
+injectable ``swap_fn`` (mirrors ``harness.collaborative_solve._http_swap``'s
+``(model_id: str) -> None`` convention), restores the primary model afterward, and picks the
+better of the two results by a fixed rule (shipped > done > module count). Never raises: a
+``swap_fn``/fallback-build failure gracefully falls back to the primary-only result. Live
+CLI/Jetson wiring of ``swap_fn`` is an explicit out-of-scope follow-up — this task only builds
+the offline-testable core.
 """
 
 from __future__ import annotations
@@ -856,3 +872,73 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         note += "; new behavior " + ("confirmed" if new_behavior_ok else "not confirmed")
     return _modify_result(modules=modules, applied=True, new_behavior_ok=new_behavior_ok, note=note)
 # #EXT-036-REQ-14 End
+
+
+# #EXT-036-REQ-13 Start
+# TASK-13 (REQ-13): hard-tier ESCALATION core — run the default (primary) model first; only pay
+# for the stronger fallback (measured: Qwen2.5-Coder-7B) when the primary actually failed to ship.
+# OFFLINE, test-gated. Live CLI/Jetson wiring of a real `swap_fn` (e.g.
+# `harness.collaborative_solve._http_swap(manager_url)`) is an explicit OUT-OF-SCOPE follow-up.
+
+def _better_result(fallback: dict, primary: dict) -> dict:
+    """Deterministic tie-break rule (REQ-13): prefer shipped over not-shipped, then done over
+    not-done, then more built modules. The PRIMARY wins an exact tie — the fallback must be
+    STRICTLY better to be worth the extra latency/cost it already paid. Never raises — a
+    malformed dict is treated as the worst possible result."""
+    def _score(r: dict) -> tuple:
+        r = r if isinstance(r, dict) else {}
+        return (
+            1 if r.get("shipped") else 0,
+            1 if r.get("done") else 0,
+            len(r.get("modules") or {}),
+        )
+    return fallback if _score(fallback) > _score(primary) else primary
+
+
+def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallback_llm=None,
+                             swap_fn=None, fallback_model_id: "str | None" = None,
+                             primary_model_id: "str | None" = None) -> dict:
+    """ESCALATE-ONLY-ON-FAILURE wrapper around ``build_system`` (REQ-13). Runs the default
+    (``primary_llm``) build first; if it ships, returns it AS-IS — ``fallback_llm``/``swap_fn``
+    are NEVER invoked, so the common case pays no extra latency. Only when the primary FAILS to
+    ship, and a ``fallback_llm`` is supplied, does it swap to the stronger fallback model (via
+    ``swap_fn(fallback_model_id)`` when a ``swap_fn`` is given — the two-plane serving swap) and
+    retry with ``build_system(spec, root, llm=fallback_llm)``, returning whichever result is
+    BETTER by ``_better_result``'s deterministic rule (shipped > done > module count). Restores
+    the primary model afterward (``swap_fn(primary_model_id)`` in a ``finally`` block) whenever a
+    swap to the fallback was made and both ``swap_fn``/``primary_model_id`` are available.
+
+    Adds two metadata keys to every returned dict (including primary-only returns, for a
+    consistent shape): ``escalated`` (bool — whether a fallback attempt was actually made) and
+    ``model`` (``"primary"`` or ``"fallback"`` — which model's result was returned).
+
+    NEVER raises (mirrors ``build_system``): a ``swap_fn`` failure or an exception from the
+    fallback ``build_system`` call is caught and the PRIMARY result is returned unchanged (with
+    the metadata keys added) — escalation never leaves the caller worse off than primary-only.
+    """
+    primary_result = build_system(spec, root, llm=primary_llm)
+    if primary_result.get("shipped"):
+        return {**primary_result, "escalated": False, "model": "primary"}
+
+    if fallback_llm is None:
+        return {**primary_result, "escalated": False, "model": "primary"}
+
+    swapped_to_fallback = False
+    try:
+        if swap_fn is not None and fallback_model_id is not None:
+            swap_fn(fallback_model_id)
+            swapped_to_fallback = True
+        fallback_result = build_system(spec, root, llm=fallback_llm)
+    except Exception:
+        return {**primary_result, "escalated": False, "model": "primary"}
+    finally:
+        if swapped_to_fallback and swap_fn is not None and primary_model_id is not None:
+            try:
+                swap_fn(primary_model_id)
+            except Exception:
+                pass   # never let a restore failure raise out of the wrapper
+
+    winner = _better_result(fallback_result, primary_result)
+    model_tag = "fallback" if winner is fallback_result else "primary"
+    return {**winner, "escalated": True, "model": model_tag}
+# #EXT-036-REQ-13 End

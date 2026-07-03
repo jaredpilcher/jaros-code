@@ -255,16 +255,33 @@ Tenet-5 UX and pairs with REQ-8 (the system asking the USER) — REQ-12 is the r
 - [ ] Familiar Claude-Code affordances: streaming output, clear turn markers, `/help` + slash commands still available,
   graceful interrupt — but UX NEVER overrides a higher tenet (Tenet 5 is the lowest-priority tenet)
 
-### [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation  (GAP, owner 2026-07-03)
+### [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation  (PARTIAL — offline escalation core DONE, TASK-13)
 
 Sentence→system must span the whole difficulty range, not just easy. SIMPLE/EASY is PROVEN (REQ-4). Push medium →
 hard → highly-complex; the honest break-point at each tier is the recorded gap (likely bites at the reasoning-heavy
 tiers, the measured small-model frontier — so expect two-plane scaffolding + roster routing to a stronger Jetson-fit
 model, e.g. the queued Qwen2.5-Coder-7B, to be the lever for hard/highly-complex).
 
+**MEASURED (2026-07-03, commit c182c33):** on complex builds gemma-4-e2b ships 2/3 (fully-completes 1) while
+Qwen2.5-Coder-7B ships 3/3 but never fully-completes and costs ~3x latency — so routing everything to the 7B is
+a bad trade; ESCALATE-ONLY-ON-FAILURE (run the default, only pay for the 7B when the default failed to ship) is
+the honest lever, and its offline core is now built.
+
 #### Acceptance Criteria
 - [x] easy (proven, REQ-4) — [ ] medium — [ ] hard — [ ] highly-complex, each with a held-out sentence set + honest pass rate
 - [ ] The break-point tier is documented with the failing LEVEL (spec/arch/interface/body/integration) and the lever tried
+- [x] An offline, test-gated ESCALATION core that runs the default model first and only escalates to a measured
+  stronger fallback (e.g. Qwen2.5-Coder-7B) when the default fails to ship, never on a shipped result — **DONE
+  2026-07-03** (`harness/system_builder.py::build_system_escalating`, TASK-13): wraps `build_system` without
+  modifying it; a shipped primary result returns AS-IS (`fallback_llm`/`swap_fn` never invoked — no latency cost
+  on the common case); an unshipped primary escalates via an injectable `swap_fn(model_id)` (mirrors
+  `harness.collaborative_solve._http_swap`'s convention) to the fallback build, picks the better result by a
+  deterministic rule (shipped > done > module count, primary wins ties), and restores the primary model
+  afterward in a `finally` block. Never raises: a `swap_fn`/fallback-build failure gracefully returns the
+  primary result. Proven OFFLINE (`tests/test_ext036_escalate.py`, canned/fake llms + a stub `swap_fn`
+  recording calls, no live model/network/Jetson). CAVEAT (honest scope): this is the offline mechanism only —
+  live CLI/Jetson wiring (a real `swap_fn` via `collaborative_solve._http_swap`) and the medium/hard/
+  highly-complex held-out sweep above remain OPEN follow-ups.
 
 ### [REQ-14] Modification from a sentence — evolve an existing system  (PARTIAL — regression-gated modify_system DONE, TASK-7)
 

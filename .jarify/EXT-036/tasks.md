@@ -295,3 +295,44 @@ unneeded question in interactive mode); headless/one-shot falls back to a sensib
 
 #### Implements
 - [REQ-8] Ask-the-user when needed — clarify ambiguity (interactive; headless falls back)
+
+### [TASK-13] Hard-tier escalation core for build_system (REQ-13)
+
+MEASURED (2026-07-03, commit c182c33): on complex sentence->system builds, gemma-4-e2b SHIPS 2/3
+(fully-completes 1) while Qwen2.5-Coder-7B SHIPS 3/3 but never fully-completes and costs ~3x
+latency. Routing EVERYTHING to the 7B is a bad trade; the honest lever for REQ-13's hard tier is
+ESCALATE-ONLY-ON-FAILURE: run the default model first, and only pay the 7B's cost when the default
+actually failed to ship — capturing the marginal coverage (e.g. the case gemma ships 0 modules for)
+without losing gemma's done-ness or latency on the common case. OFFLINE, test-gated core only; live
+CLI/Jetson wiring (via `collaborative_solve._http_swap`) is an explicit OUT-OF-SCOPE follow-up.
+
+#### Steps
+1. Add `harness/system_builder.py::build_system_escalating(spec, root, *, primary_llm,
+   fallback_llm=None, swap_fn=None, fallback_model_id=None, primary_model_id=None) -> dict`: run
+   `build_system(spec, root, llm=primary_llm)`; if it `shipped`, return it AS-IS (fallback_llm and
+   swap_fn are NEVER invoked — the common, low-latency path). Add `escalated: False` and
+   `model: "primary"` to the returned dict for a consistent shape (do not touch `build_system`
+   itself or its return shape).
+2. If the primary result is NOT shipped and `fallback_llm` is provided: call `swap_fn(fallback_model_id)`
+   when `swap_fn` is given (two-plane serving swap — activates the fallback model), then run
+   `build_system(spec, root, llm=fallback_llm)`. Pick the BETTER of the two results by a
+   deterministic rule: prefer shipped over not-shipped, then prefer done over not-done, then prefer
+   more built modules. Tag the returned dict `escalated: True` and `model: "fallback"` or
+   `"primary"` depending on which result won.
+3. Cleanup: when a swap to the fallback happened and `primary_model_id` + `swap_fn` are both given,
+   swap back to the primary model in a `finally` block so the default model is restored even if the
+   fallback build raises.
+4. Robustness (Tenet 3, never-raise like `build_system`): if `swap_fn` raises or the fallback
+   `build_system` call raises, catch it and return the primary result (with the escalation metadata
+   keys added) — never raise, never leave the caller worse off than primary-only.
+5. Tests (`tests/test_ext036_escalate.py`, OFFLINE — canned/fake llms + a stub `swap_fn` recording
+   calls, no network/Jetson): (a) primary ships -> returns primary, fallback_llm/swap_fn never
+   invoked, `escalated: False`; (b) primary fails + fallback ships -> escalates, swap_fn called with
+   fallback then primary (restore), returns the fallback result, `escalated: True`; (c) both fail ->
+   returns the better/primary result, never raises; (d) `swap_fn` raises -> gracefully returns the
+   primary result, never raises; (e) the fallback build raises -> returns the primary result, never
+   raises. Run full `tests/` — stays green.
+
+#### Implements
+- [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation (offline
+  escalation core toward the hard tier; live wiring + the difficulty-spectrum sweep remain open)
