@@ -15,6 +15,7 @@ fix_loop`` — it is not reimplemented here (Tenet 3: single source of truth).
 from __future__ import annotations
 
 import json
+import keyword
 import re
 import tempfile
 from pathlib import Path
@@ -206,12 +207,108 @@ def _run_multi_file_task(task: dict, workdir: Path, *, max_iters: int) -> tuple[
     return solved, code, orig_source
 
 
+# ---------------------------------------------------------------------------
+# refactor routing (TASK-5): TWO-PLANE -- the model makes ONE narrow grounded
+# judgment (extract the (old, new) rename pair); the deterministic, already-built
+# harness.refactor.rename_symbol applies it. See _run_refactor_task below for the
+# two-part honesty oracle.
+# ---------------------------------------------------------------------------
+
+_RENAME_PROMPT = (
+    "A refactor instruction describes renaming ONE Python identifier to another.\n"
+    "INSTRUCTION: {instruction}\n\n"
+    "Reply with ONLY the two identifiers, in the exact form OLD->NEW "
+    "(the current name, an arrow, then the new name; no spaces, no other words).\n"
+    "Example: _calc->_compute_total"
+)
+
+_RENAME_PAIR_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*->\s*([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _extract_rename(instruction: str) -> tuple[str, str] | None:
+    """MODEL judgment (two-plane): the ONE narrow grounded classification this branch asks
+    of the local model -- pull the ``(old, new)`` symbol pair out of a natural-language
+    refactor instruction. Uses the same ``build_llm()`` + ``LlmRequest`` call convention as
+    ``LocateBoundary`` (``.jaros-data/agents/locate_agent.py``).
+
+    Degeneracy guard: the reply must parse to the strict ``OLD->NEW`` form with two
+    DISTINCT, valid, non-keyword Python identifiers; anything else (drift, free text, a
+    missing arrow, an unreachable model) is treated as extraction failure. Unlike
+    ``LocateBoundary`` this does NOT fall back to a guess -- a wrong guess here would let a
+    no-op or bogus rename silently score as attempted, so failure must propagate as
+    ``solved=False`` (never a crash), per the two-part oracle below.
+    """
+    from harness.coding_loop import build_llm
+    from jaros.llm import LlmRequest
+
+    prompt = _RENAME_PROMPT.format(instruction=instruction)
+    try:
+        llm = build_llm()
+        raw = llm.complete(LlmRequest(prompt=prompt, params={"temperature": 0.0, "max_tokens": 24})).text
+    except Exception:
+        return None
+    m = _RENAME_PAIR_RE.search(raw or "")
+    if not m:
+        return None
+    old, new = m.group(1), m.group(2)
+    if (old == new or not old.isidentifier() or not new.isidentifier()
+            or keyword.iskeyword(old) or keyword.iskeyword(new)):
+        return None
+    return old, new
+
+
+def _rename_structural_ok(workdir: Path, old: str, new: str, target: str) -> bool:
+    """Two-part oracle, part (ii) -- the structural check (Tenet 3 honesty, prevents a
+    no-op from passing): the OLD symbol must be GONE as a definition and the NEW symbol
+    must be PRESENT as a definition, in ``target``. Reuses the proven AST tool
+    ``harness.navigate.find_definition`` rather than a fresh ad-hoc scan."""
+    if not target:
+        return False
+    from harness.navigate import find_definition
+    old_defs = [d for d in find_definition(str(workdir), old) if d["file"] == target]
+    new_defs = [d for d in find_definition(str(workdir), new) if d["file"] == target]
+    return not old_defs and bool(new_defs)
+
+
+def _run_refactor_task(task: dict, workdir: Path) -> bool:
+    """Route a ``refactor`` task through the two planes: (a) MODEL -- ``_extract_rename``
+    pulls the ``(old, new)`` pair from ``task["instruction"]``; (b) DETERMINISTIC -- the
+    task's ``files`` are written into the isolated ``workdir`` and the already-built,
+    test-gated ``harness.refactor.rename_symbol`` (EXT-003 REQ-6) applies the rename.
+
+    TWO-PART ORACLE (Tenet 3 honesty -- a no-op must never score solved): ``solved`` is
+    True ONLY IF BOTH (i) ``task["test_cmd"]`` still passes AFTER the rename attempt --
+    re-checked HERE independently of ``rename_symbol``'s own internal gate, never trusting
+    a single field -- AND (ii) the structural rename actually happened (see
+    ``_rename_structural_ok``). If extraction fails (``None``), or the model names a
+    symbol that never existed (a no-op: ``rename_symbol`` finds 0 occurrences, the suite
+    stays trivially green, but nothing changed), part (ii) catches it and this scores
+    ``solved=False`` -- never a crash.
+    """
+    pair = _extract_rename(task.get("instruction", ""))
+    if pair is None:
+        return False
+    old, new = pair
+    _write_files(workdir, task.get("files", {}))
+    test_cmd = task.get("test_cmd", "python -m pytest -q")
+    from harness.refactor import rename_symbol
+    from harness.multi_file import _run
+    rename_symbol(str(workdir), old, new, test_cmd)
+    ok_behavior, _ = _run(str(workdir), test_cmd)
+    ok_structural = _rename_structural_ok(workdir, old, new, task.get("target", ""))
+    return ok_behavior and ok_structural
+
+
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
     """Run the daily-driver suite, routing each task by its oracle mechanism.
 
     - ``multi-file`` tasks route through ``harness.multi_file.multi_file_fix`` (checked
       BEFORE the generic pytest branch below so they are never misrouted to the
       single-file ``fix_loop`` path, which has no cross-file localization).
+    - ``refactor`` tasks route through ``_run_refactor_task`` (also checked BEFORE the
+      generic pytest branch): a model extracts the ``(old, new)`` rename pair, then the
+      deterministic ``harness.refactor.rename_symbol`` applies it, graded by the
+      two-part oracle (behavior preserved AND the structural rename actually happened).
     - pytest-oracle tasks (``test_cmd`` present) reuse the proven isolated
       ``eval_runner.setup_task`` + ``coding_loop.fix_loop`` path.
     - answer-oracle tasks (``oracle.type == "answer"``) call ``answer_fn(task) -> str``
@@ -271,6 +368,15 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
                     except Exception:
                         pass
                 # #EXT-027-REQ-3 End
+            elif task.get("category") == "refactor":
+                # Checked BEFORE the generic test_cmd branch below: refactor tasks also
+                # carry test_cmd (the behavior-preservation grader), so without this guard
+                # they would misroute into the single-file fix_loop path (which has no
+                # rename-extraction step and no structural oracle).
+                try:
+                    solved = _run_refactor_task(task, workdir)
+                except Exception:  # a single task failure never sinks the suite
+                    solved = False
             elif task.get("test_cmd"):
                 t = Task(id=task["id"], instruction=task["instruction"],
                          target=task.get("target", ""), test_cmd=task["test_cmd"],

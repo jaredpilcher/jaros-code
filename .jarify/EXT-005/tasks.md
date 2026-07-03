@@ -140,3 +140,37 @@ class). Scope is multi-file ONLY (refactor/write-tests/ops are separate follow-u
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (multi-file category routing → full weighted-category coverage)
+
+### [TASK-5] Daily-driver runner: refactor category routing (two-plane; wire refactor.py into the parity instrument)
+
+Continue closing REQ-13's category-coverage gap (docs/GAP-MAP.md: after TASK-4, coverage is 75/100 weight;
+`refactor` weight-10 is still EMPTY). Wire the **refactor** category end-to-end through the ALREADY-BUILT
+deterministic `harness/refactor.py::rename_symbol` (EXT-003 REQ-6, tokenize-scoped — renames only NAME tokens,
+not comments/strings). TWO-PLANE (on-doctrine): the small model makes ONE narrow judgment — extract the
+`(old_symbol, new_symbol)` rename pair from the natural-language instruction — and the DETERMINISTIC tool applies
+it. Scope: rename-refactor ONLY (move_symbol / extract-method are separate follow-ups).
+
+#### Steps
+1. `harness/daily_driver.run_daily`: add a `category == "refactor"` branch (before the generic `test_cmd` branch).
+   Solve path: (a) MODEL judgment — from `task["instruction"]`, extract the `(old, new)` symbol pair (a single
+   grounded classify the 2B can do; use a narrow prompt + degeneracy guard; if extraction fails, `solved=False`,
+   never crash); (b) DETERMINISTIC — write the task `files` to an isolated temp dir and call
+   `harness.refactor.rename_symbol(cwd, old, new, ...)`; (c) GRADE — see the two-part oracle below. Keep all other
+   category routing unchanged.
+2. **Two-part oracle (HONESTY — Tenet 3, prevents a no-op passing):** a refactor is `solved` ONLY IF BOTH
+   (i) the behavior `test_cmd` still passes (behavior preserved — the test exercises a STABLE public entry point that
+   is NOT the renamed symbol, so a correct rename keeps it green), AND (ii) the structural change actually happened
+   (the OLD symbol name is gone as a definition and the NEW name is present in the target file). A no-op (model fails
+   to rename) fails part (ii); a rename that breaks behavior fails part (i). Do NOT grade on behavior alone.
+3. Seed **2 held-out refactor dev tasks** under `evals/daily_driver/dev/` — e.g. rename an INTERNAL helper
+   (`_calc` → `_compute_total`) while the public function the test calls stays stable; the instruction names the
+   rename in natural language WITHOUT giving the literal tokenized diff. Genuine, not gamed; the model must parse the
+   instruction and the tool must apply the scoped rename. schema `{id, category:"refactor", split, instruction,
+   files:{...}, target, test_cmd, oracle:{type:"refactor", old_absent, new_present}}` (or reuse existing fields —
+   match whatever the runner reads; keep it minimal).
+4. `tests/test_ext005_daily_driver.py`: OFFLINE test (monkeypatch the model extraction to return a known `(old,new)`,
+   let the REAL `rename_symbol` run deterministically) asserting run_daily routes `category=="refactor"`, applies the
+   rename, and enforces BOTH oracle parts (add a no-op case that must score `solved=False`). Full `tests/` stays green.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (refactor category routing → 85/100 weighted-category coverage)

@@ -1,4 +1,26 @@
 {
+  "REQ-13": [
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 26,
+      "endLine": 403
+    },
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 409,
+      "endLine": 493
+    },
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 500,
+      "endLine": 613
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 29,
+      "endLine": 459
+    }
+  ],
   "REQ-12": [
     {
       "file": "tests/test_ext005_proc_treekill.py",
@@ -14,26 +36,6 @@
       "file": "tests/test_ext005_proc_treekill.py",
       "startLine": 92,
       "endLine": 100
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 152,
-      "endLine": 156
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 448,
-      "endLine": 455
-    },
-    {
-      "file": "harness/build_eval.py",
-      "startLine": 158,
-      "endLine": 164
-    },
-    {
-      "file": "harness/agent_loop.py",
-      "startLine": 116,
-      "endLine": 119
     },
     {
       "file": "harness/proc_treekill.py",
@@ -61,6 +63,26 @@
       "endLine": 132
     },
     {
+      "file": "harness/intent_loop.py",
+      "startLine": 152,
+      "endLine": 156
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 448,
+      "endLine": 455
+    },
+    {
+      "file": "harness/build_eval.py",
+      "startLine": 158,
+      "endLine": 164
+    },
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 116,
+      "endLine": 119
+    },
+    {
       "file": "tests/test_pass1_treekill.py",
       "startLine": 53,
       "endLine": 76
@@ -69,23 +91,6 @@
       "file": "tests/test_pass1_treekill.py",
       "startLine": 82,
       "endLine": 102
-    }
-  ],
-  "REQ-13": [
-    {
-      "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 26,
-      "endLine": 403
-    },
-    {
-      "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 409,
-      "endLine": 493
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 28,
-      "endLine": 353
     }
   ],
   "REQ-1": [

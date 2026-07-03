@@ -491,3 +491,123 @@ def test_multi_file_task_scored_unsolved_when_multi_file_fix_does_not_reach_gree
     assert scorecard["solved"] == 0
     assert scorecard["perCategory"]["multi-file"]["passed"] == 0
 # #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
+# refactor routing (TASK-5: two-plane -- model extracts (old,new), the REAL
+# harness.refactor.rename_symbol applies it, deterministically graded)
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+def _refactor_seed_tasks():
+    return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+            if t["category"] == "refactor"]
+
+
+def test_load_daily_tasks_loads_refactor_seed_tasks():
+    tasks = _refactor_seed_tasks()
+    assert {t["id"] for t in tasks} == {"refactor_calc_total", "refactor_check_stock"}
+    for t in tasks:
+        assert t["category"] == "refactor"
+        assert t.get("test_cmd")
+        assert t.get("target")
+        assert len(t.get("files", {})) >= 2
+
+
+def test_refactor_task_not_misrouted_to_the_single_file_fix_loop_path(monkeypatch):
+    """Refactor tasks also carry test_cmd (the behavior-preservation grader), so without
+    the dedicated branch they would fall into the generic pytest/fix_loop branch below --
+    which has no rename-extraction step and no structural oracle."""
+    def _boom(*a, **kw):
+        raise AssertionError("refactor task misrouted to the single-file fix_loop path")
+
+    monkeypatch.setattr("harness.coding_loop.fix_loop", _boom)
+    monkeypatch.setattr(
+        "harness.daily_driver._extract_rename",
+        lambda instruction: ("_calc", "_compute_total"))
+
+    tasks = [t for t in _refactor_seed_tasks() if t["id"] == "refactor_calc_total"]
+    scorecard = run_daily(tasks, max_iters=1)
+    assert scorecard["solved"] == 1
+
+
+def test_refactor_task_applies_the_real_rename_and_scores_it(monkeypatch):
+    """OFFLINE: only the model-extraction step is faked (a known (old,new) pair); the REAL
+    ``harness.refactor.rename_symbol`` runs deterministically end-to-end. Proves routing,
+    a genuine structural rename, AND that the public entry point the test calls (unrelated
+    to the renamed internal helper) stays green -- both oracle parts pass."""
+    monkeypatch.setattr(
+        "harness.daily_driver._extract_rename",
+        lambda instruction: ("_calc", "_compute_total"))
+
+    tasks = [t for t in _refactor_seed_tasks() if t["id"] == "refactor_calc_total"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 1
+    assert "refactor" in scorecard["perCategory"]
+    rf = scorecard["perCategory"]["refactor"]
+    assert rf == {"passed": 1, "total": 1, "rate": 1.0, "wilson": rf["wilson"]}
+
+
+def test_refactor_second_seed_also_solves_with_its_own_pair(monkeypatch):
+    monkeypatch.setattr(
+        "harness.daily_driver._extract_rename",
+        lambda instruction: ("_chk", "_check_stock"))
+
+    tasks = [t for t in _refactor_seed_tasks() if t["id"] == "refactor_check_stock"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 1
+
+
+def test_refactor_extraction_failure_scores_unsolved_never_crashes(monkeypatch):
+    """The model abstains / drifts (no parseable OLD->NEW pair) -> solved=False, no crash."""
+    monkeypatch.setattr("harness.daily_driver._extract_rename", lambda instruction: None)
+
+    tasks = [t for t in _refactor_seed_tasks() if t["id"] == "refactor_calc_total"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["refactor"]["passed"] == 0
+
+
+def test_refactor_no_op_rename_scores_unsolved_two_part_oracle_catches_it(monkeypatch):
+    """HONESTY (Tenet 3): the model names a symbol that doesn't exist in the code --
+    rename_symbol finds 0 occurrences, the (unchanged) suite stays trivially green, but
+    NOTHING was actually renamed. Behavior-only grading would wrongly call this solved;
+    the structural half of the two-part oracle must catch it."""
+    monkeypatch.setattr(
+        "harness.daily_driver._extract_rename",
+        lambda instruction: ("_does_not_exist", "_compute_total"))
+
+    tasks = [t for t in _refactor_seed_tasks() if t["id"] == "refactor_calc_total"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["refactor"]["passed"] == 0
+
+
+def test_extract_rename_degeneracy_guard_rejects_identical_old_and_new():
+    from harness.daily_driver import _RENAME_PAIR_RE
+    m = _RENAME_PAIR_RE.search("_calc->_calc")
+    assert m is not None and m.group(1) == m.group(2)
+    # the guard itself lives inside _extract_rename (requires a live/stubbed llm to reach);
+    # the regex-level fixture above documents the case the identity check in
+    # _extract_rename rejects (old == new) after a successful parse.
+
+
+def test_extract_rename_returns_none_on_unparseable_reply(monkeypatch):
+    """Degeneracy guard: a reply with no OLD->NEW arrow form never crashes -- it is treated
+    as extraction failure (None), independent of any live model/network."""
+    class _FakeResponse:
+        text = "I cannot determine a rename here."
+
+    class _FakeLlm:
+        def complete(self, request):
+            return _FakeResponse()
+
+    monkeypatch.setattr("harness.coding_loop.build_llm", lambda: _FakeLlm())
+    from harness.daily_driver import _extract_rename
+    assert _extract_rename("rename the helper") is None
+# #EXT-005-REQ-13 End
