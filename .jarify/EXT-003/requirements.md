@@ -8,6 +8,12 @@ implementation:
     ranges:
       - - 1
         - 394
+  - file: harness/refactor.py
+    ranges:
+      - - 25
+        - 49
+      - - 64
+        - 79
 ---
 
 This spec serves **Tenets 1, 3 & 5** of PRIME-001. Single-purpose agents (EXT-002)
@@ -125,3 +131,29 @@ versus any single strategy. Repair tasks keep feedback-iteration unchanged.
       failures. `multi_file_fix` keeps a candidate's partial edit only if it strictly reduces
       the failing-test count, then fixes the next file on top. Verified end-to-end: two
       independent bugs in two files both located + fixed; 8/8 single-file unchanged; suite 118.
+
+### [REQ-6] Scoped rename — don't rename inside comments/docstrings/strings (Claude-Code-parity precise refactor)
+
+MEASURED gap (docs/GAP-MAP.md #4, verified 2026-07-02): `harness/refactor.py::rename_symbol` renames with a crude
+word-boundary REGEX (`\b{old}\b`) over every `.py` file, so it also rewrites the symbol's name inside COMMENTS,
+DOCSTRINGS, and STRING LITERALS. The suite gate preserves BEHAVIOR (reverts on red), but a cosmetic over-rename in
+non-behavioral text does NOT turn the suite red, so it SHIPS — a messy diff Claude Code would never produce (CC renames
+the symbol precisely). Pure two-plane DETERMINISTIC quality gap — no model — fixable by tokenizing and renaming only
+identifier tokens. (The module docstring already anticipated this: "A future AST version can tighten scope.")
+
+#### Acceptance Criteria
+- [x] `rename_symbol` renames only Python NAME (identifier) tokens equal to `old` — it does NOT alter occurrences
+      inside STRING/FSTRING literals or COMMENTs. Use `tokenize` to find NAME-token spans and do position-based
+      replacement (reverse order per line/offset so spans stay valid; no `untokenize` reformatting — the rest of each
+      file is byte-identical apart from the renamed identifiers)
+- [x] The existing behavior is otherwise preserved: still whole-repo (`.py` files), still test-gated (suite green
+      before; on red after, REVERT via the snapshot), same return-dict shape (`renamed/occurrences/files/note`).
+      A file that fails to tokenize (SyntaxError) is skipped safely, not crashed
+- [x] `occurrences` counts only the renamed identifier tokens (not string/comment hits)
+- [x] Offline test (`tests/test_ext003_scoped_rename.py`, NO model, tmp_path): a repo where the symbol name ALSO
+      appears in a comment, a docstring, and a string literal (e.g. a dict key `"area"` used as data) → after
+      `rename_symbol('area','extent')`, the identifier refs are renamed and the suite stays green, but the comment,
+      docstring, and the DATA string `"area"` are UNCHANGED. Plus: a same-named substring (`areatotal`) is NOT touched
+      (word-token boundary), and the red-suite-reverts path still holds. Full suite stays green
+- [x] Add `harness/refactor.py` to EXT-003 traceability (index.json) — it is currently UNTRACED — tagging the REQ-6
+      ranges, and record `harness/refactor.py` in the frontmatter `implementation` list
