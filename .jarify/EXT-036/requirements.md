@@ -218,7 +218,7 @@ for the small model), and skill execution wired into the two-plane architecture.
 - [ ] A grounded skill-selection judgment (the small model picks the right skill for a task, or none)
 - [ ] Skill execution wired in; measured that skill-use helps on tasks that need it
 
-### [REQ-12] CLI UX parity with Claude Code  (GAP, owner directive 2026-07-03 — serves Tenet 5)
+### [REQ-12] CLI UX parity with Claude Code  (PARTIAL — conversational session + resume backbone DONE, TASK-1; mid-task steering / inline ask / streaming remain)
 
 The jaros-code CLI (`harness/cli.py`, `scripts/jcode.*`) must FEEL like Claude Code: a conversational, interactive
 terminal session — the user interacts naturally, asks questions, gives instructions mid-task, and can resume prior
@@ -326,7 +326,7 @@ retrieval-negative lesson — inject the few relevant facts, not a noisy dump; s
   built from); this task's own tests are OFFLINE (stubbed selection, no live model) per its testing constraint, so a
   fresh live-model re-measurement of this exact wiring has not been re-run here.
 
-### [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)  (GAP)
+### [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)  (DONE — EXT-036 TASK-2, 2026-07-03)
 
 A per-repo `JAROS.md` (project instructions/conventions) that is loaded and injected into the agent's context on
 EVERY user prompt, so the system always honors the project's rules — exactly like CLAUDE.md.
