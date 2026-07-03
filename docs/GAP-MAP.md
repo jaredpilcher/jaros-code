@@ -245,3 +245,20 @@ value is CROSS-SESSION + LARGE-SCALE recall (REQ-16)** — where the transcript 
 the window — precise selection from a per-repo persistent fact store, NOT because raw is worse in-session. Escalation
 ladder applied: don't build the expensive agent-recall where cheap raw works; deploy it exactly where raw structurally
 can't (cross-session/scale). Guards the old retrieval-negative regression (inject the few, never a dump).
+
+## Sentence-to-system DIFFICULTY SPECTRUM — MEASURED (2026-07-03, owner's easy/medium/hard emphasis)
+
+Ran the productionized `build_system` (EXT-036) on easy/medium/complex specs (`.jaros-data/s2s_spectrum.py`):
+- **easy** (CSV stats): 3 modules, SHIPPED, done=False (2 unmet, incl. a vague "Conceptual check"), 2 repairs, 160s.
+- **medium** (URL shortener): **4 modules, SHIPPED**, done=False — unmet = ["no acceptance checklist derived"] (the
+  acceptance step produced NO parseable checklist), 0 repairs, 181s.
+- **complex** (task queue): 0 modules, FAILED at 13s — broke at the PLAN stage (fast-fail, no build).
+HONEST BREAK-POINT: the BUILD/ASSEMBLE pipeline is STRONG — it ships runnable multi-module systems to at least 4
+modules. The bottleneck is NOT the build; it's TWO things: (1) **acceptance-checklist DERIVATION is the weak link** —
+the small model emits vague/non-executable ("conceptual") checks or fails to produce a parseable checklist at all, so
+systems that SHIP (work) still report done=False. This is the highest-leverage next fix (robust executable-acceptance:
+filter to runnable assertions, checklist-repair, or a deterministic scaffold). (2) **complex planning fast-fails** —
+the plan stage breaks for a genuinely complex spec (diagnose: parse vs validation vs model-incomprehension; likely the
+L1-decompose / L6-route-to-7B frontier). NEXT FILLS: robust acceptance-derivation (unblocks done across easy/medium),
+then diagnose+attack the complex-plan break. The "done" gate is honest (never false-passes) — it's just pessimistic
+because the derived checklist is low-quality; fixing derivation is what turns shipped→done for working systems.
