@@ -215,6 +215,16 @@ contract-precise sentences → real numbers; a dishonest LOW rejected, Tenet 3).
 run the MODIFICATION suite live (gemma + 7B) for the first edit-from-a-sentence number. Per-task JSON in
 `.jaros-data/creation_suite_{results,gemma}.json`.
 
+**MODIFICATION suite first number → CREATE-vs-EDIT ASYMMETRY (2026-07-03):** ran the modification suite (5 tasks,
+regression-gated, same oracle) live: **gemma accepts 5/5 (100%)** — every edit applied + new behavior + no regression;
+VERIFIED real (a no-op modify_fn scores 0.0 — the gate genuinely requires the added behavior). So the honest picture:
+the small local model is **weak at greenfield CREATION (gemma 1/6, 7B 3/6) but strong at MODIFICATION of a working
+system (gemma 5/5)** — editing is easier (structure given as context, small localized change) AND is the MORE REALISTIC
+dev task. No 7B modification arm needed (gemma at 5/5, no headroom). CONVERGENCE READ: gemma-alone is already
+near-parity on easy-realistic EDITS; the remaining sentence→system gap is greenfield creation (where the 7B escalation
+pays 3×). CAVEAT: n=1/task, 5 simple-to-moderate edits — grow to harder modifications (multi-file, behavior-change) to
+find the modification ceiling. Results: `.jaros-data/modification_suite_gemma.json`.
+
 ## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
 
 **External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
