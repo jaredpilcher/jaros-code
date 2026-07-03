@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -240,8 +240,12 @@ A per-repo `JAROS.md` (project instructions/conventions) that is loaded and inje
 EVERY user prompt, so the system always honors the project's rules — exactly like CLAUDE.md.
 
 #### Acceptance Criteria
-- [ ] `JAROS.md` (per repo) is discovered + loaded; its content is injected into the solve/route prompt every turn
-- [ ] Bounded (fits the small context); absent file is a graceful no-op
+- [x] `JAROS.md` (per repo) is discovered + loaded; its content is injected into the solve/route prompt every turn —
+  **DONE 2026-07-03** (`harness/project_md.py::load_project_md`, discovers repo-root `JAROS.md` falling back to
+  `.jaros/JAROS.md`; injected via `harness/cli.py::_augment_with_history` as a `PROJECT INSTRUCTIONS:` preamble
+  ahead of conversation history on every plain-language + `_nl_fix` turn)
+- [x] Bounded (fits the small context); absent file is a graceful no-op — **DONE 2026-07-03** (bounded to
+  `MAX_CHARS=2000`; absent/unreadable file returns `""` and leaves the request byte-identical)
 
 ### [REQ-18] TODO task creation + management (user-facing)  (GAP)
 

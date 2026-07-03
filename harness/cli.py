@@ -57,14 +57,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # #EXT-036-REQ-12 Start
-def _augment_with_history(text: str, history: "list[dict] | None") -> str:
-    """Fold a BOUNDED recent transcript into `text` as conversation context (REQ-12).
-    Empty/no history leaves `text` byte-identical — a fresh session or one-shot call
-    (no prior turn to carry) behaves exactly like the old stateless routing."""
-    if not history:
+def _augment_with_history(text: str, history: "list[dict] | None", project_md: str = "") -> str:
+    """Fold a BOUNDED recent transcript into `text` as conversation context (REQ-12), preceded
+    by an optional JAROS.md ``PROJECT INSTRUCTIONS:`` preamble (REQ-17, EXT-036 TASK-2). Order
+    is PROJECT INSTRUCTIONS -> conversation history -> the request. Absent history AND absent
+    project_md leaves `text` byte-identical — a fresh session / repo with no JAROS.md behaves
+    exactly like the old stateless routing (a graceful no-op)."""
+    # #EXT-036-REQ-17 Start
+    parts: list[str] = []
+    if project_md:
+        parts.append(f"PROJECT INSTRUCTIONS:\n{project_md}")
+    if history:
+        convo = "\n".join(f"{h.get('role', 'user')}: {h.get('text', '')}" for h in history)
+        parts.append(f"(recent conversation)\n{convo}")
+    if not parts:
         return text
-    convo = "\n".join(f"{h.get('role', 'user')}: {h.get('text', '')}" for h in history)
-    return f"(recent conversation)\n{convo}\n\n(current request) {text}"
+    return "\n\n".join(parts) + f"\n\n(current request) {text}"
+    # #EXT-036-REQ-17 End
 
 
 def _record_turn(cli, user_text: str, assistant_text: str) -> None:
@@ -111,6 +120,13 @@ class JcodeCli:
         from harness.session import Session, load_session
         self.session = (load_session(session_id) if session_id else None) or Session(id=session_id)
         # #EXT-036-REQ-12 End
+        # #EXT-036-REQ-17 Start
+        # Per-repo JAROS.md project instructions (REQ-17): loaded ONCE per CLI instance (not
+        # per keystroke) and cached here; injected into every plain-language turn via
+        # _augment_with_history. Absent file -> "" -> a graceful no-op (see that function).
+        from harness.project_md import load_project_md
+        self.project_md = load_project_md(".")
+        # #EXT-036-REQ-17 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -595,10 +611,13 @@ class JcodeCli:
         ``history`` (EXT-036 REQ-12) is a BOUNDED recent transcript folded into the
         instruction text so a follow-up like "now add error handling to that" resolves
         against the prior turn; it does NOT change the file-detection regex above, and is a
-        no-op (byte-identical instruction) when there is no prior history."""
+        no-op (byte-identical instruction) when there is no prior history. The cached
+        ``self.project_md`` (EXT-036 REQ-17, JAROS.md) is folded in as a preamble the same way."""
         m = re.search(r"[\w./\\-]+\.\w+", arg) or re.search(r"[\w./\\-]+\.\w+", request)
         # #EXT-036-REQ-12 Start
-        instruction = _augment_with_history(request, history)
+        # #EXT-036-REQ-17 Start
+        instruction = _augment_with_history(request, history, getattr(self, "project_md", ""))
+        # #EXT-036-REQ-17 End
         # #EXT-036-REQ-12 End
         if not m:   # no file named -> locate it across the repo
             import os
@@ -695,7 +714,10 @@ class JcodeCli:
                 # #EXT-036-REQ-12 Start
                 history = self.session.recent()
                 orch = self._load_agent("orchestrator_agent.py", self.llm)
-                [d] = orch.decide({"request": _augment_with_history(line, history), "history": history})
+                # #EXT-036-REQ-17 Start
+                augmented = _augment_with_history(line, history, getattr(self, "project_md", ""))
+                # #EXT-036-REQ-17 End
+                [d] = orch.decide({"request": augmented, "history": history})
                 action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
                 banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
                 if action == "fix":

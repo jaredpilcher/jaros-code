@@ -8,42 +8,69 @@
     {
       "file": "harness/cli.py",
       "startLine": 59,
-      "endLine": 84
+      "endLine": 93
     },
     {
       "file": "harness/cli.py",
-      "startLine": 107,
-      "endLine": 113
+      "startLine": 116,
+      "endLine": 122
     },
     {
       "file": "harness/cli.py",
-      "startLine": 556,
-      "endLine": 587
+      "startLine": 572,
+      "endLine": 603
     },
     {
       "file": "harness/cli.py",
-      "startLine": 600,
-      "endLine": 602
+      "startLine": 617,
+      "endLine": 621
     },
     {
       "file": "harness/cli.py",
-      "startLine": 695,
-      "endLine": 706
+      "startLine": 714,
+      "endLine": 728
     },
     {
       "file": "harness/cli.py",
-      "startLine": 707,
-      "endLine": 709
+      "startLine": 729,
+      "endLine": 731
     },
     {
       "file": "harness/cli.py",
-      "startLine": 739,
-      "endLine": 742
+      "startLine": 761,
+      "endLine": 764
     },
     {
       "file": "harness/cli.py",
-      "startLine": 774,
-      "endLine": 779
+      "startLine": 796,
+      "endLine": 801
+    }
+  ],
+  "REQ-17": [
+    {
+      "file": "harness/project_md.py",
+      "startLine": 10,
+      "endLine": 32
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 66,
+      "endLine": 76
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 123,
+      "endLine": 129
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 618,
+      "endLine": 620
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 717,
+      "endLine": 719
     }
   ]
 }

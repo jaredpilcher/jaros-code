@@ -28,3 +28,25 @@ ask-user REQ-8 and mid-task steering are follow-ups that build on this).
 
 #### Implements
 - [REQ-12] CLI UX parity with Claude Code (conversational session state + resume — the backbone)
+
+### [TASK-2] JAROS.md — per-repo project instructions auto-injected every prompt (REQ-17)
+
+Analog of Claude Code's CLAUDE.md: a per-repo `JAROS.md` (project instructions/conventions) loaded and injected into
+the agent's context on EVERY plain-language turn, so the system always honors the project's rules. Composes on the
+TASK-1 routing/session path.
+
+#### Steps
+1. Add `harness/project_md.py` (or a small helper in cli.py): `load_project_md(root)` discovers `JAROS.md` at the repo
+   root (fall back to `.jaros/JAROS.md`); returns its text BOUNDED (e.g. first ~2000 chars, small-model context) or ""
+   if absent. Pure/deterministic, never raises.
+2. In `harness/cli.py`, inject the JAROS.md content into the SAME plain-language routing augmentation that TASK-1 added
+   (`_augment_with_history` / the orchestrator + `_nl_fix` request) — as a clearly-labeled `PROJECT INSTRUCTIONS:`
+   preamble, BEFORE the conversation history. Absent file = graceful no-op (request byte-identical, like empty history).
+   Slash commands unaffected. Load once per session (cache), not per keystroke.
+3. Tests (`tests/test_ext036_project_md.py`, OFFLINE): (a) `load_project_md` reads a JAROS.md from a temp root, bounds
+   it, and returns "" when absent; (b) when a JAROS.md exists, its content appears in the request passed to the
+   orchestrator/_nl_fix on a plain-language turn; (c) absent → request unchanged (no-op); (d) slash commands unaffected.
+   Full `tests/` stays green.
+
+#### Implements
+- [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)
