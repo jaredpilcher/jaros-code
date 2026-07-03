@@ -1,27 +1,15 @@
 {
-  "REQ-13": [
-    {
-      "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 26,
-      "endLine": 403
-    },
-    {
-      "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 409,
-      "endLine": 493
-    },
-    {
-      "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 500,
-      "endLine": 613
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 29,
-      "endLine": 459
-    }
-  ],
   "REQ-12": [
+    {
+      "file": "tests/test_pass1_treekill.py",
+      "startLine": 53,
+      "endLine": 76
+    },
+    {
+      "file": "tests/test_pass1_treekill.py",
+      "startLine": 82,
+      "endLine": 102
+    },
     {
       "file": "tests/test_ext005_proc_treekill.py",
       "startLine": 54,
@@ -81,16 +69,33 @@
       "file": "harness/agent_loop.py",
       "startLine": 116,
       "endLine": 119
+    }
+  ],
+  "REQ-13": [
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 26,
+      "endLine": 403
     },
     {
-      "file": "tests/test_pass1_treekill.py",
-      "startLine": 53,
-      "endLine": 76
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 409,
+      "endLine": 493
     },
     {
-      "file": "tests/test_pass1_treekill.py",
-      "startLine": 82,
-      "endLine": 102
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 500,
+      "endLine": 613
+    },
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 620,
+      "endLine": 763
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 29,
+      "endLine": 592
     }
   ],
   "REQ-1": [

@@ -1,54 +1,10 @@
 {
-  "REQ-3": [
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 57,
-      "endLine": 59
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 126,
-      "endLine": 128
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 41,
-      "endLine": 51
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 169,
-      "endLine": 171
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 238,
-      "endLine": 252
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 262,
-      "endLine": 273
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 285,
-      "endLine": 300
-    },
-    {
-      "file": "tests/test_ext027_autocapture.py",
-      "startLine": 22,
-      "endLine": 172
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": "harness/solution_memory.py",
-      "startLine": 27,
-      "endLine": 263
-    }
-  ],
   "REQ-4": [
+    {
+      "file": "tests/test_ext027_swebench_capture.py",
+      "startLine": 8,
+      "endLine": 204
+    },
     {
       "file": "harness/swebench_live.py",
       "startLine": 318,
@@ -78,11 +34,55 @@
       "file": "harness/swebench_live.py",
       "startLine": 450,
       "endLine": 452
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "tests/test_ext027_autocapture.py",
+      "startLine": 22,
+      "endLine": 172
     },
     {
-      "file": "tests/test_ext027_swebench_capture.py",
-      "startLine": 8,
-      "endLine": 204
+      "file": "harness/intent_loop.py",
+      "startLine": 57,
+      "endLine": 59
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 126,
+      "endLine": 128
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 42,
+      "endLine": 52
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 170,
+      "endLine": 172
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 459,
+      "endLine": 473
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 483,
+      "endLine": 494
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 524,
+      "endLine": 539
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/solution_memory.py",
+      "startLine": 27,
+      "endLine": 263
     }
   ]
 }

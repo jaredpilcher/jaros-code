@@ -299,6 +299,126 @@ def _run_refactor_task(task: dict, workdir: Path) -> bool:
     return ok_behavior and ok_structural
 
 
+# ---------------------------------------------------------------------------
+# write-tests routing (TASK-6): a GENUINE new capability (generating tests for
+# given code), not just wiring an existing one. The honest grader is MUTATION
+# TESTING -- see _write_tests_oracle_ok below for the two-part honesty oracle.
+# ---------------------------------------------------------------------------
+
+_WRITE_TESTS_PROMPT = (
+    "Write pytest tests for the following Python code, based on the instruction below.\n\n"
+    "INSTRUCTION: {instruction}\n\n"
+    "CODE (module(s): {modules}):\n{code}\n\n"
+    "Output ONLY Python code: import the needed names with `from <module> import <name>`, "
+    "then one or more `def test_...():` functions containing `assert` statements that "
+    "verify the described behavior, including typical cases and edge cases. No prose, no "
+    "markdown fences, no explanation.\n\nTests:"
+)
+
+
+def _parse_generated_tests(text: str) -> str:
+    """Pull runnable test code out of the model reply (mirrors the parsing discipline of
+    ``test_writer_agent.parse_tests``): strip markdown fences/chatter, require an actual
+    ``def test`` to exist. Empty string means "no usable test code" -- callers must treat
+    that as ``solved=False``, never crash."""
+    text = re.sub(r"```[\w+-]*", "", text or "").replace("```", "").strip()
+    lines = text.split("\n")
+    start = 0
+    for i, ln in enumerate(lines):
+        if ln.startswith(("from ", "import ", "def test")):
+            start = i
+            break
+    code = "\n".join(lines[start:]).strip()
+    if "def test" not in code:
+        return ""
+    return code + "\n"
+
+
+def _generate_tests(instruction: str, files: dict) -> str:
+    """MODEL grain (write-tests): generate pytest test-file CONTENT from the instruction +
+    the REFERENCE code ONLY. Mirrors the ``build_llm()``/``LlmRequest`` call convention used
+    elsewhere in this module (``_extract_rename``, the build-module test-writer grain).
+
+    HONESTY (Tenet 3): the mutant(s) and any reference test are NEVER shown to the model --
+    only ``task["instruction"]`` and the reference ``files`` content go into the prompt. If
+    the model is unreachable or emits no usable test code, returns ``""`` (never raises) --
+    ``_run_write_tests_task`` treats that as ``solved=False``.
+    """
+    from harness.coding_loop import build_llm
+    from jaros.llm import LlmRequest
+
+    code_blocks = "\n\n".join(f"# {name}\n{content}" for name, content in files.items())
+    modules = ", ".join(f"`{Path(name).stem}`" for name in files) or "the code above"
+    prompt = _WRITE_TESTS_PROMPT.format(instruction=instruction, code=code_blocks, modules=modules)
+    try:
+        llm = build_llm()
+        raw = llm.complete(LlmRequest(prompt=prompt, params={"temperature": 0.0})).text
+    except Exception:
+        return ""
+    return _parse_generated_tests(raw)
+
+
+def _write_tests_oracle_ok(task: dict, generated_tests: str) -> bool:
+    """MUTATION ORACLE (TASK-6 -- the whole point, Tenet 3 honesty). ``solved`` is True ONLY
+    IF BOTH:
+      (i) the generated tests PASS when run against the REFERENCE (correct) code -- proves
+          the tests are valid, not broken; AND
+      (ii) the generated tests KILL EVERY seeded mutant in ``task["mutants"]`` -- for each
+           mutant, the mutant version of the corresponding file REPLACES the reference file,
+           the SAME generated test runs again, and it MUST FAIL (the tests catch the bug).
+
+    A degenerate ``assert True`` test passes (i) but survives every mutant (fails (ii)) ->
+    correctly ``solved=False``. Each run is DETERMINISTIC (reuses ``multi_file._run``, the
+    proven tree-kill-safe pytest runner) -- no model-as-judge for grading.
+    """
+    if not generated_tests.strip():
+        return False
+    mutants = task.get("mutants") or []
+    if not mutants:
+        return False  # nothing to prove the tests actually catch a bug
+    test_name = task.get("target") or "test_generated.py"
+    test_cmd = task.get("test_cmd", "python -m pytest -q")
+    files = task.get("files", {})
+
+    from harness.multi_file import _run
+
+    # (i) tests PASS against the reference (correct) code.
+    with tempfile.TemporaryDirectory(prefix="jcode-wt-ref-") as d:
+        wd = Path(d)
+        _write_files(wd, files)
+        (wd / test_name).write_text(generated_tests, encoding="utf-8")
+        ok_ref, _ = _run(str(wd), test_cmd)
+    if not ok_ref:
+        return False
+
+    # (ii) tests KILL every seeded mutant (each mutant run MUST fail).
+    for mutant in mutants:
+        mfile = mutant.get("file")
+        if not mfile:
+            return False
+        with tempfile.TemporaryDirectory(prefix="jcode-wt-mut-") as d:
+            wd = Path(d)
+            _write_files(wd, files)  # start from the reference set...
+            (wd / mfile).write_text(mutant.get("content", ""), encoding="utf-8")  # ...then swap in the mutant
+            (wd / test_name).write_text(generated_tests, encoding="utf-8")
+            ok_mutant, _ = _run(str(wd), test_cmd)
+        if ok_mutant:
+            return False  # mutant survived -- the tests didn't catch the bug
+    return True
+
+
+def _run_write_tests_task(task: dict) -> bool:
+    """Route a ``write-tests`` task: (a) MODEL generates pytest test content from
+    ``task["instruction"]`` + the reference ``files`` (``_generate_tests`` -- never shown a
+    mutant or any reference test); (b) DETERMINISTIC grading via the two-part MUTATION
+    ORACLE (``_write_tests_oracle_ok``): passes-on-reference AND kills every seeded mutant.
+    """
+    generated = _generate_tests(task.get("instruction", ""), task.get("files", {}))
+    if not generated.strip():
+        return False
+    return _write_tests_oracle_ok(task, generated)
+
+
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
     """Run the daily-driver suite, routing each task by its oracle mechanism.
 
@@ -309,6 +429,10 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
       generic pytest branch): a model extracts the ``(old, new)`` rename pair, then the
       deterministic ``harness.refactor.rename_symbol`` applies it, graded by the
       two-part oracle (behavior preserved AND the structural rename actually happened).
+    - ``write-tests`` tasks route through ``_run_write_tests_task`` (also checked BEFORE
+      the generic pytest branch): a model generates test content from the instruction +
+      reference code, graded by the MUTATION ORACLE (passes on the reference AND kills
+      every seeded mutant -- ``_write_tests_oracle_ok``).
     - pytest-oracle tasks (``test_cmd`` present) reuse the proven isolated
       ``eval_runner.setup_task`` + ``coding_loop.fix_loop`` path.
     - answer-oracle tasks (``oracle.type == "answer"``) call ``answer_fn(task) -> str``
@@ -375,6 +499,15 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
                 # rename-extraction step and no structural oracle).
                 try:
                     solved = _run_refactor_task(task, workdir)
+                except Exception:  # a single task failure never sinks the suite
+                    solved = False
+            elif task.get("category") == "write-tests":
+                # Checked BEFORE the generic test_cmd branch below: write-tests tasks also
+                # carry test_cmd (the mutation-oracle grader), so without this guard they
+                # would misroute into the single-file fix_loop path (which has no test-
+                # generation step and no mutation oracle).
+                try:
+                    solved = _run_write_tests_task(task)
                 except Exception:  # a single task failure never sinks the suite
                     solved = False
             elif task.get("test_cmd"):

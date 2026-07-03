@@ -611,3 +611,153 @@ def test_extract_rename_returns_none_on_unparseable_reply(monkeypatch):
     from harness.daily_driver import _extract_rename
     assert _extract_rename("rename the helper") is None
 # #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
+# write-tests routing (TASK-6: model generates test content, graded by the
+# MUTATION ORACLE -- passes on the reference AND kills every seeded mutant)
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+def _write_tests_seed_tasks():
+    return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+            if t["category"] == "write-tests"]
+
+
+def test_load_daily_tasks_loads_write_tests_seed_tasks():
+    tasks = _write_tests_seed_tasks()
+    assert {t["id"] for t in tasks} == {"wt_is_prime", "wt_count_vowels"}
+    for t in tasks:
+        assert t["category"] == "write-tests"
+        assert t.get("test_cmd")
+        assert t.get("target", "").startswith("test")
+        assert t.get("files")
+        assert t.get("mutants")  # every seed carries at least one behavior-changing mutant
+
+
+def test_write_tests_task_not_misrouted_to_the_single_file_fix_loop_path(monkeypatch):
+    """write-tests tasks also carry test_cmd (the mutation-oracle grader), so without the
+    dedicated branch they would fall into the generic pytest/fix_loop branch below -- which
+    has no test-generation step and no mutation oracle."""
+    def _boom(*a, **kw):
+        raise AssertionError("write-tests task misrouted to the single-file fix_loop path")
+
+    monkeypatch.setattr("harness.coding_loop.fix_loop", _boom)
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: "def test_placeholder():\n    assert True\n")
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+    # routed correctly (no crash from the boomed fix_loop); degenerate test kills no
+    # mutant so it is correctly unsolved -- see the dedicated oracle tests below.
+    assert scorecard["total"] == 1
+    assert "write-tests" in scorecard["perCategory"]
+
+
+# A KNOWN-GOOD test (test data, not model output) for the is_prime seed: passes the
+# reference AND kills BOTH seeded mutants (n%i==0 -> n%i!=0, and range(2,n) -> range(3,n)).
+_KNOWN_GOOD_PRIME_TEST = (
+    "from primes import is_prime\n\n\n"
+    "def test_is_prime():\n"
+    "    assert is_prime(2) is True\n"
+    "    assert is_prime(3) is True\n"
+    "    assert is_prime(7) is True\n"
+    "    assert is_prime(4) is False\n"
+    "    assert is_prime(1) is False\n"
+    "    assert is_prime(0) is False\n"
+)
+
+_DEGENERATE_TEST = "def test_degenerate():\n    assert True\n"
+
+
+def test_write_tests_known_good_test_passes_reference_and_kills_every_mutant(monkeypatch):
+    """OFFLINE: the model-generation step is faked to return a KNOWN-GOOD test (real
+    behavior, no live model) -- proves the mutation oracle genuinely runs the reference AND
+    every seeded mutant, and scores solved=True only when both are satisfied."""
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: _KNOWN_GOOD_PRIME_TEST)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 1
+    assert scorecard["perCategory"]["write-tests"] == {
+        "passed": 1, "total": 1, "rate": 1.0,
+        "wilson": scorecard["perCategory"]["write-tests"]["wilson"]}
+
+
+def test_write_tests_degenerate_test_scores_unsolved_mutation_oracle_catches_it(monkeypatch):
+    """HONESTY (Tenet 3 -- the whole point): a degenerate ``assert True`` test PASSES on the
+    reference code but kills NO mutant. Grading on reference-pass alone would wrongly call
+    this solved; the mutation half of the oracle must catch it."""
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: _DEGENERATE_TEST)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["write-tests"]["passed"] == 0
+
+
+def test_write_tests_second_seed_also_scores_with_its_own_known_good_test(monkeypatch):
+    """The count_vowels seed's two mutants (dropped .lower(), missing 'u') are both killed
+    by a test that exercises an uppercase vowel and a 'u' vowel."""
+    known_good = (
+        "from vowels import count_vowels\n\n\n"
+        "def test_count_vowels():\n"
+        "    assert count_vowels('Apple') == 2\n"
+        "    assert count_vowels('fruit') == 2\n"
+        "    assert count_vowels('sky') == 0\n"
+    )
+    monkeypatch.setattr("harness.daily_driver._generate_tests",
+                        lambda instruction, files: known_good)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_count_vowels"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 1
+
+
+def test_write_tests_no_usable_test_code_scores_unsolved_never_crashes(monkeypatch):
+    """The model is unreachable / emits no parseable test code -> solved=False, no crash."""
+    monkeypatch.setattr("harness.daily_driver._generate_tests",
+                        lambda instruction, files: "")
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["write-tests"]["passed"] == 0
+
+
+def test_write_tests_prompt_never_shows_the_model_a_mutant_or_reference_test(monkeypatch):
+    """ANTI-LEAK (Tenet 3): the prompt built for the model contains only the instruction +
+    reference code -- never a mutant's content."""
+    from harness.daily_driver import _generate_tests
+
+    captured = {}
+
+    class _FakeResponse:
+        text = _KNOWN_GOOD_PRIME_TEST
+
+    class _FakeLlm:
+        def complete(self, request):
+            captured["prompt"] = request.prompt
+            return _FakeResponse()
+
+    monkeypatch.setattr("harness.coding_loop.build_llm", lambda: _FakeLlm())
+
+    tasks = _write_tests_seed_tasks()
+    task = next(t for t in tasks if t["id"] == "wt_is_prime")
+    _generate_tests(task["instruction"], task["files"])
+
+    assert "prompt" in captured
+    for mutant in task["mutants"]:
+        assert mutant["content"] not in captured["prompt"]
+    assert "n % i == 0" in captured["prompt"]  # the reference code IS shown
+# #EXT-005-REQ-13 End

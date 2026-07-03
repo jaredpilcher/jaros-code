@@ -174,3 +174,36 @@ it. Scope: rename-refactor ONLY (move_symbol / extract-method are separate follo
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (refactor category routing → 85/100 weighted-category coverage)
+
+### [TASK-6] Daily-driver runner: write-tests category routing (NEW capability — model writes tests, graded by MUTATION testing)
+
+Fill the `write-tests` weight-10 category (docs/GAP-MAP.md: coverage 85/100 after TASK-5; write-tests + ops remain).
+Unlike multi-file/refactor (which WIRE existing capabilities), this adds a GENUINELY NEW capability jaros-code lacks:
+generating tests for given code. The honest grader is **MUTATION TESTING** (the gold standard — the ONLY way to prove
+generated tests are real, not trivial): the model's tests must PASS on the reference/correct code AND KILL a seeded
+mutant. A degenerate `assert True` test passes on the reference but fails to kill any mutant → correctly `solved=False`.
+
+#### Steps
+1. `harness/daily_driver.run_daily`: add a `category == "write-tests"` branch (before the generic `test_cmd` branch).
+   Solve path: (a) MODEL generates the test-file CONTENT from `task["instruction"]` + the reference code (mirror the
+   build-module/answer model-call convention: build_llm/LlmRequest or the existing answer path); (b) DETERMINISTIC
+   grading via the mutation oracle below. If the model emits no usable test code, `solved=False`, never crash.
+2. **MUTATION ORACLE (HONESTY — Tenet 3, the whole point):** `solved` is True ONLY IF BOTH
+   (i) the generated tests PASS when run against the REFERENCE (correct) code — write reference files + the generated
+   test into a temp dir, run `test_cmd`, must be green (the tests are valid, not broken), AND
+   (ii) the generated tests KILL every seeded mutant — for each mutant in `task["mutants"]`, write the MUTANT version
+   (replacing the corresponding reference file) + the generated test, run `test_cmd`, and it MUST FAIL (the tests
+   catch the bug). solved = passes-on-reference AND every-mutant-killed. A trivial/degenerate test fails (ii).
+   NEVER show the mutant or the reference test to the model — only the reference code + instruction go into the prompt.
+3. Seed **2 held-out write-tests dev tasks** under `evals/daily_driver/dev/` — e.g. reference `is_prime(n)` (correct)
+   + instruction "write pytest tests for is_prime in primes.py" + 1-2 mutants (`n % i == 0`→`n % i != 0`, or an
+   off-by-one on the range bound) that CORRECT tests would catch. Genuine, not gamed; the mutants must be behavior-
+   changing bugs a competent test suite kills. schema `{id, category:"write-tests", split, instruction,
+   files:{reference}, target (test filename to write), test_cmd, mutants:[{file, content}] }` (adapt field names to
+   what the runner reads; keep minimal).
+4. `tests/test_ext005_daily_driver.py`: OFFLINE test (monkeypatch the model test-generation to return (a) a KNOWN-GOOD
+   test that passes reference + kills the mutant → asserts solved=True, and (b) a degenerate `assert True` test →
+   asserts solved=False because no mutant is killed). Full `tests/` stays green.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (write-tests category via mutation oracle → 95/100 weighted-category coverage)
