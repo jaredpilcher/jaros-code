@@ -228,3 +228,20 @@ cross-level-repair→scale). MEASURED 2026-07-03 (probes in `.jaros-data/s2s_*.p
   each module); then measure the medium/complex BREAK-POINT and REQ-5 cross-level repair + scale past ~4 modules.
 STATUS: simple sentence→system PROVEN end-to-end; productionize the pipeline (planner + syntax-gate/repair + executable
 acceptance + per-module oracle) then push complexity to find the honest break-point. This is the live convergence axis.
+
+## Small-model MEMORY design — MEASURED (owner directive 2026-07-03, ladder L0→L1)
+
+Owner: "memory must work differently for small models — figure it out, test it." + "maybe a memory AGENT decides
+what to store/retrieve." TESTED (`.jaros-data/mem_experiment*.py`), two iterations, HONEST corrections:
+- **Hypothesis (structured facts > raw transcript) — REFUTED at short context:** 4 constraint-carrying scenarios,
+  RAW transcript 8/8 vs STRUCTURED 7/8. At short context the 2-3B handles the raw transcript FINE. (L0 format probe.)
+- **Long-context (12 then 30 distractor facts, task needs 2): RAW-dump 2/2 == MEM-AGENT 2/2, TIE both times.** gemma is
+  FAR more context-robust than the "small models can't handle context" assumption — 30 facts didn't break raw recall.
+- **Memory-AGENT (L1 decompose: an agent selects relevant facts given the task) WORKS as a mechanism** — picked exactly
+  the 2 relevant facts every time — but does NOT beat raw IN-SESSION (raw already works).
+DESIGN (measured, not assumed): (1) **in-session short-term** = raw bounded transcript (simple, wins; TASK-1 backbone);
+(2) **condensation (REQ-15)** only near the context-window budget (needed less than feared); (3) **the memory-AGENT's
+value is CROSS-SESSION + LARGE-SCALE recall (REQ-16)** — where the transcript ISN'T available (persistence) or exceeds
+the window — precise selection from a per-repo persistent fact store, NOT because raw is worse in-session. Escalation
+ladder applied: don't build the expensive agent-recall where cheap raw works; deploy it exactly where raw structurally
+can't (cross-session/scale). Guards the old retrieval-negative regression (inject the few, never a dump).
