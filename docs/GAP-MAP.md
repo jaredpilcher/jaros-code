@@ -277,3 +277,13 @@ modules), done-ness uses honest executable checks, and the two remaining levers 
 spec's stated requirements, not invented edge cases — a refinement) and (b) model completeness on edge cases (the 7B /
 fine-tune frontier). The CREATE path is functionally complete + honest; reaching done RELIABLY on the literal spec is
 the acceptance-scoping refinement; reaching done on IMPLIED edge cases is the reasoning-tier (7B) frontier.
+
+## 7B roster lever — precise requirement (2026-07-03, active hours)
+The hard/highly-complex tier lever (L6) = **Qwen2.5-Coder-7B** (SWE-Protégé's proven SLM-SWE-bench base). Checked the
+Jetson catalog (`.jaros-data/config/models/`): it is NOT present (only gemma-4-e2b, qwen2.5-coder-3b, qwen3-4b-thinking,
+deepseek-r1-distill-qwen-1.5b/7b). The existing deepseek-7b is a REASONER (harness-format-incompatible, desyncs the
+manager) — not a coder for the sentence->system task. So this lever needs: download the Qwen2.5-Coder-7B GGUF (~5GB q)
+to the Jetson + a `models.json` catalog entry + serve + test build_system's complex-plan + edge-case completeness on it
++ restore gemma. Authorized roster-growth (Jetson-fit, $0, cloud-forbidden), but a substantial op with serving-desync
+risk — greenlight/timing best from the owner. This is the depth lever on the TRUE parity gap (the reasoning frontier);
+the overnight EXT-036 work is breadth. QUEUED for a careful active-hours execution.
