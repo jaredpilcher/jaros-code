@@ -39,6 +39,21 @@ Escalation ladder rungs referenced below: L0 prompt/format · L1 decompose/contr
 
 - **wall(2026-07-01) — hard multi-step-repo algorithm synthesis** for the 2–4B Jetson-fit roster. Evidence: pass@k 0/7 (`9856d52`), decomposition 0/8 (`ff7726f`), maximal-help 0/6 (`5006e42`), decorrelated-reasoner 0/6, collaboration 0/6, experiment-loop 0/6; cell #35 un-throttled qwen3+repair **1/2 NEUTRAL** (`baseline-pursuit`, task #35 — task2's 3-function running-median all fail). **Revisit** on: any new Jetson-fit reasoning-distilled model (L6), a LoRA specialist (L7), a reduction library (L5), or the comprehension-vs-generation probe flipping (L3). NOT yet L8 (distillation untried on this class).
 
+## Scoreboard #3 — ROUTED-SYSTEM TRIPLE, first measurement (2026-07-02, intent honest-headline metric)
+
+The intent + external-review make the **routed vs best-single vs oracle** triple the honest headline (commitment 3):
+*"routed ≤ best-single means the roster is not paying and the router is the bottleneck."* MEASURED for the first time
+(`.jaros-data/routed_triple.py`, per-problem HumanEval[:40], gemma vs qwen-coder-3b): **gemma 32/40, qwen 36/40 →
+best-single = ROUTED (class→qwen) = ORACLE(union) = 36/40, decorrelated headroom = +0.** qwen-coder-3b STRICTLY
+DOMINATES gemma on function-gen (solves all of gemma's + 4 more; gemma solves ZERO qwen misses). **HONEST FINDING:
+the multi-model ROSTER IS NOT PAYING on function-gen** — the router correctly picks the class winner, but there is no
+decorrelation to harvest, so the roster adds nothing over just serving qwen-coder-3b for this class. The router is NOT
+the bottleneck here; the roster is redundant on this class. OPEN QUESTION (the real lever for multi-model value): is
+there ANY class where oracle > best-single (models decorrelate → routing/ensembling pays)? Until such a class is
+measured, the multi-model roster's cost is UNJUSTIFIED by evidence on the classes tested — an honest gap, per the intent's
+guard against the system-level no-ceiling crutch. NEXT: measure the triple on a class-DIVERSE bar (fix/edit/multi-file,
+where gemma's co-adaptation might win some) to find where — if anywhere — the roster earns its cost.
+
 ## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
 
 **External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
