@@ -209,3 +209,22 @@ swebench.com, pricepertoken SWE-bench-Lite, SWE-AGILE/SWE-smith/SWE-Dev papers.
 - **#6 shadow-mode** — the owner's REAL Claude Code tasks replayed; the strongest signal, PENDING owner go-ahead.
 
 NEXT concrete step: grow the SWE-bench slice (#2) as the tractable discriminating number, and stand up the Foundry (#7) for long-horizon. Do NOT keep authoring moderate daily-driver tasks (measured non-discriminating). Bootstrap remaining: embedder/LoRA/distill probes (§9.5/6, Jetson-only per [[jaros-code-training-plane]]). Daily-driver suite stays as a fast regression/latency harness + flywheel-capture source, NOT the discriminating parity number.
+
+## ★ NEW FRONTIER (owner directive 2026-07-03) — SENTENCE-TO-SYSTEM (build complex systems from a sentence)
+
+Owner set the next major CC-parity gap: "really really really good at building complex systems from a sentence."
+Spec EXT-036 identifies the decomposition (spec-expansion→architecture→interface→ordered-impl→test→integration→
+cross-level-repair→scale). MEASURED 2026-07-03 (probes in `.jaros-data/s2s_*.py`):
+- **Structural planning WORKS (surprise):** gemma produces coherence-valid plans (module DAG + signatures + entrypoint)
+  from a sentence for simple/medium/complex — "a 2-3B can't architect" is FALSE at the structural level.
+- **★ END-TO-END SIMPLE WORKS:** sentence "CSV column-stats CLI" → plan (csv_reader←column_stats←cli) → build each
+  module → assemble → run → CORRECT per-column min/max/mean (rc=0, honestly validated). A one-sentence spec produced a
+  runnable, working multi-module system.
+- **2 gaps DISCOVERED + FILLED in the probe:** (i) module generation truncated at low max_tokens → SyntaxError (raise
+  budget); (ii) no per-module syntax gate/repair before assembly → cryptic system error (add py_compile gate + bounded
+  syntax-repair per module, analog of write-tests repair).
+- **NEXT gaps (recorded, EXT-036):** REQ-2 executable acceptance (planner must EMIT a runnable acceptance matching the
+  built interface — the blocker to auto-validating medium/complex); REQ-3 per-module oracle (compose write-tests to gate
+  each module); then measure the medium/complex BREAK-POINT and REQ-5 cross-level repair + scale past ~4 modules.
+STATUS: simple sentence→system PROVEN end-to-end; productionize the pipeline (planner + syntax-gate/repair + executable
+acceptance + per-module oracle) then push complexity to find the honest break-point. This is the live convergence axis.
