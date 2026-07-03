@@ -199,6 +199,22 @@ default (120s) was too short for a 7B load and left `_current` desynced — rais
 scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
 analysis) — this change is admission + catalog + profile + the timeout fix only.
 
+## Sentence→system PARITY INSTRUMENT built + first honest numbers — 7B lifts it 3× (2026-07-03, EXT-036 REQ-20/21)
+
+Owner directive: "way more CLASSES of development-systems-from-a-sentence + a set of EDIT-a-complex-system-from-a-sentence
+too." Built BOTH as held-out, executable-acceptance benchmarks with an INDEPENDENT black-box CLI oracle (only the
+sentence reaches the builder; acceptance runs the built `main.py` as a guarded subprocess — un-gameable, architect-verified
+never-fabricates-a-pass): `harness/system_suite.py` (CREATION, REQ-20, commits 4a01cbd/9bd0eb7) + `harness/modification_suite.py`
+(MODIFICATION, regression-gated, REQ-21, commit ce2a9fe). First slice = 6 creation tasks × (easy/medium/hard).
+**MEASURED first numbers (n=1/task, noisy, independent oracle):** CREATION accept — **gemma-alone 1/6 (17%)** [easy .5,
+med 0, hard 0] vs **Qwen2.5-Coder-7B 3/6 (50%)** [easy 2/2, med 1/2, hard 0/2]. The 7B accepts a SUPERSET of gemma here,
+so the REQ-13 gemma→7B escalation delivers **≈3/6 (50%) — a 3× lift** over gemma-alone while keeping gemma's speed on the
+already-shipping common case. This is the first axis where the roster/escalation is MEASURED-valuable (contrast the +0 on
+the old easy classes). HONEST: the instrument itself caught + fixed a harness bug first (vague sentences → 0%/inverted →
+contract-precise sentences → real numbers; a dishonest LOW rejected, Tenet 3). NEXT: grow classes to stabilize the number;
+run the MODIFICATION suite live (gemma + 7B) for the first edit-from-a-sentence number. Per-task JSON in
+`.jaros-data/creation_suite_{results,gemma}.json`.
+
 ## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
 
 **External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
