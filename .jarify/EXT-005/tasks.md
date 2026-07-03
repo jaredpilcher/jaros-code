@@ -236,3 +236,33 @@ path + seed tasks.
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (ops category routing → 100/100 weighted-category coverage complete)
+
+### [TASK-8] write-tests SELF-REPAIR loop (validated capability lift, 6/8→7/8 on probe)
+
+MEASURED (docs/GAP-MAP.md 2026-07-03): the write-tests capability is 75% (6/8 varied fns); the misses are the model
+writing a WRONG test ASSERTION (e.g. `assert clamp(-5,-10,-1)==-10` when the correct code returns -5) → the tests fail
+on the REFERENCE code → the mutation oracle correctly scores unsolved. PROBED a self-repair loop
+(`.jaros-data/writetests_repair_probe.py`): when generated tests FAIL on the reference, feed the pytest failure back and
+ask the model to fix the wrong assertion. RESULT: lifts `palindrome` FAIL→SOLVED in 1 repair (the failure output shows
+the concrete actual value, a strong hint); `clamp` stays unsolved (a persistent model reasoning error repair can't fix).
+So it's a PARTIAL, real, no-downside lever (repair only ever helps: if it can't fix, the task stays unsolved as before).
+Productionize it into the write-tests solve path.
+
+#### Steps
+1. `harness/daily_driver.py`: in `_run_write_tests_task` (or a helper it calls), BEFORE final grading, add a bounded
+   self-repair loop: run the generated tests against the REFERENCE code; if they FAIL (don't pass on correct code),
+   feed the pytest failure output back to the model with a prompt to fix ONLY the incorrect assertion(s) (mirror the
+   `.jaros-data/writetests_repair_probe.py::repair` prompt), re-parse, re-run on reference; repeat up to
+   `max_repair` (default 2) times. Then grade with the EXISTING two-part mutation oracle (`_write_tests_oracle_ok`)
+   unchanged. HONESTY (Tenet 3): the repair prompt gets the REFERENCE-run failure ONLY — NEVER the mutant or the
+   oracle's expected patterns (a wrong assertion is diagnosed from the correct code, not from any mutant). Repair is
+   strictly non-degrading: a task that was solved stays solved; a task repair can't fix stays unsolved.
+2. Keep the model call count bounded (default 2 repairs) so a stubborn task can't loop forever; on any model/parse
+   failure, fall through to grading the last good tests (never crash).
+3. `tests/test_ext005_daily_driver.py`: OFFLINE test (monkeypatch the generation to first return a test with a WRONG
+   assertion that fails on the reference, then on the repair call return a corrected test) — assert the repair loop
+   runs, the corrected tests are graded, and the task scores solved=True; AND a case where repair never fixes it →
+   stays solved=False (non-degrading). Full `tests/` stays green.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (write-tests self-repair → lifts the test-gen capability, no-downside)

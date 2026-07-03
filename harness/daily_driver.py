@@ -407,15 +407,106 @@ def _write_tests_oracle_ok(task: dict, generated_tests: str) -> bool:
     return True
 
 
-def _run_write_tests_task(task: dict) -> bool:
+# ---------------------------------------------------------------------------
+# write-tests SELF-REPAIR loop (TASK-8, validated by
+# .jaros-data/writetests_repair_probe.py: lifts a measured miss FAIL->SOLVED).
+# When the generated tests FAIL on the REFERENCE (correct) code, the failure is almost
+# always a WRONG ASSERTION -- feed the pytest failure back to the model and ask it to fix
+# ONLY the incorrect assertion(s), bounded by max_repair. Strictly non-degrading: a task
+# already passing on reference skips repair entirely; a task repair can't fix stays
+# unsolved exactly as before (the existing _write_tests_oracle_ok grades the last tests).
+# ---------------------------------------------------------------------------
+
+_WRITE_TESTS_REPAIR_PROMPT = (
+    "The following pytest test file for module(s) {modules} FAILED when run against the "
+    "CORRECT reference implementation. That means one or more ASSERTIONS in the test are "
+    "wrong (the expected value does not match what the correct code returns). Fix ONLY the "
+    "incorrect assertion(s) so every test passes on the correct code; keep the same tests "
+    "otherwise.\n\nTEST FILE:\n{tests}\n\nPYTEST FAILURE:\n{failure}\n\n"
+    "Return the corrected complete test file, nothing else."
+)
+
+
+def _tests_pass_on_reference(files: dict, test_name: str, test_cmd: str, tests: str) -> tuple[bool, str]:
+    """DETERMINISTIC (TASK-8): run ``tests`` against the REFERENCE (correct) ``files`` in an
+    isolated temp dir; return ``(passed, pytest_output)``. Reuses the proven tree-kill-safe
+    ``multi_file._run`` runner (Tenet 3: single source of truth) -- the same mechanism
+    ``_write_tests_oracle_ok`` uses for its part (i) check.
+    """
+    from harness.multi_file import _run
+
+    with tempfile.TemporaryDirectory(prefix="jcode-wt-ref-") as d:
+        wd = Path(d)
+        _write_files(wd, files)
+        (wd / test_name).write_text(tests, encoding="utf-8")
+        return _run(str(wd), test_cmd)
+
+
+def _repair_generated_tests(modules: str, tests: str, failure: str) -> str:
+    """MODEL grain (TASK-8): given the generated test file and the pytest failure output from
+    running it against the REFERENCE (correct) code, ask the model to fix ONLY the wrong
+    assertion(s). Mirrors the ``.jaros-data/writetests_repair_probe.py::repair`` prompt shape
+    and the ``build_llm()``/``LlmRequest`` call convention used by ``_generate_tests``.
+
+    HONESTY (Tenet 3): receives the REFERENCE-run pytest failure ONLY -- never the mutant
+    content or the oracle's expected patterns (a wrong assertion is diagnosed from the
+    correct code alone). Returns ``""`` (never raises) on any model/parse failure -- the
+    caller falls through to grading the last-known tests.
+    """
+    from harness.coding_loop import build_llm
+    from jaros.llm import LlmRequest
+
+    prompt = _WRITE_TESTS_REPAIR_PROMPT.format(modules=modules, tests=tests, failure=failure[-600:])
+    try:
+        llm = build_llm()
+        raw = llm.complete(LlmRequest(prompt=prompt, params={"temperature": 0.0})).text
+    except Exception:
+        return ""
+    return _parse_generated_tests(raw)
+
+
+def _self_repair_write_tests(task: dict, tests: str, *, max_repair: int = 2) -> str:
+    """Bounded self-repair loop (TASK-8): if ``tests`` FAIL on the REFERENCE (correct) code,
+    feed the pytest failure back to the model and ask it to fix the wrong assertion(s), up to
+    ``max_repair`` times. Returns the best tests found (the last successful repair, or the
+    original/last-attempted tests if repair never resolves it).
+
+    NON-DEGRADING: a task already passing on reference is returned unchanged (repair is
+    skipped entirely -- no model call). On any model/parse failure the loop stops early and
+    falls through with the last-known tests, never crashing, never looping unboundedly.
+    """
+    files = task.get("files", {})
+    test_name = task.get("target") or "test_generated.py"
+    test_cmd = task.get("test_cmd", "python -m pytest -q")
+    modules = ", ".join(f"`{Path(name).stem}`" for name in files) or "the code above"
+
+    ok, output = _tests_pass_on_reference(files, test_name, test_cmd, tests)
+    if ok:
+        return tests  # already valid on the reference -- nothing to repair
+
+    for _ in range(max_repair):
+        repaired = _repair_generated_tests(modules, tests, output)
+        if not repaired.strip():
+            break  # model/parse failure -- fall through with the last-known tests
+        tests = repaired
+        ok, output = _tests_pass_on_reference(files, test_name, test_cmd, tests)
+        if ok:
+            break
+    return tests
+
+
+def _run_write_tests_task(task: dict, *, max_repair: int = 2) -> bool:
     """Route a ``write-tests`` task: (a) MODEL generates pytest test content from
     ``task["instruction"]`` + the reference ``files`` (``_generate_tests`` -- never shown a
-    mutant or any reference test); (b) DETERMINISTIC grading via the two-part MUTATION
-    ORACLE (``_write_tests_oracle_ok``): passes-on-reference AND kills every seeded mutant.
+    mutant or any reference test); (a.5) TASK-8 bounded SELF-REPAIR if the tests fail on the
+    reference (``_self_repair_write_tests``, fed only the reference-run pytest failure); (b)
+    DETERMINISTIC grading via the two-part MUTATION ORACLE (``_write_tests_oracle_ok``,
+    unchanged): passes-on-reference AND kills every seeded mutant.
     """
     generated = _generate_tests(task.get("instruction", ""), task.get("files", {}))
     if not generated.strip():
         return False
+    generated = _self_repair_write_tests(task, generated, max_repair=max_repair)
     return _write_tests_oracle_ok(task, generated)
 
 

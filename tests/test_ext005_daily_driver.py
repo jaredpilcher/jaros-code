@@ -764,6 +764,93 @@ def test_write_tests_prompt_never_shows_the_model_a_mutant_or_reference_test(mon
 
 
 # ---------------------------------------------------------------------------
+# write-tests SELF-REPAIR loop (TASK-8: bounded self-repair when the generated tests
+# FAIL on the REFERENCE code -- validated by .jaros-data/writetests_repair_probe.py to
+# lift a measured miss FAIL->SOLVED; strictly non-degrading, no live model)
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+_WRONG_ASSERTION_PRIME_TEST = (
+    "from primes import is_prime\n\n\n"
+    "def test_is_prime():\n"
+    "    assert is_prime(2) is True\n"
+    "    assert is_prime(4) is True\n"  # WRONG: 4 is not prime -- fails on the reference
+    "    assert is_prime(1) is False\n"
+)
+
+
+def test_write_tests_self_repair_fixes_wrong_assertion_and_scores_solved(monkeypatch):
+    """OFFLINE (TASK-8): the first generation returns a test with a WRONG assertion that
+    FAILS on the reference code; the repair call (fed only the reference-run pytest
+    failure -- never the mutant) returns the corrected known-good test. Assert the repair
+    loop runs, the corrected tests are graded by the UNCHANGED mutation oracle, and the
+    task scores solved=True."""
+    repair_calls = []
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: _WRONG_ASSERTION_PRIME_TEST)
+
+    def _fake_repair(modules, tests, failure):
+        assert tests == _WRONG_ASSERTION_PRIME_TEST
+        assert failure  # fed the reference-run pytest failure output
+        repair_calls.append((modules, tests, failure))
+        return _KNOWN_GOOD_PRIME_TEST
+
+    monkeypatch.setattr("harness.daily_driver._repair_generated_tests", _fake_repair)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert len(repair_calls) == 1  # one repair call sufficed
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 1
+    assert scorecard["perCategory"]["write-tests"]["passed"] == 1
+
+
+def test_write_tests_self_repair_cannot_fix_stays_unsolved_non_degrading(monkeypatch):
+    """OFFLINE (TASK-8): repair is invoked up to max_repair times but never returns a test
+    that passes the reference -- the task stays solved=False exactly as it would WITHOUT
+    the repair loop (non-degrading), and the loop is BOUNDED (does not call the model
+    forever)."""
+    repair_calls = []
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: _WRONG_ASSERTION_PRIME_TEST)
+
+    def _fake_repair(modules, tests, failure):
+        repair_calls.append(1)
+        return _WRONG_ASSERTION_PRIME_TEST  # "fix" that fixes nothing -- still wrong
+
+    monkeypatch.setattr("harness.daily_driver._repair_generated_tests", _fake_repair)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert len(repair_calls) == 2  # bounded at the default max_repair=2, never infinite
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["write-tests"]["passed"] == 0
+
+
+def test_write_tests_self_repair_skipped_when_already_passing_reference(monkeypatch):
+    """NON-DEGRADING: a task whose generated tests already pass on the reference never
+    calls the repair model at all -- repair is pure upside, never extra risk."""
+    repair_calls = []
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_tests",
+        lambda instruction, files: _KNOWN_GOOD_PRIME_TEST)
+    monkeypatch.setattr(
+        "harness.daily_driver._repair_generated_tests",
+        lambda *a, **kw: repair_calls.append(1) or _KNOWN_GOOD_PRIME_TEST)
+
+    tasks = [t for t in _write_tests_seed_tasks() if t["id"] == "wt_is_prime"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert repair_calls == []
+    assert scorecard["solved"] == 1
+# #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
 # ops routing (TASK-7: the LAST category, model generates the artifact CONTENT,
 # graded by the already-built check_state oracle -> 100/100 weighted coverage)
 # ---------------------------------------------------------------------------

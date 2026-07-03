@@ -1,6 +1,11 @@
 {
   "REQ-12": [
     {
+      "file": "harness/intent_loop.py",
+      "startLine": 152,
+      "endLine": 156
+    },
+    {
       "file": "harness/cli.py",
       "startLine": 448,
       "endLine": 455
@@ -14,31 +19,6 @@
       "file": "harness/agent_loop.py",
       "startLine": 116,
       "endLine": 119
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 152,
-      "endLine": 156
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 106,
-      "endLine": 132
-    },
-    {
-      "file": "tests/test_ext005_proc_treekill.py",
-      "startLine": 54,
-      "endLine": 77
-    },
-    {
-      "file": "tests/test_ext005_proc_treekill.py",
-      "startLine": 82,
-      "endLine": 87
-    },
-    {
-      "file": "tests/test_ext005_proc_treekill.py",
-      "startLine": 92,
-      "endLine": 100
     },
     {
       "file": "harness/proc_treekill.py",
@@ -59,6 +39,26 @@
       "file": "harness/pass1_eval.py",
       "startLine": 223,
       "endLine": 225
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 106,
+      "endLine": 132
+    },
+    {
+      "file": "tests/test_ext005_proc_treekill.py",
+      "startLine": 54,
+      "endLine": 77
+    },
+    {
+      "file": "tests/test_ext005_proc_treekill.py",
+      "startLine": 82,
+      "endLine": 87
+    },
+    {
+      "file": "tests/test_ext005_proc_treekill.py",
+      "startLine": 92,
+      "endLine": 100
     },
     {
       "file": "tests/test_pass1_treekill.py",
@@ -103,7 +103,7 @@
     {
       "file": "harness/daily_driver.py",
       "startLine": 29,
-      "endLine": 680
+      "endLine": 771
     },
     {
       "file": "tests/test_ext005_daily_driver.py",
@@ -127,8 +127,13 @@
     },
     {
       "file": "tests/test_ext005_daily_driver.py",
-      "startLine": 770,
-      "endLine": 914
+      "startLine": 771,
+      "endLine": 850
+    },
+    {
+      "file": "tests/test_ext005_daily_driver.py",
+      "startLine": 857,
+      "endLine": 1001
     }
   ]
 }
