@@ -126,3 +126,31 @@ write-tests/syntax repair loops, at the acceptance level.
 
 #### Implements
 - [REQ-5] Cross-level repair (system-level acceptance-driven repair: shipped→DONE)
+
+### [TASK-6] Robust executable-acceptance derivation (REQ-2 refinement — unblock done-ness)
+
+MEASURED (docs/GAP-MAP.md difficulty spectrum): systems SHIP to 4 modules but report done=False because the acceptance
+DERIVATION is weak — the small model emits vague/non-executable "conceptual" checks (easy) or fails to produce a
+parseable checklist at all (medium: "no acceptance checklist derived"). done-ness is honest (never false-passes) but
+pessimistic. Fix the derivation so a WORKING system can reach done. Two-plane: deterministic filtering + fallback.
+
+#### Steps
+1. In `harness/system_builder.py::_derive_acceptance_checklist` (and `_run_check`): after the model proposes checks,
+   DETERMINISTICALLY FILTER to EXECUTABLE ones — a check survives only if its `code` parses (ast) AND contains a real
+   `assert` (drop prose/"conceptual"/non-assertion checks). If the model output is unparseable or yields ZERO surviving
+   checks, RETRY once with a stricter prompt (demand ONLY runnable Python asserting real behavior against the module
+   API, no prose). 
+2. Deterministic FALLBACK: if still no executable checks, synthesize a minimal deterministic check — the entrypoint /
+   each exported module IMPORTS without error and the entrypoint is callable (a smoke check). `done` requires ≥1 real
+   executable check present AND all surviving checks pass — never done on an EMPTY checklist (an empty checklist must
+   NOT count as done; today "no checklist" → not done, keep that, but prefer the fallback smoke check so a working
+   system can pass).
+3. HONESTY (Tenet 3): filtering/fallback must never make a BROKEN system pass — the fallback smoke check still requires
+   real import+run success; dropping a vague check never turns a failing system green. `done` still means real checks pass.
+4. Tests (`tests/test_ext036_acceptance.py`, OFFLINE — canned llm): (a) a vague/"conceptual" model check is FILTERED
+   out (not run as-is); (b) unparseable/zero-executable → stricter retry, then deterministic smoke fallback; (c) the
+   smoke fallback passes for a working entrypoint and FAILS for a broken one (no false-pass); (d) an empty checklist
+   never counts as done. Full `tests/` stays green.
+
+#### Implements
+- [REQ-2] Executable acceptance — robust derivation (filter to runnable checks + deterministic smoke fallback)

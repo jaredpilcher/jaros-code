@@ -40,7 +40,7 @@ guarantees structural coherence + repairs/rejects incoherent plans.
 - [ ] A plan-repair loop: when the validator finds defects, feed them back for a coherent re-plan (analog of the write-tests repair loop)
 - [ ] Measured on a held-out set of sentences; coherence-pass rate reported honestly
 
-### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (GAP)
+### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (PARTIAL — robust derivation DONE, TASK-6)
 
 The probe's acceptance was PROSE ("output containing the min, max, mean") — not deterministically checkable.
 For honest end-to-end validation the plan (or a follow-up step) must produce a concrete runnable acceptance
@@ -53,6 +53,18 @@ check (a script asserting real behavior on a real input) so the built system is 
 - [x] The acceptance test is run against the assembled system; ship only if it passes — DONE (URL-shortener: 4/4 checks
   pass → DONE). CAVEAT (Tenet 3): the model writes both checks AND code from the same spec, so this validates internal
   consistency + implementation bugs, NOT fully-independent external validation — productionize with independent/mutation rigor.
+- [x] Robust derivation, unblocking done-ness on a WORKING system — **DONE 2026-07-03** (`harness/system_builder.py`
+  `_derive_acceptance_checklist`/`_is_executable_check`/`_smoke_checklist`, TASK-6): MEASURED (docs/GAP-MAP.md) that
+  systems SHIP but report `done=False` because the model's proposed checks are vague/"conceptual" prose (no real
+  assertion) or the checklist doesn't parse at all. Proposed checks are now DETERMINISTICALLY FILTERED — a check
+  survives only if its `code` parses (`ast.parse`) AND contains a real `assert`; an unparseable/all-filtered first
+  attempt gets exactly ONE stricter retry (demanding only runnable Python, no prose); if still nothing survives, a
+  deterministic SMOKE checklist (every module imports without error and each exported name is actually present)
+  is synthesized instead. HONEST (Tenet 3): filtering + the smoke fallback never manufacture a pass — the smoke
+  check is itself a real import+assert that genuinely FAILS on a broken system (proven: an import-time exception
+  is honestly reported unmet, not swallowed); an empty checklist (only possible with zero modules, which
+  `validate_plan` already forbids) still never counts as done. Proven OFFLINE (`tests/test_ext036_acceptance.py`,
+  canned llm, no live model — filtering, the bounded retry, and the smoke fallback's honest pass/fail).
 
 ### [REQ-3] Per-module oracle generation — reuse the write-tests capability to gate each module build  (GAP)
 

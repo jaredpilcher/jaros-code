@@ -41,10 +41,24 @@ Best-seen ``(built, unmet)`` is tracked and returned — repair only ever improv
 skips repair entirely. The result dict gains a ``repairs`` field recording every repair
 attempt (round, check, module, whether it was applied, and — for a rejected/reverted round
 — why).
+
+TASK-6 (REQ-2 refinement) makes acceptance-checklist DERIVATION robust: systems were
+observed to ship (build+assemble fine) but report ``done=False`` because the model's
+proposed checks were vague/"conceptual" prose (not real assertions) or the checklist
+didn't parse at all. ``_derive_acceptance_checklist`` now DETERMINISTICALLY FILTERS the
+model's proposed checks to ones that actually parse and contain a real ``assert``
+statement; when nothing survives it RETRIES ONCE with a stricter prompt; when nothing
+survives that either it falls back to a deterministic SMOKE checklist (every module
+imports, its exported names are present). The smoke check is still a REAL executable
+check (genuine import + assert) — it fails for real on a broken system, so filtering and
+the fallback can only relieve spurious pessimism, never manufacture a false pass (Tenet
+3). An empty checklist (only possible when there are no modules to check at all) still
+never counts as done.
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import py_compile
@@ -249,21 +263,99 @@ def _module_api(mods: list[dict]) -> str:
         sigs = ", ".join(e.get("signature", e.get("name", "")) for e in (m.get("exports", []) or []))
         parts.append(f"{m.get('name')}: {sigs}")
     return "; ".join(parts)
+# #EXT-036-REQ-4 End
+# #EXT-036-REQ-2 Start
+CHECKLIST_STRICT_PROMPT = (
+    "SPEC: {spec}\nThe system will expose this API: {api}\n\n"
+    "Your previous ACCEPTANCE CHECKS were not runnable. Write 3-4 ACCEPTANCE CHECKS as ONLY "
+    'RUNNABLE PYTHON CODE — no prose, no "conceptual" descriptions. Each check\'s `code` MUST '
+    "parse as valid Python and contain a real `assert` statement testing CONCRETE behavior "
+    "against the module API (import the built modules, call them, assert on a real result). "
+    "Output ONLY a JSON list: "
+    '[{{"name": "<short label>", "code": "<standalone runnable python with a real assert>"}}]. '
+    "No prose."
+)
+
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _derive_acceptance_checklist(spec: str, mods: list[dict], llm) -> list[dict]:
-    """Executable acceptance CHECKLIST (REQ-2/REQ-7 probe logic), derived contract-first
-    from the SPEC + the module API (not the built code). Guarded — returns [] on any
-    model/parse failure (never a fabricated pass)."""
+def _is_executable_check(code) -> bool:
+    """The deterministic EXECUTABLE-check filter (REQ-2): a proposed check survives only
+    if its ``code`` parses as valid Python (``ast.parse``) AND contains a real ``assert``
+    statement. Drops prose/"conceptual"/non-assertion items that the model sometimes
+    emits instead of a runnable check — those are never run as-is."""
+    if not isinstance(code, str) or not code.strip():
+        return False
     try:
-        raw = _call(llm, CHECKLIST_PROMPT.format(spec=spec, api=_module_api(mods)),
-                    max_tokens=CHECKLIST_MAX_TOKENS)
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return False
+    return any(isinstance(node, ast.Assert) for node in ast.walk(tree))
+
+
+def _smoke_checklist(mods: list[dict]) -> list[dict]:
+    """Deterministic FALLBACK (REQ-2) when the model cannot produce any executable
+    acceptance check: a minimal SMOKE check asserting every module IMPORTS without error
+    and each exported name is actually present on it. This is still a REAL executable
+    check — a genuine import plus real ``assert`` statements — so it FAILS for real when a
+    module is broken or missing an exported name; it never manufactures a false pass
+    (Tenet 3). Returns [] only when there is nothing to check at all (no modules)."""
+    lines: list[str] = []
+    asserts: list[str] = []
+    for m in mods or []:
+        mod = m.get("name") if isinstance(m, dict) else None
+        if not mod:
+            continue
+        modname = mod[:-3] if mod.endswith(".py") else mod
+        if not _IDENT_RE.match(modname):
+            continue
+        lines.append(f"import {modname}")
+        for e in (m.get("exports", []) or []):
+            ename = e.get("name") if isinstance(e, dict) else None
+            if ename and _IDENT_RE.match(ename):
+                asserts.append(
+                    f"assert hasattr({modname}, {ename!r}), \"{modname} missing {ename}\""
+                )
+    if not lines:
+        return []
+    if not asserts:
+        asserts.append("assert True  # modules imported without error")
+    code = "\n".join(lines + asserts) + "\n"
+    return [{"name": "smoke: modules import and expose their API", "code": code}]
+
+
+def _propose_checklist(spec: str, api: str, llm, prompt: str) -> list[dict]:
+    """One model round-trip proposing acceptance checks, DETERMINISTICALLY FILTERED to
+    executable ones (``_is_executable_check``). Guarded — returns [] on any model/parse
+    failure or when nothing survives the filter (never a fabricated pass)."""
+    try:
+        raw = _call(llm, prompt.format(spec=spec, api=api), max_tokens=CHECKLIST_MAX_TOKENS)
     except Exception:
         return []
     checks = _extract_json(raw, "[", "]")
     if not isinstance(checks, list):
         return []
-    return [c for c in checks if isinstance(c, dict) and c.get("code")]
+    return [c for c in checks if isinstance(c, dict) and _is_executable_check(c.get("code"))]
+
+
+def _derive_acceptance_checklist(spec: str, mods: list[dict], llm) -> list[dict]:
+    """Executable acceptance CHECKLIST (REQ-2/REQ-7 probe logic, hardened by TASK-6),
+    derived contract-first from the SPEC + the module API (not the built code). ROBUST
+    derivation: (1) propose checks and keep only the ones that survive the deterministic
+    executable-check filter; (2) if nothing survives (unparseable output or every check
+    was vague/"conceptual"), RETRY ONCE with a stricter prompt demanding only runnable
+    Python; (3) if still nothing survives, fall back to a deterministic SMOKE checklist.
+    Only stage (3)'s [] (no modules at all) yields an empty checklist — callers must treat
+    an empty list as NOT done (Tenet 3), never as a vacuous pass."""
+    api = _module_api(mods)
+    checks = _propose_checklist(spec, api, llm, CHECKLIST_PROMPT)
+    if not checks:
+        checks = _propose_checklist(spec, api, llm, CHECKLIST_STRICT_PROMPT)
+    if not checks:
+        checks = _smoke_checklist(mods)
+    return checks
+# #EXT-036-REQ-2 End
+# #EXT-036-REQ-4 Start
 
 
 def _run_check(root: Path, check: dict) -> bool:

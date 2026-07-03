@@ -217,12 +217,19 @@ def test_failing_acceptance_check_marks_not_done(tmp_path):
     assert "adds correctly" not in result["unmet"]
 
 
-def test_no_acceptance_checklist_derived_is_not_done(tmp_path):
+def test_unparseable_checklist_falls_back_to_smoke_and_still_reaches_done(tmp_path):
+    """TASK-6 (REQ-2 refinement): an unparseable model checklist no longer strands a
+    genuinely-working system at "no acceptance checklist derived" -- the robust
+    derivation retries once, then falls back to a deterministic SMOKE checklist (every
+    module imports + exposes its API), which a real working build passes. See
+    `tests/test_ext036_acceptance.py` for the dedicated TASK-6 coverage (filtering,
+    stricter retry, and the smoke fallback's honest pass/fail on working vs. broken
+    systems)."""
     llm = _CannedLlm(checklist="not a json list")
     result = build_system(SPEC, tmp_path / "built", llm=llm)
     assert result["shipped"] is True
-    assert result["done"] is False
-    assert result["unmet"] == ["no acceptance checklist derived"]
+    assert result["done"] is True
+    assert result["unmet"] == []
 
 
 # --- CLI wiring (/buildsystem) -----------------------------------------------------------
