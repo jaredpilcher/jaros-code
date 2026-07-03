@@ -144,6 +144,29 @@ measured, the multi-model roster's cost is UNJUSTIFIED by evidence on the classe
 guard against the system-level no-ceiling crutch. NEXT: measure the triple on a class-DIVERSE bar (fix/edit/multi-file,
 where gemma's co-adaptation might win some) to find where — if anywhere — the roster earns its cost.
 
+## Research-derived lever (plateau-exit 2026-07-03) — the SLM-SWE-bench base is a 7B CODER (roster-growth candidate)
+
+At a genuine plateau on internal levers (roster-value closed, parity categories 95% filled, hard-class reasoning
+measured-blocked for the 3B), did the owner-directed external-research move. Findings (arXiv, July-2026 web):
+- **Agentless (2407.01489)** — localize→repair→validate with NO agentic decisions — is EXACTLY jaros-code's
+  `swebench_live.py` pipeline. Approach validated by the literature.
+- **"Smaller/mid models gain MOST from localization improvements"** — matches jaros-code's #1 measured SWE-bench win
+  (localization 2/8→4/8). Confirms localization is THE small-model lever. (But jaros-code's residual misses are already
+  correctly-localized + applied-but-wrong-LOGIC → more localization won't move them; the residual is reasoning.)
+- **SWE-Protégé (2602.22124): 42.4% Pass@1 SLM SOTA** by lightly post-training **Qwen2.5-Coder-7B** + SPARSE expert
+  collaboration (+25.4% over prior SLM SOTA). KEY: the effective SLM-SWE-bench BASE is a **7B coder**, not a 3B; the
+  "expert collaboration" maps to jaros-code's LOCAL reasoner-escalation (qwen3-4b-thinking already in roster).
+**QUEUED LEVER (highest-value roster-growth candidate, for ACTIVE hours + careful Jetson setup):** admit
+**Qwen2.5-Coder-7B** to the roster (the proven SLM-SWE-bench base; fits Jetson best-first ~5-6GB q) and test whether it
+resolves hard-class misses the 3B can't. This is the SYSTEM-level no-ceiling path the intent endorses (a stronger
+Jetson-fitting model, cloud still forbidden). Supersedes task #42 (Phi-4-mini) as the better roster-growth target for
+the HARD class. CAVEATS (no overclaim): (i) 7B models are finicky on the Jetson (STATE: deepseek-7b "serving desyncs
+manager") — needs careful serving; (ii) SWE-Protégé's gains also need light POST-TRAINING (LoRA measured-null for us at
+1.5-3B, but a 7B base may respond differently — revisit trigger for GAP-1); (iii) the sparse-expert part needs the
+expert to be genuinely stronger — our only local "expert" is the 4B reasoner (measured low-EV), so the collaboration
+gain may not transfer without the 7B base first. Net: admit + measure the 7B coder BEFORE any collaboration/training
+work. Sources: arxiv.org/abs/2407.01489, arxiv.org/html/2602.22124v1.
+
 ## Steering note — SWE-bench small-model frontier (research-backed, 2026-07-02)
 
 **External research (SWE-bench Lite leaderboards + small-model SWE papers) reframes #2 honestly:** a naive stronger
