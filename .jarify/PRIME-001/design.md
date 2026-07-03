@@ -7,6 +7,28 @@ executed by a deterministic tool plane on top of the Jaros runtime. This documen
 system-wide architecture the Intent demands. Feature specs (`EXT-00x`) decompose individual
 tenets into requirements, design, and tasks.
 
+## The product — the end goal (owner clarification, 2026-07-03)
+
+Everything below serves ONE product: **a CLI that BUILDS and MODIFIES complete software systems from a
+sentence** — the operational meaning of "be just like Claude Code." A developer describes a system, or a
+change to an existing one, in plain language at the terminal; jaros-code plans → builds → tests → ships
+(or evolves) it end-to-end, locally, at $0. The router, the two planes, the swarm, and the tool library
+below are the *means*; this CLI is the *end*. It is realized by the sentence→system pipeline
+(`harness/system_builder.py`: `build_system` / `build_system_escalating` / `modify_system`, spec
+`EXT-036`) surfaced as the `/buildsystem` and `/modifysystem` commands, and its parity is measured
+end-to-end by held-out creation + modification suites graded through the CLI by independent oracles.
+
+```text
+   sentence ("build a job-queue CLI with priorities + retry" │ "add a delete command to the kv-store")
+        │
+        ▼   /buildsystem · /modifysystem   (the PRODUCT surface)
+   ┌──────────── plan → build (topo, syntax-gated) → assemble → acceptance → repair ───────────┐
+   │  routed/escalating: gemma default; on ship-failure escalate to the complex-build specialist │
+   └───────────────────────────────────────────────────────────────────────────────────────────┘
+        │  everything below is HOW this is served
+        ▼
+```
+
 ## The two planes
 
 ```text

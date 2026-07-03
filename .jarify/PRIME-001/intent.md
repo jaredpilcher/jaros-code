@@ -11,6 +11,17 @@ tools, agents, configuration, and prompts proven to adapt the harness *to that m
 model still runs on the Jetson at zero cost (commitment 2); the system began on **Gemma 4 2B
 (`e2b`)**, which remains one member of the model roster and the honest baseline anchor.
 
+**What the product concretely IS — the END GOAL (owner clarification, 2026-07-03):** a **CLI that
+BUILDS and MODIFIES complete software systems from a sentence.** That is the operational meaning of
+"be just like Claude Code": a developer describes a system — or a change to an existing one — in
+plain language at the terminal, and jaros-code plans → builds → tests → ships it (or evolves it)
+end-to-end, locally, at $0. Every other element of this directive — the model roster, the
+deterministic router, the agent swarm, the tool library, the evals, the flywheel — exists to make
+THAT product as good as or better than Claude Code on Opus 4.8. The sentence→system
+build-and-modify CLI is **not one feature among many; it is the point** — and the parity instruments
+that measure it (the held-out creation + modification suites, graded end-to-end through the CLI by
+independent oracles) are therefore the headline scoreboard for the whole pursuit.
+
 **The bar is explicit and high — it is the very North Star: the system must become so
 good that it overcomes the model limitations of Gemma 4 2B (`e2b`) and is AS GOOD OR BETTER,
 in ALL ways, than the Claude Code CLI running on Claude Opus 4.8 at its max.** Matching
