@@ -183,3 +183,80 @@ Tenet-5 UX and pairs with REQ-8 (the system asking the USER) — REQ-12 is the r
 - [ ] Resume conversations: sessions persist (transcript + state) and can be resumed later (`--resume` / session id)
 - [ ] Familiar Claude-Code affordances: streaming output, clear turn markers, `/help` + slash commands still available,
   graceful interrupt — but UX NEVER overrides a higher tenet (Tenet 5 is the lowest-priority tenet)
+
+### [REQ-13] Full difficulty spectrum — easy / medium / hard / highly-complex creation  (GAP, owner 2026-07-03)
+
+Sentence→system must span the whole difficulty range, not just easy. SIMPLE/EASY is PROVEN (REQ-4). Push medium →
+hard → highly-complex; the honest break-point at each tier is the recorded gap (likely bites at the reasoning-heavy
+tiers, the measured small-model frontier — so expect two-plane scaffolding + roster routing to a stronger Jetson-fit
+model, e.g. the queued Qwen2.5-Coder-7B, to be the lever for hard/highly-complex).
+
+#### Acceptance Criteria
+- [x] easy (proven, REQ-4) — [ ] medium — [ ] hard — [ ] highly-complex, each with a held-out sentence set + honest pass rate
+- [ ] The break-point tier is documented with the failing LEVEL (spec/arch/interface/body/integration) and the lever tried
+
+### [REQ-14] Modification from a sentence — evolve an existing system  (GAP, owner 2026-07-03)
+
+Not just create — MODIFY an existing codebase from a sentence ("add rate-limiting to the shortener", "make the CSV
+CLI also output median"). Compose the existing edit capabilities (fix/edit/refactor/multi_file + repo-context REQ-10):
+locate the relevant code, plan the change, apply, re-validate (done-ness) that the modification is complete + didn't
+break existing behavior (regression-gated).
+
+#### Acceptance Criteria
+- [ ] Given an existing system + a modification sentence, locate the change site(s) and apply the change
+- [ ] Re-run existing + new acceptance so the modification is validated AND nothing regressed (Tenet 3)
+- [ ] Measured across difficulty tiers, like REQ-13
+
+## AGENTIC INFRASTRUCTURE (owner directive 2026-07-03) — the Claude-Code substrate (memory / tasks / experiments / project-file)
+
+Claude Code manages short + long-term memory, condenses context, keeps per-repo memory + a CLAUDE.md sent every
+prompt, creates todo tasks + experiments. jaros-code has META-level analogs (this convergence loop uses a task list,
+experiments, CLAUDE.md, .claude memory) but must build these INTO the harness for its USERS.
+
+### [REQ-15] Short-term memory management + condensation  (GAP)
+
+The session transcript (REQ-12) is short-term memory; when it grows past the small model's budget, CONDENSE it (an
+LLM/deterministic summary of older turns) so context stays within budget without losing the thread — Claude-Code's
+compaction. Critical for the small model (tiny context window makes this MORE important than for a big model).
+
+#### Acceptance Criteria
+- [ ] Bounded working-context budget; when exceeded, older turns are condensed into a running summary kept in-context
+- [ ] Condensation preserves task-relevant facts (measured: a follow-up needing an old fact still resolves post-condense)
+
+### [REQ-16] Long-term + PER-REPO memory  (GAP)
+
+Persistent memory that survives across sessions, SEPARATE per repo the user works on (facts/decisions/preferences for
+THIS project). Mirrors the .claude per-project memory model. Small-model-appropriate: recall must be PRECISE (the
+retrieval-negative lesson — inject the few relevant facts, not a noisy dump; see memory retrieval-fewshot-negative).
+
+#### Acceptance Criteria
+- [ ] A per-repo memory store (keyed by repo path/id) persisted under the repo's jaros state
+- [ ] Write (capture a durable fact) + precise recall (surface only the few relevant facts into the prompt)
+- [ ] Isolated per repo; measured that recall helps, not hurts (guard against the noisy-context regression)
+
+### [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)  (GAP)
+
+A per-repo `JAROS.md` (project instructions/conventions) that is loaded and injected into the agent's context on
+EVERY user prompt, so the system always honors the project's rules — exactly like CLAUDE.md.
+
+#### Acceptance Criteria
+- [ ] `JAROS.md` (per repo) is discovered + loaded; its content is injected into the solve/route prompt every turn
+- [ ] Bounded (fits the small context); absent file is a graceful no-op
+
+### [REQ-18] TODO task creation + management (user-facing)  (GAP)
+
+The system creates + tracks todo tasks for the user's work (decompose a request into tracked steps, mark progress),
+like Claude Code's task list — surfaced in the CLI.
+
+#### Acceptance Criteria
+- [ ] Create/list/update tasks tied to the session/repo; the model can propose a task breakdown for a request
+- [ ] Surfaced in the CLI UX (REQ-12); persisted with the session/repo
+
+### [REQ-19] Experiment creation + management (user-facing)  (GAP)
+
+The system can create + run experiments for the user (hypothesis → run → measure → record), like this convergence
+loop does at the meta level — exposed as a first-class user capability.
+
+#### Acceptance Criteria
+- [ ] Define an experiment (what to run, how to measure), run it, record the result against the hypothesis
+- [ ] Results persisted (per-repo) + surfaced; reusable across sessions
