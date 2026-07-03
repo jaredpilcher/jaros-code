@@ -47,8 +47,12 @@ For honest end-to-end validation the plan (or a follow-up step) must produce a c
 check (a script asserting real behavior on a real input) so the built system is test-gated, not eyeballed.
 
 #### Acceptance Criteria
-- [ ] The planner emits (or a deterministic step derives) an executable acceptance test for the system
-- [ ] The acceptance test is run against the assembled system; ship only if it passes (Tenet 3: real gate, no prose)
+- [x] The planner emits (or a deterministic step derives) an executable acceptance test for the system — **DONE 2026-07-03**
+  (`.jaros-data/s2s_doneness_probe.py`): sentence → a CHECKLIST of executable acceptance checks derived contract-first
+  from the SPEC + module API (not the code), each a standalone Python assertion against the built API.
+- [x] The acceptance test is run against the assembled system; ship only if it passes — DONE (URL-shortener: 4/4 checks
+  pass → DONE). CAVEAT (Tenet 3): the model writes both checks AND code from the same spec, so this validates internal
+  consistency + implementation bugs, NOT fully-independent external validation — productionize with independent/mutation rigor.
 
 ### [REQ-3] Per-module oracle generation — reuse the write-tests capability to gate each module build  (GAP)
 
@@ -116,8 +120,10 @@ requirements covered), and an honest "NOT done — here's what's missing" when i
 ship-gate + executable acceptance, but at the SPEC level (did we build what was asked?), not just per-module.
 
 #### Acceptance Criteria
-- [ ] Derive the acceptance criteria from the spec (spec-expansion → checklist of implied requirements)
-- [ ] Validate each against the built system; report DONE only if all pass, else list the unmet items honestly (Tenet 3)
+- [x] Derive the acceptance criteria from the spec (spec-expansion → checklist of implied requirements) — **DONE 2026-07-03**
+  (probe: sentence → 4 implied-requirement checks: round-trip, uniqueness, stability, resolution accuracy)
+- [x] Validate each against the built system; report DONE only if all pass, else list unmet items — DONE (reports
+  "DONE (all pass)" or "NOT DONE — unmet: <list>"). Same Tenet-3 caveat as REQ-2 (model-written checks; add independence).
 
 ### [REQ-8] Ask-the-user when needed — clarify ambiguity  (GAP, cross-cutting)
 
@@ -161,3 +167,19 @@ for the small model), and skill execution wired into the two-plane architecture.
 - [ ] A skill registry (named skills with descriptions/when-to-use)
 - [ ] A grounded skill-selection judgment (the small model picks the right skill for a task, or none)
 - [ ] Skill execution wired in; measured that skill-use helps on tasks that need it
+
+### [REQ-12] CLI UX parity with Claude Code  (GAP, owner directive 2026-07-03 — serves Tenet 5)
+
+The jaros-code CLI (`harness/cli.py`, `scripts/jcode.*`) must FEEL like Claude Code: a conversational, interactive
+terminal session — the user interacts naturally, asks questions, gives instructions mid-task, and can resume prior
+conversations. Today the REPL is command/one-shot oriented. Implementation lives with the CLI (EXT-004). This is
+Tenet-5 UX and pairs with REQ-8 (the system asking the USER) — REQ-12 is the reverse+conversational channel.
+
+#### Acceptance Criteria
+- [ ] Conversational multi-turn session: freeform natural-language turns (not just slash commands), with context
+  carried across turns (the model sees the running conversation, not each request in isolation)
+- [ ] Mid-task steering: the user can give a new instruction / correction mid-task and the session adapts
+- [ ] The system can ASK the user a question and consume the typed answer inline (shares REQ-8's channel)
+- [ ] Resume conversations: sessions persist (transcript + state) and can be resumed later (`--resume` / session id)
+- [ ] Familiar Claude-Code affordances: streaming output, clear turn markers, `/help` + slash commands still available,
+  graceful interrupt — but UX NEVER overrides a higher tenet (Tenet 5 is the lowest-priority tenet)
