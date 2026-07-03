@@ -15,6 +15,10 @@
 .jaros-data/daemon.log
 .jaros-data/sessions/
 
+# EXT-036 REQ-16: per-repo long-term memory (runtime state — never commit an actual
+# store); JAROS.md itself (REQ-17, .jaros/JAROS.md) stays committed as project instructions.
+.jaros/memory.jsonl
+
 # Real benchmark datasets (large / separately licensed — fetched, not vendored)
 evals/benchmarks/
 

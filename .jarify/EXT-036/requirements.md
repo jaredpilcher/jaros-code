@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -223,16 +223,25 @@ compaction. Critical for the small model (tiny context window makes this MORE im
 - [ ] Bounded working-context budget; when exceeded, older turns are condensed into a running summary kept in-context
 - [ ] Condensation preserves task-relevant facts (measured: a follow-up needing an old fact still resolves post-condense)
 
-### [REQ-16] Long-term + PER-REPO memory  (GAP)
+### [REQ-16] Long-term + PER-REPO memory  (DONE — EXT-036 TASK-3, 2026-07-03)
 
 Persistent memory that survives across sessions, SEPARATE per repo the user works on (facts/decisions/preferences for
 THIS project). Mirrors the .claude per-project memory model. Small-model-appropriate: recall must be PRECISE (the
 retrieval-negative lesson — inject the few relevant facts, not a noisy dump; see memory retrieval-fewshot-negative).
 
 #### Acceptance Criteria
-- [ ] A per-repo memory store (keyed by repo path/id) persisted under the repo's jaros state
-- [ ] Write (capture a durable fact) + precise recall (surface only the few relevant facts into the prompt)
-- [ ] Isolated per repo; measured that recall helps, not hurts (guard against the noisy-context regression)
+- [x] A per-repo memory store (keyed by repo path/id) persisted under the repo's jaros state — DONE
+  (`harness/repo_memory.py::add_fact`/`load_facts`, `<root>/.jaros/memory.jsonl`; bounded read, guarded — never raises)
+- [x] Write (capture a durable fact) + precise recall (surface only the few relevant facts into the prompt) — DONE
+  (`/remember` persists a fact; `select_relevant` is a NARROW memory-agent judgment mirroring the validated
+  `.jaros-data/mem_experiment2.py` selection prompt, wired into `harness/cli.py`'s plain-language routing as a
+  `RELEVANT MEMORY:` block, after `PROJECT INSTRUCTIONS:` and before conversation history)
+- [x] Isolated per repo; measured that recall helps, not hurts (guard against the noisy-context regression) — DONE
+  (store keyed by repo root; ANY failure — no facts, unreachable model, unparseable/out-of-range output — returns
+  `[]`, never a bulk dump). Honest caveat: the "recall helps" measurement is the existing live-model probe
+  (`.jaros-data/mem_experiment2.py`, MEM-AGENT selective beat RAW-LONG dump on the long-context task this design is
+  built from); this task's own tests are OFFLINE (stubbed selection, no live model) per its testing constraint, so a
+  fresh live-model re-measurement of this exact wiring has not been re-run here.
 
 ### [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)  (GAP)
 

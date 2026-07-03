@@ -7,43 +7,85 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 59,
-      "endLine": 93
+      "startLine": 60,
+      "endLine": 102
     },
     {
       "file": "harness/cli.py",
-      "startLine": 116,
-      "endLine": 122
+      "startLine": 125,
+      "endLine": 131
     },
     {
       "file": "harness/cli.py",
-      "startLine": 572,
-      "endLine": 603
+      "startLine": 606,
+      "endLine": 637
     },
     {
       "file": "harness/cli.py",
-      "startLine": 617,
-      "endLine": 621
+      "startLine": 670,
+      "endLine": 676
     },
     {
       "file": "harness/cli.py",
-      "startLine": 714,
-      "endLine": 728
+      "startLine": 771,
+      "endLine": 788
     },
     {
       "file": "harness/cli.py",
-      "startLine": 729,
-      "endLine": 731
+      "startLine": 789,
+      "endLine": 791
     },
     {
       "file": "harness/cli.py",
-      "startLine": 761,
-      "endLine": 764
+      "startLine": 821,
+      "endLine": 824
     },
     {
       "file": "harness/cli.py",
-      "startLine": 796,
-      "endLine": 801
+      "startLine": 856,
+      "endLine": 861
+    }
+  ],
+  "REQ-16": [
+    {
+      "file": "harness/repo_memory.py",
+      "startLine": 17,
+      "endLine": 109
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 75,
+      "endLine": 79
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 139,
+      "endLine": 145
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 432,
+      "endLine": 436
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 445,
+      "endLine": 450
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 639,
+      "endLine": 654
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 672,
+      "endLine": 674
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 773,
+      "endLine": 775
     }
   ],
   "REQ-17": [
@@ -54,23 +96,23 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 66,
-      "endLine": 76
+      "startLine": 70,
+      "endLine": 74
     },
     {
       "file": "harness/cli.py",
-      "startLine": 123,
-      "endLine": 129
+      "startLine": 132,
+      "endLine": 138
     },
     {
       "file": "harness/cli.py",
-      "startLine": 618,
-      "endLine": 620
+      "startLine": 671,
+      "endLine": 675
     },
     {
       "file": "harness/cli.py",
-      "startLine": 717,
-      "endLine": 719
+      "startLine": 777,
+      "endLine": 779
     }
   ]
 }

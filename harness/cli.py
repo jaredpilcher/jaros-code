@@ -36,8 +36,9 @@ Commands (Claude-Code-style):
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
   /explain <function|file>      plain-English summary of what code does
-  /remember <note>              save a convention/learning to project memory (.jcode/memory.md)
-  /memory                       show the project memory
+  /remember <note>              save a convention/learning to project memory (.jcode/memory.md);
+                                 also captures it as a durable per-repo fact for memory-agent recall (EXT-036)
+  /memory                       show the project memory + the per-repo long-term fact store
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /new                          start a fresh conversational session (EXT-036)
@@ -57,23 +58,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # #EXT-036-REQ-12 Start
-def _augment_with_history(text: str, history: "list[dict] | None", project_md: str = "") -> str:
+def _augment_with_history(text: str, history: "list[dict] | None", project_md: str = "",
+                           memory: "list[str] | None" = None) -> str:
     """Fold a BOUNDED recent transcript into `text` as conversation context (REQ-12), preceded
-    by an optional JAROS.md ``PROJECT INSTRUCTIONS:`` preamble (REQ-17, EXT-036 TASK-2). Order
-    is PROJECT INSTRUCTIONS -> conversation history -> the request. Absent history AND absent
-    project_md leaves `text` byte-identical — a fresh session / repo with no JAROS.md behaves
-    exactly like the old stateless routing (a graceful no-op)."""
+    by an optional JAROS.md ``PROJECT INSTRUCTIONS:`` preamble (REQ-17, EXT-036 TASK-2) and an
+    optional memory-agent-selected ``RELEVANT MEMORY:`` block (REQ-16, EXT-036 TASK-3). Order is
+    PROJECT INSTRUCTIONS -> RELEVANT MEMORY -> conversation history -> the request. Absent
+    history AND absent project_md AND empty memory leaves `text` byte-identical — a fresh
+    session / repo with no JAROS.md / no recalled facts behaves exactly like the old stateless
+    routing (a graceful no-op)."""
     # #EXT-036-REQ-17 Start
     parts: list[str] = []
     if project_md:
         parts.append(f"PROJECT INSTRUCTIONS:\n{project_md}")
+    # #EXT-036-REQ-17 End
+    # #EXT-036-REQ-16 Start
+    if memory:
+        mem_block = "\n".join(f"- {f}" for f in memory)
+        parts.append(f"RELEVANT MEMORY:\n{mem_block}")
+    # #EXT-036-REQ-16 End
     if history:
         convo = "\n".join(f"{h.get('role', 'user')}: {h.get('text', '')}" for h in history)
         parts.append(f"(recent conversation)\n{convo}")
     if not parts:
         return text
     return "\n\n".join(parts) + f"\n\n(current request) {text}"
-    # #EXT-036-REQ-17 End
 
 
 def _record_turn(cli, user_text: str, assistant_text: str) -> None:
@@ -127,6 +136,13 @@ class JcodeCli:
         from harness.project_md import load_project_md
         self.project_md = load_project_md(".")
         # #EXT-036-REQ-17 End
+        # #EXT-036-REQ-16 Start
+        # Per-repo long-term fact store (REQ-16): loaded ONCE per CLI instance (mirrors the
+        # REQ-17 JAROS.md cache), NOT injected wholesale — _recall_memory asks the narrow
+        # memory-agent to select the precise few facts relevant to each turn.
+        from harness.repo_memory import load_facts
+        self.repo_facts = load_facts(".")
+        # #EXT-036-REQ-16 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -404,17 +420,35 @@ class JcodeCli:
 
     def cmd_remember(self, arg: str) -> str:
         """Project memory (EXT-009 REQ-3): append a note/convention to .jcode/memory.md — persists
-        across runs (Claude Code's CLAUDE.md analog, for jcode). Wires harness/project_memory.py."""
+        across runs (Claude Code's CLAUDE.md analog, for jcode). Wires harness/project_memory.py.
+
+        EXT-036 REQ-16: ALSO captures the note as a durable per-repo LONG-TERM fact
+        (.jaros/memory.jsonl) so it becomes available to the memory-agent's selective recall
+        on future plain-language turns (see _recall_memory / harness/repo_memory.py)."""
         if not arg.strip():
             return "usage: /remember <note or convention>"
         from harness.project_memory import append_memory
-        return f"remembered -> {append_memory('.', arg)}"
+        path = append_memory('.', arg)
+        # #EXT-036-REQ-16 Start
+        from harness.repo_memory import add_fact
+        if add_fact(arg, root="."):
+            self.repo_facts = getattr(self, "repo_facts", []) + [arg.strip()]
+        # #EXT-036-REQ-16 End
+        return f"remembered -> {path}"
 
     def cmd_memory(self, _arg: str) -> str:
-        """Show the project memory (.jcode/memory.md)."""
+        """Show the project memory (.jcode/memory.md), plus the per-repo long-term FACT store
+        (EXT-036 REQ-16, .jaros/memory.jsonl) that the memory-agent selects from."""
         from harness.project_memory import read_memory
         m = read_memory(".")
-        return m.rstrip() if m.strip() else "(no project memory yet — add one with /remember <note>)"
+        out = m.rstrip() if m.strip() else "(no project memory yet — add one with /remember <note>)"
+        # #EXT-036-REQ-16 Start
+        from harness.repo_memory import load_facts
+        facts = load_facts(".")
+        if facts:
+            out += "\n\nlong-term facts (recall-selectable):\n" + "\n".join(f"  - {f}" for f in facts)
+        # #EXT-036-REQ-16 End
+        return out
 
     def cmd_undo(self, _arg: str) -> str:
         """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —
@@ -602,7 +636,25 @@ class JcodeCli:
         return "recent sessions:" + "".join(f"\n  {r['id']}  ({r['turns']} turn(s))" for r in rows)
     # #EXT-036-REQ-12 End
 
-    def _nl_fix(self, request: str, arg: str, history: "list[dict] | None" = None) -> str:
+    # #EXT-036-REQ-16 Start
+    def _recall_memory(self, request: str) -> list[str]:
+        """Memory-AGENT recall (REQ-16): ask the narrow memory-selection judgment which of
+        the cached per-repo facts (``self.repo_facts``) are relevant to `request`. Guarded —
+        no facts, an unreachable model, or unparseable output all fall through to [] so
+        NOTHING is injected; this must never dump the whole store (the measured
+        retrieval-negative regression — noisy context hurts the small model)."""
+        facts = getattr(self, "repo_facts", None)
+        if not facts:
+            return []
+        try:
+            from harness.repo_memory import select_relevant
+            return select_relevant(request, facts, llm=self.llm) or []
+        except Exception:
+            return []
+    # #EXT-036-REQ-16 End
+
+    def _nl_fix(self, request: str, arg: str, history: "list[dict] | None" = None,
+                memory: "list[str] | None" = None) -> str:
         """Natural-language fix. If the request names a specific file, fix that file; if it
         names NONE (e.g. 'fix the failing tests'), fall back to the multi-file fixer, which
         LOCATES the faulty file(s) across the repo. The branch is a deterministic file-token
@@ -612,11 +664,14 @@ class JcodeCli:
         instruction text so a follow-up like "now add error handling to that" resolves
         against the prior turn; it does NOT change the file-detection regex above, and is a
         no-op (byte-identical instruction) when there is no prior history. The cached
-        ``self.project_md`` (EXT-036 REQ-17, JAROS.md) is folded in as a preamble the same way."""
+        ``self.project_md`` (EXT-036 REQ-17, JAROS.md) is folded in as a preamble the same way,
+        and `memory` (EXT-036 REQ-16, the memory-agent's selected facts) as a block after it."""
         m = re.search(r"[\w./\\-]+\.\w+", arg) or re.search(r"[\w./\\-]+\.\w+", request)
         # #EXT-036-REQ-12 Start
         # #EXT-036-REQ-17 Start
-        instruction = _augment_with_history(request, history, getattr(self, "project_md", ""))
+        # #EXT-036-REQ-16 Start
+        instruction = _augment_with_history(request, history, getattr(self, "project_md", ""), memory)
+        # #EXT-036-REQ-16 End
         # #EXT-036-REQ-17 End
         # #EXT-036-REQ-12 End
         if not m:   # no file named -> locate it across the repo
@@ -696,7 +751,9 @@ class JcodeCli:
         EXT-036 REQ-12: every turn (slash or plain) is appended to the session transcript
         and persisted (best-effort). Plain-language routing (the orchestrator path and its
         NL-fix branch) additionally sees a BOUNDED recent transcript as context, so it stays
-        conversation-aware; slash-command dispatch is unchanged — still direct/stateless."""
+        conversation-aware, plus a memory-agent-selected ``RELEVANT MEMORY:`` block (REQ-16)
+        when the per-repo fact store has something relevant; slash-command dispatch is
+        unchanged — still direct/stateless."""
         line = line.strip()
         if not line:
             return ""
@@ -713,15 +770,18 @@ class JcodeCli:
             else:
                 # #EXT-036-REQ-12 Start
                 history = self.session.recent()
+                # #EXT-036-REQ-16 Start
+                memory = self._recall_memory(line)
+                # #EXT-036-REQ-16 End
                 orch = self._load_agent("orchestrator_agent.py", self.llm)
                 # #EXT-036-REQ-17 Start
-                augmented = _augment_with_history(line, history, getattr(self, "project_md", ""))
+                augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory)
                 # #EXT-036-REQ-17 End
                 [d] = orch.decide({"request": augmented, "history": history})
                 action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
                 banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
                 if action == "fix":
-                    out = banner + "\n" + self._nl_fix(line, arg, history=history)
+                    out = banner + "\n" + self._nl_fix(line, arg, history=history, memory=memory)
                 else:
                     handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
                     out = banner + "\n" + handler(arg)

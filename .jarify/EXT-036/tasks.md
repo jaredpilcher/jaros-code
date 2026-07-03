@@ -50,3 +50,28 @@ TASK-1 routing/session path.
 
 #### Implements
 - [REQ-17] Project-instructions file auto-injected every prompt (JAROS.md ≈ CLAUDE.md)
+
+### [TASK-3] Per-repo long-term memory + memory-AGENT recall (REQ-16)
+
+The measured small-model memory design (docs/GAP-MAP.md): raw transcript is fine IN-session; the memory-AGENT's value
+is CROSS-SESSION + large-scale recall (where the transcript isn't available). Build that: a per-repo persistent fact
+store + an agent that SELECTS the few relevant facts for the current request (validated: it picks correctly) and
+injects ONLY those (precise recall — never a dump, guarding the retrieval-negative regression).
+
+#### Steps
+1. `harness/repo_memory.py`: a per-repo fact store persisted to `.jaros/memory.jsonl` (keyed to the repo/cwd).
+   `add_fact(text, root=".")` appends a durable fact; `load_facts(root)` returns the list; both deterministic,
+   guarded (never raise). Bound the store read (cap facts loaded).
+2. Memory-AGENT recall: `select_relevant(request, facts)` — a NARROW model judgment that returns the indices/subset of
+   facts directly relevant to the request (mirror `.jaros-data/mem_experiment2.py`'s selection prompt; return [] if
+   none). Deterministic fallback: if the model output is unparseable, return [] (no injection) — never dump all facts.
+3. Wire into `harness/cli.py`: on plain-language turns, recall the relevant facts and inject them into the routing
+   augmentation as a `RELEVANT MEMORY:` block (after JAROS.md PROJECT INSTRUCTIONS, before conversation history).
+   Empty selection = no-op (byte-identical). Add a `/remember <fact>` command to capture a fact; `/memory` lists them.
+4. Tests (`tests/test_ext036_repo_memory.py`, OFFLINE — stub the memory-agent + orchestrator, no live model):
+   (a) add_fact→load_facts round-trips per-repo + is isolated by root; (b) select_relevant returns only the stubbed
+   relevant subset, [] on unparseable; (c) selected facts injected into the plain-turn request as RELEVANT MEMORY,
+   empty selection = no-op; (d) `/remember` persists, `/memory` lists; (e) slash commands unaffected. Full tests green.
+
+#### Implements
+- [REQ-16] Long-term + PER-REPO memory (memory-agent selective recall — cross-session)
