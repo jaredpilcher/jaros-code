@@ -1,10 +1,47 @@
 {
-  "REQ-4": [
+  "REQ-3": [
     {
-      "file": "tests/test_ext027_swebench_capture.py",
-      "startLine": 8,
-      "endLine": 204
+      "file": "harness/daily_driver.py",
+      "startLine": 42,
+      "endLine": 52
     },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 170,
+      "endLine": 172
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 537,
+      "endLine": 551
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 561,
+      "endLine": 572
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 602,
+      "endLine": 617
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 57,
+      "endLine": 59
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 126,
+      "endLine": 128
+    },
+    {
+      "file": "tests/test_ext027_autocapture.py",
+      "startLine": 22,
+      "endLine": 172
+    }
+  ],
+  "REQ-4": [
     {
       "file": "harness/swebench_live.py",
       "startLine": 318,
@@ -34,48 +71,11 @@
       "file": "harness/swebench_live.py",
       "startLine": 450,
       "endLine": 452
-    }
-  ],
-  "REQ-3": [
-    {
-      "file": "tests/test_ext027_autocapture.py",
-      "startLine": 22,
-      "endLine": 172
     },
     {
-      "file": "harness/intent_loop.py",
-      "startLine": 57,
-      "endLine": 59
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 126,
-      "endLine": 128
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 42,
-      "endLine": 52
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 170,
-      "endLine": 172
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 459,
-      "endLine": 473
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 483,
-      "endLine": 494
-    },
-    {
-      "file": "harness/daily_driver.py",
-      "startLine": 524,
-      "endLine": 539
+      "file": "tests/test_ext027_swebench_capture.py",
+      "startLine": 8,
+      "endLine": 204
     }
   ],
   "REQ-1": [

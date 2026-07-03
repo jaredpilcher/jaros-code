@@ -1,0 +1,14 @@
+{
+  "id": "ops_gitignore",
+  "category": "ops",
+  "split": "dev",
+  "instruction": "Create a .gitignore file for a Python project that ignores the __pycache__ directory, compiled *.pyc files, and a local .env file used for secrets.",
+  "files": {},
+  "target": ".gitignore",
+  "oracle": {
+    "type": "state",
+    "check": "file_contains",
+    "path": ".gitignore",
+    "expect": ["__pycache__", "\\*\\.pyc", "\\.env"]
+  }
+}

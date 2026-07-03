@@ -207,3 +207,32 @@ mutant. A degenerate `assert True` test passes on the reference but fails to kil
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (write-tests category via mutation oracle → 95/100 weighted-category coverage)
+
+### [TASK-7] Daily-driver runner: ops category routing (the LAST category → 100/100 weighted coverage)
+
+Fill the final empty category `ops` (weight 5) → completes REQ-13's declared 8-category coverage (100/100). Unlike the
+algorithmic categories, `ops` is about producing correct CONFIG / FILE-STATE artifacts (gitignore, config files,
+requirements, directory/file structure) — a distinct everyday capability graded by the ALREADY-BUILT `check_state`
+oracle (`file_exists` / `file_contains` regex list / `cmd_exit0`). The oracle side is done; this task builds the SOLVE
+path + seed tasks.
+
+#### Steps
+1. `harness/daily_driver.run_daily`: the `oracle.type == "state"` branch currently just `_write_files` the GIVEN files
+   then `check_state` — with NO model step producing the artifact. Add an `ops` SOLVE path: for `category == "ops"`,
+   the MODEL generates the required artifact CONTENT from `task["instruction"]` (mirror the answer_fn/build model-call
+   convention; the model returns the file body, or a small map of filename→content for multi-file ops), the harness
+   writes it into the temp dir, THEN `check_state` grades. If the model emits nothing usable, `solved=False`, no crash.
+   Keep the existing non-ops state-oracle path (pre-given files) working for back-compat.
+2. **HONESTY (Tenet 3):** `check_state` must grade REAL produced state — never write the expected artifact for the
+   model, and never leak the oracle's exact regex/expected file into the model prompt (only the instruction). A wrong
+   or empty artifact must fail. Prefer discriminating oracles: `cmd_exit0` (the artifact must actually work) or
+   MULTI-pattern `file_contains`, not a single trivially-echoed string.
+3. Seed **2 held-out ops dev tasks** under `evals/daily_driver/dev/` — genuine config/ops artifacts, e.g. (a) "create a
+   `.gitignore` that ignores `__pycache__/`, `*.pyc`, and a `.env` file" → `file_contains` with 3 regex patterns; (b)
+   "create `setup.cfg` with a `[flake8]` section setting `max-line-length = 100`" → `file_contains` (section + setting)
+   or `cmd_exit0`. Instructions describe the requirement in prose; the model must produce the correctly-formatted file.
+4. `tests/test_ext005_daily_driver.py`: OFFLINE test (monkeypatch the model ops-generation) — a KNOWN-GOOD artifact →
+   solved=True, a WRONG/empty artifact → solved=False. Full `tests/` stays green.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (ops category routing → 100/100 weighted-category coverage complete)

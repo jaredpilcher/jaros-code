@@ -1,0 +1,14 @@
+{
+  "id": "ops_setup_cfg",
+  "category": "ops",
+  "split": "dev",
+  "instruction": "Create a setup.cfg file that configures flake8 with a [flake8] section setting max-line-length to 100.",
+  "files": {},
+  "target": "setup.cfg",
+  "oracle": {
+    "type": "state",
+    "check": "file_contains",
+    "path": "setup.cfg",
+    "expect": ["\\[flake8\\]", "max-line-length\\s*=\\s*100"]
+  }
+}

@@ -419,6 +419,79 @@ def _run_write_tests_task(task: dict) -> bool:
     return _write_tests_oracle_ok(task, generated)
 
 
+# ---------------------------------------------------------------------------
+# ops routing (TASK-7, the LAST empty category -> 100/100 weighted coverage):
+# the model generates the required CONFIG/FILE-STATE artifact CONTENT from the
+# instruction; the ALREADY-BUILT check_state oracle (file_exists/file_contains/
+# cmd_exit0) grades the REAL produced state. See _run_ops_task below.
+# ---------------------------------------------------------------------------
+
+_OPS_PROMPT = (
+    "Produce the file described below.\n\n"
+    "INSTRUCTION: {instruction}\n\n"
+    "Output ONLY the exact file content (no prose, no markdown fences, no explanation)."
+)
+
+
+def _generate_ops_files(task: dict) -> dict[str, str]:
+    """MODEL grain (ops): generate the required artifact(s) CONTENT from
+    ``task["instruction"]`` ONLY. Mirrors the ``build_llm()``/``LlmRequest`` call
+    convention used elsewhere in this module (``_extract_rename``, ``_generate_tests``).
+
+    HONESTY (Tenet 3): the prompt carries ONLY the instruction -- never the oracle's
+    ``check``/``path``/``expect`` fields (its exact regex/expected content), so the model
+    must produce a genuinely correct artifact, not an echo of the grader.
+
+    Returns a ``{filename: content}`` map to write into the workdir: either the model's own
+    JSON filename->content map (multi-file ops), or the raw text written to
+    ``task["target"]`` (the common single-file case). Returns ``{}`` (never raises) if the
+    model is unreachable or emits nothing usable -- ``_run_ops_task`` treats that as
+    ``solved=False``.
+    """
+    from harness.coding_loop import build_llm
+    from jaros.llm import LlmRequest
+
+    prompt = _OPS_PROMPT.format(instruction=task.get("instruction", ""))
+    try:
+        llm = build_llm()
+        raw = llm.complete(LlmRequest(prompt=prompt, params={"temperature": 0.0})).text
+    except Exception:
+        return {}
+    cleaned = re.sub(r"```[\w+-]*", "", raw or "").replace("```", "").strip()
+    if not cleaned:
+        return {}
+    try:
+        parsed = json.loads(cleaned)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict) and parsed and all(
+            isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+        return parsed
+    target = task.get("target") or "output.txt"
+    return {target: cleaned + "\n"}
+
+
+def _run_ops_task(task: dict, workdir: Path) -> bool:
+    """Route an ``ops`` task: (a) MODEL generates the artifact content from
+    ``task["instruction"]`` ONLY (``_generate_ops_files``); (b) DETERMINISTIC -- the
+    generated file(s) are written into the isolated ``workdir``; (c) GRADE -- the
+    already-built ``check_state`` oracle (``file_exists``/``file_contains``/``cmd_exit0``)
+    runs against the REAL produced state (never the expected artifact written for the
+    model). Any pre-given ``task["files"]`` (fixture inputs the artifact should sit
+    alongside) are written first for back-compat, then the model-generated artifact
+    overlays them. A missing/unusable model reply scores ``solved=False``, never crashes.
+    """
+    _write_files(workdir, task.get("files", {}))
+    generated = _generate_ops_files(task)
+    if not generated:
+        return False
+    _write_files(workdir, generated)
+    oracle = task.get("oracle")
+    if not oracle:
+        return False
+    return check_state(workdir, oracle)
+
+
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
     """Run the daily-driver suite, routing each task by its oracle mechanism.
 
@@ -435,9 +508,14 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
       every seeded mutant -- ``_write_tests_oracle_ok``).
     - pytest-oracle tasks (``test_cmd`` present) reuse the proven isolated
       ``eval_runner.setup_task`` + ``coding_loop.fix_loop`` path.
+    - ``ops`` tasks route through ``_run_ops_task`` (checked BEFORE the generic
+      ``oracle.type == "state"`` branch below): a model generates the required artifact
+      CONTENT from the instruction, the harness writes it, then ``check_state`` grades the
+      REAL produced state.
     - answer-oracle tasks (``oracle.type == "answer"``) call ``answer_fn(task) -> str``
       (injectable; default stub returns ``""``) then ``check_answer``.
-    - state-oracle tasks (``oracle.type == "state"``) call ``check_state``.
+    - state-oracle tasks (``oracle.type == "state"``, non-``ops``) call ``check_state``
+      against pre-given ``files`` -- no model step (back-compat).
 
     Returns a scorecard: per-category ``{passed,total,rate,wilson}``, the weighted
     headline ``Σ(wᵢ·rateᵢ)/Σwᵢ``, and a dev vs holdout breakdown.
@@ -537,6 +615,16 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
                     except Exception:
                         pass
                 # #EXT-027-REQ-3 End
+            elif task.get("category") == "ops":
+                # Checked BEFORE the generic oracle.type=="state" branch below: ops tasks
+                # also carry a "state" oracle (the check_state grader), so without this
+                # guard they would fall into the back-compat branch that only writes the
+                # GIVEN files with no model step -- ops tasks have no pre-given artifact,
+                # the model must generate it (TASK-7).
+                try:
+                    solved = _run_ops_task(task, workdir)
+                except Exception:  # a single task failure never sinks the suite
+                    solved = False
             elif oracle and oracle.get("type") == "answer":
                 _write_files(workdir, task.get("files", {}))
                 answer = answer_fn(task)

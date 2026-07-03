@@ -761,3 +761,154 @@ def test_write_tests_prompt_never_shows_the_model_a_mutant_or_reference_test(mon
         assert mutant["content"] not in captured["prompt"]
     assert "n % i == 0" in captured["prompt"]  # the reference code IS shown
 # #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
+# ops routing (TASK-7: the LAST category, model generates the artifact CONTENT,
+# graded by the already-built check_state oracle -> 100/100 weighted coverage)
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+def _ops_seed_tasks():
+    return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+            if t["category"] == "ops"]
+
+
+def test_load_daily_tasks_loads_ops_seed_tasks():
+    tasks = _ops_seed_tasks()
+    assert {t["id"] for t in tasks} == {"ops_gitignore", "ops_setup_cfg"}
+    for t in tasks:
+        assert t["category"] == "ops"
+        assert t.get("oracle", {}).get("type") == "state"
+        assert not t.get("test_cmd")  # state-oracle, not pytest
+        assert len(t["oracle"]["expect"]) >= 2  # MULTI-pattern, not a single trivial echo
+
+
+_KNOWN_GOOD_GITIGNORE = "__pycache__/\n*.pyc\n.env\n"
+_WRONG_GITIGNORE = "*.log\n"
+
+
+def test_ops_task_no_model_step_scores_unsolved_never_silently_passes(monkeypatch):
+    """HONESTY (Tenet 3): the back-compat state-oracle path (write GIVEN files, no model
+    step) must NOT silently pass an ops task -- ops tasks carry no pre-given artifact, so
+    without the dedicated branch/model step the oracle would just check empty state."""
+    monkeypatch.setattr("harness.daily_driver._generate_ops_files", lambda task: {})
+
+    tasks = [t for t in _ops_seed_tasks() if t["id"] == "ops_gitignore"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 0
+    assert "ops" in scorecard["perCategory"]
+    assert scorecard["perCategory"]["ops"]["passed"] == 0
+
+
+def test_ops_known_good_artifact_scores_solved(monkeypatch):
+    """OFFLINE: the model-generation step is faked to return a KNOWN-GOOD artifact (real
+    behavior, no live model) -- proves the file is actually written and check_state grades
+    the REAL produced state."""
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_ops_files",
+        lambda task: {task["target"]: _KNOWN_GOOD_GITIGNORE})
+
+    tasks = [t for t in _ops_seed_tasks() if t["id"] == "ops_gitignore"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 1
+    assert scorecard["perCategory"]["ops"] == {
+        "passed": 1, "total": 1, "rate": 1.0,
+        "wilson": scorecard["perCategory"]["ops"]["wilson"]}
+
+
+def test_ops_wrong_artifact_scores_unsolved(monkeypatch):
+    """A wrong artifact (does not contain the required patterns) must fail -- never a
+    trivially-echoed single-string pass."""
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_ops_files",
+        lambda task: {task["target"]: _WRONG_GITIGNORE})
+
+    tasks = [t for t in _ops_seed_tasks() if t["id"] == "ops_gitignore"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["ops"]["passed"] == 0
+
+
+def test_ops_empty_artifact_scores_unsolved_never_crashes(monkeypatch):
+    """The model is unreachable / emits nothing usable -> solved=False, no crash."""
+    monkeypatch.setattr("harness.daily_driver._generate_ops_files", lambda task: {})
+
+    tasks = [t for t in _ops_seed_tasks() if t["id"] == "ops_setup_cfg"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["ops"]["passed"] == 0
+
+
+def test_ops_second_seed_known_good_setup_cfg_scores_solved(monkeypatch):
+    good = "[flake8]\nmax-line-length = 100\n"
+    monkeypatch.setattr(
+        "harness.daily_driver._generate_ops_files",
+        lambda task: {task["target"]: good})
+
+    tasks = [t for t in _ops_seed_tasks() if t["id"] == "ops_setup_cfg"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 1
+
+
+def test_ops_generate_files_accepts_a_multi_file_json_map(monkeypatch):
+    """The model may also reply with a filename->content JSON map (multi-file ops); the
+    generator must honor that map rather than always writing a single ``target`` file."""
+    from harness.daily_driver import _generate_ops_files
+
+    class _FakeResponse:
+        text = json.dumps({".gitignore": _KNOWN_GOOD_GITIGNORE})
+
+    class _FakeLlm:
+        def complete(self, request):
+            return _FakeResponse()
+
+    monkeypatch.setattr("harness.coding_loop.build_llm", lambda: _FakeLlm())
+
+    tasks = _ops_seed_tasks()
+    task = next(t for t in tasks if t["id"] == "ops_gitignore")
+    generated = _generate_ops_files(task)
+
+    assert generated == {".gitignore": _KNOWN_GOOD_GITIGNORE}
+
+
+def test_ops_prompt_never_leaks_the_oracle_expected_patterns(monkeypatch):
+    """ANTI-LEAK (Tenet 3): the prompt built for the model carries only the instruction --
+    never the oracle's exact regex/expected content (checked via the regex-escaped forms,
+    which never occur in ordinary prose)."""
+    from harness.daily_driver import _generate_ops_files
+
+    captured = {}
+
+    class _FakeResponse:
+        text = _KNOWN_GOOD_GITIGNORE
+
+    class _FakeLlm:
+        def complete(self, request):
+            captured["prompt"] = request.prompt
+            return _FakeResponse()
+
+    monkeypatch.setattr("harness.coding_loop.build_llm", lambda: _FakeLlm())
+
+    tasks = _ops_seed_tasks()
+    task = next(t for t in tasks if t["id"] == "ops_gitignore")
+    _generate_ops_files(task)
+
+    assert "prompt" in captured
+    # Only the REGEX-ESCAPED patterns (backslash form) are a genuine "leak" signal -- a
+    # plain substring like "__pycache__" legitimately also appears in ordinary prose (the
+    # instruction itself names the artifacts it wants ignored), so only patterns containing
+    # regex metacharacters are checked here.
+    for pattern in task["oracle"]["expect"]:
+        if "\\" in pattern:
+            assert pattern not in captured["prompt"]
+    assert json.dumps(task["oracle"]) not in captured["prompt"]  # the raw oracle dict never appears
+    assert task["instruction"] in captured["prompt"]  # the instruction IS shown
+# #EXT-005-REQ-13 End
