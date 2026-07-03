@@ -62,6 +62,20 @@ lever, NOT roster grinding — no decorrelation to harvest): (i) grow the daily-
 the models + wire a real model answer_fn so answer-tasks are exercised (feeds #51 + #44), (ii) the model-split evidence
 must come from a harder bar since every current class saturates or is single-model-dominated.
 
+### Scoreboard #1 — DAILY-DRIVER parity headline RE-MEASURED after category fills (2026-07-03)
+
+After filling multi-file (TASK-4) + refactor (TASK-5), the suite is 15 tasks / 6 of 8 weighted categories
+(85/100 weight). Full gemma-default scorecard (`.jaros-data/dd_full_scorecard.py`): **WEIGHTED HEADLINE 0.941
+(14/15 raw)** — edit 2/2, fix 6/6, multi-file 2/2, refactor 2/2, navigate 1/1 (now genuinely tested via a wired
+answer_fn), build-module 1/2. The ONLY miss is one build-module task — a GENERATIVE-VARIANCE flake (build_from_intent
+is from-scratch generation, higher variance; gemma solved BOTH build-module tasks in the earlier dd_triple run), NOT a
+regression. HONEST CAVEATS: (1) this 94% is over EASY tasks — the suite still largely saturates for the roster (both
+small models ~ace it, per scoreboard #3); a high number here reflects task easiness, not CC-parity on hard work — the
+external hard bar (SWE-bench ~13%) remains the true parity gap. (2) 2 categories still empty (write-tests w10, ops w5)
+so the headline covers 85/100 declared weight. (3) build-module variance means single-run category rates are noisy;
+a multi-seed average would tighten them. This is the instrument's honest current output — useful as a REGRESSION guard
+and to measure future harder-task additions, not as a parity-achieved claim.
+
 ### ROUTER VERIFIED CORRECT (2026-07-02) — closes the "should we rewire routing?" question
 
 DIAGNOSE (read-only, live tally): the deterministic tally-argmax already routes `standalone-fn-gen → qwen2.5-coder-3b`
