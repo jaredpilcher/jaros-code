@@ -931,7 +931,13 @@ class JcodeCli:
                 out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
             else:
                 # #EXT-036-REQ-12 Start
-                history = self.session.recent()
+                # #EXT-036-REQ-15 Start
+                # condense() is the raw recent() slice (byte-identical) for under-budget
+                # sessions, and a [summary] + recent-turns view once the transcript grows
+                # past the budget (REQ-15) — the router always gets ONE consistent shape.
+                from harness.session import condense
+                history = condense(self.session, llm=self.llm)
+                # #EXT-036-REQ-15 End
                 # #EXT-036-REQ-16 Start
                 memory = self._recall_memory(line)
                 # #EXT-036-REQ-16 End

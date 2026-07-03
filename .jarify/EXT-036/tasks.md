@@ -245,3 +245,28 @@ the test-gen. Offline-testable with canned/deterministic runs.
 
 #### Implements
 - [REQ-6] Multi-level test generation — integration + performance
+
+### [TASK-11] Short-term memory condensation (REQ-15)
+
+Completes the memory subsystem: when the session transcript (TASK-1 `Session`) grows past a budget (the small model's
+finite context), CONDENSE the oldest turns into a running summary so context stays within budget without losing the
+thread. Safe + additive: only activates over-budget; never changes behavior for short sessions. (Measured: raw is fine
+to ~30 facts, but real long transcripts exceed the window — this is the guard for that.)
+
+#### Steps
+1. `harness/session.py`: add a budget (e.g. `MAX_TURNS`/`MAX_CHARS` for the injected slice) and
+   `condense(session, llm) -> None` (or return a condensed view): when the transcript exceeds the budget, summarize the
+   OLDEST turns (a narrow model call) into a single `role:"summary"` entry, keep it + the most-recent turns; the
+   `recent()` slice returned to the router then = summary + recent turns, staying within budget. Deterministic budget
+   check; the only model step is the summary. Guarded, never raises (on model failure, fall back to truncating oldest).
+2. Wire into the CLI's history-injection path (the existing `_augment_with_history`/`recent()` consumer): the injected
+   context is the condensed view when over budget, the raw recent turns otherwise. No change for short sessions.
+3. HONESTY: condensation must preserve task-relevant facts — a follow-up needing an old fact should still resolve after
+   condense (best-effort via the summary). It's a lossy summary, honestly labeled `summary`, not a claim of full recall.
+4. Tests (`tests/test_ext036_condense.py`, OFFLINE — canned llm summary): (a) under budget → no condense, raw turns
+   returned unchanged; (b) over budget → oldest turns replaced by a `summary` entry, recent turns kept, slice within
+   budget; (c) model-failure fallback truncates without raising; (d) a fact stated in an old (now-summarized) turn is
+   present in the summary (canned) so it's still injected. Full `tests/` stays green.
+
+#### Implements
+- [REQ-15] Short-term memory management + condensation

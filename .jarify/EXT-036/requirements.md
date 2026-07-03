@@ -280,15 +280,31 @@ Claude Code manages short + long-term memory, condenses context, keeps per-repo 
 prompt, creates todo tasks + experiments. jaros-code has META-level analogs (this convergence loop uses a task list,
 experiments, CLAUDE.md, .claude memory) but must build these INTO the harness for its USERS.
 
-### [REQ-15] Short-term memory management + condensation  (GAP)
+### [REQ-15] Short-term memory management + condensation  (DONE — EXT-036 TASK-11, 2026-07-03)
 
 The session transcript (REQ-12) is short-term memory; when it grows past the small model's budget, CONDENSE it (an
 LLM/deterministic summary of older turns) so context stays within budget without losing the thread — Claude-Code's
 compaction. Critical for the small model (tiny context window makes this MORE important than for a big model).
 
 #### Acceptance Criteria
-- [ ] Bounded working-context budget; when exceeded, older turns are condensed into a running summary kept in-context
-- [ ] Condensation preserves task-relevant facts (measured: a follow-up needing an old fact still resolves post-condense)
+- [x] Bounded working-context budget; when exceeded, older turns are condensed into a running summary kept in-context —
+  DONE (`harness/session.py::condense(session, llm=None, keep=CONDENSE_KEEP, max_chars=300)`): deterministic budget
+  check (`MAX_TURNS=40` on the full transcript); under budget it is BYTE-IDENTICAL to `session.recent()` (no behavior
+  change for short sessions); over budget the oldest turns (everything before the most-recent `CONDENSE_KEEP=6`) are
+  folded via ONE narrow model call (`_summarize_turns`) into a single `{"role": "summary", "text": ...}` entry, and
+  the returned slice is `[summary] + recent turns` — bounded regardless of transcript size. Guarded: any model
+  failure (unreachable/empty output) falls back to a deterministic truncation (`_fallback_truncate`), never raises.
+  Wired into `harness/cli.py::handle()`'s history-injection path (replacing the raw `session.recent()` call) so the
+  router always receives the condensed view once over budget, the raw recent turns otherwise.
+- [x] Condensation preserves task-relevant facts (measured: a follow-up needing an old fact still resolves post-condense)
+  — DONE, proven OFFLINE (`tests/test_ext036_condense.py`, canned llm summary, no live model): a fact stated in an
+  old (now-summarized) turn is present in the canned summary text so it's still injected into the routed request;
+  under-budget sessions return raw turns unchanged (and never call the model); over-budget sessions replace the
+  oldest turns with a single honestly-labeled `summary` entry while keeping the most-recent turns verbatim, staying
+  within a fixed-size bound regardless of transcript size; a model failure (raises, or returns empty text) falls back
+  to truncation without raising. Existing `test_ext036_cli_session.py` (TASK-1)/`test_ext036_project_md.py`
+  (TASK-2)/`test_ext036_repo_memory.py` (TASK-3) all stay green — condensation is additive and only engages once the
+  transcript exceeds `MAX_TURNS`, well beyond those tests' short sessions.
 
 ### [REQ-16] Long-term + PER-REPO memory  (DONE — EXT-036 TASK-3, 2026-07-03)
 

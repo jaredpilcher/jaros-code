@@ -1,4 +1,16 @@
 {
+  "REQ-19": [
+    {
+      "file": "harness/experiment_store.py",
+      "startLine": 33,
+      "endLine": 184
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 753,
+      "endLine": 799
+    }
+  ],
   "REQ-17": [
     {
       "file": "harness/cli.py",
@@ -17,8 +29,8 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 939,
-      "endLine": 941
+      "startLine": 945,
+      "endLine": 947
     },
     {
       "file": "harness/project_md.py",
@@ -59,8 +71,8 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 935,
-      "endLine": 937
+      "startLine": 941,
+      "endLine": 943
     },
     {
       "file": "harness/repo_memory.py",
@@ -92,22 +104,22 @@
     {
       "file": "harness/cli.py",
       "startLine": 933,
-      "endLine": 950
+      "endLine": 956
     },
     {
       "file": "harness/cli.py",
-      "startLine": 951,
-      "endLine": 953
+      "startLine": 957,
+      "endLine": 959
     },
     {
       "file": "harness/cli.py",
-      "startLine": 983,
-      "endLine": 986
+      "startLine": 989,
+      "endLine": 992
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1018,
-      "endLine": 1023
+      "startLine": 1024,
+      "endLine": 1029
     },
     {
       "file": "harness/session.py",
@@ -176,16 +188,16 @@
       "endLine": 164
     }
   ],
-  "REQ-19": [
+  "REQ-15": [
     {
       "file": "harness/cli.py",
-      "startLine": 753,
-      "endLine": 799
+      "startLine": 934,
+      "endLine": 940
     },
     {
-      "file": "harness/experiment_store.py",
-      "startLine": 33,
-      "endLine": 184
+      "file": "harness/session.py",
+      "startLine": 90,
+      "endLine": 156
     }
   ],
   "REQ-6": [
