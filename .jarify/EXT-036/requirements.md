@@ -37,7 +37,18 @@ guarantees structural coherence + repairs/rejects incoherent plans.
 #### Acceptance Criteria
 - [x] Model emits a parseable JSON plan for a one-sentence spec (probed: simple/medium/complex all parse)
 - [x] Deterministic coherence validator (DAG/signatures/imports/entrypoint) — probed, all three pass
-- [ ] A plan-repair loop: when the validator finds defects, feed them back for a coherent re-plan (analog of the write-tests repair loop)
+- [~] A plan-repair loop: when the validator finds defects, feed them back for a coherent re-plan (analog of the write-tests repair loop) — **PARTIAL, 2026-07-03 (TASK-19)**: MEASURED
+  (`.jaros-data/diag_residuals.py`) that 4/5 creation-suite residuals hit the SAME defect — gemma's plan lists
+  exactly ONE module but sets `entrypoint` to a DIFFERENT filename it clearly intends as the entrypoint (just
+  named its lone module descriptively) — so `validate_plan` correctly rejects it and 0 modules build.
+  `harness/system_builder.py::_repair_plan_entrypoint`, called before the `validate_plan` gate, DETERMINISTICALLY
+  repairs this specific, unambiguous single-module case (renames the sole module to the entrypoint filename) — a
+  deterministic repair, not a model-feedback re-plan call, and only for this one defect shape. A genuinely
+  incoherent MULTI-module plan with a mismatched entrypoint is left untouched (ambiguous which module should host
+  it) so it still fails coherence exactly as before — no regression, no silent wrong guess. Proven OFFLINE
+  (`tests/test_ext036_planrepair.py`, canned llm, no live model). CAVEAT (honest scope): this fills only the ONE
+  measured defect shape; a GENERAL re-plan-on-defect loop that feeds arbitrary validator defects back to the model
+  for a fresh plan (the broader criterion) remains open.
 - [ ] Measured on a held-out set of sentences; coherence-pass rate reported honestly
 
 ### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (PARTIAL — robust derivation DONE, TASK-6)

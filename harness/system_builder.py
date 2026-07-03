@@ -193,6 +193,40 @@ def _topo_order(mods: list[dict], names: list[str]) -> list[str]:
     for n in names:
         visit(n)
     return order
+
+
+def _repair_plan_entrypoint(plan: dict) -> "tuple[dict, str | None]":
+    """Deterministic plan-repair (TASK-19, REQ-1): fixes the single MEASURED coherence
+    defect (`.jaros-data/diag_residuals.py`) where the model's plan lists exactly ONE
+    module (named descriptively, e.g. ``calculator.py``) but sets ``entrypoint`` to a
+    DIFFERENT filename (e.g. ``main.py``, matching the sentence's pinned entrypoint
+    convention) — the model clearly INTENDS that file as the entrypoint, it just named its
+    lone module descriptively rather than matching it. When there is exactly one module and
+    the entrypoint is a non-empty string that isn't that module's name, rename the sole
+    module (and any self-referencing import) to the entrypoint filename, so it BECOMES the
+    entrypoint the sentence asked for. Returns ``(plan, note)`` — ``note`` is ``None`` when
+    no repair was made (already coherent, or nothing safe to repair), else a short
+    human-readable description for traceability/honesty. Never raises. Multi-module plans
+    with a mismatched entrypoint are left UNTOUCHED — ambiguous which module should host the
+    entrypoint, so a genuinely incoherent multi-module plan is still rejected by
+    ``validate_plan`` exactly as before (no silent, possibly-wrong guess)."""
+    if not isinstance(plan, dict):
+        return plan, None
+    mods = plan.get("modules")
+    entrypoint = plan.get("entrypoint")
+    if not isinstance(mods, list) or len(mods) != 1 or not isinstance(entrypoint, str) or not entrypoint:
+        return plan, None
+    sole = mods[0]
+    if not isinstance(sole, dict):
+        return plan, None
+    old_name = sole.get("name")
+    if not old_name or old_name == entrypoint:
+        return plan, None
+    sole["name"] = entrypoint
+    imports = sole.get("imports")
+    if isinstance(imports, list):
+        sole["imports"] = [entrypoint if i == old_name else i for i in imports]
+    return plan, f"plan-repair: renamed sole module {old_name} -> {entrypoint}"
 # #EXT-036-REQ-1 End
 
 
@@ -572,9 +606,10 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
 
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
-            repairs=None) -> dict:
+            repairs=None, plan_repair: str = "") -> dict:
     return {"modules": modules or {}, "shipped": shipped, "done": done,
-            "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or []}
+            "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or [],
+            "plan_repair": plan_repair}
 
 
 def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
@@ -605,9 +640,17 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     plan = _extract_json(raw, "{", "}")
     if not isinstance(plan, dict):
         return _result(shipped=False, done=False, note="planner produced no parseable JSON plan")
+    # #EXT-036-REQ-1 Start
+    # TASK-19: deterministic plan-repair BEFORE the coherence gate — fixes the MEASURED
+    # single-module/mismatched-entrypoint defect so a genuinely coherent (just misnamed)
+    # plan isn't rejected. Never weakens validate_plan's other checks (see
+    # _repair_plan_entrypoint's own multi-module conservatism).
+    plan, plan_repair_note = _repair_plan_entrypoint(plan)
+    plan_repair = plan_repair_note or ""
+    # #EXT-036-REQ-1 End
     defects = validate_plan(plan)
     if defects:
-        return _result(shipped=False, done=False, plan=plan,
+        return _result(shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                         note="plan failed coherence validation: " + "; ".join(defects[:6]))
 
     mods = plan.get("modules", [])
@@ -623,10 +666,10 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         try:
             code, ok = _build_module(spec, m, built, llm)
         except Exception as exc:
-            return _result(modules=built, shipped=False, done=False, plan=plan,
+            return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"build failed for {name}: {exc}")
         if not ok:
-            return _result(modules=built, shipped=False, done=False, plan=plan,
+            return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"module {name} failed the syntax gate after {MAX_REPAIR_ATTEMPTS} repair attempt(s)")
         built[name] = code
 
@@ -636,12 +679,13 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         for name, code in built.items():
             (root / name).write_text(code, encoding="utf-8", newline="\n")
     except OSError as exc:
-        return _result(modules=built, shipped=False, done=False, plan=plan, note=f"assembly failed: {exc}")
+        return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
+                        note=f"assembly failed: {exc}")
 
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
     checks = _derive_acceptance_checklist(spec, mods, llm)
     if not checks:
-        return _result(modules=built, shipped=True, done=False, plan=plan,
+        return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
                         unmet=["no acceptance checklist derived"],
                         note="shipped, but no executable acceptance checklist could be derived")
     unmet = [c.get("name", "?") for c in checks if not _run_check(root, c)]
@@ -659,7 +703,8 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     if repairs:
         rounds = len({r["round"] for r in repairs})
         note += f" (after {rounds} repair round(s))"
-    return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note, repairs=repairs)
+    return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note,
+                    repairs=repairs, plan_repair=plan_repair)
 # #EXT-036-REQ-4 End
 
 

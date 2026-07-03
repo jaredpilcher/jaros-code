@@ -579,3 +579,58 @@ unconfigured/offline environment (e.g. CI, a laptop with no Jetson) never regres
   CLI wiring of the offline escalation core: `/buildsystem` now genuinely routes through
   `build_system_escalating` when a hard-tier specialist is configured, carrying the measured
   25%->58% ship-rate lift into the actual product path, not just the offline test-gated core)
+
+### [TASK-19] Deterministic plan-repair: entrypoint-not-listed (REQ-1)
+
+MEASURED ROOT CAUSE (`.jaros-data/diag_residuals.py`, 2026-07-03): 4 of 5 creation-suite
+RESIDUALS (`temp-converter-cli`, `priority-jobqueue-cli`, `rpn-calc-cli`,
+`rate-limiter-cli`) fail identically -- gemma's plan lists exactly ONE logic module (e.g.
+`calculator.py`/`conversion.py`/`job_queue.py`/`rate_limiter.py`) but sets
+`entrypoint: "main.py"` (matching the sentence's pinned entrypoint convention from
+TASK-15), and `validate_plan` correctly rejects the plan ("entrypoint not a listed
+module"), so 0 modules build and the task is never shipped. gemma clearly INTENDS
+`main.py` as the entrypoint -- it just named its single module descriptively rather than
+`main.py`. This is a deterministic coherence-REPAIR opportunity (the analog of the
+write-tests repair loop, but here the "defect" has exactly one honest, unambiguous fix
+rather than needing a re-plan call), not a model reasoning failure.
+
+#### Steps
+1. In `harness/system_builder.py` (REQ-1 section, alongside `validate_plan`/`_topo_order`),
+   add a deterministic `_repair_plan_entrypoint(plan: dict) -> tuple[dict, str | None]`: if
+   `plan["modules"]` is a list of EXACTLY ONE module and `plan["entrypoint"]` is a non-empty
+   string that does not match that module's `name`, rename the sole module's `name` (and any
+   self-referencing `imports` entry) to the entrypoint filename, so the one module BECOMES
+   the entrypoint the sentence asked for. Return `(plan, note)` where `note` is a short
+   string (e.g. `"plan-repair: renamed sole module calculator.py -> main.py"`) when a repair
+   was made, else `(plan, None)`. Multi-module plans with a mismatched entrypoint are left
+   UNTOUCHED (ambiguous which module should host the entrypoint) -- do not add a driver
+   module or otherwise guess; a genuinely incoherent multi-module plan must still be
+   rejected by `validate_plan` exactly as before. Pure/deterministic, no model call, never
+   raises.
+2. In `build_system`, call `_repair_plan_entrypoint(plan)` immediately after the plan is
+   parsed (`_extract_json`) and BEFORE the `validate_plan(plan)` coherence gate, so a
+   single-module/mismatched-entrypoint plan is repaired first and then passes coherence
+   validation (and proceeds to build) instead of being rejected. Do not change
+   `validate_plan`'s own checks or weaken any other defect it catches.
+3. Thread the repair note into the returned result for honesty/traceability: add a
+   `plan_repair` field to `_result()` (default `""`), and pass the note through on every
+   `build_system` return path reached after the repair call (so it's visible whether the
+   build later ships, fails to build, or fails acceptance). Never raises; a plan needing no
+   repair returns `plan_repair: ""` unchanged (byte-identical behavior to today).
+4. Tests `tests/test_ext036_planrepair.py` (OFFLINE -- canned `llm`, no network, following
+   `tests/test_ext036_system_builder.py`'s `_CannedLlm` pattern): (a) a single-module plan
+   whose `entrypoint` is NOT among its listed modules is REPAIRED (module renamed to the
+   entrypoint) and the build proceeds past coherence validation to ship (not rejected with
+   "entrypoint not a listed module"); (b) a plan whose `entrypoint` already matches a listed
+   module is UNCHANGED (`plan_repair == ""`, `_repair_plan_entrypoint` is a no-op); (c) a
+   MULTI-module plan with a mismatched entrypoint is NOT silently repaired -- it still fails
+   `validate_plan`'s coherence check exactly as before (no regression, no wrong guess); (d)
+   `build_system` still never raises on a malformed/edge-case plan (empty modules list, non-
+   dict module entry, entrypoint that's not a string). Run the FULL `python -m pytest
+   tests/ -q` (was 1376) and confirm it stays green at the new count.
+
+#### Implements
+- [REQ-1] Planner: sentence -> structured, coherence-validated plan (a deterministic
+  plan-repair for the MEASURED single-module/mismatched-entrypoint defect -- fills part of
+  the "plan-repair loop... feed back for a coherent re-plan" acceptance criterion; a
+  general re-plan-on-defect loop for OTHER defect classes remains open)
