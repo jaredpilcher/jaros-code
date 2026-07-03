@@ -41,22 +41,26 @@ Escalation ladder rungs referenced below: L0 prompt/format · L1 decompose/contr
 
 ## Scoreboard #3 — ROUTED-SYSTEM TRIPLE, SECOND class (2026-07-02): fix/edit/build, +0 headroom AGAIN
 
-Extended the triple to a NON-function-gen class — the daily-driver suite's 6 fix + 2 edit + 2 build + 1 navigate
-tasks (`.jaros-data/dd_triple.py` + restore-safe `dd_triple_run.sh`; runs LOCALLY, no WSL). Result: **gemma 10/11,
-qwen 10/11 — PERFECTLY CORRELATED (identical per-task: same 10 solved, same 1 missed) → routed = best-single =
-oracle = 10/11, decorrelated headroom = +0.** So across BOTH measured classes the roster shows ZERO decorrelation
-value: function-gen (qwen strictly dominates gemma) and fix/edit/build (gemma ≡ qwen). **HONEST SYSTEM-LEVEL
-CONCLUSION: the multi-model roster does not pay via within-class decorrelation on any class jaros-code can currently
-measure** — the router is correct but adds nothing over serving the single best model. TWO implications: (a) scoreboard
-#3 says the roster's cost is UNJUSTIFIED by decorrelation evidence to date (honest, per intent commitment 3 — surfaced
-not hidden); the roster's only remaining value hypothesis is class-COVERAGE (route a class one model wins to that model)
-— but that needs a class where models genuinely SPLIT (one wins tasks the other loses), which neither measured class
-shows. (b) The daily-driver suite is TOO EASY to discriminate (both small models 10/11) — the single discriminating task
-(nav_callers_of_load_config) is missed by BOTH, a navigate-class gap — so the suite (#51, only 11 tasks vs intent's 80+)
-can't measure either model-split OR hard-task parity; a HARDER, larger daily-driver tier is the prerequisite to ever
-measure roster value. NEXT: the honest lever is NOT more roster grinding (no decorrelation to harvest) but (i) grow the
-daily-driver to harder tasks that actually split the models (feeds #51 + #44 admission-by-marginal-coverage), and (ii)
-probe the navigate-class miss (both models fail nav_callers — a candidate harness/localization gap, suspect-harness-first).
+Extended the triple to a NON-function-gen class — the daily-driver suite's 6 fix + 2 edit + 2 build tasks (the
+test_cmd/fix_loop path, which DOES call the model) (`.jaros-data/dd_triple.py` + restore-safe `dd_triple_run.sh`; runs
+LOCALLY, no WSL). Result: **gemma 10/10, qwen 10/10 on the CODE tasks — PERFECTLY CORRELATED (identical per-task) →
+routed = best-single = oracle, decorrelated headroom = +0.** So across BOTH measured classes the roster shows ZERO
+decorrelation value: function-gen (qwen strictly dominates gemma) and fix/edit/build (gemma ≡ qwen). **HONEST
+SYSTEM-LEVEL CONCLUSION: the multi-model roster does not pay via within-class decorrelation on any class jaros-code can
+currently measure** — the router is correct but adds nothing over serving the single best model. Its only remaining
+value hypothesis is class-COVERAGE (route a class one model wins to that model), which needs a class where models
+genuinely SPLIT — neither measured class shows one. **★ RECORD CORRECTION (Tenet 3, suspect-harness-first, same tick):
+the 1 navigate task (nav_callers_of_load_config) initially showed "both miss" — that was a MEASUREMENT ARTIFACT, not a
+gap.** `run_daily`'s `answer_fn` defaults to an empty stub (`_default_answer_fn` returns "") — the navigate/ops
+answer-oracle tasks are NEVER asked the model unless a caller injects a real answer_fn, and my dd_triple.py (like every
+un-injected caller) didn't → empty answer → guaranteed fail. Diagnostic: asked gemma the navigate question DIRECTLY →
+it answers `start\nreload` correctly (check_answer=True). So gemma actually solves 11/11; the daily-driver suite is
+FULLY SATURATED for the roster (both small models ace every task) — even stronger evidence it can't discriminate models.
+REAL harness gap surfaced: the primary parity instrument (daily-driver) has NO production answer_fn wired, so its
+answer-type tasks (navigate/ops) are silently untested in any real run — a wiring gap to fix in #51. NEXT (honest
+lever, NOT roster grinding — no decorrelation to harvest): (i) grow the daily-driver to HARDER tasks that actually split
+the models + wire a real model answer_fn so answer-tasks are exercised (feeds #51 + #44), (ii) the model-split evidence
+must come from a harder bar since every current class saturates or is single-model-dominated.
 
 ## Scoreboard #3 — ROUTED-SYSTEM TRIPLE, first measurement (2026-07-02, intent honest-headline metric)
 
