@@ -171,9 +171,47 @@ def _run_build_module_task(task: dict, *, max_iters: int) -> tuple[bool, str]:
     # #EXT-027-REQ-3 End
 
 
+def _find_test_file(files: dict) -> str:
+    """Convention used across the harness (``multifile_eval.py``, ``cli.py``): the
+    failing-test file is the one whose name starts with ``test`` and ends ``.py``."""
+    return next((n for n in files if n.startswith("test") and n.endswith(".py")), "")
+
+
+def _run_multi_file_task(task: dict, workdir: Path, *, max_iters: int) -> tuple[bool, str, str]:
+    """Route a ``multi-file`` task through ``harness.multi_file.multi_file_fix`` (EXT-010,
+    incl. the REQ-6 minimal-diff pass) — the discriminating CROSS-FILE class: the fault is
+    localized (deterministic import-closure walk) and fixed in a DIFFERENT file than the
+    failing test (contrast ``fix``/``edit``, which are single-file via ``fix_loop`` against
+    a known ``target``). ``solved`` is exactly whether the run reaches all-green.
+
+    Returns ``(solved, fixed_file_content, original_fixed_file_content)`` -- the latter two
+    for EXT-027 REQ-3 capture (fixed content is the code artifact captured; the ORIGINAL,
+    pre-fix content of that same file is the "source", mirroring the edit/fix capture
+    convention below).
+    """
+    from harness.multi_file import multi_file_fix
+    _write_files(workdir, task.get("files", {}))
+    test_file = _find_test_file(task.get("files", {}))
+    result = multi_file_fix(str(workdir), task["test_cmd"], task.get("instruction", ""),
+                            str(workdir / test_file), max_iters=max_iters, verbose=False)
+    solved = bool(result.get("solved"))
+    fixed_name = result.get("file")
+    code, orig_source = "", ""
+    if solved and fixed_name:
+        try:
+            code = (workdir / fixed_name).read_text(encoding="utf-8")
+        except OSError:
+            code = ""
+        orig_source = task.get("files", {}).get(fixed_name, "")
+    return solved, code, orig_source
+
+
 def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
     """Run the daily-driver suite, routing each task by its oracle mechanism.
 
+    - ``multi-file`` tasks route through ``harness.multi_file.multi_file_fix`` (checked
+      BEFORE the generic pytest branch below so they are never misrouted to the
+      single-file ``fix_loop`` path, which has no cross-file localization).
     - pytest-oracle tasks (``test_cmd`` present) reuse the proven isolated
       ``eval_runner.setup_task`` + ``coding_loop.fix_loop`` path.
     - answer-oracle tasks (``oracle.type == "answer"``) call ``answer_fn(task) -> str``
@@ -208,6 +246,27 @@ def run_daily(tasks: list[dict], *, answer_fn=None, max_iters: int = 3) -> dict:
                              "problem_class": _CAPTURE_PROBLEM_CLASS.get(
                                  task.get("category", ""), "standalone-fn-gen")},
                             built_code,
+                        )
+                    except Exception:
+                        pass
+                # #EXT-027-REQ-3 End
+            elif task.get("category") == "multi-file":
+                # Checked BEFORE the generic test_cmd branch below: multi-file tasks also
+                # carry test_cmd (the grader), so without this guard they would misroute
+                # into the single-file fix_loop path (no target/cross-file localization).
+                try:
+                    solved, fixed_code, orig_source = _run_multi_file_task(
+                        task, workdir, max_iters=max_iters)
+                except Exception:  # a single task failure never sinks the suite
+                    solved, fixed_code, orig_source = False, "", ""
+                # #EXT-027-REQ-3 Start
+                if solved and fixed_code:
+                    try:
+                        record_verified(
+                            {"source": orig_source,
+                             "problem_class": _CAPTURE_PROBLEM_CLASS.get(
+                                 task.get("category", ""), "multi-file")},
+                            fixed_code,
                         )
                     except Exception:
                         pass

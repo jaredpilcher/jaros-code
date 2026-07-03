@@ -401,3 +401,93 @@ def test_build_module_task_scored_unsolved_when_the_built_solution_fails_the_ora
     assert scorecard["solved"] == 0
     assert scorecard["perCategory"]["build-module"]["passed"] == 0
 # #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
+# multi-file routing (TASK-4: harness.multi_file.multi_file_fix wired in)
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+def _multi_file_seed_tasks():
+    return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
+            if t["category"] == "multi-file"]
+
+
+def test_load_daily_tasks_loads_multi_file_seed_tasks():
+    tasks = _multi_file_seed_tasks()
+    assert {t["id"] for t in tasks} == {"mfx_geometry_area", "mfx_cart_discount"}
+    for t in tasks:
+        assert t["category"] == "multi-file"
+        assert t.get("test_cmd")
+        assert len(t.get("files", {})) >= 2
+        # the failing test lives in a DIFFERENT file than the fault (real cross-file tasks)
+        assert any(name.startswith("test") for name in t["files"])
+
+
+def test_multi_file_task_not_misrouted_to_the_single_file_fix_loop_path(monkeypatch):
+    """Multi-file tasks also carry test_cmd (the grader for multi_file_fix's own internal
+    run), so without the dedicated branch they would fall into the generic pytest/fix_loop
+    branch below -- which builds a Task with no 'target' and can't cross-file-localize."""
+    def _boom(*a, **kw):
+        raise AssertionError("multi-file task misrouted to the single-file fix_loop path")
+
+    monkeypatch.setattr("harness.coding_loop.fix_loop", _boom)
+
+    def _fake_multi_file_fix(cwd, test_cmd, instruction, test_file, *, max_iters=3, verbose=False):
+        return {"solved": True, "file": "geometry.py", "tried": ["geometry.py"], "fixed": ["geometry.py"]}
+
+    monkeypatch.setattr("harness.multi_file.multi_file_fix", _fake_multi_file_fix)
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
+
+    tasks = _multi_file_seed_tasks()
+    scorecard = run_daily(tasks, max_iters=1)
+    assert scorecard["solved"] == len(tasks) == 2
+
+
+def test_multi_file_tasks_route_through_multi_file_fix_and_score_it(monkeypatch):
+    """Offline: multi_file_fix faked to a KNOWN result (no live model / no real
+    localization+fix run) -- proves run_daily wires the multi-file branch, writes the
+    task's files into an isolated dir first, and the weighted/per-category scorecard
+    carries a 'multi-file' row."""
+    calls: list = []
+
+    def _fake_multi_file_fix(cwd, test_cmd, instruction, test_file, *, max_iters=3, verbose=False):
+        calls.append({"cwd": cwd, "test_cmd": test_cmd, "instruction": instruction,
+                      "test_file": test_file, "max_iters": max_iters})
+        # the task's files must already be materialized in cwd before this is called
+        assert (Path(cwd) / Path(test_file).name).is_file()
+        return {"solved": True, "file": "geometry.py", "tried": [], "fixed": ["geometry.py"]}
+
+    monkeypatch.setattr("harness.multi_file.multi_file_fix", _fake_multi_file_fix)
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
+
+    tasks = [t for t in _multi_file_seed_tasks() if t["id"] == "mfx_geometry_area"]
+    scorecard = run_daily(tasks, max_iters=2)
+
+    assert scorecard["total"] == 1
+    assert scorecard["solved"] == 1
+    assert "multi-file" in scorecard["perCategory"]
+    mf = scorecard["perCategory"]["multi-file"]
+    assert mf == {"passed": 1, "total": 1, "rate": 1.0, "wilson": mf["wilson"]}
+    assert scorecard["weighted"] == pytest.approx(1.0)
+
+    assert len(calls) == 1
+    assert calls[0]["test_file"].endswith("test_shapes.py")
+    assert calls[0]["test_cmd"] == "python -m pytest -q"
+    assert calls[0]["max_iters"] == 2
+
+
+def test_multi_file_task_scored_unsolved_when_multi_file_fix_does_not_reach_green(monkeypatch):
+    """Proves the grading is genuine -- an unsolved multi_file_fix result scores unsolved."""
+    def _fake_multi_file_fix(cwd, test_cmd, instruction, test_file, *, max_iters=3, verbose=False):
+        return {"solved": False, "file": None, "tried": ["geometry.py"], "fixed": []}
+
+    monkeypatch.setattr("harness.multi_file.multi_file_fix", _fake_multi_file_fix)
+    monkeypatch.setattr("harness.daily_driver.record_verified", lambda *a, **kw: None)
+
+    tasks = [t for t in _multi_file_seed_tasks() if t["id"] == "mfx_cart_discount"]
+    scorecard = run_daily(tasks, max_iters=1)
+
+    assert scorecard["solved"] == 0
+    assert scorecard["perCategory"]["multi-file"]["passed"] == 0
+# #EXT-005-REQ-13 End

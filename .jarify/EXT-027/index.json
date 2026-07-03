@@ -22,18 +22,23 @@
     },
     {
       "file": "harness/daily_driver.py",
-      "startLine": 200,
-      "endLine": 214
+      "startLine": 238,
+      "endLine": 252
     },
     {
       "file": "harness/daily_driver.py",
-      "startLine": 226,
-      "endLine": 241
+      "startLine": 262,
+      "endLine": 273
+    },
+    {
+      "file": "harness/daily_driver.py",
+      "startLine": 285,
+      "endLine": 300
     },
     {
       "file": "tests/test_ext027_autocapture.py",
       "startLine": 22,
-      "endLine": 166
+      "endLine": 172
     }
   ],
   "REQ-1": [

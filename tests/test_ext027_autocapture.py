@@ -51,9 +51,9 @@ def _capture_tasks() -> list[dict]:
             "category": "multi-file",
             "split": "dev",
             "instruction": "fix across files",
-            "target": "multi_target.py",
             "test_cmd": "python -m pytest -q",
-            "files": {"multi_target.py": _ORIGINAL_MULTI_SOURCE, "helper.py": "def h(): pass\n"},
+            "files": {"multi_target.py": _ORIGINAL_MULTI_SOURCE, "helper.py": "def h(): pass\n",
+                      "test_multi.py": "def test_x():\n    assert True\n"},
         },
         {
             "id": "cap_build_solved",
@@ -93,8 +93,14 @@ def _install_stubs(monkeypatch):
     def _fake_build_from_intent(task, max_iters=3, verbose=False):
         return IntentResult(task["id"], True, True, 1, code=f"BUILT::{task['target']}")
 
+    def _fake_multi_file_fix(cwd, test_cmd, instruction, test_file, *, max_iters=3, verbose=False):
+        name = "multi_target.py"
+        (Path(cwd) / name).write_text(f"FIXED::{name}\n", encoding="utf-8")
+        return {"solved": True, "file": name, "tried": [name], "fixed": [name]}
+
     monkeypatch.setattr("harness.coding_loop.fix_loop", _fake_fix_loop)
     monkeypatch.setattr("harness.intent_loop.build_from_intent", _fake_build_from_intent)
+    monkeypatch.setattr("harness.multi_file.multi_file_fix", _fake_multi_file_fix)
 
     calls: list[dict] = []
 

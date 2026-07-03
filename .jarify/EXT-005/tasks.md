@@ -106,3 +106,37 @@ build-module tasks already exist: `evals/daily_driver/dev/build_stack.json`, `..
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (build-module generative category routing + held-out oracle)
+
+### [TASK-4] Daily-driver runner: multi-file category routing (wire the multi_file_fix capability into the parity instrument)
+
+MEASURED GAP (docs/GAP-MAP.md, 2026-07-02): the daily-driver runner declares 8 frequency-weighted
+categories but the suite populates only 4 (navigate/edit/fix/build-module) — **multi-file (weight 10),
+refactor, write-tests, ops are EMPTY**, so REQ-13's weighted headline silently covers only 65% of the
+declared workload. This task fills the highest-capability-value missing category, **multi-file**, by
+routing it through the already-built `harness/multi_file.multi_file_fix` (EXT-010, incl. the REQ-6
+minimal-diff pass) — a cross-file fault where the fix must touch a DIFFERENT file than the failing test
+(the fix/edit categories are single-file via `fix_loop`; multi-file is the discriminating cross-file
+class). Scope is multi-file ONLY (refactor/write-tests/ops are separate follow-up tasks).
+
+#### Steps
+1. `harness/daily_driver.run_daily`: add a `category == "multi-file"` branch (BEFORE the generic
+   `test_cmd`→`fix_loop` branch so it isn't misrouted) that sets up the task's `files` in an isolated
+   temp dir and calls `harness.multi_file.multi_file_fix(cwd, test_cmd, ...)` (mirror how the fix branch
+   sets up `Task`/`setup_task`, but use the multi_file entry point that localizes across the import
+   closure). `solved = bool(result all-green)`. Keep build-module/edit/fix/navigate/state routing
+   unchanged.
+2. `load_daily_tasks`: accept multi-file tasks — schema `{id, category:"multi-file", split, instruction,
+   files:{path:content,...} (≥2 files: the failing test file + ≥1 source file holding the bug in a
+   DIFFERENT file), test_cmd}`. Do not misroute as a single-file fix.
+3. Seed **2 held-out multi-file dev tasks** under `evals/daily_driver/dev/` (e.g. a bug in
+   `geometry.py` surfaced by `test_shapes.py` importing `shapes.py` importing `geometry.py`; and a
+   second distinct cross-file scenario). HONEST (Tenet 3): the task is a GENUINE cross-file fault the
+   model must localize+fix; the `test_cmd` is the grader; do NOT leak the fix or tune the task to pass.
+   Tasks must be real (not trivially solvable, not gamed) and representative of everyday multi-file work.
+4. The weighted headline + per-category scorecard must include a `multi-file` row when such tasks are
+   present. `tests/test_ext005_daily_driver.py`: add an OFFLINE test (monkeypatch `multi_file_fix` to a
+   known result) asserting run_daily routes `category=="multi-file"` to the multi_file path and scores
+   it; full suite stays green.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (multi-file category routing → full weighted-category coverage)
