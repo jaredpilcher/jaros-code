@@ -200,3 +200,26 @@ breakdown of a request into tracked steps. Composes on the session/per-repo stat
 
 #### Implements
 - [REQ-18] TODO task creation + management (user-facing)
+
+### [TASK-9] Experiment management, user-facing (REQ-19)
+
+Claude-Code-style experiments: define (hypothesis + how to run + how to measure) → run → record the result against the
+hypothesis. Mirrors TASK-8's store pattern; the "run" is a real deterministic subprocess execution (never faked).
+
+#### Steps
+1. `harness/experiment_store.py`: per-repo store at `.jaros/experiments.jsonl`. `define_experiment(hypothesis, run_cmd,
+   root, measure="")` → `{id, hypothesis, run_cmd, measure, status:"defined"}`; `run_experiment(id, root, *,
+   timeout=60)` → executes `run_cmd` via subprocess in `root` (guarded, bounded timeout, tree-kill-safe if available),
+   records `{exit_code, output(tail), status:"run"}` — a REAL run, never fabricated; `list_experiments(root)`.
+   Deterministic, guarded, never raises. Bounded read.
+2. `harness/cli.py`: `/experiment <hypothesis> :: <run_cmd>` (define), `/experiments` (list w/ id+status+last result),
+   `/experiment run <id>` (run + report exit/output). Additive; existing commands untouched.
+3. HONESTY (Tenet 3): the result is the ACTUAL subprocess exit/output — never invented. A run failure records the real
+   failure, not a pass.
+4. Tests (`tests/test_ext036_experiments.py`, OFFLINE — no model needed; use trivial real run_cmds like
+   `python -c "import sys;sys.exit(0)"` (pass) and `...sys.exit(1)` (fail)): (a) define/list/run round-trip + per-repo
+   isolation; (b) a passing run_cmd → exit_code 0 recorded, a failing one → non-zero recorded (real, not faked);
+   (c) run guards a bad/hanging cmd (timeout) without raising; (d) CLI commands work; (e) slash unaffected. Tests green.
+
+#### Implements
+- [REQ-19] Experiment creation + management (user-facing)

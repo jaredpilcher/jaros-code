@@ -50,6 +50,9 @@ Commands (Claude-Code-style):
   /tasks                        list tasks (id + status)
   /task done <id>                mark a task done
   /task doing <id>               mark a task in progress
+  /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
+  /experiments                  list experiments (id + status + last result)
+  /experiment run <id>          actually run the experiment (real subprocess, never faked)
   /clear  /quit
 """
 
@@ -746,6 +749,54 @@ class JcodeCli:
             return "(no tasks yet — add one with /task <text>)"
         return "tasks:" + "".join(f"\n  [{t['id']}] {t['status']:<11} {t['text']}" for t in tasks)
     # #EXT-036-REQ-18 End
+
+    # #EXT-036-REQ-19 Start
+    def cmd_experiment(self, arg: str) -> str:
+        """Experiment management (REQ-19): ``/experiment <hypothesis> :: <run_cmd>`` defines an
+        experiment for this repo, ``/experiment run <id>`` actually RUNS it (a real guarded
+        subprocess — never fabricated) and reports the real exit code + output. Deterministic —
+        wires harness/experiment_store.py; never touches the model."""
+        arg = arg.strip()
+        if not arg:
+            return ("usage: /experiment <hypothesis> :: <run_cmd>   |   /experiment run <id>")
+        bits = arg.split(None, 1)
+        if bits[0].lower() == "run":
+            if len(bits) < 2 or not bits[1].strip():
+                return "usage: /experiment run <id>"
+            exp_id = bits[1].strip()
+            from harness.experiment_store import run_experiment
+            e = run_experiment(exp_id, root=".")
+            if e is None:
+                return f"no experiment found with id {exp_id!r}"
+            return (
+                f"[{e['id']}] ran: {e['run_cmd']}\nexit_code={e['exit_code']}\n{e['output']}"
+            )
+        parts = [p.strip() for p in arg.split("::")]
+        if len(parts) < 2 or not parts[0] or not parts[1]:
+            return "usage: /experiment <hypothesis> :: <run_cmd> [:: <measure>]"
+        hypothesis, run_cmd = parts[0], parts[1]
+        measure = parts[2] if len(parts) > 2 else ""
+        from harness.experiment_store import define_experiment
+        e = define_experiment(hypothesis, run_cmd, root=".", measure=measure)
+        if e is None:
+            return "could not define experiment"
+        return f"defined [{e['id']}] {e['hypothesis']}  (run: {e['run_cmd']})"
+
+    def cmd_experiments(self, _arg: str) -> str:
+        """List this repo's defined/run experiments (id + status + last result), oldest first
+        (REQ-19)."""
+        from harness.experiment_store import list_experiments
+        exps = list_experiments(root=".")
+        if not exps:
+            return "(no experiments yet — define one with /experiment <hypothesis> :: <run_cmd>)"
+        lines = []
+        for e in exps:
+            row = f"  [{e['id']}] {e['status']:<8} {e['hypothesis']}"
+            if e.get("status") == "run":
+                row += f"  (exit_code={e.get('exit_code')})"
+            lines.append(row)
+        return "experiments:" + "".join("\n" + line for line in lines)
+    # #EXT-036-REQ-19 End
 
     # #EXT-036-REQ-16 Start
     def _recall_memory(self, request: str) -> list[str]:

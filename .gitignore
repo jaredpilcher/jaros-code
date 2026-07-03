@@ -22,6 +22,9 @@
 # EXT-036 REQ-18: per-repo TODO task store (runtime state — never commit actual tasks).
 .jaros/tasks.jsonl
 
+# EXT-036 REQ-19: per-repo experiment store (runtime state — never commit actual experiments).
+.jaros/experiments.jsonl
+
 # Real benchmark datasets (large / separately licensed — fetched, not vendored)
 evals/benchmarks/
 

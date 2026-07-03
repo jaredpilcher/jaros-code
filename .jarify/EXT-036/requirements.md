@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -324,11 +324,22 @@ like Claude Code's task list — surfaced in the CLI.
   stubbed breakdown and `[]` on unparseable output, the CLI commands work end-to-end, and slash-command
   dispatch/output is unaffected by stored tasks.
 
-### [REQ-19] Experiment creation + management (user-facing)  (GAP)
+### [REQ-19] Experiment creation + management (user-facing)  (DONE — EXT-036 TASK-9, 2026-07-03)
 
 The system can create + run experiments for the user (hypothesis → run → measure → record), like this convergence
 loop does at the meta level — exposed as a first-class user capability.
 
 #### Acceptance Criteria
-- [ ] Define an experiment (what to run, how to measure), run it, record the result against the hypothesis
-- [ ] Results persisted (per-repo) + surfaced; reusable across sessions
+- [x] Define an experiment (what to run, how to measure), run it, record the result against the hypothesis —
+  DONE (`harness/experiment_store.py::define_experiment`/`run_experiment`, a per-repo store at
+  `<root>/.jaros/experiments.jsonl`, deterministic + guarded, never raises. `run_experiment` executes the
+  experiment's `run_cmd` via a REAL guarded subprocess (Popen + tree-kill on timeout, mirrors
+  `harness/multi_file.py::_run`) in `root` — never fabricated; a failing/hanging command records the real
+  non-zero exit code + a bounded output tail, honestly, never silently upgraded to a pass)
+- [x] Results persisted (per-repo) + surfaced; reusable across sessions — DONE: `/experiment <hypothesis> ::
+  <run_cmd>` defines an experiment, `/experiments` lists them (id + status + last exit code), `/experiment run
+  <id>` actually runs it and reports the real exit code/output (`harness/cli.py::cmd_experiment`/`cmd_experiments`).
+  Proven OFFLINE (`tests/test_ext036_experiments.py`, no model needed — trivial real `python -c
+  "...sys.exit(N)"` run_cmds): define/list/run round-trip + per-repo isolation, a passing run_cmd records
+  exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
+  timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
