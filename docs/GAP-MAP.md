@@ -62,6 +62,26 @@ lever, NOT roster grinding — no decorrelation to harvest): (i) grow the daily-
 the models + wire a real model answer_fn so answer-tasks are exercised (feeds #51 + #44), (ii) the model-split evidence
 must come from a harder bar since every current class saturates or is single-model-dominated.
 
+### EFFICIENCY TRIPLE MEASURED (2026-07-02, scoreboard #4) — the roster's last hypothesis FAILS too
+
+Measured qwen per-task daily-driver latency (`dd_latency_qwen.sh`, restore-safe; gemma from `dd_latency.out`).
+Both solve 11/11 (equal accuracy), so routed(gemma-default) escalates ZERO times → routed latency = gemma latency.
+Result — **TOTAL wall-time over the 11 tasks: gemma 180.8s vs qwen 147.5s → qwen is ~18% FASTER**, and the direction
+holds even on the low-variance non-build tasks (gemma 52.5s vs qwen 43.0s; qwen wins fix_merge_intervals 8.8 vs 16.0,
+build_word_freq 14.3 vs 43.9 — qwen converges in FEWER fix_loop iterations despite being the bigger per-token 3B).
+**So the roster's LAST value hypothesis (cheap-gemma-default is faster) is MEASURED-NEGATIVE: gemma is neither more
+accurate NOR faster than qwen on the measured workload.** COMPLETE honest roster-value verdict across all instruments:
+qwen-coder-3b weakly DOMINATES gemma on BOTH accuracy (#3, +0 decorrelation ×2 classes) AND latency (#4) on every class
+jaros-code can currently measure → **"just serve qwen-coder-3b" is the honest efficient frontier for the coding
+workload**; the gemma-default multi-model roster is not paying its complexity/swap cost by any measured evidence.
+CAVEATS (no overclaim): single run, build-module tasks are high-variance (iterative); per-TOKEN gemma-2B is faster, qwen
+wins WALL-TIME via fewer iterations. The ONE surviving roster rationale is the ORIGINAL 2026-06-28 pivot basis —
+specialist COVERAGE of the HARD class (route tasks BOTH gemma AND qwen-coder fail to the qwen3-4b-THINKING reasoner):
+that is coverage of a class the coder can't do, NOT the gemma-default efficiency story (now dead). Honest steer: the
+multi-model layer's justified scope shrinks to "serve qwen-coder for code; escalate to the reasoner only for the
+measured hard-reasoning class" — gemma-as-default earns its slot only if a future class shows it winning (none yet).
+This CLOSES the roster-value axis (accuracy +0 ×2, latency negative) → SWITCH AXES per anti-rut.
+
 ### SYNTHESIS of the #3 arc (2026-07-02) — the roster's value is EFFICIENCY, not accuracy (and it's unmeasured)
 
 Two classes now measured, both +0 decorrelated headroom, with qwen weakly dominating (function-gen) or tying (fix/edit).
