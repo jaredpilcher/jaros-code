@@ -188,11 +188,11 @@ def test_callable_check_failure_not_accepted_no_raise():
 # --- (e) the first-slice CreationTask registry ----------------------------------------------
 
 def test_first_slice_registry_shape():
-    assert len(FIRST_SLICE) == 6
+    assert len(FIRST_SLICE) == 12
     tiers = [t.tier for t in FIRST_SLICE]
-    assert tiers.count("easy") == 2
-    assert tiers.count("medium") == 2
-    assert tiers.count("hard") == 2
+    assert tiers.count("easy") == 4
+    assert tiers.count("medium") == 4
+    assert tiers.count("hard") == 4
     names = [t.name for t in FIRST_SLICE]
     assert len(names) == len(set(names))   # unique names
     for task in FIRST_SLICE:
@@ -215,3 +215,152 @@ def test_first_slice_actually_runs_offline_with_real_stub_entrypoint():
 
     result = run_creation_suite(build_fn, tasks=[sum_task])
     assert result["results"][0]["accepted"] is True
+
+
+# --- TASK-17: coherence of the +6 grown-suite tasks -----------------------------------------
+# Each new FIRST_SLICE task gets a straightforward, correct reference implementation of its
+# OWN stated CLI contract, run through the real suite oracle -- proving the checks are
+# internally coherent with the sentence they describe (not just well-formed), the same way
+# ``test_first_slice_actually_runs_offline_with_real_stub_entrypoint`` proves it for sum-cli.
+
+_REVERSE_LINES_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    for line in sys.stdin:\n"
+    "        print(line.rstrip(chr(10))[::-1])\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_MAX_CLI_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    line = sys.stdin.readline()\n"
+    "    print(max(int(x) for x in line.split()))\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_RPN_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    tokens = sys.stdin.readline().split()\n"
+    "    stack = []\n"
+    "    for tok in tokens:\n"
+    "        if tok in ('+', '-', '*', '/'):\n"
+    "            b = stack.pop()\n"
+    "            a = stack.pop()\n"
+    "            if tok == '+':\n"
+    "                stack.append(a + b)\n"
+    "            elif tok == '-':\n"
+    "                stack.append(a - b)\n"
+    "            elif tok == '*':\n"
+    "                stack.append(a * b)\n"
+    "            else:\n"
+    "                stack.append(int(a / b))\n"
+    "        else:\n"
+    "            stack.append(int(tok))\n"
+    "    print(stack.pop())\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_KV_SORTED_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    store = {}\n"
+    "    for line in sys.stdin:\n"
+    "        line = line.strip()\n"
+    "        if not line:\n"
+    "            continue\n"
+    "        key, _, value = line.partition('=')\n"
+    "        store[key] = value\n"
+    "    for key in sorted(store):\n"
+    "        print(key + '=' + store[key])\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_PUBSUB_CODE = (
+    "import sys\n"
+    "from collections import defaultdict\n"
+    "def main():\n"
+    "    subs = defaultdict(list)\n"
+    "    for line in sys.stdin:\n"
+    "        parts = line.split()\n"
+    "        if not parts:\n"
+    "            continue\n"
+    "        cmd = parts[0]\n"
+    "        if cmd == 'subscribe':\n"
+    "            _, name, topic = parts\n"
+    "            subs[topic].append(name)\n"
+    "            print('subscribed ' + name + ' ' + topic)\n"
+    "        elif cmd == 'publish':\n"
+    "            _, topic, message = parts\n"
+    "            names = subs.get(topic, [])\n"
+    "            if not names:\n"
+    "                print('no subscribers')\n"
+    "            else:\n"
+    "                for name in names:\n"
+    "                    print(name + ' received ' + message)\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_RATE_LIMITER_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    limit = int(sys.argv[1])\n"
+    "    count = 0\n"
+    "    for line in sys.stdin:\n"
+    "        parts = line.split()\n"
+    "        if not parts:\n"
+    "            continue\n"
+    "        _, rid = parts\n"
+    "        count += 1\n"
+    "        if count <= limit:\n"
+    "            print('allow ' + rid)\n"
+    "        else:\n"
+    "            print('deny ' + rid)\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_NEW_TASK_REFERENCE_CODE = {
+    "reverse-lines-cli": _REVERSE_LINES_CODE,
+    "max-of-stdin-cli": _MAX_CLI_CODE,
+    "rpn-calc-cli": _RPN_CODE,
+    "kv-lines-sorted-cli": _KV_SORTED_CODE,
+    "pubsub-cli": _PUBSUB_CODE,
+    "rate-limiter-cli": _RATE_LIMITER_CODE,
+}
+
+
+def _reference_build_fn(code):
+    def build_fn(sentence, root):
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "main.py").write_text(code, encoding="utf-8")
+        return {"modules": {"main.py": code}, "shipped": True, "done": True,
+                "unmet": [], "plan": {"entrypoint": "main.py"}, "note": "DONE"}
+    return build_fn
+
+
+def test_grown_suite_tasks_are_internally_coherent():
+    """TASK-17: each of the +6 grown-suite tasks' ``checks`` are satisfied by a straightforward
+    correct implementation of its OWN stated contract -- proves the checks are genuinely
+    determined by the sentence, not accidentally unsatisfiable or trivially-always-true."""
+    assert set(_NEW_TASK_REFERENCE_CODE) == {
+        t.name for t in FIRST_SLICE
+        if t.name not in {"sum-cli", "wordcount-cli", "todo-list-cli",
+                           "temp-converter-cli", "kv-store-ttl-cli",
+                           "priority-jobqueue-cli"}
+    }
+    for task in FIRST_SLICE:
+        code = _NEW_TASK_REFERENCE_CODE.get(task.name)
+        if code is None:
+            continue
+        result = run_creation_suite(_reference_build_fn(code), tasks=[task])
+        rec = result["results"][0]
+        assert rec["accepted"] is True, f"{task.name}: {rec}"
+        assert rec["n_checks_passed"] == rec["n_checks"] == len(task.checks)

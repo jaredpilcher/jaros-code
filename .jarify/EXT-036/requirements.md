@@ -416,7 +416,7 @@ loop does at the meta level — exposed as a first-class user capability.
   exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
   timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
 
-### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15, 2026-07-03)
+### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15; grown to 12 tasks/classes, TASK-17, 2026-07-03)
 
 To honestly know whether jaros-code is *"really really good at building complex systems from a sentence"* we need a
 broad, DIVERSE, HELD-OUT benchmark of CREATION tasks spanning many classes × difficulty tiers — not the three sentences
@@ -429,10 +429,12 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
 - [ ] A held-out task set covering many CREATION classes (e.g. CLI tool, REST/HTTP service, ETL/data pipeline, job
   queue, state machine, parser/DSL, cache+eviction, scheduler, pub-sub/event system, plugin system, rate-limiter,
   auth/permission, workflow engine, simulation/game-loop) across difficulty tiers (easy 1-module → medium 2-3 → hard
-  4-6 interdependent → highly-complex many-module + cross-cutting) — PARTIAL: first slice (TASK-14) covers 6 classes
-  (aggregator/text CLI, todo-list, unit-converter, kv-store+TTL, priority job-queue) across easy/medium/hard; the
-  broader class list above (REST service, state machine, parser/DSL, scheduler, pub-sub, plugin system, auth,
-  workflow engine, simulation, highly-complex tier) remains open growth.
+  4-6 interdependent → highly-complex many-module + cross-cutting) — PARTIAL: `FIRST_SLICE` (TASK-14, grown TASK-17)
+  now covers 12 tasks / 9 distinct classes (cli-tool [sum/wordcount/temp-converter/max-of-stdin], todo-list,
+  kv-store+TTL, priority job-queue, text-transform, calculator, parser (kv-lines-sorted), pub-sub, rate-limiter)
+  across easy/medium/hard (4/4/4, TASK-17 doubled the tier counts); the broader class list above (REST/HTTP
+  service, state machine, cache+eviction/scheduler, plugin system, auth/permission, workflow engine,
+  simulation/game-loop, and the highly-complex many-module tier) remains open growth.
 - [x] Each task = one sentence + a deterministic, automated executable-acceptance check (done / not-done), stored so it
   is never leaked into the solving prompt (held-out; Tenet 3) — **DONE 2026-07-03** (`harness/system_suite.py`,
   TASK-14): each `CreationTask`'s `checks` are BLACK-BOX CLI checks (`(argv, stdin, expected_substring)`, run as a
@@ -449,14 +451,19 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   gemma-alone vs. `build_system_escalating` against this suite has not been executed here; that live measurement
   is an explicit follow-up.
 - [x] Starts with a first concrete slice (~5–8 classes across tiers) and is designed to grow — **DONE 2026-07-03**
-  (`harness/system_suite.py::FIRST_SLICE`, TASK-14): 6 tasks (2 easy / 2 medium / 2 hard) across 6 classes, each a
+  (`harness/system_suite.py::FIRST_SLICE`, TASK-14; GROWN TASK-17): originally 6 tasks (2 easy / 2 medium / 2 hard)
+  across 6 classes, now DOUBLED to 12 tasks (4 easy / 4 medium / 4 hard) across 9 distinct classes, each a
   self-contained sentence + concrete deterministic checks (no wall-clock-dependent checks — e.g. the kv-store's TTL
-  expiry uses a `ttl=0` immediate-expiry case rather than a timed sleep). `CreationTask`/`run_creation_suite`
-  accept an arbitrary `tasks` list, so growing the slice is additive. Proven OFFLINE
-  (`tests/test_ext036_suite.py`, no live model): aggregation correctness, a passing stub → accepted, a
-  broken/missing-entrypoint stub → not accepted without raising, a raising `build_fn` → that task recorded
-  not-accepted and the suite continues, the callable-check path, and the first-slice registry's shape (6 tasks,
-  valid tiers/classes, unique names, at least one deterministic check each).
+  expiry uses a `ttl=0` immediate-expiry case, the rate-limiter uses a fixed request count rather than a timed
+  window). `CreationTask`/`run_creation_suite` accept an arbitrary `tasks` list, so growing the slice is additive
+  (proven twice now: TASK-15's contract-precision fix and TASK-17's +6 classes both left the oracle mechanism
+  untouched). Proven OFFLINE (`tests/test_ext036_suite.py`, no live model): aggregation correctness, a passing
+  stub → accepted, a broken/missing-entrypoint stub → not accepted without raising, a raising `build_fn` → that
+  task recorded not-accepted and the suite continues, the callable-check path, the grown registry's shape (12
+  tasks, 4/4/4 tiers, unique names, at least one deterministic check each), and — new in TASK-17 — a coherence
+  test running a genuine correct reference implementation of each of the +6 new tasks through the REAL
+  `run_creation_suite` oracle, proving each new task's `checks` are actually satisfiable by (and thus genuinely
+  determined by) its stated contract, not trivially-always-true or accidentally unsatisfiable.
 - [x] The first slice's task SENTENCES are contract-precise, not merely well-shaped (a prerequisite for the ship/
   accept rates above to reflect genuine model capability rather than sentence ambiguity) — **DONE 2026-07-03**
   (`harness/system_suite.py::FIRST_SLICE`, TASK-15). MEASURED: the first LIVE run of the original TASK-14

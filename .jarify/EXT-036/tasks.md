@@ -475,3 +475,43 @@ oracle rather than duplicating it, and pairs with REQ-14's ``modify_system``.
 - [REQ-21] Parity instrument: matching sentence->system MODIFICATION classes (framework +
   first slice + the regression-gate honesty property; live gemma-vs-escalating measurement
   and growing change-class coverage remain open follow-ups)
+
+### [TASK-17] Grow creation suite — 6 more classes (REQ-20)
+
+Owner directive: the parity instrument needs "way way more classes of
+development-systems-from-a-sentence." TASK-14/15 proved the framework + made the first 6
+sentences contract-precise; this task GROWS the class coverage, doubling `FIRST_SLICE` to 12
+tasks (4 easy / 4 medium / 4 hard) across 6 NEW classes not yet represented, following the
+EXACT contract-precise pattern TASK-15 proved (single `main.py` entrypoint, exact
+argv/stdin invocation, exact stdout format including the trailing newline, `if __name__ ==
+"__main__":` required, deterministic checks with no wall-clock dependence).
+
+#### Steps
+1. In `harness/system_suite.py`, ADD 6 new `CreationTask`s to `FIRST_SLICE` (append after the
+   existing 6, keeping them unchanged): 2 easy (`reverse-lines-cli` — reverses each line of
+   stdin; `max-of-stdin-cli` — prints the max of a line of stdin integers), 2 medium
+   (`rpn-calc-cli` — a Reverse-Polish-Notation calculator reading one line of tokens;
+   `kv-lines-sorted-cli` — parses `key=value` stdin lines and prints them sorted by key, last
+   value wins on repeat), 2 hard (`pubsub-cli` — a subscribe/publish event simulator;
+   `rate-limiter-cli` — a fixed-window allow/deny limiter over a `request <id>` command
+   stream). Each sentence pins the `main.py` entrypoint, the exact invocation (argv and/or a
+   precise line-based stdin protocol), the exact stdout format, and the
+   `if __name__ == "__main__":` requirement — the sentence IS the spec the independent
+   black-box oracle checks against; never leak the checks into the sentence.
+2. Do NOT modify `run_creation_suite`/`_run_cli`/`_resolve_entry`/`_run_single_check` (the
+   proven oracle mechanism) or the existing 6 `FIRST_SLICE` tasks. Do NOT touch
+   `build_system`/`modify_system`/escalation core or `harness/modification_suite.py`.
+3. Update `tests/test_ext036_suite.py`: bump `test_first_slice_registry_shape`'s expectations
+   to 12 tasks / 4-4-4 tiers. Add reference (known-correct) implementations for each of the 6
+   new tasks and a coherence test that runs each through the real `run_creation_suite` oracle,
+   asserting `accepted=True` and every check passes — proving each new task's `checks` are
+   genuinely determined by its stated contract (not trivially-always-true), mirroring how
+   `test_first_slice_actually_runs_offline_with_real_stub_entrypoint` validates `sum-cli`.
+4. Run the FULL `python -m pytest tests/ -q` (was 1368) and confirm it stays green at the new
+   count. Update `.jarify/EXT-036/index.json`'s `REQ-20` range to the file's grown line count.
+
+#### Implements
+- [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
+  classes (doubles the class/tier coverage to 12 tasks across 12 classes; live
+  gemma-vs-escalating measurement against the grown suite and further class growth remain
+  open follow-ups)

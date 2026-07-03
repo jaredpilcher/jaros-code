@@ -325,5 +325,127 @@ FIRST_SLICE: "list[CreationTask]" = [
             ([], "run\n", "empty"),
         ],
     ),
+
+    # --- TASK-17 GROWTH (2026-07-03): +6 more classes, spread easy/medium/hard, same
+    # contract-precise convention proven by TASK-15 (single main.py entrypoint, exact
+    # invocation, exact stdout format, `if __name__ == "__main__":` required). Held-out,
+    # deterministic, no wall-clock dependence.
+
+    CreationTask(
+        name="reverse-lines-cli", cls="text-transform", tier="easy",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py` (no command-line arguments), it reads lines from standard input "
+            "until end of input (EOF); for EACH line, in the SAME order it was read, it prints "
+            "that line's characters reversed (excluding its own trailing newline character), "
+            "followed by a newline, to standard output (nothing else is printed). The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            ([], "abc\n", "cba"),
+            ([], "hello\nworld\n", "olleh\ndlrow"),
+        ],
+    ),
+    CreationTask(
+        name="max-of-stdin-cli", cls="cli-tool", tier="easy",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py` (no command-line arguments), it reads one line of "
+            "whitespace-separated integers from standard input and prints ONLY the MAXIMUM of "
+            "those integers, as a single integer followed by a newline, to standard output "
+            "(nothing else). The file must contain an `if __name__ == \"__main__\":` block that "
+            "runs this."
+        ),
+        checks=[
+            ([], "3 1 4 1 5\n", "5"),
+            ([], "7 2 9 3\n", "9"),
+        ],
+    ),
+    CreationTask(
+        name="rpn-calc-cli", cls="calculator", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a Reverse Polish "
+            "Notation (postfix) calculator. Running it as `python main.py` (no command-line "
+            "arguments), it reads ONE line of whitespace-separated tokens from standard input, "
+            "where each token is either an integer or one of the operators +, -, *, / ; it "
+            "evaluates the postfix expression using a standard stack-based algorithm (for each "
+            "operator, pop the top two values, apply the operator with the SECOND-popped value "
+            "on the left and the FIRST-popped value on the right, and push the result) and "
+            "prints ONLY the final result, as a single integer followed by a newline, to "
+            "standard output (nothing else). You may assume the input is always a valid postfix "
+            "expression and that every `/` divides evenly (the test inputs never require "
+            "rounding). The file must contain an `if __name__ == \"__main__\":` block that runs "
+            "this."
+        ),
+        checks=[
+            ([], "3 4 +\n", "7"),
+            ([], "5 1 2 + 4 * + 3 -\n", "14"),
+            ([], "10 2 /\n", "5"),
+        ],
+    ),
+    CreationTask(
+        name="kv-lines-sorted-cli", cls="parser", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py` (no command-line arguments), it reads lines from standard input "
+            "until end of input (EOF); each non-blank line is of the form `key=value` where key "
+            "and value are single tokens containing no `=` or whitespace characters (blank "
+            "lines are ignored). After all input has been read, it prints ONE line per UNIQUE "
+            "key, in ASCENDING alphabetical order by key, each formatted EXACTLY as "
+            "`key=value` followed by a newline; if a key appears more than once, use the value "
+            "from its LAST occurrence. Nothing else is printed. The file must contain an `if "
+            "__name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            ([], "b=2\na=1\n", "a=1\nb=2"),
+            ([], "x=1\nx=2\n", "x=2"),
+            ([], "z=9\na=1\nm=5\n", "a=1\nm=5\nz=9"),
+        ],
+    ),
+    CreationTask(
+        name="pubsub-cli", cls="pub-sub", tier="hard",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, an in-memory "
+            "publish/subscribe event system. Running it as `python main.py` (no command-line "
+            "arguments), it reads commands from standard input, one command per line, until "
+            "standard input is exhausted (EOF); after processing each command it immediately "
+            "prints that command's output, followed by a newline for each printed line, to "
+            "standard output. Supported commands: `subscribe <name> <topic>` registers "
+            "subscriber `<name>` to `<topic>` and prints `subscribed <name> <topic>`; `publish "
+            "<topic> <message>` (message is a single token with no spaces) delivers the message "
+            "to every subscriber currently subscribed to `<topic>`, printing one line per "
+            "subscriber, in the ORDER those subscribers subscribed, each formatted EXACTLY as "
+            "`<name> received <message>`; if `<topic>` has no subscribers, `publish` prints "
+            "ONLY `no subscribers` instead. The file must contain an `if __name__ == "
+            "\"__main__\":` block that runs this."
+        ),
+        checks=[
+            ([], "subscribe a t\nsubscribe b t\npublish t hello\n",
+             "a received hello\nb received hello"),
+            ([], "publish t2 hi\n", "no subscribers"),
+            ([], "subscribe a t\npublish other hi\n", "no subscribers"),
+        ],
+    ),
+    CreationTask(
+        name="rate-limiter-cli", cls="rate-limiter", tier="hard",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a fixed-window "
+            "request rate limiter. Running it as `python main.py <limit>` (exactly one "
+            "command-line argument, a positive integer `limit`), it then reads commands from "
+            "standard input, one command per line, until standard input is exhausted (EOF); "
+            "each line is `request <id>` (id is a single token identifying the request). "
+            "Treat the ENTIRE run as one fixed window: the first `limit` requests, in the "
+            "order they are read, are ALLOWED -- print `allow <id>` for each; every request "
+            "after that (the (limit+1)-th and beyond) is DENIED -- print `deny <id>` for each. "
+            "Print exactly one line per `request` command, in the order the commands were "
+            "read, and nothing else. The file must contain an `if __name__ == \"__main__\":` "
+            "block that runs this."
+        ),
+        checks=[
+            (["2"], "request a\nrequest b\nrequest c\n", "allow a\nallow b\ndeny c"),
+            (["1"], "request x\nrequest y\n", "allow x\ndeny y"),
+            (["3"], "request a\nrequest b\n", "allow a\nallow b"),
+        ],
+    ),
 ]
 # #EXT-036-REQ-20 End
