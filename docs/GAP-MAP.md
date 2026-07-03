@@ -199,6 +199,23 @@ default (120s) was too short for a 7B load and left `_current` desynced — rais
 scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
 analysis) — this change is admission + catalog + profile + the timeout fix only.
 
+## ★ HOST DEV TOOLBELT — the product must DO development on the host (owner gap, 2026-07-03)
+
+Claude-Code parity requires the prompt→system CLI to not just EMIT code but ACTUALLY DO development on the host, safely.
+Recorded as a product gap (tasks #74/#75/#76), state=lever-named (build via the execution-plane tool library, PRIME-001 T1 +
+Foundry safety envelope). Sub-capabilities:
+- **Safe CLI execution** — run shell/commands with deterministic gates (timeout, tree-kill, output-as-observation, NO external
+  egress by default, NO destructive ops).
+- **Root-jailed filesystem** — READ freely; CREATE/WRITE/UPDATE confined to the PROJECT ROOT ONLY (path-jail rejecting ../,
+  outside-absolute, symlink escape). "Really good at generating CLI Python scripts that read + do limited safeguarded writes."
+- **Environment setup** — detect/install Python, create/manage venvs, install+pin deps (into the root venv).
+- **Git** — init, add/commit, view+update commit history, branch/status/log/diff; no force-push/history-rewrite w/o gate;
+  never commit secrets.
+Two-plane throughout: model emits inert Decisions; each effect is a deterministic Jaros tool (validate()+execute()),
+hash-chain logged. This is what lets the product build+modify REAL projects (runnable, dependency-complete, version-controlled),
+not just source files. Likely its own EXT- spec. Impact HIGH (completes the product); tractable (deterministic tools + a
+path-jail; the shell/fs primitives partly exist per design.md). NEXT: scope the spec + build the path-jailed fs + gated exec first.
+
 ## ★★ prompt→system PARITY LIFTED 58%→92% by a HARNESS FIX (2026-07-03, commit 20fe5db) — headline update
 
 Suspect-harness-first on the 5 creation-suite residuals found 4/5 were ONE deterministic planner-coherence bug (gemma
