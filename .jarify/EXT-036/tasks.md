@@ -180,3 +180,23 @@ non-degrading pattern from TASK-5. The HONESTY core: a modification must PRESERV
 
 #### Implements
 - [REQ-14] Modification from a sentence (regression-gated modify_system)
+
+### [TASK-8] Todo task management, user-facing (REQ-18)
+
+Claude-Code-style task tracking for the user's work: create/list/update/complete tasks, plus a model-proposed
+breakdown of a request into tracked steps. Composes on the session/per-repo state (TASK-1/TASK-3).
+
+#### Steps
+1. `harness/task_store.py`: a per-repo task store persisted to `.jaros/tasks.jsonl`. `add_task(text, root, status="pending")`,
+   `list_tasks(root)`, `update_task(id, status/text, root)` (statuses: pending/in_progress/done). Deterministic, guarded,
+   never raises. Bounded read.
+2. Model-proposed breakdown: `propose_tasks(request, llm) -> list[str]` — ONE narrow model call that decomposes a
+   request into 2-6 concrete task strings (JSON list, `[]` on failure — never fabricate). Deterministic parse/guard.
+3. `harness/cli.py`: `/task <text>` (add), `/tasks` (list with ids+status), `/task done <id>` / `/task doing <id>`
+   (update). Additive; existing commands untouched. Surface tasks compactly.
+4. Tests (`tests/test_ext036_tasks.py`, OFFLINE — canned llm): (a) add/list/update round-trips + per-repo isolation +
+   status transitions; (b) propose_tasks returns the stubbed breakdown, `[]` on unparseable (never fabricates);
+   (c) CLI commands add/list/update correctly; (d) slash commands unaffected. Full `tests/` stays green.
+
+#### Implements
+- [REQ-18] TODO task creation + management (user-facing)

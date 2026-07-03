@@ -46,6 +46,10 @@ Commands (Claude-Code-style):
   /new                          start a fresh conversational session (EXT-036)
   /resume <id>                  resume a prior session by id (also: --resume <id> on the command line)
   /sessions                     list recent saved sessions
+  /task <text>                  add a TODO task for this repo (EXT-036)
+  /tasks                        list tasks (id + status)
+  /task done <id>                mark a task done
+  /task doing <id>               mark a task in progress
   /clear  /quit
 """
 
@@ -707,6 +711,41 @@ class JcodeCli:
             return "(no saved sessions yet)"
         return "recent sessions:" + "".join(f"\n  {r['id']}  ({r['turns']} turn(s))" for r in rows)
     # #EXT-036-REQ-12 End
+
+    # #EXT-036-REQ-18 Start
+    def cmd_task(self, arg: str) -> str:
+        """TODO task management (REQ-18): ``/task <text>`` adds a task for this repo,
+        ``/task done <id>`` / ``/task doing <id>`` update its status. Deterministic —
+        wires harness/task_store.py; never touches the model."""
+        arg = arg.strip()
+        if not arg:
+            return "usage: /task <text>   |   /task done <id>   |   /task doing <id>"
+        bits = arg.split(None, 1)
+        verb = bits[0].lower()
+        if verb in ("done", "doing"):
+            if len(bits) < 2 or not bits[1].strip():
+                return f"usage: /task {verb} <id>"
+            task_id = bits[1].strip()
+            status = "done" if verb == "done" else "in_progress"
+            from harness.task_store import update_task
+            t = update_task(task_id, root=".", status=status)
+            if t is None:
+                return f"no task found with id {task_id!r}"
+            return f"[{t['id']}] {t['status']}: {t['text']}"
+        from harness.task_store import add_task
+        t = add_task(arg, root=".")
+        if t is None:
+            return "could not add task"
+        return f"added [{t['id']}] {t['text']}"
+
+    def cmd_tasks(self, _arg: str) -> str:
+        """List this repo's tracked tasks (id + status), oldest first (REQ-18)."""
+        from harness.task_store import list_tasks
+        tasks = list_tasks(root=".")
+        if not tasks:
+            return "(no tasks yet — add one with /task <text>)"
+        return "tasks:" + "".join(f"\n  [{t['id']}] {t['status']:<11} {t['text']}" for t in tasks)
+    # #EXT-036-REQ-18 End
 
     # #EXT-036-REQ-16 Start
     def _recall_memory(self, request: str) -> list[str]:

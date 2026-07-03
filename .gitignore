@@ -19,6 +19,9 @@
 # store); JAROS.md itself (REQ-17, .jaros/JAROS.md) stays committed as project instructions.
 .jaros/memory.jsonl
 
+# EXT-036 REQ-18: per-repo TODO task store (runtime state — never commit actual tasks).
+.jaros/tasks.jsonl
+
 # Real benchmark datasets (large / separately licensed — fetched, not vendored)
 evals/benchmarks/
 

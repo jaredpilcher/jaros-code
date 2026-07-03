@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -305,14 +305,24 @@ EVERY user prompt, so the system always honors the project's rules — exactly l
 - [x] Bounded (fits the small context); absent file is a graceful no-op — **DONE 2026-07-03** (bounded to
   `MAX_CHARS=2000`; absent/unreadable file returns `""` and leaves the request byte-identical)
 
-### [REQ-18] TODO task creation + management (user-facing)  (GAP)
+### [REQ-18] TODO task creation + management (user-facing)  (DONE — EXT-036 TASK-8, 2026-07-03)
 
 The system creates + tracks todo tasks for the user's work (decompose a request into tracked steps, mark progress),
 like Claude Code's task list — surfaced in the CLI.
 
 #### Acceptance Criteria
-- [ ] Create/list/update tasks tied to the session/repo; the model can propose a task breakdown for a request
-- [ ] Surfaced in the CLI UX (REQ-12); persisted with the session/repo
+- [x] Create/list/update tasks tied to the session/repo; the model can propose a task breakdown for a request —
+  DONE (`harness/task_store.py::add_task`/`list_tasks`/`update_task`, a per-repo store at
+  `<root>/.jaros/tasks.jsonl`, deterministic + guarded, never raises; statuses pending/in_progress/done.
+  `propose_tasks(request, llm=None)` is the ONE narrow model call that decomposes a request into 2-6 concrete
+  task strings — a JSON-list parse, `[]` on any model failure or unparseable output, never fabricates a
+  breakdown)
+- [x] Surfaced in the CLI UX (REQ-12); persisted with the session/repo — DONE: `/task <text>` adds a task,
+  `/tasks` lists them (id + status), `/task done <id>` / `/task doing <id>` update status
+  (`harness/cli.py::cmd_task`/`cmd_tasks`). Proven OFFLINE (`tests/test_ext036_tasks.py`, canned llm, no live
+  model): add/list/update round-trip + per-repo isolation + status transitions, `propose_tasks` returns the
+  stubbed breakdown and `[]` on unparseable output, the CLI commands work end-to-end, and slash-command
+  dispatch/output is unaffected by stored tasks.
 
 ### [REQ-19] Experiment creation + management (user-facing)  (GAP)
 
