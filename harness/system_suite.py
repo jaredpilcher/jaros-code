@@ -111,16 +111,23 @@ def _run_single_check(check, root: Path, plan, python_exe: str) -> bool:
     """Run ONE acceptance check for a task: either a ``callable(root, plan) -> bool`` or a
     black-box ``(argv, stdin, expected_substring)`` CLI check against the resolved entrypoint.
     Never raises -- a missing entrypoint file, a non-zero exit, a timeout, or any exception is a
-    real ``False`` (never a fabricated pass, Tenet 3)."""
+    real ``False`` (never a fabricated pass, Tenet 3).
+
+    TASK-15 (REQ-20): every current task's sentence pins a SINGLE-FILE convention ("in a file
+    named main.py"). If the plan-declared entrypoint doesn't resolve to a real file (e.g. the
+    plan is missing/malformed) but ``root/main.py`` exists, fall back to that -- a minimal,
+    GENERIC convention fallback (not keyed to any specific task), never a fabricated pass: it
+    still requires a real file to actually exist and actually run successfully."""
     try:
         if callable(check):
             return bool(check(root, plan))
         argv, stdin, expected = check
         entry = _resolve_entry(plan)
-        if not entry:
-            return False
-        entry_path = root / entry
-        if not entry_path.is_file():
+        entry_path = (root / entry) if entry else None
+        if entry_path is None or not entry_path.is_file():
+            fallback = root / "main.py"
+            entry_path = fallback if fallback.is_file() else None
+        if entry_path is None:
             return False
         ok, out = _run_cli(python_exe, entry_path, argv, stdin, root)
         if not ok:
@@ -192,13 +199,29 @@ def run_creation_suite(build_fn: Callable, tasks: "list[CreationTask] | None" = 
 # without needing to know anything about the model's chosen module/function names. Checks never
 # depend on wall-clock timing (the TTL task uses a ttl=0 immediate-expiry case, not a real sleep)
 # so re-running the suite is fully reproducible.
+#
+# TASK-15 (REQ-20) CONTRACT-PRECISE REWRITE (2026-07-03): MEASURED (first live run) that the
+# original sentences below were too VAGUE, causing two distinct HARNESS false-negatives (not a
+# model capability ceiling; see ``.jaros-data/hyp_precise_sentence.py`` +
+# ``.jaros-data/debug_suite_v2.py``): (1) gemma sometimes planned an entrypoint filename that
+# wasn't one of its own listed modules, so ``validate_plan`` correctly rejected the plan
+# ("entrypoint not a listed module") and 0 modules got built; (2) even when it shipped, gemma
+# could build a DIFFERENT CLI surface than the one this suite's hardcoded ``checks`` assumed, so
+# the independent oracle correctly couldn't run/match it. PROVEN FIX: pin the entrypoint FILENAME
+# (``main.py``), the exact invocation, the exact stdout format (incl. a trailing newline), and
+# the ``if __name__ == "__main__":`` requirement, directly in the sentence -- this is honest
+# (Tenet 3), not leakage: the sentence IS the spec the independent, held-out oracle checks
+# against, and the model still has to build a genuinely working system that satisfies it.
 
 FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="sum-cli", cls="cli-tool", tier="easy",
         sentence=(
-            "Write a CLI tool. It reads a single line of whitespace-separated integers from "
-            "stdin and prints their sum (a single integer, nothing else) to stdout."
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py` (no command-line arguments), it reads one line of "
+            "whitespace-separated integers from standard input and prints ONLY their sum, as a "
+            "single integer followed by a newline, to standard output (nothing else). The file "
+            "must contain an `if __name__ == \"__main__\":` block that runs this."
         ),
         checks=[
             ([], "1 2 3\n", "6"),
@@ -208,8 +231,11 @@ FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="wordcount-cli", cls="cli-tool", tier="easy",
         sentence=(
-            "Write a CLI word-count tool. It reads text from stdin and prints the number of "
-            "whitespace-separated words in it (a single integer, nothing else) to stdout."
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py` (no command-line arguments), it reads all text from standard "
+            "input and prints ONLY the number of whitespace-separated words in it, as a single "
+            "integer followed by a newline, to standard output (nothing else). The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
         ),
         checks=[
             ([], "the quick brown fox\n", "4"),
@@ -219,12 +245,18 @@ FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="todo-list-cli", cls="todo-list", tier="medium",
         sentence=(
-            "Write a CLI todo-list tool backed by an in-memory store. It reads commands from "
-            "stdin, one per line, until stdin is exhausted, and prints each command's output as "
-            "it processes it. Commands: 'add <text>' adds a new item with that text and prints "
-            "'added <text>'; 'list' prints every current item, one per line, formatted exactly "
-            "as '<index>) <text>' (index starting at 0, in the order items were added); 'done "
-            "<index>' marks the item at that index as done and prints 'marked done <index>'."
+            "Write a single-file Python CLI program in a file named main.py, backed by an "
+            "in-memory list. Running it as `python main.py` (no command-line arguments), it "
+            "reads commands from standard input, one command per line, until standard input is "
+            "exhausted (EOF); after processing each command it immediately prints that "
+            "command's output line, followed by a newline, to standard output, in the SAME "
+            "order the commands were read. Supported commands (each is one line of stdin): "
+            "`add <text>` appends a new item with the given text and prints `added <text>`; "
+            "`list` prints one line per current item, each formatted exactly as `<index>) "
+            "<text>` (index starting at 0, in the order items were added; if there are no "
+            "items, `list` prints nothing); `done <index>` marks the item at that integer index "
+            "as done and prints `marked done <index>`. The file must contain an `if __name__ "
+            "== \"__main__\":` block that runs this."
         ),
         checks=[
             ([], "add buy milk\nlist\n", "added buy milk"),
@@ -235,10 +267,13 @@ FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="temp-converter-cli", cls="cli-tool", tier="medium",
         sentence=(
-            "Write a CLI temperature converter. Invoked as `<entrypoint> <value> <from_unit> "
-            "<to_unit>` where value is a number and from_unit/to_unit are each one of C, F, K "
-            "(Celsius, Fahrenheit, Kelvin). It prints ONLY the converted numeric value, rounded "
-            "to exactly 2 decimal places, to stdout (nothing else)."
+            "Write a single-file Python CLI program in a file named main.py. Running it as "
+            "`python main.py <value> <from_unit> <to_unit>` (exactly three command-line "
+            "arguments: value is a number, from_unit and to_unit are each one of C, F, K for "
+            "Celsius/Fahrenheit/Kelvin), it prints ONLY the converted numeric value, rounded to "
+            "exactly 2 decimal places, followed by a newline, to standard output (nothing "
+            "else). The file must contain an `if __name__ == \"__main__\":` block that runs "
+            "this."
         ),
         checks=[
             (["0", "C", "F"], None, "32.00"),
@@ -249,13 +284,19 @@ FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="kv-store-ttl-cli", cls="kv-store", tier="hard",
         sentence=(
-            "Write a CLI key-value store with TTL (time-to-live) expiry. It reads commands from "
-            "stdin, one per line, until stdin is exhausted, printing each command's output as it "
-            "processes it. Commands: 'set <key> <value> <ttl_seconds>' stores value under key "
-            "with an integer TTL in seconds and prints 'ok' (a ttl of 0 means the key is already "
-            "expired and immediately unavailable to any later get); 'get <key>' prints the "
-            "stored value if present and not expired, or prints 'none' otherwise; 'delete <key>' "
-            "removes the key (if present) and prints 'ok'."
+            "Write a single-file Python CLI program in a file named main.py, an in-memory "
+            "key-value store with TTL (time-to-live) expiry. Running it as `python main.py` "
+            "(no command-line arguments), it reads commands from standard input, one command "
+            "per line, until standard input is exhausted (EOF); after processing each command "
+            "it immediately prints that command's output line, followed by a newline, to "
+            "standard output, in the SAME order the commands were read. Supported commands: "
+            "`set <key> <value> <ttl_seconds>` stores value under key with an integer TTL in "
+            "seconds and prints `ok` (a ttl of 0 means the key is treated as already expired "
+            "and is immediately unavailable to any later `get`); `get <key>` prints the stored "
+            "value if present and not expired, or prints `none` if the key is absent or "
+            "expired; `delete <key>` removes the key if present and prints `ok` (print `ok` "
+            "even if the key was already absent). The file must contain an `if __name__ == "
+            "\"__main__\":` block that runs this."
         ),
         checks=[
             ([], "set a 1 100\nget a\n", "1"),
@@ -266,12 +307,17 @@ FIRST_SLICE: "list[CreationTask]" = [
     CreationTask(
         name="priority-jobqueue-cli", cls="job-queue", tier="hard",
         sentence=(
-            "Write a CLI job-queue tool. It reads commands from stdin, one per line, until "
-            "stdin is exhausted, printing each command's output as it processes it. Commands: "
-            "'enqueue <name> <priority>' adds a job with an integer priority (a HIGHER number "
-            "runs first; on equal priority the job enqueued EARLIER runs first) and prints "
-            "'enqueued <name>'; 'run' removes and runs the single highest-priority pending job, "
-            "printing 'ran <name>', or prints 'empty' if there are no pending jobs."
+            "Write a single-file Python CLI program in a file named main.py, an in-memory "
+            "priority job queue. Running it as `python main.py` (no command-line arguments), it "
+            "reads commands from standard input, one command per line, until standard input is "
+            "exhausted (EOF); after processing each command it immediately prints that "
+            "command's output line, followed by a newline, to standard output, in the SAME "
+            "order the commands were read. Supported commands: `enqueue <name> <priority>` adds "
+            "a job with an integer priority (a HIGHER number runs first; jobs with EQUAL "
+            "priority run in the order they were enqueued, earliest first) and prints "
+            "`enqueued <name>`; `run` removes and runs the single highest-priority pending job, "
+            "printing `ran <name>`, or prints `empty` if there are no pending jobs. The file "
+            "must contain an `if __name__ == \"__main__\":` block that runs this."
         ),
         checks=[
             ([], "enqueue low 1\nenqueue high 5\nrun\n", "ran high"),

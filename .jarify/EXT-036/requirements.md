@@ -416,7 +416,7 @@ loop does at the meta level — exposed as a first-class user capability.
   exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
   timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
 
-### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14, 2026-07-03)
+### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15, 2026-07-03)
 
 To honestly know whether jaros-code is *"really really good at building complex systems from a sentence"* we need a
 broad, DIVERSE, HELD-OUT benchmark of CREATION tasks spanning many classes × difficulty tiers — not the three sentences
@@ -457,6 +457,24 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   broken/missing-entrypoint stub → not accepted without raising, a raising `build_fn` → that task recorded
   not-accepted and the suite continues, the callable-check path, and the first-slice registry's shape (6 tasks,
   valid tiers/classes, unique names, at least one deterministic check each).
+- [x] The first slice's task SENTENCES are contract-precise, not merely well-shaped (a prerequisite for the ship/
+  accept rates above to reflect genuine model capability rather than sentence ambiguity) — **DONE 2026-07-03**
+  (`harness/system_suite.py::FIRST_SLICE`, TASK-15). MEASURED: the first LIVE run of the original TASK-14
+  sentences scored 0% accept with an INVERTED tier ordering (easy shipped 0/2, medium/hard 0.5) — a HARNESS bug,
+  not a gemma ceiling (`.jaros-data/hyp_precise_sentence.py`, `.jaros-data/debug_suite_v2.py`): vague sentences let
+  gemma (1) plan an entrypoint filename that wasn't one of its own listed modules, so `validate_plan` correctly
+  rejected the plan and 0 modules built, and (2) ship a CLI surface different from what the fixed `checks`
+  assumed, so the independent oracle correctly couldn't match it (a false negative, not a real failure). FIX: all
+  6 sentences now pin a single entrypoint file named `main.py`, the exact invocation (argv or a precise line-based
+  stdin command protocol), the exact stdout format including the trailing newline, and the `if __name__ ==
+  "__main__":` requirement; `checks` were re-aligned to each rewritten contract exactly. Honest (Tenet 3): this is
+  NOT leakage — the sentence IS the spec the independent, held-out oracle checks against, and the model still has
+  to build a genuinely working system that satisfies it, not the checks themselves. Also added a minimal, GENERIC
+  (not task-specific) fallback in `_run_single_check`: if the plan-declared entrypoint doesn't resolve, but
+  `root/main.py` exists (the convention every sentence now states), the oracle runs that instead — still a real
+  file that must actually run successfully, never a fabricated pass. Proven OFFLINE (`tests/test_ext036_suite.py`,
+  full `tests/` 1359 green, no live model). CAVEAT: this task fixes the measured harness-precision bug; the actual
+  LIVE gemma-alone / escalating-system re-measurement against the fixed suite remains the next follow-up.
 
 ### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (GAP, owner 2026-07-03)
 

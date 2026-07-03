@@ -375,3 +375,55 @@ independent of module/function names the model chooses (API-agnostic).
 - [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
   classes (framework + first slice; live gemma-vs-escalating measurement and growing class
   coverage remain open follow-ups)
+
+### [TASK-15] Make creation-suite task sentences contract-precise (oracle-honest)
+
+MEASURED (2026-07-03, first live run): the FIRST_SLICE suite scored 0% accept + an INVERTED
+tier ordering (easy 0/2 shipped, medium/hard 0.5 accept) — a HARNESS bug in the task
+definitions, not a gemma capability ceiling. Root cause (probe
+`.jaros-data/hyp_precise_sentence.py`, `.jaros-data/debug_suite_v2.py`): the original
+`FIRST_SLICE` sentences left the entrypoint FILENAME and exact CLI/stdout contract unstated,
+so (1) gemma sometimes plans an entrypoint filename that isn't one of its own listed
+modules, which `validate_plan` correctly rejects ("entrypoint not a listed module"),
+yielding 0 built modules; and (2) even when it ships, gemma may build a CLI surface that
+diverges from what the oracle's hardcoded `checks` assume, so the independent oracle
+correctly can't run/match it — a false negative caused by an under-specified sentence, not a
+broken build. PROVEN FIX: a CONTRACT-PRECISE sentence — pinning the entrypoint filename
+`main.py`, the exact `python main.py` invocation (or exact argv/stdin protocol), the exact
+stdout format including the trailing newline, and the `if __name__ == "__main__":`
+requirement — made `sum-cli` ship AND the independent oracle ACCEPT it. This is honest, not
+leakage (Tenet 3): the sentence IS the spec the independent oracle checks against; the model
+still has to build a working system that satisfies it.
+
+#### Steps
+1. In `harness/system_suite.py`, rewrite each of the 6 `FIRST_SLICE` task `sentence` fields to
+   be contract-complete: every task's system is pinned to a SINGLE entrypoint file named
+   `main.py` ("in a file named main.py", requiring an `if __name__ == "__main__":` block),
+   making the plan coherent (`entrypoint` in the model's own listed modules) and the oracle's
+   entrypoint resolution unambiguous.
+2. Pin the EXACT invocation + I/O contract in each sentence: how args/stdin are supplied and
+   the exact stdout format (state the format explicitly, including a trailing newline). For
+   the multi-command tasks (`todo-list-cli`, `kv-store-ttl-cli`, `priority-jobqueue-cli`)
+   spell out a deterministic line-based stdin command protocol precisely enough that the
+   existing fixed `checks` are unambiguous against it. Keep the same 6 classes/tiers (easy:
+   `sum-cli`, `wordcount-cli`; medium: `todo-list-cli`, `temp-converter-cli`; hard:
+   `kv-store-ttl-cli`, `priority-jobqueue-cli`).
+3. Align each task's `checks` to its rewritten contract exactly, keeping them deterministic
+   (no wall-clock; the kv-store TTL check keeps `ttl=0` immediate-expiry) and derivable from
+   the stated output format.
+4. Add a minimal, GENERIC entrypoint-resolution fallback in `harness/system_suite.py`'s
+   `_run_single_check` (not task-specific): if the plan-declared entrypoint file is not found
+   on disk but `root/main.py` exists (the convention every task's sentence now pins), fall
+   back to running `main.py`. Do NOT otherwise change `run_creation_suite`/`_run_cli`/the
+   oracle mechanism (proven working on the medium `temp-converter-cli` task, which already
+   shipped+done in the live run).
+5. Update `tests/test_ext036_suite.py` only where it depended on old sentence/check text (none
+   currently assert exact `FIRST_SLICE` sentence content) or the stub systems it writes so
+   they still satisfy the rewritten `checks`; run the FULL `python -m pytest tests/ -q` suite
+   and confirm it stays green at its prior count.
+
+#### Implements
+- [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
+  classes (this task fixes a measured harness precision bug in the first slice's task
+  definitions so ship/accept rates reflect genuine model capability, not sentence ambiguity;
+  live gemma-vs-escalating re-measurement after this fix remains the follow-up)
