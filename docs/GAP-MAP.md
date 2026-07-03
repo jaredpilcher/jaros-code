@@ -199,6 +199,17 @@ default (120s) was too short for a 7B load and left `_current` desynced — rais
 scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
 analysis) — this change is admission + catalog + profile + the timeout fix only.
 
+## ★★ prompt→system PARITY LIFTED 58%→92% by a HARNESS FIX (2026-07-03, commit 20fe5db) — headline update
+
+Suspect-harness-first on the 5 creation-suite residuals found 4/5 were ONE deterministic planner-coherence bug (gemma
+plans a sole module named e.g. `calculator.py` but declares `entrypoint: main.py` → `validate_plan` rejects
+"entrypoint not a listed module" → 0 modules built). FIX = `_repair_plan_entrypoint` (REQ-1): single-module case renames the
+module to the entrypoint; multi-module incoherence still rejected; oracle untouched. **RE-MEASURED 12-task creation suite:
+gemma shipped 4/12→11/12; gemma-alone accept 3/12 (25%)→10/12 (83%); ESCALATING SYSTEM 7/12 (58%)→11/12 (92%).** All 4
+planner-bug residuals now ship+accept via gemma; only kv-store-ttl remains (genuine wrong-output). HONEST (Tenet 3):
+deterministic coherence repair, oracle-verified real behavior, NOT gaming — the "58% ceiling" was ~85% a harness bug, a
+5th "suspect-harness-first" vindication this session. **HEADLINE = 92% escalating / 83% gemma-alone.** CAVEAT: n=1/task.
+
 ## Sentence→system PARITY INSTRUMENT built + first honest numbers — 7B lifts it 3× (2026-07-03, EXT-036 REQ-20/21)
 
 Owner directive: "way more CLASSES of development-systems-from-a-sentence + a set of EDIT-a-complex-system-from-a-sentence
