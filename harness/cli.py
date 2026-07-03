@@ -32,6 +32,7 @@ Commands (Claude-Code-style):
   /callers <symbol>             call hierarchy: functions that CALL a symbol (call sites only)
   /about <symbol>               one-view symbol summary (definition + callers + refs + dead?)
   /build <func> <intent>        behavioral solve: Gherkin(+comprehension)->self-tests->code (EXT-012 system)
+  /buildsystem <sentence>        sentence-to-system: plan->build->assemble->acceptance (EXT-036)
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
@@ -395,6 +396,30 @@ class JcodeCli:
         from harness.intent_loop import build_in_dir
         r = build_in_dir(".", intent, f"{func}.py", func)
         return f"[build {'OK' if r['self_pass'] else 'partial'}] {r['note']}\n  files: {', '.join(r['files'])}"
+
+    # #EXT-036-REQ-4 Start
+    def cmd_buildsystem(self, arg: str) -> str:
+        """Sentence-to-system (EXT-036): plan -> topological build (syntax-gated + repair) ->
+        assemble -> run an executable acceptance checklist. A separate command from /build
+        (which builds a single function) — this builds a whole multi-module system from one
+        sentence into a subdirectory of the current directory. Wires harness.system_builder."""
+        sentence = arg.strip()
+        if not sentence:
+            return "usage: /buildsystem <one-sentence spec>"
+        from harness.system_builder import build_system
+        subdir = Path(".") / ".jaros" / "built_systems" / f"sys_{uuid.uuid4().hex[:8]}"
+        r = build_system(sentence, subdir, llm=self.llm)
+        mods = ", ".join(r.get("modules", {})) or "(none)"
+        status = "shipped" if r.get("shipped") else "NOT shipped"
+        doneness = "DONE" if r.get("done") else "NOT done"
+        unmet = r.get("unmet") or []
+        out = [f"[buildsystem] {status}, {doneness} — into {subdir}", f"  modules: {mods}"]
+        if unmet:
+            out.append("  unmet: " + ", ".join(unmet))
+        if r.get("note"):
+            out.append(f"  note: {r['note']}")
+        return "\n".join(out)
+    # #EXT-036-REQ-4 End
 
     def cmd_agent(self, arg: str) -> str:
         """Agentic master loop (EXT-009): give ONE plain request; the system plans a TODO, runs the

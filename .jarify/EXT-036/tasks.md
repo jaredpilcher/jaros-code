@@ -75,3 +75,29 @@ injects ONLY those (precise recall — never a dump, guarding the retrieval-nega
 
 #### Implements
 - [REQ-16] Long-term + PER-REPO memory (memory-agent selective recall — cross-session)
+
+### [TASK-4] Productionize the sentence-to-system pipeline into the harness (REQ-1/3/4 core)
+
+The end-to-end pipeline is PROVEN in probes (`.jaros-data/s2s_build_probe.py`, `s2s_doneness_probe.py`) but only lives
+there. Productionize it into `harness/system_builder.py` as a real, tested capability composing the proven pieces.
+
+#### Steps
+1. `harness/system_builder.py::build_system(spec, root, *, llm=None) -> dict`: (a) PLAN — model emits a coherence-valid
+   JSON plan (modules+signatures+imports+entrypoint), deterministic validator checks the DAG (reuse the probe's
+   validate()); (b) topological BUILD — for each module leaves-first, model writes the body given
+   responsibility+signature+already-built sibling code, then a deterministic py_compile SYNTAX GATE + bounded repair
+   loop (the two gaps already discovered+fixed in the probe); (c) ASSEMBLE into `root`; (d) ACCEPTANCE — derive an
+   executable acceptance checklist from the spec+API (REQ-2/7 probe logic) and RUN it; return
+   `{modules, shipped: bool, done: bool, unmet: [...], plan}`. Never raises; on any failure returns shipped/done False.
+2. Two-plane: model = plan + module bodies + acceptance-checklist authoring; deterministic = DAG validation, syntax
+   gate, assembly, running the checklist. Bound token budgets (the truncation gap). Honest: `done` requires the
+   acceptance checklist to PASS (Tenet 3), not prose.
+3. Add a `/build <sentence>` CLI command wiring build_system (writes into a subdir, reports shipped/done/unmet).
+4. Tests (`tests/test_ext036_system_builder.py`, OFFLINE — stub `llm` to return a CANNED plan, canned module bodies,
+   canned acceptance checks; NO live model): assert the pipeline plans→builds→assembles→runs the checklist and returns
+   the right dict; assert the syntax-gate+repair path (canned first body has a SyntaxError, repair returns valid) works;
+   assert a failing acceptance check → done=False + unmet lists it. Full `tests/` stays green.
+
+#### Implements
+- [REQ-4] End-to-end plan→build→wire→assemble→acceptance (productionized)
+- [REQ-1] Planner (coherence-validated) + [REQ-3] per-module syntax-gate/repair, composed into the pipeline
