@@ -270,6 +270,15 @@ model-independent **import smoke-gate** — `_importable_modules` (`python -c "i
 baseline-broken module. Airtight proof = the deterministic import-break UNIT TEST (fake llm); suite 1470 green. A
 modification-path HONESTY floor (catches false no-regression a NO-OP/breaking edit could otherwise score as applied).
 NEXT: formalize a MULTI-FILE modification suite TIER for a held-out number; difficulty lever stays SIZE (go 3+-file/real-repo).
+**★ DONE + LIVE HEADLINE NUMBER (2026-07-03, commit 95c58f1 + measured): the MULTI-FILE tier is formalized (MULTIFILE_SLICE,
+5 tasks: 3×2-file + 2×3-file, held-out, independent oracle, architect-verified no fixture passes a no-op). LIVE vs gemma
+($0): single-file FIRST_SLICE 10/10 (100%) + multi-file MULTIFILE_SLICE 5/5 (100%) = 15/15 — new_behavior AND no_regression
+perfect on every task incl. the hard 3-file mul-op. HONEST READ: the product MODIFIES small systems from a prompt at 100%
+on the current suite → the modification instrument is SATURATED at this scale (2-3 file simple CLIs). Per the PRIME-001
+ratchet, the next instrument must go HARDER: REAL external repos (git-cloned, django-scale localization + surrounding-code
+comprehension) — that is the true CC-parity modification frontier. Modification remains gemma's STRONG half (vs greenfield
+CREATION ~83% gemma / ~92% escalating); most real dev = editing, so this is the high-value realistic axis. n=15 single-run,
+small simple systems — the caveat that motivates the real-repo push.**
 
 ## ★★ prompt→system PARITY LIFTED 58%→92% by a HARNESS FIX (2026-07-03, commit 20fe5db) — headline update
 
