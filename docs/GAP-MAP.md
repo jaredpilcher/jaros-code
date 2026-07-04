@@ -199,8 +199,26 @@ default (120s) was too short for a 7B load and left `_current` desynced — rais
 scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
 analysis) — this change is admission + catalog + profile + the timeout fix only.
 
-## ★ HOST DEV TOOLBELT — CORE FUNCTIONALLY COMPLETE (2026-07-03, EXT-037 REQ-1..4)
+## ★★ HOST DEV TOOLBELT — COMPLETE + PROVEN END-TO-END (2026-07-03, EXT-037 REQ-1..5, live demo)
 
+**EXT-037 is CLOSED — the product now turns a PROMPT into a runnable, git-committed, gitignore'd deliverable
+end-to-end on the local gemma at $0 (Claude-Code-like).** REQ-5 wiring landed (`5330499`): `/buildsystem` runs a
+FINALIZE step (`harness/system_finalize.py`) after a shipped build — every effect dispatched as a Decision through
+`Runtime(root=root)` (two-plane: validate()→execute()→hash-chain-log), git-init+commit the source (secret-guarded),
+venv-if-deps (offline, stdlib-only builds skip it), NO auto-run of generated code. **Honest live end-to-end proof
+(`.jaros-data/e2e_product_demo.py`, real gemma, temp root):** a plain PROMPT → gemma builds `main.py` → runs correctly
+(`python main.py <'3 4 5'` → `12`) → finalize writes `.gitignore` + git-commits → `shipped=True | runs_correctly=True |
+git_committed=True` (commit `67a1c3d Initial commit: system built by /buildsystem`). **The demo caught a real
+integration bug 1466 unit tests missed (Tenet-3 value of an honest e2e): the build's acceptance run creates
+`__pycache__/*.pyc`, which `git add -A` staged, and the secret-guard CORRECTLY refused ignored runtime state →
+whole commit blocked.** FIX (`d67f2f9`, EXT-037 REQ-5 via Jarify builder→architect): finalize writes a standard
+Python `.gitignore` (covering `__pycache__/`, `.venv/`, `*.pyc`, …) BEFORE commit, so artifacts are never staged — the
+product-correct behavior (a generated project ships with a sensible .gitignore, like CC). Re-ran the SAME demo → fully
+green. Honest scope: `done=False` on the build's stricter internal multi-case done-ness heuristic (the system still
+ships, runs correctly on the oracle, and versions cleanly); auto-run of the built system remains deferred (explicit
+later opt-in, not this task). Interactive-CLI + eval-loop path-jail wiring still honestly unwired (seam ready).
+
+### CORE (2026-07-03, EXT-037 REQ-1..4) — the pieces beneath REQ-5
 The owner-prioritized toolbelt CORE is built + committed + honest (adversarially validated each piece):
 - **REQ-1 root-jailed FS writes** (34af5ec mechanism + 00c7185 ENFORCEMENT): `path_jail` (realpath containment,
   rejects ../ + outside-absolute + symlink-escape) now FIRES on the 2 real write paths — the sentence→system
