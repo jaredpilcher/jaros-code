@@ -27,32 +27,39 @@ signal to look harder and generate the next horizon, never to stop.
 
 ## ★ North Star (from PRIME-001)
 
-Match or exceed **Claude Code (Opus 4.8)** at real software development, with **every reasoning
-call served by a single small LOCAL model** (Gemma 4 2B `e2b` on the Jetson) at **$0**, honest
-and reproducible. Build/modify **increasingly real systems** (servers → databases → web-informed
-→ large repos), each verified honestly. The honest external hard bar is the **uncurated
-SWE-bench slice (~13%)**; the frontier is real-systems difficulty climbing, not the saturated
-toy-CLI suites.
+Match or exceed **Claude Code (Opus 4.8)** at real software development **in ALL ways — the WHOLE
+CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification, 2026-07-04) — with
+**every reasoning call served by a single small LOCAL model** (Gemma 4 2B `e2b` on the Jetson) at
+**$0**, honest and reproducible. Two convergent bars, neither substitutes for the other:
+1. **Capability** — build/modify **increasingly real systems** (servers → databases → web-informed →
+   large repos), each honestly verified. External hard bar: the **uncurated SWE-bench slice (~13%)**.
+2. **Product surface** — the whole terminal experience a developer actually uses: sessions,
+   headless/Unix composability, instruction-memory, custom skills/commands, hooks, permissions, an
+   MCP client, subagent authoring, checkpoint/rewind, interrupt-and-steer, context management, a
+   background-runs surface, terminal UX, install/health, multimodal (GAP-MAP rows #12–27).
 
 ## Scoreboard (brief — detail in `docs/GAP-MAP.md`)
 
-- External hard bar: uncurated SWE-bench-Lite **~13%** (reasoning-bound for the 2–3B roster).
-- Creation/modification parity suites: high on curated/authored tiers (the FLOOR, not the frontier).
-- Full test suite: **1728 green**. Security envelope: closed for the build pipeline (one open gap: runtime OS-egress enforcement).
+- **Capability scoreboard** (how WELL it solves): external hard bar uncurated SWE-bench-Lite **~13%**
+  (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
+- **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
+  Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
+- Full test suite: **1736 green**. Security envelope: closed for the build pipeline (one open gap: runtime OS-egress enforcement).
 
 ---
 
 ## NOW (in flight — the top of the loop)
 
-- **[plan-repair: dangling-local-import]** deterministic plan-repair for `imports unknown '<local>'` —
-  when a planned module imports a name that is neither listed nor stdlib, add the missing module to the
-  plan (or resolve/drop the dangling ref), analogous to the entrypoint-not-listed repair (20fe5db) —
-  **high** · MEASURED the real #86 datastore blocker: gemma DETERMINISTICALLY (6/6) draws a 2-module
-  notes-cli plan whose `cli.py` imports an unlisted `database` module → validate_plan rejects → 0 accept.
-  Because it's deterministic, best-of-k CANNOT help this; a deterministic plan-repair is the lever.
-- **[#86 datastore end-to-end verify]** once the plan-repair lands, re-measure the notes-sqlite-cli
-  accept-rate live — does the repaired multi-file plan now BUILD and PASS acceptance (real rows persist),
-  or does the next honest blocker appear? — high · the payoff check that closes the #86 sqlite loop with a number.
+- **[★ REALIGN on the whole-PRODUCT bar]** the parity bar just expanded (supervisor 5e0b553): match the
+  WHOLE Claude Code CLI product, not just solving (GAP-MAP #12–27 + Product-Parity Checklist). See the new
+  **PRODUCT-SURFACE PARITY** axis below — this is the major new forward direction — high.
+- **[product-surface: build the Product-Parity Checklist instrument]** the scoreboard for the new axis —
+  score jcode feature-by-feature vs the official Claude Code docs (works/partial/missing), monthly re-sync —
+  high · you can't converge on product parity without measuring it (do this FIRST, then attack the top rows).
+- **[#14 JCODE.md — first product-surface build]** auto-loaded per-repo instruction file + `/init` (the
+  CLAUDE.md-equivalent) — high · foundational (feeds every session) + serves long-horizon alignment; via Jarify (EXT-041/new spec).
+- **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
+  does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
 ## RE-MEASURED — #86 datastore (2026-07-04)
 
@@ -105,7 +112,41 @@ toy-CLI suites.
   into sub-agent test runs — low · finishes observability coverage.
 - **[#55 notify channel]** focus-independent phone notify (ntfy/Pushover) — low · needs owner topic/creds.
 
+## ★ PRODUCT-SURFACE PARITY — the whole CLI product (NEW AXIS, 2026-07-04, supervisor 5e0b553)
+
+The bar is now the WHOLE Claude Code CLI product experience, not just task-solving (GAP-MAP rows
+#12–27, researched from the official docs). Placement discipline: every surface lands Jaros-native
+(judgments=agents; effects=gated deterministic tools; hooks/permissions=clerk config; sessions=durable
+log). New meta-item: **build the Product-Parity Checklist instrument** (feature-by-feature scoring vs
+the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
+
+**Product-surface — NEXT-tractable (thin deterministic layers, high parity value):**
+- **[#14 JCODE.md]** auto-loaded per-repo instruction file + user level + `/init` generator (the
+  CLAUDE.md-equivalent) — high · foundational (feeds every session) + directly serves long-horizon alignment.
+- **[#13 headless/Unix]** print mode + stdin pipe + `--output-format json/stream-json` + exit codes +
+  `--max-turns` — high · CI/scriptability; a thin deterministic layer over the existing one-shot path.
+- **[#12 sessions]** continue / resume / fork / named durable transcripts (`jcode -c` / `-r`) — high ·
+  the Jaros hash-chain log already IS the transcript; add the store + REPL UX.
+- **[#24 terminal UX]** streaming tool events (already hash-chain-logged) + statusline (model·class·$0·latency) — med.
+
+**Product-surface — LATER / bigger lift:**
+- **[#18 MCP client]** connect stdio/HTTP tool servers; each foreign tool wrapped as a GATED Jaros tool
+  (two-plane preserved) — high value · instant ecosystem access; a larger build.
+- **[#15 custom skills/commands]** `.jcode/skills/<name>.md` drop-ins read by the deterministic router — med.
+- **[#16 hooks]** user lifecycle hooks (PreToolUse/PostToolUse/…) consumed by the clerk at the validate()/execute() seam — med.
+- **[#17 permissions + modes]** allow/ask/deny per tool-pattern + plan/acceptEdits modes + approval prompts, OVER the non-negotiable hard-gate floor — med.
+- **[#19 subagent authoring]** markdown agent spec → loader compiles to a Jaros agent — med.
+- **[#20 checkpoint/rewind]** per-edit checkpoint ring + `/rewind` (code/convo/both) — med · extends EXT-009.
+- **[#21 interrupt-and-steer]** cooperative cancel points between plan steps + queue a correction — med.
+- **[#22 context mgmt]** deterministic compactor (jarify spec IS the compaction target) + `@file` refs + `/compact` — med · needed now that long-horizon runs are real.
+- **[#23 background surface]** `jcode --bg` / attach / logs / stop over the existing inbox+log — med.
+- **[#25 install/health]** `pipx install` packaging + `/doctor` deterministic checks — low·med.
+- **[#26 multimodal]** image → e4b vision (Jetson roster is vision-capable) → structured UI desc → build pipeline — low · genuinely reachable, unproven.
+
 ## PARKED (deferred, with reason — revisit triggers in GAP-MAP)
+
+- **[#27 non-CLI surfaces]** IDE extensions, desktop/web app, Slack/GitHub-Actions, remote control — DEFERRED
+  (recorded not silent, GAP-MAP #27); out of scope for the CLI-product-parity pursuit for now; none block the terminal product.
 
 - **[SWE-bench uncurated ~13%]** MODEL-bound reasoning frontier for the 2–3B roster; harness
   saturated, selection exhausted, training scoreboard-null. Revisit on: a stronger fast-trainable
@@ -126,6 +167,9 @@ toy-CLI suites.
 
 ## LANDED (recent trail — newest first)
 
+- **[realign: whole-PRODUCT bar]** merged supervisor 5e0b553 (PRIME-001 intent + GAP-MAP product-surface rows #12–27 + Product-Parity Checklist) into local work; roadmap realigned with the new PRODUCT-SURFACE axis — d130eff.
+- **[EXT-036 TASK-36]** deterministic plan-repair for dangling-local-import (adds the missing module) — 0ac92bd.
+- **[governance: Jarify=harness + Roadmap=execution]** CLAUDE.md + governance-loop skill: use Jarify for everything; roadmap is what we execute to converge on PRIME-001 — ebd8b93.
 - **[governance: every spec has intent+design]** rule set (jarify-manage-specs) + governance-loop enforces/backfills; 17 intent.md + 6 design.md backfilled — completes the convergence chain (each spec states its intent + how it converges toward PRIME-001) — 18d4ad3 (owner).
 - **[governance: Jarify Roadmap]** this artifact — the official living forward-plan layer + jarify-manage-roadmap skill + PRIME-001 binding + convergence-hierarchy wiring (specs→Prime Directive) — 23ac171 (owner).
 - **[EXT-040]** observability heartbeat + `/status` live phase + anti-wedge runner + 5-min watchdog (owner) — 3030b3d/485adf8/36524cc.
