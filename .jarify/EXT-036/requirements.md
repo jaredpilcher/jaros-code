@@ -877,3 +877,43 @@ a genuinely-ranked deterministic recall mechanism, proven offline.
   `build_system`/`build_system_governed`/the CLI orchestrator so every real build records its action+
   rationale and every new plan retrieves+reconciles against similar past work before planning — this
   requirement builds and proves the mechanism only; wiring is an open follow-up (out of TASK-32's scope)
+
+### [REQ-25] Best-of-k build reliability — mask occasional total build failure  (PARTIAL — offline mechanism DONE, EXT-036 TASK-33, 2026-07-04)
+
+**Owner directive (2026-07-04), MEASURED, verify-don't-assume:** a median-of-3 coherence measurement on
+`HARD_SLICE` (the 11-req interdependent CLIs, REQ-23) found single-pass `build_system` scores median
+coherence 1.0 when it succeeds — it NAILS all 11 requirements, ZERO dropped requirements — but suffers an
+occasional TOTAL BUILD FAILURE (~17% measured: 1/6 builds produced nothing runnable, scoring 0). So the
+failure mode this class of build actually has is BUILD RELIABILITY (occasional total failure), NOT dropped
+requirements — the governed decompose→repair capstone (REQ-23) was the WRONG lever for THIS failure mode
+(no requirements are being dropped to repair) and was correctly banked as net-negative for it. The RIGHT
+lever for a total-failure-rate class is BEST-OF-K: build the same spec up to `k` times and keep the best
+attempt by an INDEPENDENT acceptance measure — this masks the ~17% total-failure rate deterministically
+(selection is test-gated/deterministic; only generation is model-driven), without any model-drift risk.
+
+#### Acceptance Criteria
+- [x] `build_system_best_of_k(spec, root, *, llm=None, k=3)` in `harness/system_builder.py` (NEW function;
+  `build_system`'s own behavior/signature untouched) builds up to `k` attempts, each into its OWN fresh
+  temp subdirectory so attempts never contaminate each other — **DONE 2026-07-04**
+  (`harness/system_builder.py::build_system_best_of_k`, TASK-33)
+- [x] Each attempt is scored by an INDEPENDENT acceptance measure (a freshly-derived acceptance checklist —
+  `_derive_acceptance_checklist` — run for real via `_run_check` against that attempt's own assembled
+  modules, never trusting the attempt's self-reported `done` alone) — count of actually-passing checks is
+  the score — **DONE 2026-07-04**
+- [x] SELECTS the best attempt (most passing acceptance checks; ties → the first/fastest evaluated).
+  EARLY-EXIT: an attempt that passes ALL of its acceptance checks stops the loop immediately (doesn't waste
+  the remaining `k`) — **DONE 2026-07-04**
+- [x] ASSEMBLES the winning attempt's modules onto the caller's `root` (never the temp attempt dirs), and
+  returns `{modules, shipped, done, attempts_run, best_score, note}` — `done` reflects the WINNER's real,
+  independently-verified acceptance, never a fabricated pass. NEVER raises: a failing attempt scores 0 and
+  is skipped over; if every attempt fails, the LEAST-BAD attempt is returned with `done=False` and an
+  honest note (never a manufactured pass) — **DONE 2026-07-04**
+- [x] Selection is fully DETERMINISTIC and test-gated (only generation is model-driven) — proven OFFLINE
+  with a fake/canned llm (`tests/test_ext036_system_builder.py`): a case where attempt 1 is broken/empty (0
+  checks pass) and attempt 2 is fully correct proves best-of-k MASKS the failure (returns the correct
+  system); a first-attempt-passes-everything case proves the early-exit (`attempts_run == 1`); an
+  all-attempts-fail case proves the honest least-bad return (`done=False`, no fabricated pass);
+  `build_system` itself is confirmed byte-identical/unaffected — **DONE 2026-07-04**
+- [ ] FOLLOW-UP (explicit, out of this task's scope): wiring `build_system_best_of_k` into the `/buildsystem`
+  CLI command (today only reachable via direct harness import/tests) and a LIVE gemma re-measurement of the
+  masked failure rate against `HARD_SLICE`/`coherence_suite.run_coherence_suite` — open

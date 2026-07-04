@@ -25,6 +25,7 @@ os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
 from harness.system_builder import (
     build_system,
     build_system_governed,
+    build_system_best_of_k,
     syntax_ok,
     validate_plan,
     _decompose_requirements,
@@ -825,6 +826,139 @@ def test_decompose_requirements_drops_imagined_class_api_check_shape(tmp_path):
 def test_governed_build_system_itself_is_untouched(tmp_path):
     """CONFIRM: `build_system`'s own existing behavior (the ORIGINAL fixture/spec used
     throughout this file) is byte-identical -- `build_system_governed` is additive only."""
+    root = tmp_path / "built"
+    llm = _CannedLlm()
+    result = build_system(SPEC, root, llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert set(result["modules"]) == {"helper.py", "cli.py"}
+
+
+# --- TASK-33 (REQ-25): best-of-k build-reliability wrapper -----------------------------
+#
+# MEASURED (median-of-3 coherence run on `harness/coherence_suite.py::HARD_SLICE`):
+# single-pass `build_system` scores median coherence 1.0 (zero dropped requirements) when
+# it succeeds, but suffers an occasional TOTAL BUILD FAILURE (~17%: 1/6 builds produced
+# nothing runnable). `build_system_best_of_k` masks that failure rate by building the same
+# spec up to `k` times and keeping the best-scoring attempt by an INDEPENDENT, freshly-run
+# acceptance check. These tests use fake/canned llms only -- no live model, no network.
+
+class _AttemptAwareLlm:
+    """Best-of-k fixture: the FIRST `build_system()` invocation this llm serves produces a
+    BROKEN system (`helper.py` never compiles, even through every repair attempt, so that
+    attempt ships nothing checkable); every SUBSEQUENT invocation produces a fully-correct,
+    fully-passing system. Attempt boundaries are tracked by counting 'build PLAN' calls --
+    exactly one per `build_system()` invocation, always its first LLM call -- so this single
+    stateful object correctly varies its behavior across the multiple `build_system()` calls
+    `build_system_best_of_k` makes with it."""
+
+    def __init__(self) -> None:
+        self.attempt = -1
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "build PLAN" in prompt:
+            self.attempt += 1
+            return _Resp(PLAN_JSON)
+        broken = self.attempt == 0
+        if "SYNTAX ERROR" in prompt or "COMPLETE Python module" in prompt:
+            m = _MODULE_NAME_RE.search(prompt)
+            name = m.group(1) if m else None
+            if name == "helper.py":
+                return _Resp(HELPER_BROKEN if broken else HELPER_FIXED)
+            if name == "cli.py":
+                return _Resp(CLI_OK)
+            return _Resp("")
+        if "ACCEPTANCE CHECKS" in prompt:
+            return _Resp(CHECKLIST_PASSING)
+        return _Resp("")
+
+
+class _AlwaysBrokenLlm:
+    """Every `build_system()` invocation ships a broken `helper.py` that never compiles,
+    even after every repair attempt -- for the ALL-ATTEMPTS-FAIL honesty test."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "build PLAN" in prompt:
+            return _Resp(PLAN_JSON)
+        if "SYNTAX ERROR" in prompt or "COMPLETE Python module" in prompt:
+            m = _MODULE_NAME_RE.search(prompt)
+            name = m.group(1) if m else None
+            if name == "helper.py":
+                return _Resp(HELPER_BROKEN)
+            if name == "cli.py":
+                return _Resp(CLI_OK)
+            return _Resp("")
+        return _Resp("")
+
+
+def test_best_of_k_masks_a_build_failure(tmp_path):
+    """CORE LIFT: attempt 1 is broken/empty (0 checks pass), attempt 2 is fully correct
+    (all checks pass) -- best-of-k must return the CORRECT system, proving it raises
+    reliability over a single pass."""
+    root = tmp_path / "built"
+    llm = _AttemptAwareLlm()
+    result = build_system_best_of_k(SPEC, root, llm=llm, k=2)
+
+    assert result["done"] is True
+    assert result["attempts_run"] == 2
+    assert result["best_score"] > 0
+    assert set(result["modules"]) == {"helper.py", "cli.py"}
+    # the WORKING build actually landed on the caller's root, not a broken one
+    assert (root / "helper.py").read_text(encoding="utf-8").strip() == HELPER_FIXED.strip()
+    assert (root / "cli.py").is_file()
+
+
+def test_best_of_k_early_exits_when_first_attempt_passes(tmp_path):
+    """EARLY-EXIT: the first attempt already passes every acceptance check, so the
+    remaining `k` budget is never spent."""
+    root = tmp_path / "built"
+    llm = _CannedLlm()   # default fixture already builds+passes fully in one call
+    result = build_system_best_of_k(SPEC, root, llm=llm, k=3)
+
+    assert result["done"] is True
+    assert result["attempts_run"] == 1
+
+
+def test_best_of_k_honest_when_every_attempt_fails(tmp_path):
+    """ALL-FAIL HONESTY: every attempt fails to build a checkable system -- `done=False`
+    with an honest note (never a fabricated pass), and the least-bad attempt is returned
+    without raising."""
+    root = tmp_path / "built"
+    llm = _AlwaysBrokenLlm()
+    result = build_system_best_of_k(SPEC, root, llm=llm, k=2)
+
+    assert result["done"] is False
+    assert result["shipped"] is False
+    assert result["attempts_run"] == 2
+    assert result["note"]
+    assert "fail" in result["note"].lower()
+
+
+def test_best_of_k_never_raises_when_llm_itself_raises(tmp_path):
+    """NEVER RAISES: an llm that raises on every call degrades to an honest failed result,
+    never a traceback."""
+    class _RaisingLlm:
+        def complete(self, request):
+            raise RuntimeError("boom")
+
+    result = build_system_best_of_k(SPEC, tmp_path / "built", llm=_RaisingLlm(), k=2)
+    assert result["done"] is False
+    assert result["shipped"] is False
+    assert result["attempts_run"] == 2
+
+
+def test_best_of_k_build_system_unaffected(tmp_path):
+    """CONFIRM: plain `build_system` is byte-identical/unaffected -- `build_system_best_of_k`
+    is a pure additive wrapper around it."""
     root = tmp_path / "built"
     llm = _CannedLlm()
     result = build_system(SPEC, root, llm=llm)

@@ -151,6 +151,24 @@ requirement set — never worse than a plain ``build_system`` call. Honest scope
 lift): this floor does NOT claim to fix decompose-completeness blind spots (a requirement the
 decompose call never enumerates at all is invisible to this check set, same as before) — it
 only guarantees governed never regresses BELOW build_system on the requirements it does check.
+
+TASK-33 (REQ-25) adds ``build_system_best_of_k(spec, root, *, llm=None, k=3)`` — a BEST-OF-K
+build-RELIABILITY wrapper, a different lever from ``build_system_governed`` above. MEASURED
+(a median-of-3 coherence run on ``harness/coherence_suite.py::HARD_SLICE``): single-pass
+``build_system`` scores median coherence 1.0 with ZERO dropped requirements when it succeeds —
+so REQ-23's decompose->repair capstone is the WRONG lever here (there is nothing partial to
+repair) — but suffers an occasional TOTAL BUILD FAILURE (~17% measured: 1/6 builds produced
+nothing runnable, scoring 0). Best-of-k masks that failure rate deterministically: build the
+same spec up to ``k`` times, each into its OWN fresh temp subdirectory (attempts never
+contaminate each other), independently SCORE each attempt with a freshly-derived acceptance
+checklist run for real (never trusting the attempt's own self-reported ``done``), and ASSEMBLE
+only the best-scoring attempt's modules onto the caller's ``root``. Two-plane, like every other
+function in this module: selection (score, early-exit, tie-break, assembly) is 100%
+deterministic; only generation (``build_system`` itself) is model-driven. Never raises: a
+failing attempt scores 0 and is skipped over; if every attempt fails, the least-bad attempt is
+returned with ``done=False`` and an honest note (never a manufactured pass). Does not modify
+``build_system``/``build_system_governed``/``build_system_escalating`` in any way — wiring this
+into the ``/buildsystem`` CLI command is an explicit follow-up (REQ-25).
 """
 
 from __future__ import annotations
@@ -160,6 +178,7 @@ import json
 import os
 import py_compile
 import re
+import shutil
 # #EXT-036-REQ-14 Start
 import subprocess  # TASK-21: deterministic import smoke-gate (modify_system regression hardening)
 # #EXT-036-REQ-14 End
@@ -1722,3 +1741,128 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     return _governed_result(modules=built, shipped=True, done=done, requirements_total=total,
                              requirements_met=met, unmet=unmet_ids, note=note, rounds=rounds)
 # #EXT-036-REQ-23 End
+
+
+# #EXT-036-REQ-25 Start
+# TASK-33 (REQ-25): BEST-OF-K build-RELIABILITY wrapper. MEASURED (median-of-3 coherence run on
+# ``harness/coherence_suite.py::HARD_SLICE``): single-pass ``build_system`` scores median coherence
+# 1.0 (ZERO dropped requirements) when it succeeds, but suffers an occasional TOTAL BUILD FAILURE
+# (~17% measured: 1/6 builds produced nothing runnable, scoring 0). So the failure mode this class
+# actually has is RELIABILITY, not dropped requirements -- ``build_system_governed`` (REQ-23) is
+# the wrong lever for it. The right lever: build the same spec up to `k` times into ISOLATED temp
+# subdirs, independently SCORE each attempt (never trusting its own self-reported `done`), and
+# ASSEMBLE only the best-scoring attempt onto the caller's `root`. Selection is 100% deterministic
+# (test-gated); only generation (`build_system` itself) is model-driven.
+
+def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tuple[int, int]:
+    """INDEPENDENT scoring for one best-of-k attempt: NEVER trust `result`'s own self-reported
+    `done` -- derive a FRESH acceptance checklist from the attempt's own planned module API and
+    run every check for real against the attempt's own assembled root, counting real passes.
+    Returns ``(passed, total)``; ``total == 0`` means nothing could be checked at all (no plan /
+    no built modules -- a total build failure), scored 0. Never raises."""
+    if not isinstance(result, dict):
+        return 0, 0
+    plan = result.get("plan")
+    mods = plan.get("modules") if isinstance(plan, dict) else None
+    built = result.get("modules") or {}
+    if not isinstance(mods, list) or not mods or not built:
+        return 0, 0
+    try:
+        checks = _derive_acceptance_checklist(spec, mods, llm)
+    except Exception:
+        checks = []
+    if not checks:
+        return 0, 0
+    passed = 0
+    for c in checks:
+        try:
+            if _run_check(attempt_root, c):
+                passed += 1
+        except Exception:
+            pass
+    return passed, len(checks)
+
+
+def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 3) -> dict:
+    """Build ``spec`` up to `k` times (each into its OWN fresh, isolated temp subdir so attempts
+    never contaminate each other or `root`), independently score every attempt with a freshly
+    derived + actually-RUN acceptance checklist (`_score_build_attempt`), and ASSEMBLE only the
+    best-scoring attempt's modules onto the caller's `root`.
+
+    EARLY-EXIT: an attempt that passes every one of its own acceptance checks stops the loop
+    immediately -- the remaining `k` budget is never spent. Otherwise the winner is the
+    highest-scoring attempt, ties broken by the FIRST/earliest-evaluated attempt (deterministic,
+    never random).
+
+    Returns ``{modules, shipped, done, attempts_run, best_score, note}``. `done` reflects the
+    WINNER's own independently-verified acceptance (passed == total, total > 0) -- NEVER a
+    fabricated pass. NEVER raises: a build-call exception is treated as a failed (0-scored)
+    attempt; if every attempt fails, the least-bad attempt is returned with `done=False` and an
+    honest note.
+
+    Does not modify `build_system`'s own behavior/signature in any way -- this is a pure wrapper
+    around it. Wiring into `/buildsystem` is an explicit follow-up (REQ-25)."""
+    root = Path(root)
+    k = max(1, int(k)) if k else 1
+    attempts: list[dict] = []
+    tmp_dirs: list[Path] = []
+    winner = None
+    try:
+        for i in range(k):
+            attempt_root = Path(tempfile.mkdtemp(prefix=f"jarify_bok_{i}_"))
+            tmp_dirs.append(attempt_root)
+            try:
+                result = build_system(spec, attempt_root, llm=llm)
+            except Exception as exc:
+                result = _result(shipped=False, done=False, note=f"attempt {i} raised: {exc}")
+            try:
+                passed, total = _score_build_attempt(spec, attempt_root, result, llm)
+            except Exception:
+                passed, total = 0, 0
+            attempts.append({"result": result, "passed": passed, "total": total})
+            if total > 0 and passed == total:
+                winner = attempts[-1]
+                break
+
+        if winner is None:
+            best_idx = 0
+            best_key = None
+            for idx, rec in enumerate(attempts):
+                key = (rec["passed"], -idx)   # highest score wins; earlier attempt breaks ties
+                if best_key is None or key > best_key:
+                    best_key, best_idx = key, idx
+            winner = attempts[best_idx] if attempts else {"result": {}, "passed": 0, "total": 0}
+
+        modules = dict((winner["result"] or {}).get("modules") or {})
+        if modules:
+            try:
+                root.mkdir(parents=True, exist_ok=True)
+                for name, code in modules.items():
+                    _jailed_write(root, name, code)
+            except Exception:
+                pass
+
+        passed, total = winner["passed"], winner["total"]
+        done = total > 0 and passed == total
+        shipped = bool((winner["result"] or {}).get("shipped")) or bool(modules)
+        attempts_run = len(attempts)
+        if done:
+            note = f"DONE (best of {attempts_run} attempt(s): {passed}/{total} acceptance checks pass)"
+        elif total > 0:
+            note = (f"NOT DONE — best attempt of {attempts_run} passes {passed}/{total} "
+                     "acceptance checks")
+        else:
+            note = (f"NOT DONE — all {attempts_run} attempt(s) failed to produce a checkable "
+                     "system (total build failure), returning the least-bad attempt")
+        return {
+            "modules": modules,
+            "shipped": shipped,
+            "done": done,
+            "attempts_run": attempts_run,
+            "best_score": passed,
+            "note": note,
+        }
+    finally:
+        for d in tmp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+# #EXT-036-REQ-25 End

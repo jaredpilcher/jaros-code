@@ -1257,3 +1257,64 @@ follow-up. Self-contained new module, isolated from every other harness path (wi
 
 #### Implements
 - [REQ-24] Episodic (action+rationale) memory — groundwork + experience-recall for planning
+
+### [TASK-33] Best-of-k build reliability wrapper for build_system (REQ-25)
+
+MEASURED (median-of-3 coherence run on `HARD_SLICE`): single-pass `build_system` scores median coherence
+1.0 with ZERO dropped requirements when it succeeds, but suffers an occasional TOTAL BUILD FAILURE (~17%:
+1/6 builds produced nothing runnable). The governed decompose→repair capstone (REQ-23) is the WRONG lever
+for this failure mode (no requirements to repair — the failure is binary total-failure, not partial
+drift). The right lever is BEST-OF-K: build the same spec up to `k` times into isolated attempts, keep the
+best by an INDEPENDENT acceptance check. Self-contained NEW function; `build_system`'s own
+behavior/signature is untouched.
+
+#### Steps
+1. Add `build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 3) -> dict` to
+   `harness/system_builder.py`. For each attempt `i` in `range(max(1, k))`: create a FRESH temp subdir
+   (`tempfile.mkdtemp`) so attempts never contaminate each other or the caller's `root`; call
+   `build_system(spec, attempt_dir, llm=llm)` (guarded — a raised exception is treated as a failed attempt,
+   never propagated).
+2. Add a private `_score_build_attempt(spec, attempt_root, result, llm) -> tuple[int, int]` helper that
+   independently scores an attempt: extract `result["plan"]["modules"]` (the module list); if there is no
+   plan or no built modules, return `(0, 0)` (a total build failure, scored 0/0); otherwise call
+   `_derive_acceptance_checklist(spec, mods, llm)` (a FRESH, independent derivation — never trust the
+   attempt's own self-reported `done`) and run each check for real via `_run_check(attempt_root, check)`,
+   counting passes. Return `(passed, total)`. Guarded — any exception during derivation/running counts that
+   check as not passing, never raises.
+3. In `build_system_best_of_k`, after each attempt is built+scored, EARLY-EXIT the loop immediately when
+   `total > 0 and passed == total` (the attempt passes every one of its acceptance checks) — do not build the
+   remaining `k - i - 1` attempts. Otherwise continue to the next attempt.
+4. SELECT the winner: the early-exit attempt if one occurred; otherwise the attempt with the highest
+   `passed` count (ties broken by the FIRST/earliest-evaluated attempt, i.e. lowest index — deterministic,
+   never random). ASSEMBLE the winner's `modules` dict onto the caller's `root` (reusing the same
+   `_jailed_write` helper `build_system` itself uses for every module write), NOT onto any temp attempt dir.
+   Clean up every temp attempt directory in a `finally` block (best-effort `shutil.rmtree`, never raises).
+5. Return `{"modules": <winner modules>, "shipped": <bool>, "done": <bool>, "attempts_run": <int>,
+   "best_score": <int>, "note": <str>}`. `done` is `True` only when the winner's independently-verified
+   `passed == total` and `total > 0` (never a fabricated pass); `shipped` reflects whether any modules were
+   actually assembled. The `note` honestly reports attempts run + best score, and — when every attempt
+   scored `0` total — explicitly says all `k` attempts failed to produce a checkable system (least-bad
+   returned, no manufactured pass). Add `import shutil` to `harness/system_builder.py`'s existing import
+   block if not already present.
+6. Do NOT modify `build_system`, `build_system_governed`, `build_system_escalating`, `coherence_suite.py`,
+   `server_oracle.py`, `system_suite.py`, or `cli.py` — wiring `build_system_best_of_k` into `/buildsystem`
+   is an explicit follow-up (noted in REQ-25), out of this task's scope.
+7. Tests, appended to `tests/test_ext036_system_builder.py` (OFFLINE — a fake/canned llm mirroring the
+   existing `_CannedLlm` pattern in that file, no live model, no network):
+   (a) **BEST-OF-K MASKS A FAILURE** — a fake llm whose first `build_system()` invocation produces a
+   broken/empty system (module never compiles, so the attempt ships nothing checkable — 0 checks pass) and
+   whose second invocation produces a fully-correct system (all checks pass): assert
+   `build_system_best_of_k(spec, root, llm=fake, k=2)` returns `done=True`, a full `best_score` (score ==
+   total), `root` ends up containing the WORKING build's modules on disk, and `attempts_run == 2` (it
+   genuinely tried again after the first failure);
+   (b) **EARLY-EXIT** — a fake llm whose first invocation already produces a fully-passing system: assert
+   `attempts_run == 1` with `k=3` (the remaining budget is never spent);
+   (c) **ALL-FAIL HONESTY** — a fake llm where every invocation produces a broken/uncheckable system: assert
+   `done=False` with an honest note (never a fabricated pass), and the function still returns the
+   least-bad attempt's (possibly empty) `modules` without raising;
+   (d) a confirmation that plain `build_system` itself is byte-identical/unaffected (reuse the file's
+   existing `SPEC`/`_CannedLlm` fixture). Run `python -m pytest tests/test_ext036_system_builder.py -q`
+   then the FULL `python -m pytest tests/ -q` synchronously in the foreground and confirm both stay green.
+
+#### Implements
+- [REQ-25] Best-of-k build reliability — mask occasional total build failure
