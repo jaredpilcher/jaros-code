@@ -234,7 +234,17 @@ class JcodeCli:
         _backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
         _backend_label = "llamacpp, local" if _backend.startswith("llama") else "ollama, local (legacy)"
         # #EXT-014-REQ-1 End
-        return (f"model: {self.model} ({_backend_label})\n"
+        # #EXT-040-REQ-1 Start
+        # Live observability: what is jaros-code DOING right now (activity, elapsed, stalled?).
+        # Owner directive 2026-07-04 -- so "stuck vs working" is answerable at a glance.
+        try:
+            from harness.heartbeat import format_status, status as _hb_status
+            activity_line = format_status(_hb_status()) + "\n"
+        except Exception:
+            activity_line = ""
+        # #EXT-040-REQ-1 End
+        return (f"{activity_line}"
+                f"model: {self.model} ({_backend_label})\n"
                 f"latest: {rep.get('headline','(no eval yet)')}\n"
                 f"census: agents={c['agents']} tools={c['tools']} capabilities={c['capabilities']} "
                 f"evals={c['evals']}+{c['harnessEvals']} specs={c['specs']}")

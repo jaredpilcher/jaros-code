@@ -1,0 +1,26 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/heartbeat.py",
+      "startLine": 22,
+      "endLine": 157
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 237,
+      "endLine": 245
+    },
+    {
+      "file": "tests/test_ext040_heartbeat.py",
+      "startLine": 1,
+      "endLine": 130
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/run_with_heartbeat.py",
+      "startLine": 26,
+      "endLine": 120
+    }
+  ]
+}
