@@ -55,6 +55,21 @@ says "do that again" or refers to something done earlier, it can recall the exac
 against it** — past experience is part of the upcoming plan's context, not forgotten each run. (Guard:
 this is PLAN + provenance recall, distinct from behavior-keyed few-shot code examples, which measured
 *negative* for solving on the 2B — recall informs the plan, it does not paste stale code.)
+
+**(g) stay aligned across LONG-HORIZON builds — minutes → hours → days (owner directive, 2026-07-03).**
+The hardest, highest goal: build a LARGE system over a long autonomous run **without drifting from what
+was asked.** The product decomposes the prompt into a **governed spec** (requirements + an ordered task
+list), builds it **task-by-task**, and after each unit runs an **alignment + verification pass** (a
+jarify-architect-style check: does this still serve the spec? is it correct? no scope drift?) before
+advancing — **continuously re-grounding on the spec** so an hours-long (eventually days-long) run stays
+coherent instead of wandering. The mechanism for this alignment **IS jarify** — its skills (manage-specs →
+builder → architect) and agents, or a **jaros-code-native equivalent we must still fully implement inside
+the product** (today jarify governs how *we build jaros-code*; the product must run the same governed loop
+*internally* to build the user's system). **jarify is key** — its spec-first discipline (Tenet 4) is the
+anti-drift engine of a long run. The difficulty **ratchet applies to DURATION too**: start with builds that
+finish in **minutes**, and expand to systems so large they take **hours or days** — a run only counts when,
+at the end, every requirement is traced to work that is honestly verified. This is the north-star form of
+"just like Claude Code": hand it something big, walk away, and it stays on-task and delivers.
 **Tenet reconciliation (this does NOT weaken Tenet 2):** web research and package/service setup are
 **read-only information retrieval and build-time actions**, not inference — *every reasoning call
 still runs on the local Jetson model at $0; no cloud/paid model is ever used for thinking.* Fetching

@@ -57,6 +57,19 @@ act; every effect logged):
    **planner is experience-informed**: before finalizing a plan it retrieves similar past plans/actions from
    that store and reconciles the new plan against them (L4 experience-recall on the escalation ladder) — recall
    feeds the plan's context, NOT stale few-shot code (which measured negative for solving on the 2B).
+6. **Long-horizon governed build loop — jarify INSIDE the product (owner directive, 2026-07-03).** For a large
+   build, the product runs its OWN spec-first governance loop: decompose the prompt into a spec (requirements +
+   an ordered task list, `manage-specs`-style) → build each task through the two-plane pipeline → gate each with
+   an **architect-style alignment + verification pass** (serves the spec? correct? no scope drift?) before
+   advancing — re-grounding on the spec every unit so the run does not wander. State is persisted across the
+   session / tasks / experiments / episodic-memory planes (EXT-036 + plane 5) so a run can span **hours → days
+   and resume** after interruption. This is **jarify (skills + builder/architect agents) applied inside
+   jaros-code, not merely to build jaros-code** — where the product lacks a native equivalent of a jarify skill/
+   agent, we build one (a co-goal: prove jarify governance as a runtime capability). The difficulty ratchet
+   (§"The difficulty ratchet") **extends to DURATION**: a new **long-horizon coherence instrument** starts at
+   minute-scale multi-requirement builds and ratchets to hour/day-scale, measuring whether a long run stays
+   ALIGNED — every requirement traced to work that is honestly verified at the end, zero drift — not merely that
+   it produced output. Coherence over hours is the headline capability this whole design converges toward.
 
 ```text
    prompt ("build a job-queue CLI with priorities + retry" │ "add a delete command to the kv-store")
