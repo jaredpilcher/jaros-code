@@ -463,3 +463,79 @@ never mutates the target repo.
 
 #### Implements
 - [REQ-6] Scratch research-script investigation plane — throwaway probes, native two-plane
+
+### [TASK-9] Secure sandboxed execution of generated code + gated egress — foundation (REQ-7)
+
+Add the standalone `harness/secure_exec.py` sandbox module — the FOUNDATION that closes the live
+gap of `build_system`'s acceptance step running model-generated code as a plain, unrestricted host
+subprocess. Deterministic, self-contained, never-raises: an AST scanner that classifies dangerous
+operations, a first-class `EgressPolicy` that GATES (default-deny + explicit allow-list) rather than
+blankets network egress, and a sandboxed runner with a scrubbed environment and POSIX resource caps.
+This task lands the module + its offline tests only; wiring it into `system_builder.py`'s acceptance
+step is an explicit, separate follow-up (named, not silently deferred).
+
+#### Steps
+1. Create `harness/secure_exec.py` with an `EgressPolicy` dataclass: `mode: Literal["deny",
+   "allow_list"] = "deny"`, `allowed_hosts: set[str] = frozenset()`. Add `is_host_allowed(host) ->
+   bool` (False for `"deny"` mode; membership check against `allowed_hosts` for `"allow_list"`), a
+   class-level `DENY_ALL` instance, and a classmethod/constructor `allow(*hosts) ->
+   EgressPolicy` that builds an `"allow_list"` policy from the given hosts.
+2. In the same module, add a `ScanPolicy` dataclass holding the per-category default-deny flags
+   (`deny_subprocess: bool = True`, `deny_dynamic_exec: bool = True`, `deny_destructive_fs: bool =
+   True`) so a caller can deliberately loosen one category, and a `SecurityReport` dataclass
+   (`ok: bool`, `violations: list[dict]`, `egress_ops: list[dict]`, `notes: list[str]`).
+3. Implement `scan_code(sources, *, egress_policy=None, scan_policy=None) -> SecurityReport`:
+   accept `sources` as a single code string or a `{filename: code}` dict; for each file, `ast.parse`
+   inside a `try`/`except SyntaxError` (an unparseable file becomes a `violation`, not a crash), then
+   walk the AST (`ast.walk`) classifying `ast.Import`/`ast.ImportFrom`/`ast.Call`/`ast.Attribute`
+   nodes into NETWORK/EGRESS (`socket`, `urllib`, `http.client`, `requests`, `httpx`, `aiohttp`,
+   `ftplib`, `smtplib`, etc.), SUBPROCESS/SHELL (`os.system`, `os.popen`, `subprocess.*`, `pty`),
+   DYNAMIC-EXEC (`eval`, `exec`, `compile`, `__import__`, `importlib.import_module`), and
+   DESTRUCTIVE/FS-OUTSIDE-ROOT (`shutil.rmtree`, `os.remove`/`unlink`/`rmdir`, `os.chmod`, and an
+   `open()`/`Path.write_*` call whose first argument is a string literal that is an absolute path or
+   contains a parent-escaping `".."` segment). Each match records `{category, detail, lineno}`.
+4. Decide `ok` in `scan_code` by policy: any SUBPROCESS/SHELL, DYNAMIC-EXEC, or
+   DESTRUCTIVE/FS-OUTSIDE-ROOT match (when its `ScanPolicy` flag is True, the default) appends to
+   `violations` and sets `ok=False`. An EGRESS match appends to `egress_ops` always, but only becomes
+   a `violations` entry (forcing `ok=False`) when `egress_policy` is `None` or does not permit the
+   specific host/module in question (egress is GATED, not auto-forbidden) — when an `allow_list`
+   policy is supplied, egress ops are recorded but do not by themselves flip `ok=False`.
+5. Implement `run_sandboxed(cmd, *, cwd, egress_policy=EgressPolicy.DENY_ALL, timeout=30,
+   mem_mb=512, extra_env=None) -> dict`: build a SCRUBBED environment dict (a minimal safe allow-list
+   — `PATH`, `SYSTEMROOT`/`WINDIR` on Windows, `LANG`, `TMP`/`TEMP`, `PYTHONPATH` if present in the
+   current env — plus whatever `extra_env` supplies; nothing else from `os.environ` is copied), launch
+   `subprocess.Popen(cmd, cwd=cwd, env=scrubbed_env, stdout=PIPE, stderr=PIPE, text=True)` (POSIX gets
+   `start_new_session=True` and, when the stdlib `resource` module is importable, a `preexec_fn`
+   applying `resource.setrlimit(RLIMIT_AS, ...)`/`RLIMIT_CPU` from `mem_mb`/`timeout` — guarded in a
+   `try`/`except` so a platform without `resource` just skips the cap), reuse the existing
+   timeout + process-tree-kill pattern (mirroring `.jaros-data/tools/shell_exec_tool.py::_kill_tree`:
+   `taskkill /F /T /PID` on Windows, `os.killpg` + `SIGKILL` on POSIX) on `subprocess.TimeoutExpired`,
+   and return `{ok, returncode, stdout, stderr, timed_out, killed, note}` — document inline that
+   runtime egress blocking is NOT implemented here (a Linux network namespace/firewall follow-up);
+   never raises (an outer `try`/`except` backstop returns an honest `ok=False` result on any failure
+   to even start the process).
+6. Implement `secure_run_generated(sources, cmd, *, cwd, egress_policy=EgressPolicy.DENY_ALL) ->
+   dict`: call `scan_code(sources, egress_policy=egress_policy)`; if `not report.ok`, return
+   `{"ran": False, "blocked": True, "report": report}` without running anything; else call
+   `run_sandboxed(cmd, cwd=cwd, egress_policy=egress_policy)` and return `{"ran": True, "blocked":
+   False, "report": report, **run_result}`.
+7. Add `tests/test_ext037_secure_exec.py` (offline, deterministic) covering: `scan_code` flags each
+   category on crafted snippets (`os.system`, `subprocess.run`, `eval`/`exec`/`__import__`,
+   `shutil.rmtree`, `open('/etc/x', 'w')`, a `socket`/`requests` import) and a clean stdin-reading CLI
+   script has `ok=True` with no violations; an egress-using snippet is flagged under `DENY_ALL` but
+   passes the egress category under `EgressPolicy.allow("pypi.org")` (proving GATED-not-blocked);
+   `EgressPolicy.is_host_allowed` permits a listed host and denies an unlisted one under `allow_list`,
+   and denies everything under `DENY_ALL`; `run_sandboxed` scrubs the environment (set
+   `os.environ["SECRET_TOKEN"]` in the test, run a child that prints
+   `os.environ.get("SECRET_TOKEN", "<none>")`, assert the child sees `<none>` while a safe var like
+   `PATH` is still present in the child); `run_sandboxed` enforces its timeout (a hang is killed,
+   `timed_out=True`, no orphan) and never raises on garbage `cmd`/`cwd`; a POSIX-only test proves a
+   memory-bombing child is killed by the `RLIMIT_AS` cap (skipped on Windows, per platform honesty);
+   and `secure_run_generated` refuses to run a violating snippet (`blocked=True`, nothing executed)
+   while running a clean one successfully.
+8. Run `python -m pytest tests/test_ext037_secure_exec.py -q` first, then the full
+   `python -m pytest tests/ -q` synchronously in the foreground to confirm the whole suite is green
+   with no regression to any prior EXT-037 task's tests.
+
+#### Implements
+- [REQ-7] Secure sandboxed execution of generated code + gated egress

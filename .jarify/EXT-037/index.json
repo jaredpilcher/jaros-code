@@ -1,5 +1,72 @@
 {
+  "REQ-5": [
+    {
+      "file": "harness/system_finalize.py",
+      "startLine": 59,
+      "endLine": 227
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 147,
+      "endLine": 169
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 525,
+      "endLine": 539
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 667,
+      "endLine": 797
+    },
+    {
+      "file": "tests/test_ext037_finalize.py",
+      "startLine": 26,
+      "endLine": 296
+    },
+    {
+      "file": "tests/test_ext037_cli_git.py",
+      "startLine": 28,
+      "endLine": 157
+    }
+  ],
   "REQ-1": [
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 189,
+      "endLine": 222
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 761,
+      "endLine": 766
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 781,
+      "endLine": 783
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 883,
+      "endLine": 889
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1118,
+      "endLine": 1124
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1163,
+      "endLine": 1175
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1190,
+      "endLine": 1192
+    },
     {
       "file": "harness/coding_loop.py",
       "startLine": 112,
@@ -19,41 +86,6 @@
       "file": "harness/agent_loop.py",
       "startLine": 96,
       "endLine": 104
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 111,
-      "endLine": 144
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 683,
-      "endLine": 688
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 703,
-      "endLine": 705
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 805,
-      "endLine": 811
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1040,
-      "endLine": 1046
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1085,
-      "endLine": 1097
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1112,
-      "endLine": 1114
     },
     {
       "file": "tests/test_ext037_root_enforcement.py",
@@ -101,36 +133,16 @@
       "endLine": 52
     }
   ],
-  "REQ-5": [
+  "REQ-7": [
     {
-      "file": "harness/cli.py",
-      "startLine": 147,
-      "endLine": 169
+      "file": "harness/secure_exec.py",
+      "startLine": 43,
+      "endLine": 687
     },
     {
-      "file": "harness/cli.py",
-      "startLine": 525,
-      "endLine": 539
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 667,
-      "endLine": 797
-    },
-    {
-      "file": "harness/system_finalize.py",
-      "startLine": 59,
-      "endLine": 227
-    },
-    {
-      "file": "tests/test_ext037_finalize.py",
-      "startLine": 26,
-      "endLine": 296
-    },
-    {
-      "file": "tests/test_ext037_cli_git.py",
-      "startLine": 28,
-      "endLine": 157
+      "file": "tests/test_ext037_secure_exec.py",
+      "startLine": 25,
+      "endLine": 328
     }
   ],
   "REQ-6": [

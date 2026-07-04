@@ -31,6 +31,8 @@ implementation:
   - tests/test_ext037_git_tools.py
   - tests/test_ext037_finalize.py
   - tests/test_ext037_research_scripts.py
+  - harness/secure_exec.py
+  - tests/test_ext037_secure_exec.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -250,3 +252,59 @@ propagating.
 - [x] Proven by an offline test (small-result probe, oversized-output probe, non-zero-exit probe, a
   hang-with-short-timeout probe with no orphan left behind, and confirmation the target repo's working
   tree is untouched)
+
+### [REQ-7] Secure sandboxed execution of generated code + gated egress  (partial)
+
+**Owner-directed, highest priority (2026-07-04) — a live safety gap.** `build_system`'s acceptance step
+RUNS model-generated code on the host as a plain subprocess (`python main.py`, `uvicorn main:app`) with
+`cwd=<build dir>` but **no `env=` restriction** — the child inherits the FULL host environment, including
+secrets (API keys, `LLAMACPP_*`, tokens), runs with full host permissions, has unrestricted network egress,
+and is never statically scanned before it runs. Only the existing timeout + tree-kill and root-jailed
+*writes* (REQ-1/REQ-2) cover any part of this path. Executing untrusted, model-generated code with host
+trust is a Foundry safety-envelope violation; this requirement closes the FOUNDATION of that gap: a
+deterministic AST scanner that classifies dangerous operations, a first-class `EgressPolicy` that GATES
+(not blankets) network egress, and a scrubbed-environment/resource-capped sandboxed runner.
+
+**OWNER CONSTRAINT — egress is GATED, not BLOCKED.** Web research and dependency installation both need
+controlled network access, so the design is DEFAULT-DENY with an explicit ALLOW-LIST a caller supplies for
+the hosts it actually needs (e.g. `pypi.org`, `docs.python.org`) — never a blanket network kill. A code
+path that uses network APIs is refused ONLY when no `EgressPolicy` permits it; supplying an allow-list
+policy that covers the used host(s) is enough to pass the static gate.
+
+**HONEST STATUS (Tenet 3):** this task lands the standalone `harness/secure_exec.py` module (`EgressPolicy`,
+`scan_code`, `run_sandboxed`, `secure_run_generated`) and its offline test suite — the FOUNDATION. It is
+**deliberately NOT yet wired into `harness/system_builder.py`'s acceptance step** (the live gap named above
+still exists in production until that follow-up task lands); this task's scope is the sandbox module + its
+own tests only. **Honest platform limitation:** true runtime network blocking needs an OS-level mechanism
+(a Linux network namespace or firewall rule) that this task does not implement — egress is gated at the
+STATIC layer only (the AST scan + `EgressPolicy` refuse un-permitted egress code before it ever runs);
+runtime egress enforcement on the Jetson/Linux target is an explicit, named follow-up, not claimed here.
+
+#### Acceptance Criteria
+- [x] `EgressPolicy` (default-deny, `DENY_ALL`, an `allow(*hosts)` allow-list constructor, and
+  `is_host_allowed(host)`) is the one mechanism that GATES egress — never a blanket network kill
+- [x] `scan_code(sources)` AST-scans (never raises; unparseable code is a violation, not a crash) and
+  classifies dangerous operations into NETWORK/EGRESS, SUBPROCESS/SHELL, DYNAMIC-EXEC, and
+  DESTRUCTIVE/FS-OUTSIDE-ROOT, returning a structured `SecurityReport{ok, violations, egress_ops, notes}`
+- [x] By default SUBPROCESS/SHELL, DYNAMIC-EXEC, and DESTRUCTIVE/FS-OUTSIDE-ROOT are always violations
+  (`ok=False`); EGRESS is flagged only as a violation when NO `EgressPolicy` would permit it — an
+  `allow_list` policy covering the used host(s) lets a scan with egress still report `ok=True` for that
+  category (a configurable `ScanPolicy` lets a caller loosen specific categories deliberately)
+- [x] `run_sandboxed(cmd, cwd=..., egress_policy=..., timeout=..., mem_mb=..., extra_env=...)` runs with a
+  SCRUBBED environment (a minimal safe allow-list + `extra_env` only — no ambient secrets reach the child,
+  proven by a test), `cwd` confined to the caller's build dir, POSIX resource caps
+  (`RLIMIT_AS`/`RLIMIT_CPU` via `resource.setrlimit`, guarded/optional on non-POSIX), and the existing
+  timeout + process-tree-kill discipline; never raises
+- [x] `secure_run_generated(sources, cmd, cwd=..., egress_policy=...)` scans first and REFUSES to run
+  (`{ran: False, blocked: True, report}`) on any violation, else delegates to `run_sandboxed` — the gate a
+  future `build_system` acceptance call will use
+- [x] Proven by an offline test suite: each violation category flagged on a crafted snippet, a clean
+  script `ok=True`, the egress allow-list path proven both ways (flagged under `DENY_ALL`, permitted under
+  an `allow()` policy covering the used host), the env-scrub proof (a test-set secret is invisible to the
+  child, a safe var like `PATH` still present), timeout+kill with no orphan, and `secure_run_generated`
+  refusing a violating snippet while running a clean one
+- [ ] **Follow-up (not in this task's scope):** wire `secure_run_generated` into
+  `harness/system_builder.py`'s acceptance-run step so `build_system`'s actual `python main.py`/
+  `uvicorn main:app` execution goes through the sandbox instead of a plain `subprocess` call
+- [ ] **Follow-up (not in this task's scope):** real runtime egress ENFORCEMENT (a Linux network
+  namespace or firewall rule on the Jetson/Linux deployment target) — today's gate is static-only
