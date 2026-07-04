@@ -634,7 +634,7 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
 
-### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28; NO-REGRESS FLOOR hardened end to end, EXT-036 TASK-29, 2026-07-04)
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28; NO-REGRESS FLOOR hardened end to end, EXT-036 TASK-29; task slice HARDENED with a HARD_SLICE, EXT-036 TASK-30, 2026-07-04)
 
 **Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
 the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
@@ -773,3 +773,24 @@ matter for the follow-on capstone build.
   only guarantees governed never regresses BELOW build_system on the requirements it does check; a live gemma
   re-measurement against the kvdb-cli confirming the floor holds live (`requirements_met >= 10/11`) remains the
   explicit next follow-up.
+- [x] Harden the instrument's own TASK SLICE so it stays DISCRIMINATING (never floor/ceiling-ing out) —
+  **DONE 2026-07-04** (`harness/coherence_suite.py::HARD_SLICE`, EXT-036 TASK-30). MEASURED: `FIRST_SLICE`
+  (stats-cli 4 reqs, text-tools-cli 5, ledger-cli 5) scored `build_system` at coherence=1.00 (saturated); a
+  separately-probed 11-requirement interdependent kvdb-cli broke it (single-pass 10/11), showing FIRST_SLICE
+  alone had stopped being informative. FIX: `HARD_SLICE` adds 2 "highly-complex"-tier, 11-requirement,
+  INTERDEPENDENT tasks — `kvdb-cli` (the proven-discriminating one: set/get/get-missing/delete/exists-yes/
+  exists-no/count/keys/incr/clear/usage against an in-memory stdin-driven key-value store) and `taskmgr-cli`
+  (a different domain, also interdependent: add/add-increments-id/done/done-missing/list-shows-status/
+  list-empty/remove/remove-missing/count-after-remove/pending-count/usage against an in-memory stdin-driven
+  task list, where later commands' checks depend on state built up by earlier ones in the same stdin stream).
+  `ALL_COHERENCE_TASKS = FIRST_SLICE + HARD_SLICE` is exposed for callers that want the grown set;
+  `run_coherence_suite`'s own default stays `FIRST_SLICE` (backward compatible, no behavior change for existing
+  callers). Proven OFFLINE (`tests/test_ext036_coherence.py`, no live model): a correct reference
+  implementation of EACH `HARD_SLICE` task scores `all_satisfied=True`/`coherence=1.0` (every requirement is
+  genuinely satisfiable by a correct program, Tenet 3); a deliberately partial kvdb-cli implementation (8 of 11
+  requirements genuinely correct, keys/incr/clear genuinely wrong) scores `coherence=8/11` exactly; a no-op
+  `build_fn` scores `coherence=0.0` for every `HARD_SLICE` task; `ALL_COHERENCE_TASKS == FIRST_SLICE +
+  HARD_SLICE`; each `HARD_SLICE` task has >=8 requirements; the bare default call still returns
+  `len(FIRST_SLICE)` results. Full `tests/` suite stays green (1571 passed, 1 skipped). CAVEAT (honest scope):
+  growing `HARD_SLICE` beyond 2 tasks, and a live gemma-vs-escalating measurement run of `build_system`/
+  `build_system_governed` against the grown suite, remain open follow-ups.

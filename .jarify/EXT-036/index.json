@@ -1,9 +1,21 @@
 {
+  "REQ-19": [
+    {
+      "file": "harness/experiment_store.py",
+      "startLine": 33,
+      "endLine": 184
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 987,
+      "endLine": 1033
+    }
+  ],
   "REQ-23": [
     {
       "file": "harness/coherence_suite.py",
-      "startLine": 46,
-      "endLine": 244
+      "startLine": 54,
+      "endLine": 345
     },
     {
       "file": "harness/system_builder.py",
@@ -215,18 +227,6 @@
       "endLine": 164
     }
   ],
-  "REQ-19": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 987,
-      "endLine": 1033
-    },
-    {
-      "file": "harness/experiment_store.py",
-      "startLine": 33,
-      "endLine": 184
-    }
-  ],
   "REQ-8": [
     {
       "file": "harness/cli.py",
@@ -275,6 +275,23 @@
       "endLine": 738
     }
   ],
+  "REQ-22": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 41,
+      "endLine": 323
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 528,
+      "endLine": 600
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 873,
+      "endLine": 908
+    }
+  ],
   "REQ-20": [
     {
       "file": "harness/system_suite.py",
@@ -306,23 +323,6 @@
       "file": "harness/system_builder.py",
       "startLine": 437,
       "endLine": 527
-    }
-  ],
-  "REQ-22": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 528,
-      "endLine": 600
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 873,
-      "endLine": 908
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 41,
-      "endLine": 323
     }
   ],
   "REQ-5": [

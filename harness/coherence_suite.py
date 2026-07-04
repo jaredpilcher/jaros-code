@@ -30,6 +30,14 @@ Live gemma-vs-escalating measurement against this suite, and growing the class/t
 beyond the FIRST_SLICE below, are explicit OUT-OF-SCOPE follow-ups for this task -- this module
 only builds the instrument + a first concrete slice (3 tasks, 4-5 requirements each, across
 easy/medium/hard tiers).
+
+TASK-30 (REQ-23 hardening) added ``HARD_SLICE`` right below ``FIRST_SLICE``: HARD,
+MANY-requirement, INTERDEPENDENT "highly-complex" tasks (11 requirements each) -- including the
+kvdb-cli that a separate probe measured `build_system` at only 10/11 on, showing FIRST_SLICE alone
+had saturated at coherence=1.00 and stopped being discriminating. ``ALL_COHERENCE_TASKS =
+FIRST_SLICE + HARD_SLICE`` is exposed for callers that want the full, growing set;
+``run_coherence_suite``'s own default is UNCHANGED (still ``FIRST_SLICE``) for backward
+compatibility.
 """
 
 from __future__ import annotations
@@ -241,4 +249,97 @@ FIRST_SLICE: "list[CoherenceTask]" = [
         ],
     ),
 ]
+
+
+# --- HARD SLICE (REQ-23 hardening, TASK-30) --------------------------------------------------
+# MEASURED (2026-07-03/04, a separately-probed 11-requirement interdependent kvdb-cli): the
+# FIRST_SLICE above saturates at coherence=1.00 for build_system -- a HARD, MANY-requirement,
+# INTERDEPENDENT slice is needed to keep the instrument DISCRIMINATING (never floor/ceiling out).
+# Each task below is "highly-complex" tier, >=8 independent requirements, and INTERDEPENDENT
+# (later requirement checks depend on state built up by earlier commands in the SAME stdin
+# stream -- e.g. `get` after a prior `set`, `count`/`pending-count` after prior `add`s), so a
+# build that silently drops or corrupts EARLIER state shows up in LATER checks too. Same
+# contract-precision + internal-coherence discipline as FIRST_SLICE (Tenet 3): each task's
+# ``tests/test_ext036_coherence.py`` reference implementation satisfies ALL its requirements.
+
+HARD_SLICE: "list[CoherenceTask]" = [
+    CoherenceTask(
+        name="kvdb-cli", tier="highly-complex",
+        prompt=(
+            "Write a single-file Python CLI program in a file named main.py, an in-memory "
+            "key-value store starting empty. Running it as `python main.py` (no command-line "
+            "arguments), it reads commands from standard input, one command per line, until "
+            "standard input is exhausted (EOF); after processing each command it immediately "
+            "prints that command's output line, followed by a newline, to standard output, in "
+            "the SAME order the commands were read. Supported commands: `set <key> <value>` "
+            "stores <value> (a single token) under <key> and prints `ok`; `get <key>` prints "
+            "the stored value for <key> if it currently exists, otherwise prints `none`; "
+            "`delete <key>` removes <key> if present (no error if absent) and prints `ok`; "
+            "`exists <key>` prints `yes` if <key> is currently stored, otherwise prints `no`; "
+            "`count` prints the current number of stored keys as a single integer; `keys` "
+            "prints all currently-stored keys, SORTED alphabetically and separated by a single "
+            "space, on one line; `incr <key>` treats the stored value for <key> as an integer "
+            "(treating a currently-missing key as 0), adds 1 to it, stores the result as a "
+            "string, and prints the new integer value; `clear` removes every stored key and "
+            "prints `ok`; any other or malformed command prints exactly `usage`. The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        requirements=[
+            ("set", [], "set a 1\n", "ok"),
+            ("get", [], "set a 1\nget a\n", "1"),
+            ("get-missing", [], "get zzz\n", "none"),
+            ("delete", [], "set a 1\ndelete a\nget a\n", "none"),
+            ("exists-yes", [], "set a 1\nexists a\n", "yes"),
+            ("exists-no", [], "exists zzz\n", "no"),
+            ("count", [], "set a 1\nset b 2\ncount\n", "2"),
+            ("keys", [], "set b 2\nset a 1\nkeys\n", "a b"),
+            ("incr", [], "set n 5\nincr n\n", "6"),
+            ("clear", [], "set a 1\nset b 2\nclear\ncount\n", "0"),
+            ("usage", [], "bogus\n", "usage"),
+        ],
+    ),
+    CoherenceTask(
+        name="taskmgr-cli", tier="highly-complex",
+        prompt=(
+            "Write a single-file Python CLI program in a file named main.py, an in-memory task "
+            "list starting empty, with an auto-incrementing integer id starting at 1. Running "
+            "it as `python main.py` (no command-line arguments), it reads commands from "
+            "standard input, one command per line, until standard input is exhausted (EOF); "
+            "after processing each command it immediately prints that command's output "
+            "line(s), followed by a newline, to standard output, in the SAME order the "
+            "commands were read. Supported commands: `add <text>` (<text> may contain spaces "
+            "and is everything after the first space) creates a new task with the next id "
+            "(assigned in order starting at 1) and status `pending`, and prints `added <id>`; "
+            "`done <id>` marks the task with that id as `done` and prints `done <id>` if a "
+            "task with that id currently exists, otherwise prints `no such task` and changes "
+            "nothing; `remove <id>` deletes the task with that id and prints `removed <id>` "
+            "if it currently exists, otherwise prints `no such task` and changes nothing; "
+            "`list` prints each remaining task, one per line, in the order it was added, each "
+            "formatted as `<id> <status> <text>` (status is `pending` or `done`), or prints "
+            "exactly `no tasks` if there are currently none; `count` prints the current total "
+            "number of tasks (pending plus done) as a single integer; `pending-count` prints "
+            "the current number of tasks whose status is still `pending`, as a single integer; "
+            "any other or malformed command prints exactly `usage`. The file must contain an "
+            "`if __name__ == \"__main__\":` block that runs this."
+        ),
+        requirements=[
+            ("add-first", [], "add buy milk\n", "added 1"),
+            ("add-second-increments", [], "add buy milk\nadd walk dog\n", "added 2"),
+            ("done", [], "add buy milk\ndone 1\n", "done 1"),
+            ("done-missing", [], "done 99\n", "no such task"),
+            ("list-shows-status", [], "add buy milk\ndone 1\nlist\n", "1 done buy milk"),
+            ("list-empty", [], "list\n", "no tasks"),
+            ("remove", [], "add buy milk\nremove 1\n", "removed 1"),
+            ("remove-missing", [], "remove 5\n", "no such task"),
+            ("count-after-remove", [], "add a\nadd b\nremove 1\ncount\n", "1"),
+            ("pending-count", [], "add a\nadd b\ndone 1\npending-count\n", "1"),
+            ("usage", [], "bogus\n", "usage"),
+        ],
+    ),
+]
+
+# ``ALL_COHERENCE_TASKS`` composes FIRST_SLICE + HARD_SLICE for callers that want the full,
+# harder-and-growing set; ``run_coherence_suite``'s own DEFAULT stays FIRST_SLICE (backward
+# compatible -- existing callers/tests that rely on the small, fast default are unaffected).
+ALL_COHERENCE_TASKS: "list[CoherenceTask]" = FIRST_SLICE + HARD_SLICE
 # #EXT-036-REQ-23 End

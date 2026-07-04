@@ -1126,3 +1126,39 @@ initial output, so a repaired-but-worse system could ship.
   this check set — it only guarantees governed never regresses below build_system on the requirements it does
   check. A live gemma re-measurement against the kvdb-cli confirming the floor holds live remains an explicit
   follow-up.)
+
+### [TASK-30] Harden the coherence instrument's task slice with a HARD_SLICE (REQ-23)
+
+MEASURED: `harness/coherence_suite.py`'s `FIRST_SLICE` (stats-cli 4 reqs, text-tools-cli 5, ledger-cli 5)
+scored `build_system` at coherence=1.00 (saturated) — a separately-probed 11-requirement interdependent
+kvdb-cli broke it (single-pass 10/11), showing FIRST_SLICE alone had stopped being discriminating. Add HARD,
+MANY-requirement, INTERDEPENDENT tasks to the slice — including the kvdb-cli that already discriminates — so
+the instrument keeps measuring genuine drift instead of floor/ceiling-ing out.
+
+#### Steps
+1. In `harness/coherence_suite.py`, add a `HARD_SLICE: list[CoherenceTask]` right after `FIRST_SLICE`, inside
+   the `#EXT-036-REQ-23` span, with 2 "highly-complex"-tier tasks: `kvdb-cli` (11 requirements: set/get/
+   get-missing/delete/exists-yes/exists-no/count/keys/incr/clear/usage, an in-memory stdin-driven key-value
+   store) and `taskmgr-cli` (11 requirements: add/add-increments-id/done/done-missing/list-shows-status/
+   list-empty/remove/remove-missing/count-after-remove/pending-count/usage, an in-memory stdin-driven task
+   list) — a DIFFERENT domain, also interdependent (later commands' checks depend on state built up by earlier
+   commands in the same stdin stream). Each prompt is contract-precise (single `main.py` entrypoint, exact
+   stdin/argv invocation, exact stdout format, `if __name__ == "__main__":` required), following the same
+   convention `FIRST_SLICE`/`harness.system_suite.FIRST_SLICE` already prove.
+2. Expose `ALL_COHERENCE_TASKS = FIRST_SLICE + HARD_SLICE`. Do NOT change `run_coherence_suite`'s own default
+   (stays `FIRST_SLICE`) — backward compatible with existing callers/tests.
+3. TENET-3 (mandatory): for every `HARD_SLICE` task, write a correct REFERENCE `main.py` in the test module and
+   prove via `run_coherence_suite` that it scores `all_satisfied=True`/`coherence=1.0` (every requirement is
+   genuinely satisfiable by a correct program), that a PARTIAL implementation scores exactly `k/N`, and that a
+   no-op scores `0.0`.
+4. Tests (`tests/test_ext036_coherence.py`): each `HARD_SLICE` task's reference scores 1.0/all_satisfied; a
+   partial implementation (kvdb-cli) scores exact `k/N`; a no-op scores 0.0 for every `HARD_SLICE` task;
+   `ALL_COHERENCE_TASKS == FIRST_SLICE + HARD_SLICE`; each `HARD_SLICE` task has >=8 requirements;
+   `run_coherence_suite`'s bare default still returns `len(FIRST_SLICE)` results (backward-compat). Run the
+   FULL `python -m pytest tests/ -q` synchronously in the foreground and confirm it stays green.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (hardens the task slice with `HARD_SLICE` — 2
+  "highly-complex", many-requirement, interdependent tasks including the kvdb-cli that measurably broke the
+  saturated `FIRST_SLICE` — so the instrument stays discriminating instead of floor/ceiling-ing out; growing
+  `HARD_SLICE` further and a live gemma-vs-escalating measurement against it remain open follow-ups)

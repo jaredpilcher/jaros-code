@@ -12,7 +12,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.coherence_suite import CoherenceTask, FIRST_SLICE, run_coherence_suite
+from harness.coherence_suite import (
+    ALL_COHERENCE_TASKS,
+    CoherenceTask,
+    FIRST_SLICE,
+    HARD_SLICE,
+    run_coherence_suite,
+)
 
 
 def _build_fn_writing(code: str):
@@ -176,6 +182,148 @@ _PARTIAL_CODE_AND_K = {
 }
 
 
+# --- HARD_SLICE (TASK-30, REQ-23 hardening): reference + partial implementations ------------
+# Same Tenet-3 discipline as FIRST_SLICE above, but for the HARD, many-requirement,
+# INTERDEPENDENT "highly-complex" tasks added to keep the instrument discriminating.
+
+_KVDB_CLI_REFERENCE = (
+    "import sys\n"
+    "def main():\n"
+    "    store = {}\n"
+    "    for raw in sys.stdin:\n"
+    "        raw = raw.rstrip(chr(10))\n"
+    "        if not raw:\n"
+    "            continue\n"
+    "        parts = raw.split()\n"
+    "        cmd = parts[0] if parts else ''\n"
+    "        if cmd == 'set' and len(parts) >= 3:\n"
+    "            store[parts[1]] = parts[2]\n"
+    "            print('ok')\n"
+    "        elif cmd == 'get' and len(parts) >= 2:\n"
+    "            print(store.get(parts[1], 'none'))\n"
+    "        elif cmd == 'delete' and len(parts) >= 2:\n"
+    "            store.pop(parts[1], None)\n"
+    "            print('ok')\n"
+    "        elif cmd == 'exists' and len(parts) >= 2:\n"
+    "            print('yes' if parts[1] in store else 'no')\n"
+    "        elif cmd == 'count':\n"
+    "            print(len(store))\n"
+    "        elif cmd == 'keys':\n"
+    "            print(' '.join(sorted(store.keys())))\n"
+    "        elif cmd == 'incr' and len(parts) >= 2:\n"
+    "            val = int(store.get(parts[1], '0')) + 1\n"
+    "            store[parts[1]] = str(val)\n"
+    "            print(val)\n"
+    "        elif cmd == 'clear':\n"
+    "            store.clear()\n"
+    "            print('ok')\n"
+    "        else:\n"
+    "            print('usage')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_TASKMGR_CLI_REFERENCE = (
+    "import sys\n"
+    "def main():\n"
+    "    tasks = {}\n"
+    "    order = []\n"
+    "    next_id = 1\n"
+    "    for raw in sys.stdin:\n"
+    "        raw = raw.rstrip(chr(10))\n"
+    "        if not raw:\n"
+    "            continue\n"
+    "        parts = raw.split(' ', 1)\n"
+    "        cmd = parts[0]\n"
+    "        if cmd == 'add' and len(parts) > 1:\n"
+    "            text = parts[1]\n"
+    "            tid = next_id\n"
+    "            next_id += 1\n"
+    "            tasks[tid] = {'text': text, 'status': 'pending'}\n"
+    "            order.append(tid)\n"
+    "            print('added %d' % tid)\n"
+    "        elif cmd == 'done' and len(parts) > 1:\n"
+    "            try:\n"
+    "                tid = int(parts[1])\n"
+    "            except ValueError:\n"
+    "                tid = None\n"
+    "            if tid in tasks:\n"
+    "                tasks[tid]['status'] = 'done'\n"
+    "                print('done %d' % tid)\n"
+    "            else:\n"
+    "                print('no such task')\n"
+    "        elif cmd == 'remove' and len(parts) > 1:\n"
+    "            try:\n"
+    "                tid = int(parts[1])\n"
+    "            except ValueError:\n"
+    "                tid = None\n"
+    "            if tid in tasks:\n"
+    "                del tasks[tid]\n"
+    "                order.remove(tid)\n"
+    "                print('removed %d' % tid)\n"
+    "            else:\n"
+    "                print('no such task')\n"
+    "        elif cmd == 'list':\n"
+    "            if not order:\n"
+    "                print('no tasks')\n"
+    "            else:\n"
+    "                for tid in order:\n"
+    "                    t = tasks[tid]\n"
+    "                    print('%d %s %s' % (tid, t['status'], t['text']))\n"
+    "        elif cmd == 'count':\n"
+    "            print(len(order))\n"
+    "        elif cmd == 'pending-count':\n"
+    "            print(sum(1 for tid in order if tasks[tid]['status'] == 'pending'))\n"
+    "        else:\n"
+    "            print('usage')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_HARD_REFERENCE_CODE = {
+    "kvdb-cli": _KVDB_CLI_REFERENCE,
+    "taskmgr-cli": _TASKMGR_CLI_REFERENCE,
+}
+
+# kvdb-cli partial: satisfies set/get/get-missing/delete/exists-yes/exists-no/count/usage (8 of
+# 11); keys/incr/clear are genuinely wrong on purpose (a stub "not-implemented" instead of the
+# real behavior), proving the instrument measures per-requirement coverage on a HARD task too.
+_KVDB_CLI_PARTIAL = (
+    "import sys\n"
+    "def main():\n"
+    "    store = {}\n"
+    "    for raw in sys.stdin:\n"
+    "        raw = raw.rstrip(chr(10))\n"
+    "        if not raw:\n"
+    "            continue\n"
+    "        parts = raw.split()\n"
+    "        cmd = parts[0] if parts else ''\n"
+    "        if cmd == 'set' and len(parts) >= 3:\n"
+    "            store[parts[1]] = parts[2]\n"
+    "            print('ok')\n"
+    "        elif cmd == 'get' and len(parts) >= 2:\n"
+    "            print(store.get(parts[1], 'none'))\n"
+    "        elif cmd == 'delete' and len(parts) >= 2:\n"
+    "            store.pop(parts[1], None)\n"
+    "            print('ok')\n"
+    "        elif cmd == 'exists' and len(parts) >= 2:\n"
+    "            print('yes' if parts[1] in store else 'no')\n"
+    "        elif cmd == 'count':\n"
+    "            print(len(store))\n"
+    "        elif cmd in ('keys', 'incr', 'clear'):\n"
+    "            print('not-implemented')\n"
+    "        else:\n"
+    "            print('usage')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+_KVDB_CLI_PARTIAL_K = 8
+
+_HARD_PARTIAL_CODE_AND_K = {
+    "kvdb-cli": (_KVDB_CLI_PARTIAL, _KVDB_CLI_PARTIAL_K),
+}
+
+
 # --- TENET-3: reference implementations are FULLY coherent (satisfy every requirement) -----
 
 def test_first_slice_registry_shape():
@@ -310,3 +458,70 @@ def test_wall_seconds_reported_and_nonnegative():
     rec = result["results"][0]
     assert isinstance(rec["wall_seconds"], float)
     assert rec["wall_seconds"] >= 0.0
+
+
+# --- HARD_SLICE (TASK-30, REQ-23 hardening): registry shape + Tenet-3 coherence -------------
+
+def test_hard_slice_registry_shape():
+    assert len(HARD_SLICE) == 2
+    names = [t.name for t in HARD_SLICE]
+    assert len(names) == len(set(names))
+    for task in HARD_SLICE:
+        assert task.tier == "highly-complex"
+        assert task.prompt.strip()
+        assert len(task.requirements) >= 8
+        req_ids = [req[0] for req in task.requirements]
+        assert len(req_ids) == len(set(req_ids))
+        for req in task.requirements:
+            assert len(req) == 4
+            req_id, argv, stdin, expected = req
+            assert isinstance(req_id, str) and req_id
+            assert isinstance(argv, list)
+            assert isinstance(expected, str) and expected
+
+
+def test_hard_slice_reference_implementations_are_fully_coherent():
+    assert set(_HARD_REFERENCE_CODE) == {t.name for t in HARD_SLICE}
+    for task in HARD_SLICE:
+        code = _HARD_REFERENCE_CODE[task.name]
+        result = run_coherence_suite(_build_fn_writing(code), tasks=[task])
+        rec = result["results"][0]
+        assert rec["all_satisfied"] is True, f"{task.name}: {rec}"
+        assert rec["coherence"] == 1.0
+        assert rec["requirements_satisfied"] == rec["requirements_total"] == len(task.requirements)
+
+
+def test_hard_slice_partial_implementation_scores_exact_fraction():
+    # At least one HARD_SLICE task (kvdb-cli): a partial implementation scores coherence = k/N
+    # exactly, proving per-requirement coverage measurement holds on a hard, interdependent task.
+    kvdb_task = next(t for t in HARD_SLICE if t.name == "kvdb-cli")
+    code, k = _HARD_PARTIAL_CODE_AND_K["kvdb-cli"]
+    n = len(kvdb_task.requirements)
+    result = run_coherence_suite(_build_fn_writing(code), tasks=[kvdb_task])
+    rec = result["results"][0]
+    assert rec["requirements_satisfied"] == k, f"kvdb-cli: {rec}"
+    assert rec["requirements_total"] == n
+    assert rec["coherence"] == k / n
+    assert rec["all_satisfied"] is (k == n)
+
+
+def test_hard_slice_noop_build_fn_scores_zero():
+    result = run_coherence_suite(_noop_build_fn, tasks=HARD_SLICE)
+    for rec in result["results"]:
+        assert rec["requirements_satisfied"] == 0
+        assert rec["coherence"] == 0.0
+        assert rec["all_satisfied"] is False
+
+
+# --- ALL_COHERENCE_TASKS composition + backward-compatible default --------------------------
+
+def test_all_coherence_tasks_equals_first_plus_hard():
+    assert ALL_COHERENCE_TASKS == FIRST_SLICE + HARD_SLICE
+    assert len(ALL_COHERENCE_TASKS) == len(FIRST_SLICE) + len(HARD_SLICE)
+
+
+def test_run_coherence_suite_default_is_still_first_slice():
+    # Backward compatible: run_coherence_suite's own default must remain FIRST_SLICE, not
+    # ALL_COHERENCE_TASKS, so existing callers/tests relying on the small default are unaffected.
+    result = run_coherence_suite(_noop_build_fn)
+    assert len(result["results"]) == len(FIRST_SLICE)
