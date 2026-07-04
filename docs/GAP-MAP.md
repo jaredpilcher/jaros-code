@@ -279,6 +279,13 @@ ratchet, the next instrument must go HARDER: REAL external repos (git-cloned, dj
 comprehension) — that is the true CC-parity modification frontier. Modification remains gemma's STRONG half (vs greenfield
 CREATION ~83% gemma / ~92% escalating); most real dev = editing, so this is the high-value realistic axis. n=15 single-run,
 small simple systems — the caveat that motivates the real-repo push.**
+**★ REAL-REPO (PACKAGE-STRUCTURED) MODIFICATION WORKS (2026-07-03, probe): drove modify_system on a 5-file project inside a
+real git repo — a `calc/` PACKAGE (calc/__init__.py + calc/ops.py + calc/format.py), main.py entrypoint, README, git-init'd
+with an initial commit. One-sentence change (add mul op) -> applied=True, new behavior CONFIRMED, changed EXACTLY calc/ops.py
+(+3) + main.py (wired), left __init__/format/README untouched, all 3 runtime checks pass, and `git diff --stat` is CLEAN/minimal.
+So subdir module paths, package imports, precise localization + clean diff all HOLD at package scale (_jailed_write creates
+subdirs; the import-smoke-gate doesn't false-revert). NEXT rung = a LARGER real EXTERNAL repo (git-clone a PyPI-scale project),
+where django-scale localization + surrounding-code comprehension is the true CC-parity frontier.**
 
 ## ★★ prompt→system PARITY LIFTED 58%→92% by a HARNESS FIX (2026-07-03, commit 20fe5db) — headline update
 
