@@ -1,24 +1,39 @@
 {
   "REQ-1": [
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 112,
-      "endLine": 121
+      "file": ".jaros-data/tools/_pathjail.py",
+      "startLine": 22,
+      "endLine": 76
     },
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 134,
-      "endLine": 136
+      "file": ".jaros-data/tools/write_file_tool.py",
+      "startLine": 22,
+      "endLine": 28
     },
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 140,
-      "endLine": 144
+      "file": ".jaros-data/tools/write_file_tool.py",
+      "startLine": 47,
+      "endLine": 53
     },
     {
-      "file": "harness/agent_loop.py",
-      "startLine": 96,
-      "endLine": 104
+      "file": ".jaros-data/tools/search_replace_tool.py",
+      "startLine": 27,
+      "endLine": 33
+    },
+    {
+      "file": ".jaros-data/tools/search_replace_tool.py",
+      "startLine": 70,
+      "endLine": 76
+    },
+    {
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 23,
+      "endLine": 29
+    },
+    {
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 46,
+      "endLine": 52
     },
     {
       "file": "harness/system_builder.py",
@@ -66,39 +81,46 @@
       "endLine": 162
     },
     {
-      "file": ".jaros-data/tools/_pathjail.py",
-      "startLine": 22,
-      "endLine": 76
+      "file": "harness/agent_loop.py",
+      "startLine": 96,
+      "endLine": 104
     },
     {
-      "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 22,
-      "endLine": 28
+      "file": "harness/coding_loop.py",
+      "startLine": 112,
+      "endLine": 121
     },
     {
-      "file": ".jaros-data/tools/write_file_tool.py",
-      "startLine": 47,
-      "endLine": 53
+      "file": "harness/coding_loop.py",
+      "startLine": 134,
+      "endLine": 136
     },
     {
-      "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 27,
-      "endLine": 33
+      "file": "harness/coding_loop.py",
+      "startLine": 140,
+      "endLine": 144
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 86,
+      "endLine": 101
     },
     {
-      "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 70,
-      "endLine": 76
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 106,
+      "endLine": 111
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 23,
-      "endLine": 29
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 120,
+      "endLine": 136
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 46,
-      "endLine": 52
+      "file": "tests/test_ext037_gated_exec.py",
+      "startLine": 34,
+      "endLine": 148
     }
   ]
 }

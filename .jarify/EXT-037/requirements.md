@@ -8,7 +8,9 @@ implementation:
   - .jaros-data/tools/write_file_tool.py
   - .jaros-data/tools/apply_patch_tool.py
   - .jaros-data/tools/search_replace_tool.py
+  - .jaros-data/tools/shell_exec_tool.py
   - tests/test_ext037_pathjail.py
+  - tests/test_ext037_gated_exec.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -65,19 +67,30 @@ jail now genuinely FIRES in production:
   general interactive CLI (`JcodeCli.rt`) and the SWE-bench/eval solve loops remain honestly UNWIRED (see status
   note above); a future task may thread `root` into those once each has an unambiguous root concept to supply
 
-### [REQ-2] Gated host CLI execution — run commands as a deterministic, safeguarded tool  (uncovered)
+### [REQ-2] Gated host CLI execution — run commands as a deterministic, safeguarded tool  (covered)
 
 `shell_exec` (run a host command, capture output as an observation the model can read) hardened with deterministic
 gates: a timeout with process-TREE kill (no orphans, per the SWE-bench lesson), NO external network egress by
 default, NO destructive operations (rm -rf outside root, etc.), working directory confined to root by default.
 Output (stdout/stderr/exit) returns as an inert observation; the model never executes directly.
 
+**HONEST STATUS (Tenet 3, TASK-3):** the timeout + process-tree kill and the destructive/egress denylist gate
+already existed in `.jaros-data/tools/shell_exec_tool.py` (built under EXT-001 / REQ-5 / REQ-7, before this spec).
+TASK-3 added the two REQ-2-specific pieces that were genuinely missing: (a) an explicit, payload-scoped
+`allow_unsafe: true` override so a caller can opt a single command past the denylist gate — never default-on,
+any other value (missing/`False`/a truthy string) leaves the gate fully in effect; and (b) a `cwd` default that
+anchors to a caller-supplied `root` when no explicit `cwd` is given. It also hardened `execute()` so a bad `cwd`
+or unresolvable command returns a structured, honest failure observation instead of raising uncaught.
+**Honest limitation:** the denylist is a deterministic regex safety NET, not a full sandbox — it catches the
+common destructive/egress command shapes by pattern match; a sufficiently obfuscated command could still evade
+it. This is documented in the tool's own code comments, not hidden.
+
 #### Acceptance Criteria
-- [ ] `shell_exec` enforces a timeout + process-tree kill; a hanging/slow command is killed cleanly, no orphan
-- [ ] A denylist/gate blocks destructive + egress commands by default (validate-fail), with an explicit
+- [x] `shell_exec` enforces a timeout + process-tree kill; a hanging/slow command is killed cleanly, no orphan
+- [x] A denylist/gate blocks destructive + egress commands by default (validate-fail), with an explicit
   per-command owner-gated override path (never a default)
-- [ ] cwd defaults to the project root; output captured + returned as a structured observation; exit code honest
-- [ ] Proven by offline tests (fast in-root commands succeed; a blocked/hanging command is handled without harm)
+- [x] cwd defaults to the project root; output captured + returned as a structured observation; exit code honest
+- [x] Proven by offline tests (fast in-root commands succeed; a blocked/hanging command is handled without harm)
 
 ### [REQ-3] Environment tools — Python + virtualenv + dependencies  (uncovered)
 

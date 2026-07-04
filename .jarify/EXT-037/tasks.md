@@ -97,3 +97,43 @@ Decision just before `validate()` — reused live by the `/agent` loop's `edit` 
 #### Implements
 - [REQ-1] Root-jailed filesystem writes — create/write/update confined to the project root
 - [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end
+
+### [TASK-3] Gated CLI execution (REQ-2)
+
+`shell_exec_tool.py` (EXT-001 / REQ-5 / REQ-7) already carries the timeout + process-tree
+kill and a safety denylist, but was missing two REQ-2 specifics: an explicit per-command
+override path for the denylist gate (never default-on), and a `cwd` default anchored to a
+caller-supplied project `root` rather than the ambient process directory. This task closes
+that gap without touching the existing denylist patterns or the tree-kill mechanism, and
+hardens `execute()` so it never raises uncaught on a bad `cwd`/unresolvable command.
+
+#### Steps
+1. In `.jaros-data/tools/shell_exec_tool.py`'s `ShellExecTool.validate()`, add an explicit,
+   payload-scoped `allow_unsafe` override: only when the payload's `allow_unsafe` key is the
+   literal boolean `True` does the existing deny-pattern check get skipped for that one
+   command; any other value (missing, `False`, a truthy string) leaves the existing
+   denylist gate fully in effect (never default-on).
+2. In `ShellExecTool.execute()`, resolve `cwd` from `payload.get("cwd") or payload.get("root")
+   or None` so a caller that supplies a project `root` (and no explicit `cwd`) gets its
+   command anchored there by default, matching REQ-1's root concept without importing the
+   path-jail helper (no writes happen in this tool to jail).
+3. Wrap the `subprocess.Popen(...)` call in `execute()` in a `try`/`except Exception` that
+   returns a structured, honest failure observation (`exitCode: None`, an `error` field, a
+   descriptive `stderr`) instead of letting a bad `cwd` or unresolvable command raise
+   uncaught — the timeout/tree-kill path already returns structured results, this closes the
+   same contract for process-start failures.
+4. Add `tests/test_ext037_gated_exec.py` (offline, no network, no real destructive ops)
+   covering: a fast safe in-root command succeeds with a structured stdout/exit-code
+   observation and `cwd` defaulting to a supplied `root`; a short `time.sleep` command
+   exceeding a short `timeout_s` is killed cleanly with an honest `timedOut` result; a
+   destructive command (`rm -rf ...`) and an egress command (`curl ...`) are each rejected
+   by `validate()` by default, the override is NOT default-on (only literal `allow_unsafe:
+   True` opts in, tested with a harmless `echo` stand-in so nothing unsafe is ever actually
+   run), and `execute()` never raises for a bad `cwd`/nonexistent command (returns a
+   structured error observation instead).
+5. Run `python -m pytest tests/ -q` to confirm the full suite is green (baseline 1408
+   passed, 1 skipped, plus the new REQ-2 tests) with no regression to the existing EXT-001
+   `shell.exec` tests (timeout, denylist, output-capture).
+
+#### Implements
+- [REQ-2] Gated host CLI execution — run commands as a deterministic, safeguarded tool

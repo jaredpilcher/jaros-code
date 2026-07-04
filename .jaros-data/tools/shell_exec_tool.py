@@ -83,17 +83,32 @@ class ShellExecTool:
         command = payload.get("command")
         if not command or not isinstance(command, (str, list)):
             return ValidationResult.reject("shell.exec requires a non-empty 'command' (str or list)")
-        hit = _denied(command)
-        if hit is not None:
-            return ValidationResult.reject(
-                f"shell.exec refused unsafe command (matched {hit!r}): "
-                "no network egress / destructive / privilege-escalating commands allowed")
+        # #EXT-037-REQ-2 Start
+        # Explicit, per-command, opt-in override of the denylist gate below (EXT-037 / REQ-2).
+        # NEVER default-on: only an explicit `allow_unsafe: true` in THIS decision's payload
+        # skips the check, and only for this one command. This is a safety-net denylist, not a
+        # full sandbox -- it catches the common destructive/egress patterns by regex, honestly
+        # documented as heuristic (a determined caller with allow_unsafe could still do harm).
+        allow_unsafe = payload.get("allow_unsafe") is True
+        if not allow_unsafe:
+            hit = _denied(command)
+            if hit is not None:
+                return ValidationResult.reject(
+                    f"shell.exec refused unsafe command (matched {hit!r}): "
+                    "no network egress / destructive / privilege-escalating commands allowed "
+                    "by default; pass allow_unsafe=true to override this specific command")
         return ValidationResult.accept(decision)
+        # #EXT-037-REQ-2 End
 
     def execute(self, decision, **collaborators) -> dict:
         payload = decision.payload
         command = payload["command"]
-        cwd = payload.get("cwd") or None
+        # #EXT-037-REQ-2 Start
+        # cwd defaults to a supplied project 'root' (REQ-2) when the caller doesn't pass an
+        # explicit 'cwd' -- mirrors the root-jail concept from REQ-1 without importing it (no
+        # writes happen here to jail; this only anchors the working directory).
+        cwd = payload.get("cwd") or payload.get("root") or None
+        # #EXT-037-REQ-2 End
         timeout = int(payload.get("timeout_s", _DEFAULT_TIMEOUT_S))
         use_shell = isinstance(command, str)
         # Popen (not subprocess.run) so we can kill the whole TREE on timeout — run() leaves
@@ -102,7 +117,23 @@ class ShellExecTool:
                             stderr=subprocess.PIPE, text=True)
         if sys.platform != "win32":
             popen_kwargs["start_new_session"] = True  # own process group, so killpg reaches kids
-        proc = subprocess.Popen(command, **popen_kwargs)
+        # #EXT-037-REQ-2 Start
+        # Never raise uncaught (PRIME-001 Tenet 3, honest observations only): a bad cwd or an
+        # unresolvable command must come back as a structured, honest failure observation, not
+        # an exception that would break the two-plane contract.
+        try:
+            proc = subprocess.Popen(command, **popen_kwargs)
+        except Exception as exc:
+            return {
+                "tool": self.NAME,
+                "command": command,
+                "exitCode": None,
+                "stdout": "",
+                "stderr": f"shell.exec failed to start: {exc}",
+                "timedOut": False,
+                "error": str(exc),
+            }
+        # #EXT-037-REQ-2 End
         try:
             out, err = proc.communicate(timeout=timeout)
             return {
