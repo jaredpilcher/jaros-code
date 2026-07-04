@@ -9,8 +9,14 @@ implementation:
   - .jaros-data/tools/apply_patch_tool.py
   - .jaros-data/tools/search_replace_tool.py
   - .jaros-data/tools/shell_exec_tool.py
+  - .jaros-data/tools/_envtools.py
+  - .jaros-data/tools/python_detect_tool.py
+  - .jaros-data/tools/venv_create_tool.py
+  - .jaros-data/tools/venv_install_tool.py
+  - .jaros-data/tools/venv_pin_tool.py
   - tests/test_ext037_pathjail.py
   - tests/test_ext037_gated_exec.py
+  - tests/test_ext037_env_tools.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -92,16 +98,33 @@ it. This is documented in the tool's own code comments, not hidden.
 - [x] cwd defaults to the project root; output captured + returned as a structured observation; exit code honest
 - [x] Proven by offline tests (fast in-root commands succeed; a blocked/hanging command is handled without harm)
 
-### [REQ-3] Environment tools — Python + virtualenv + dependencies  (uncovered)
+### [REQ-3] Environment tools — Python + virtualenv + dependencies  (covered)
 
 The product must set up a runnable, dependency-complete environment: detect/ensure Python, create + manage a
 virtual environment (venv) in the project root, install + pin dependencies (pip) into that venv. Each a
 deterministic gated tool; writes (the venv, a requirements file) live in root.
 
+**HONEST STATUS (Tenet 3, TASK-4):** four new Jaros tools land this requirement, all sharing the existing
+`path_jail`/`path_escape_reason` root-jail choke point (REQ-1) for every write: `env.python_detect` (read-only,
+probes the available interpreter(s) + version), `env.venv_create` (creates a real stdlib `venv` inside a
+root-jailed path, `with_pip=True` via `ensurepip` — offline, no network), `env.venv_install` (installs into the
+venv's OWN python only; `validate()` refuses any global/system-scope pip flag — `--user`/`--target`/`--prefix`/
+`--system`/`--global`/`--root`/`--break-system-packages` — and refuses to run at all against a not-yet-created
+venv unless the caller passes `dry_run: true`), and `env.venv_pin` (writes a root-jailed requirements file, by
+default from the venv's own offline `pip freeze`, or from an explicit `packages` list). A new `_envtools.py`
+helper holds the shared cross-platform venv-python path lookup and the global-install-flag denylist.
+**Honest limitation:** the offline test suite exercises `env.venv_install` via `dry_run: true` rather than a
+real PyPI install (per the no-network test constraint) — it proves the exact venv-scoped `pip install` command
+is constructed and that `validate()` blocks a global-scope flag / a missing-venv target; the real (non-dry-run)
+install path is unchanged code but is not network-exercised in CI. `env.venv_pin`'s freeze mode IS exercised for
+real (offline `pip freeze` against a genuinely created venv), so "record/pin deps" is proven end-to-end.
+
 #### Acceptance Criteria
-- [ ] Tools to: detect Python, create a project-root venv, install a dependency into it, record/pin deps
-- [ ] No global-system mutation without an explicit gate; the venv + reqs are root-scoped
-- [ ] Proven by an offline/gated test (create a venv in a temp root, install a trivial dep, verify)
+- [x] Tools to: detect Python, create a project-root venv, install a dependency into it, record/pin deps
+- [x] No global-system mutation without an explicit gate; the venv + reqs are root-scoped
+- [x] Proven by an offline/gated test (create a venv in a temp root, install a trivial dep, verify) — the
+  install step is proven via a `dry_run` command-construction + validate()-gate test (no real PyPI network
+  call in the hermetic suite, honestly noted above); venv creation and requirements pinning are proven for real
 
 ### [REQ-4] Git tools — version the work like Claude Code  (uncovered)
 

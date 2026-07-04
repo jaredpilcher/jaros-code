@@ -137,3 +137,71 @@ hardens `execute()` so it never raises uncaught on a bad `cwd`/unresolvable comm
 
 #### Implements
 - [REQ-2] Gated host CLI execution — run commands as a deterministic, safeguarded tool
+
+### [TASK-4] Environment tools — python/venv/deps (REQ-3)
+
+Add the missing environment-setup capability so the product can hand back a RUNNABLE,
+dependency-complete project, not just source: four deterministic Jaros tools (Python
+detection, project-root venv creation, venv-scoped dependency install, and requirements
+pinning), all sharing the existing `path_jail`/`path_escape_reason` choke point (REQ-1)
+for every write (the venv directory, the requirements file) so they inherit the same
+root-jail containment as `write_file`/`apply_patch`/`search_replace`, plus a new
+`_envtools.py` helper (underscore-prefixed, skipped by the tool loader) for the
+cross-platform venv-python path and the global-install-flag denylist.
+
+#### Steps
+1. Add `.jaros-data/tools/_envtools.py`: `venv_python_path(venv_dir) -> str` (returns
+   `<venv>/Scripts/python.exe` on Windows, `<venv>/bin/python` on POSIX — the expected
+   path, not required to exist yet) and `global_install_flag(args: list[str]) -> str |
+   None` (returns the first disallowed global-scope pip flag — `--user`, `--target`,
+   `--prefix`, `--system`, `--global`, `--root`, `--break-system-packages` — found in
+   `args`, or `None`).
+2. Add `.jaros-data/tools/python_detect_tool.py` (`env.python_detect`): read-only —
+   `validate()` always accepts (nothing to gate for a detection). `execute()` probes a
+   caller-supplied `candidates` list (default `[sys.executable, "python3", "python",
+   "py"]`), resolves each via `shutil.which`/absolute check, runs `<interp> --version`
+   (bounded timeout, never raises), dedupes by real path, and returns `{found: [...],
+   primary, available}` as a structured observation.
+3. Add `.jaros-data/tools/venv_create_tool.py` (`env.venv_create`): `validate()` requires
+   a non-empty `root` that already exists as a directory, and a `venv_path` (default
+   `.venv`) that `path_escape_reason(root, venv_path)` accepts (root-jailed, mirroring
+   the existing writer tools). `execute()` resolves the jailed target via `path_jail`,
+   calls stdlib `venv.create(target, with_pip=True)` (offline — `ensurepip` bootstraps
+   from bundled wheels, no network), and returns `{venvPath, pythonPath, created,
+   pythonExists}`; never raises (wraps `venv.create` in try/except, returns a structured
+   error observation on failure).
+4. Add `.jaros-data/tools/venv_install_tool.py` (`env.venv_install`): installs into the
+   venv's OWN python only — never a system/global pip. `validate()` root-jails
+   `venv_path`, requires a non-empty `package`/`packages`, rejects a package spec that
+   looks like a flag (starts with `-`), rejects any `extra_args` entry that is a
+   global-scope pip flag (`global_install_flag`, never default-on — no flag list means
+   nothing is blocked, but nothing broadens scope either since the command is always
+   `<venv-python> -m pip install`), and rejects the whole decision if the venv's python
+   does not already exist (no silent fallback to an ambient/system interpreter) unless
+   `dry_run: true`. `execute()` builds `[venv_python, "-m", "pip", "install",
+   *extra_args, *packages]`; when `dry_run` is set (or the venv python is missing)
+   returns the constructed command WITHOUT running it (`installed: false, dryRun:
+   true`); otherwise runs it (bounded timeout, never raises) and returns exit
+   code/stdout/stderr.
+5. Add `.jaros-data/tools/venv_pin_tool.py` (`env.venv_pin`): writes a root-jailed
+   requirements file (default `requirements.txt`). Default mode runs the venv's own
+   `pip freeze` (fully offline — lists only already-installed packages, no network);
+   callers may instead supply an explicit `packages` list to skip the freeze. `execute()`
+   never raises (wraps the freeze subprocess and the file write in try/except) and
+   returns `{requirementsPath, source: "freeze"|"explicit", written, bytesWritten}`.
+6. Add `tests/test_ext037_env_tools.py` (offline, no network, mirrors the
+   `_load_tool`/`_decision` conventions of `test_ext037_gated_exec.py`) covering:
+   `env.python_detect` returns at least one interpreter with a parsable version;
+   `env.venv_create` creates a real venv in a temp root (assert the venv python file
+   exists) and its `validate()` rejects a `venv_path` escaping root (no venv created);
+   `env.venv_install`'s `validate()` rejects a global-scope `extra_args` flag and a
+   missing-venv target, and its `execute()` (via `dry_run: true`, no network) builds the
+   correct venv-scoped `-m pip install` command; `env.venv_pin` writes a root-jailed
+   `requirements.txt` from a real (offline) `pip freeze` against the created venv, and
+   its `validate()` rejects a requirements path escaping root; every tool's `execute()`
+   never raises on a bad/missing root or venv.
+7. Run `python -m pytest tests/ -q` to confirm the full suite is green (baseline 1417
+   passed, 1 skipped, plus the new REQ-3 tests) with no regression.
+
+#### Implements
+- [REQ-3] Environment tools — Python + virtualenv + dependencies
