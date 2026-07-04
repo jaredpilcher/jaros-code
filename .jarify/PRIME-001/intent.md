@@ -36,7 +36,17 @@ import-smoke pass. To do this, the product must be able to, autonomously from a 
 (a) **research the web for current, correct information — and KNOW when it must** — read the latest
 official documentation, framework/library APIs, and evolving protocols (e.g. the A2A agent
 protocol, vector-DB and datastore docs) before implementing against them, rather than guessing from
-stale training memory;
+stale training memory. **Two HARD guards bind this plane (non-negotiable — the research plane is the
+single biggest honesty attack surface):** (i) **eval-leak is HARD-DISABLED, not merely discouraged** —
+research is categorically OFF during any eval/measurement run (a global switch the eval harness forces),
+AND the allow-list categorically EXCLUDES every eval target (SWE-bench/-Live repos, issues, PRs, and any
+held-out suite's source), because those fixes are public on GitHub and ONE leaked fetch invalidates the
+number and our credibility — a skeptic will ask exactly this, so the guard must be provably airtight,
+not trust-based (Tenet 3). (ii) **fetched content is UNTRUSTED DATA, never instructions** — a doc/web
+page is quarantined as reference data and can inform the plan's facts, but the planner/agents must NEVER
+execute or obey instructions embedded in fetched text (prompt-injection via a doc page is a real vector
+now that research feeds the planner); fetched text is fenced/labeled as untrusted and stripped of any
+imperative authority before it reaches a reasoning prompt;
 (b) **set up and depend on external components** — install packages, stand up and configure the
 databases/services a system needs (from the researched docs), and wire the system to them;
 (c) **research and comprehend large, complex repositories** it is changing — build an accurate

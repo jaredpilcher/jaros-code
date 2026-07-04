@@ -467,3 +467,24 @@ the first REAL framework system built from a prompt on the local gemma at $0 AND
 the exact bar the owner set. Non-web CLI builds are byte-identical (zero regression; creation suite unaffected). NEXT on the
 real-systems roadmap: #86 external-dep/DB setup (Qdrant/Cassandra + a datastore acceptance oracle), #85 web-research plane,
 #87 repo-comprehension+planning, #89 scratch-script plane, #90 episodic memory, #91 long-horizon coherence (capstone).
+
+## ⚠️ EXTERNAL-AGENT FEEDBACK — encoded as steering discipline (2026-07-04)
+
+A reviewing agent flagged three things; all correct, all now binding:
+1. **RESEARCH PLANE = biggest honesty attack surface.** SWE-bench-Live fixes are PUBLIC on GitHub. The eval-leak
+   guard must HARD-DISABLE research during any scored run (global switch forced by the eval harness) AND the
+   allow-list must categorically EXCLUDE every eval target (repos/issues/PRs + held-out sources) via a deterministic
+   denylist checked before each fetch — provable, not trust-based; one leaked fetch voids the number + credibility.
+   ALSO: fetched docs are UNTRUSTED INPUT — quarantine page content as data, fence/label it, strip imperative
+   authority; the planner NEVER obeys instructions embedded in a fetched page (doc-page prompt-injection is live now
+   that research feeds the planner). Both are HARD acceptance criteria on the web-research spec (task #92 gates #85).
+2. **DON'T let the headline migrate to the friendliest instrument.** The self-authored creation/modification suites
+   (creation ~83/92%, modification 15/15) SATURATE fast and are what the agent tunes against — they are the
+   FLOOR/regression-guard, NOT the headline. The credible, UN-GAMEABLE headline is the **shadow-mode parity log**
+   (the owner's real Claude Code tasks replayed against jcode — nobody can game it) + the **amortization ratio**
+   (intent instruments 5 & 6). These did NOT land in this batch — landing/refreshing them is HIGH priority (task
+   #93); until they do, report the authored-suite numbers as FLOOR, never as parity proof.
+3. **BREADTH BRAKE.** Planes (a)-(g) opened a large surface fast. The commits show COMPLETED verified slices per
+   plane (not seven half-built things), so this is a caution, not a defect — but impact×tractability ranking here is
+   the brake, and the **long-horizon coherence instrument (#91, the north-star) PULLS the roadmap**: build the
+   minimal coherence instrument SOON so it ranks which planes matter, rather than adding planes speculatively.

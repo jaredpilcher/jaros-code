@@ -36,7 +36,15 @@ act; every effect logged):
    REASONING stays on the local Jetson model ($0, Tenet 2 intact); this plane only retrieves facts. It is
    network egress, so it is **gated + observed** (allow-listed research reads; an eval-leak guard forbids ever
    fetching held-out answers — Tenet 3), and it **supersedes the old "harness makes no network calls" stance
-   for research + dependency setup only**.
+   for research + dependency setup only**. **Two enforced guards (this plane is the biggest honesty attack
+   surface):** (i) **eval-leak HARD-OFF** — the eval/measurement harness forces a global `research=disabled`
+   switch for the entire duration of any scored run, AND the allow-list categorically denies every eval target
+   (SWE-bench/-Live repos + issues + PRs, held-out suite sources); the guard is a deterministic denylist checked
+   before every fetch (provable, not trust-based) because those fixes are public and one leaked fetch voids the
+   number. (ii) **untrusted-input isolation** — fetched page content is captured as quarantined DATA, fenced +
+   labeled untrusted, and stripped of imperative authority before it reaches any reasoning prompt; the planner
+   never executes instructions found in a fetched page (doc-page prompt-injection is a live vector once research
+   feeds the planner). Both guards are acceptance criteria on the research-plane spec, not aspirations.
 3. **External-dependency + service setup.** Extend the env toolbelt (EXT-037) to actually install pinned
    packages and to **provision + configure the services/databases** a system needs (from the researched docs),
    with localhost-only binding, resource caps, and teardown — so a built system that needs Qdrant/Cassandra can
