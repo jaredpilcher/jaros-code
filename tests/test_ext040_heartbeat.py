@@ -110,6 +110,28 @@ def test_format_status_strings():
     assert "STALLED" in hb.format_status(stalled)
 
 
+class _Resp:
+    def __init__(self, text):
+        self.text = text
+
+
+class _JunkLlm:
+    """Minimal `.complete(req) -> .text` stub whose plan is unparseable, so build_system
+    beats START + PLAN then returns fast (no live model)."""
+    def complete(self, request):
+        return _Resp("not json at all")
+
+
+def test_build_system_emits_phase_beats():
+    # EXT-040 REQ-3: build_system must leave a live phase trail (not idle) even on a fast exit.
+    from harness.system_builder import build_system
+    res = build_system("build a trivial CLI", ".", llm=_JunkLlm())
+    assert res["done"] is False  # junk plan -> no build (control flow unchanged by beats)
+    st = hb.status()
+    assert st["activity"] == "build_system"
+    assert st["detail"] == "PLAN"  # got to the PLAN phase before the parse failure
+
+
 def test_never_raises_on_bad_input():
     # non-str activity / weird detail must not raise
     hb.beat(None, {"not": "a str"}, run_id=None)  # type: ignore[arg-type]

@@ -949,6 +949,22 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     ``.complete(LlmRequest) -> .text``) drives fully offline testing.
     """
     root = Path(root)
+    # #EXT-040-REQ-3 Start
+    # TASK-4: observability phase beats -- /status shows the LIVE build phase (PLAN/ASSEMBLE/
+    # SCAN/ACCEPTANCE/REPAIR/DONE) instead of "idle", so a wedged build is visible. Additive
+    # and never-raises (harness.heartbeat.beat swallows its own errors) -- it can neither
+    # change build_system's control flow/return values nor break a build.
+    import time as _time
+
+    from harness.heartbeat import beat as _hb_beat
+    _hb_start = _time.time()
+    _hb_run = f"build_system-{int(_hb_start)}"
+
+    def _beat(_phase: str) -> None:
+        _hb_beat("build_system", _phase, run_id=_hb_run, started_at=_hb_start)
+
+    _beat("START")
+    # #EXT-040-REQ-3 End
     if llm is None:
         try:
             from harness.coding_loop import build_llm
@@ -957,6 +973,7 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
             return _result(shipped=False, done=False, note=f"llm unavailable: {exc}")
 
     # 1. PLAN (REQ-1)
+    _beat("PLAN")  # #EXT-040-REQ-3
     try:
         raw = _call(llm, PLAN_PROMPT.format(spec=spec), max_tokens=PLAN_MAX_TOKENS)
     except Exception as exc:
@@ -998,6 +1015,7 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         built[name] = code
 
     # 3. ASSEMBLE
+    _beat("ASSEMBLE")  # #EXT-040-REQ-3
     try:
         root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -1022,6 +1040,7 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # DENY_ALL egress by default: a generated CLI/service acceptance run has no legitimate
     # need for network access (the owner's egress-is-gated-not-blocked design applies to a
     # future caller that explicitly supplies a looser EgressPolicy, not to this default).
+    _beat("SCAN")  # #EXT-040-REQ-3
     security_report = scan_code(built, egress_policy=EgressPolicy.DENY_ALL)
     if not security_report.ok:
         categories = sorted({v.get("category", "?") for v in security_report.violations})
@@ -1048,6 +1067,7 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # #EXT-037-REQ-8 End
 
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
+    _beat("ACCEPTANCE")  # #EXT-040-REQ-3
     # #EXT-036-REQ-22 Start
     # TASK-25: a DETECTED web service is HONESTLY HTTP-verified — never allowed to fall
     # through to the stdout-based checklist / import-only `_smoke_checklist` below, which
@@ -1104,10 +1124,12 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # feedback. Skipped entirely when already done (non-degrading, no wasted calls).
     repairs: list[dict] = []
     if unmet:
+        _beat("REPAIR")  # #EXT-040-REQ-3
         built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm)
     # #EXT-036-REQ-5 End
     # #EXT-036-REQ-4 Start
     done = not unmet
+    _beat("DONE" if done else "NOT-DONE")  # #EXT-040-REQ-3
     note = "DONE (all acceptance checks pass)" if done else "NOT DONE — unmet: " + ", ".join(unmet)
     if repairs:
         rounds = len({r["round"] for r in repairs})

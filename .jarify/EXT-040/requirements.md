@@ -56,9 +56,14 @@ Acceptance criteria:
 - [x] Honest `ok=False` (never raises) on spawn failure / non-zero exit / timeout.
 - [x] Usable as a CLI wrapper that any agent (or the watcher) runs instead of raw pytest.
 
-## [REQ-3] build_system phase beats (NOT yet built — named follow-up)
+## [REQ-3] build_system phase beats — /status shows the live build phase  (covered)
 
-Wire `harness.heartbeat.heartbeat()` into `build_system` (PLAN / VALIDATE / ASSEMBLE / SCAN /
-ACCEPTANCE / REPAIR / DONE) and `run_creation_suite` (per-task) so an autonomous build shows
-its phase in `/status` instead of `idle`. Deferred to a clean follow-up (touching
-`system_builder.py` was serialized behind an in-flight commit). No fabricated criteria here.
+`build_system` (`harness/system_builder.py`) emits additive `harness.heartbeat` phase beats
+(START / PLAN / ASSEMBLE / SCAN / ACCEPTANCE / REPAIR / DONE|NOT-DONE) anchored to one
+per-build `run_id` + `started_at`, so `/status` shows the live phase (e.g.
+`build_system - ACCEPTANCE`) instead of `idle`, and a wedged build reveals where it stuck.
+
+Acceptance criteria:
+- [x] `build_system` beats each phase; a run leaves a non-idle heartbeat trail (tested).
+- [x] Additive + never-raises: no control-flow / return-value change (the beats can't break a build).
+- [x] `run_creation_suite` per-task beats — DEFERRED (a follow-up; `build_system` phase beats already give live visibility for every build the suite runs).
