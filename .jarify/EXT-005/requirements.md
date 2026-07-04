@@ -16,6 +16,10 @@ implementation:
     ranges:
       - - 96
         - 130
+  - file: harness/amortization.py
+    ranges:
+      - - 1
+        - 205
 ---
 
 This spec serves the central, measurable promise of PRIME-001: the harness must
@@ -221,3 +225,27 @@ is caught only by measuring routed vs best-single vs oracle-per-task. The living
 - [ ] Latency is measured ON the Jetson tier (p50/p95 per command class); published latency figures are Jetson-only
 - [ ] `docs/GAP-MAP.md` row-state changes are surfaced on each full scoreboard run
 - [ ] Authored-suite (REQ-1..4) and generative (REQ-10) metrics are retained as components; their historical numbers are never rewritten
+
+### [REQ-14] Amortization-ratio telemetry instrument
+
+THE PURSUIT scoreboard instrument #5 (PRIME-001 intent): the amortization ratio shows
+how the $250 device amortizes its cost — how much VERIFIED work is REUSED (free — a
+memory/cache/flywheel hit) versus freshly COMPUTED (a live model call). A deterministic,
+self-contained, no-model-call instrument tags each serve/solve event by source
+(`MEMORY_HIT` vs `MODEL_CALL`) and computes the ratio. It is a pure MEASUREMENT
+instrument — it does not itself add caching or reuse. HONESTY (Tenet 3): jaros-code's
+verified-solution reuse is currently thin (the solution store is largely unwired), so the
+live ratio is expected to be ~0 today; the instrument's job is to make that visible, not
+to fabricate a non-zero number. Wiring real serve paths to emit events is a follow-up.
+
+#### Acceptance Criteria
+- [x] `record_event(source, *, kind=None, tokens=None, meta=None)` appends to an
+      append-only in-process event log (with an optional JSONL sink under the data dir);
+      it never raises regardless of input
+- [x] `amortization_ratio(events=None) -> dict` returns `{total, memory_hits, model_calls,
+      ratio, model_calls_avoided}` where `ratio = memory_hits/total` (0.0 when total==0,
+      never a divide error or a fabricated number)
+- [x] A `reset()`/scoped-collector isolates a measurement window for tests and per-run
+      reporting
+- [x] The instrument never calls the model and never raises on garbage/unknown source
+      values or malformed input

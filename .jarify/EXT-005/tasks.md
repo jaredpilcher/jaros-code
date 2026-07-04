@@ -266,3 +266,37 @@ Productionize it into the write-tests solve path.
 
 #### Implements
 - [REQ-13] The Pursuit scoreboard is the parity instrument (write-tests self-repair → lifts the test-gen capability, no-downside)
+
+### [TASK-9] Amortization-ratio telemetry instrument
+
+Build the standalone deterministic AMORTIZATION-RATIO instrument (PRIME-001 scoreboard instrument #5,
+REQ-14). A new, self-contained module — no model calls, no dependency on the daily-driver runner or
+other scoreboard code — that tags serve/solve events as `MEMORY_HIT` (a reused verified artifact) or
+`MODEL_CALL` (fresh inference) and computes the reuse ratio. Fully offline + test-gated.
+
+#### Steps
+1. Create `harness/amortization.py`:
+   - `record_event(source, *, kind=None, tokens=None, meta=None)` — appends `{source, kind, tokens,
+     meta, ts}` to an append-only in-process event log; also appends the same record as one JSON line
+     to an optional JSONL sink file under the data dir (best-effort, swallow I/O errors). Never raises,
+     even on a garbage/unknown `source` or malformed `meta` — unknown sources are still recorded (not
+     silently dropped) but counted separately from `MEMORY_HIT`/`MODEL_CALL` in the ratio calculation.
+   - `amortization_ratio(events=None) -> dict` — computes over the given events (or the in-process log
+     when `events=None`): `total`, `memory_hits`, `model_calls`, `ratio = memory_hits/total` (`0.0`
+     when `total==0`, no exception), and `model_calls_avoided` (= `memory_hits`). Optionally, when every
+     event carries a `tokens` value, also include a token-weighted variant. Always returns a
+     well-formed dict; never raises.
+   - `reset()` — clears the in-process event log so a fresh measurement window can start; a small
+     scoped-collector helper (context manager or class) isolates a window of recorded events without
+     disturbing any other caller's log, for use in tests and per-run reporting.
+2. Create `tests/test_amortization.py`: record a mix of `MEMORY_HIT`/`MODEL_CALL` events and assert
+   `amortization_ratio` returns the exact `total`/`memory_hits`/`model_calls`/`ratio`/
+   `model_calls_avoided`; assert `total==0` yields `ratio == 0.0` with no exception; assert `reset()`/the
+   scoped collector isolates counts across windows; assert `record_event` never raises on a garbage
+   `source` value or malformed `meta`/`tokens` input. Full `tests/` suite stays green.
+3. Do not wire `harness/amortization.py` into `system_builder.py`, `coherence_suite.py`, `cli.py`, or
+   any other harness module in this task — this task is the instrument only; wiring real serve paths
+   to emit events (so the live ratio reflects actual reuse) is an explicit follow-up task.
+
+#### Implements
+- [REQ-14] Amortization-ratio telemetry instrument
