@@ -193,6 +193,15 @@ from pathlib import Path
 from harness.secure_exec import EgressPolicy, run_sandboxed, scan_code
 # #EXT-037-REQ-7 End
 
+# #EXT-037-REQ-8 Start
+# TASK-12: deterministic, stdlib-only ADVISORY code-quality signal (REQ-8) -- answers "are we
+# checking the actual code it's writing for quality?" (previously honestly NO). ADDITIVE only:
+# never gates `done`, never refuses a build. See harness/code_quality.py for the full module.
+import dataclasses
+
+from harness.code_quality import assess_quality
+# #EXT-037-REQ-8 End
+
 # #EXT-037-REQ-1 Start
 # TASK-2: root-jail every module write this module performs directly (bypassing the
 # Decision/tool layer entirely -- `build_system`/`modify_system` write files straight to
@@ -833,15 +842,21 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
 
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
-            repairs=None, plan_repair: str = "", security=None) -> dict:
+            repairs=None, plan_repair: str = "", security=None, quality=None) -> dict:
     # #EXT-037-REQ-7 Start
     # TASK-10: `security` is an additive, backward-compatible field (default None) -- only
     # populated when the REQ-7 scan gate actually refuses a build; every other call site is
     # unchanged.
+    # #EXT-037-REQ-7 End
+    # #EXT-037-REQ-8 Start
+    # TASK-12: `quality` is likewise additive/backward-compatible (default None) -- ADVISORY
+    # only, populated on the relevant build_system return paths once modules exist and the
+    # security scan has passed; omitting it (every pre-existing caller/test) leaves the
+    # returned dict byte-compatible with before this task.
     return {"modules": modules or {}, "shipped": shipped, "done": done,
             "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or [],
-            "plan_repair": plan_repair, "security": security}
-    # #EXT-037-REQ-7 End
+            "plan_repair": plan_repair, "security": security, "quality": quality}
+    # #EXT-037-REQ-8 End
 
 
 def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
@@ -946,6 +961,15 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         )
     # #EXT-037-REQ-7 End
 
+    # #EXT-037-REQ-8 Start
+    # 3c. CODE-QUALITY SIGNAL (TASK-12/REQ-8) — computed AFTER the security scan gate has
+    # already passed (built modules exist and are cleared to run). ADVISORY ONLY: this NEVER
+    # changes `done`, never refuses the build -- a working-but-smelly build still ships/passes
+    # exactly as before this task. Computed once here and attached to every RELEVANT return
+    # path below that has `built` (both done=True and done=False paths).
+    quality = dataclasses.asdict(assess_quality(built))
+    # #EXT-037-REQ-8 End
+
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
     # #EXT-036-REQ-22 Start
     # TASK-25: a DETECTED web service is HONESTLY HTTP-verified — never allowed to fall
@@ -964,6 +988,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
                 unmet=["web service present but not HTTP-verified"],
                 note="shipped, but a web service was detected and no derivable HTTP "
                      "acceptance checks were found — not HTTP-verified",
+                # #EXT-037-REQ-8 Start
+                quality=quality,
+                # #EXT-037-REQ-8 End
             )
         try:
             http_result = serve_and_check(root, service, http_checks)
@@ -980,14 +1007,19 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
         else:
             note = "NOT DONE — web service HTTP checks failed: " + \
                 (", ".join(unmet) if unmet else (http_result.get("note") or "unknown failure"))
+        # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet,
-                        note=note, plan_repair=plan_repair)
+                        note=note, plan_repair=plan_repair, quality=quality)
+        # #EXT-037-REQ-8 End
     # #EXT-036-REQ-22 End
     checks = _derive_acceptance_checklist(spec, mods, llm)
     if not checks:
+        # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
                         unmet=["no acceptance checklist derived"],
-                        note="shipped, but no executable acceptance checklist could be derived")
+                        note="shipped, but no executable acceptance checklist could be derived",
+                        quality=quality)
+        # #EXT-037-REQ-8 End
     unmet = [c.get("name", "?") for c in checks if not _run_check(root, c)]
     # #EXT-036-REQ-4 End
     # #EXT-036-REQ-5 Start
@@ -1003,8 +1035,10 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     if repairs:
         rounds = len({r["round"] for r in repairs})
         note += f" (after {rounds} repair round(s))"
+    # #EXT-037-REQ-8 Start
     return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note,
-                    repairs=repairs, plan_repair=plan_repair)
+                    repairs=repairs, plan_repair=plan_repair, quality=quality)
+    # #EXT-037-REQ-8 End
 # #EXT-036-REQ-4 End
 
 

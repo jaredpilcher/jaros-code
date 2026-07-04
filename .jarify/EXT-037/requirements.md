@@ -37,6 +37,8 @@ implementation:
   - harness/system_suite.py
   - tests/test_ext036_suite.py
   - tests/test_ext036_server_oracle.py
+  - harness/code_quality.py
+  - tests/test_ext037_code_quality.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -388,3 +390,70 @@ a STATIC/documentation-time gate only.
   test (real FastAPI + Flask servers) still passing unchanged
 - [ ] **Follow-up (not in this task's scope):** real runtime egress ENFORCEMENT (a Linux network
   namespace or firewall rule on the Jetson/Linux deployment target) — today's gate is static-only
+
+### [REQ-8] Code-quality signal on generated systems — advisory  (covered)
+
+**Owner's open question (2026-07-04):** "are we checking the actual code it's writing for
+quality?" — before this requirement, honestly NO. REQ-7's `scan_code` gates DANGEROUS
+operations (subprocess/dynamic-exec/destructive-fs/egress) and correctly refuses a build over
+a real violation; it says nothing about ordinary code-QUALITY smells (bare excepts, swallowed
+exceptions, mutable default args, star imports, overly-long/overly-complex/deeply-nested
+functions) that are never dangerous enough to refuse a build over but are worth surfacing to a
+caller/reader. This requirement adds that complementary signal as a deterministic, ADVISORY
+field on `build_system`'s result — never a second gate.
+
+**HONEST STATUS (Tenet 3, TASK-12):** a new, standalone, PURE-STDLIB (`ast`-only — no
+`ruff`/`radon`/`pyflakes`; none are installed and none are added by this task) module
+`harness/code_quality.py` adds `assess_quality(sources: dict[str, str]) -> QualityReport`,
+deliberately mirroring `harness/secure_exec.py::scan_code`'s house pattern (never raises;
+unparseable source is recorded as a note and skipped, not a crash; accepts a single code string
+or a `{filename: code}` dict). It computes, per function, McCabe cyclomatic complexity
+(`1 + count of If/For/AsyncFor/While/ExceptHandler/With-items/BoolOp-extra-values/IfExp/
+comprehension-if/assert/match-case`, never double-counting a nested function/lambda's own
+decision points into its outer function's score), line length, and max nesting depth; and
+flags conservative structural smells (bare `except:`, `except Exception: pass` swallow,
+a mutable list/dict/set literal default argument, a star-import, an overly-long function
+(> 80 lines), a high-complexity function (CC > 15), and deep nesting (> 5 levels)) — each a
+`{category, detail, lineno, file}` dict. `QualityReport.ok` is ADVISORY: `True` unless a
+*critical* smell (`bare_except`/`swallowed_exception` — the two patterns that actively HIDE a
+bug/error, as opposed to the merely-stylistic smells) fires; it is never consulted to change
+`done` or refuse a build. Unused-import detection is deliberately OMITTED (cannot be done
+reliably from a single module's own AST without false-positiving on re-exports/`getattr` use —
+better to omit a detector than to false-positive).
+
+`harness/system_builder.py::build_system` computes `quality = dataclasses.asdict(assess_quality
+(built))` immediately AFTER the REQ-7 security scan gate has already passed (built modules exist
+and are cleared to run), and attaches it as an ADDITIVE `quality` field (via a new `quality=None`
+default kwarg on the shared `_result(...)` helper, exactly mirroring the existing `security=None`
+kwarg) on every RELEVANT return path that has `built` — both the `done=True` and the `done=False`
+acceptance-outcome paths (the web-service-not-HTTP-verified path, the web-service HTTP-verified
+path, the no-checklist-derived path, and the final checklist/repair-loop result). **This is
+advisory ONLY**: no return path's `shipped`/`done`/`unmet` computation reads or is influenced by
+`quality` in any way, and every caller that ignores the field (every pre-existing test/caller)
+sees a byte-compatible result dict except for the new `"quality"` key.
+
+#### Acceptance Criteria
+- [x] `harness/code_quality.py::assess_quality(sources)` is pure-stdlib (`ast` only, no
+  `ruff`/`radon`/`pyflakes`), never raises, and mirrors `secure_exec.py::scan_code`'s AST-walk
+  house pattern (single string or `{filename: code}` dict, unparseable source becomes a note)
+- [x] Per-function McCabe cyclomatic complexity, function length (lines), and max nesting depth
+  are computed correctly (proven by a hand-computed known-CC function) and aggregated into
+  `max_complexity`/`worst_function` across the whole scanned system
+- [x] Structural smells (bare `except:`, `except Exception: pass` swallow, mutable default arg,
+  star-import, overly-long function, high-complexity function, deep nesting) each fire on a
+  positive example and stay silent on clean code — conservative detectors, no false-positive
+  storms (unused-import detection deliberately omitted rather than risk false positives)
+- [x] `QualityReport(ok, max_complexity, worst_function, smells, per_file, notes)` — `ok` is
+  ADVISORY (True unless a critical smell fires) and is NEVER used to gate a build
+- [x] `build_system` attaches a populated `quality` field (via `_result`'s additive
+  `quality=None` default kwarg) on every relevant done=True/done=False return path that has
+  `built`, computed once, after the REQ-7 security scan gate has already passed
+- [x] **PROVEN ADVISORY, NOT A GATE:** a deliberately-smelly-but-WORKING generated system
+  (a bare `except:` around code that never actually raises) still returns `shipped=True`,
+  `done=True`, `unmet=[]` — only `quality.ok` is False and a `bare_except` smell is recorded;
+  the signal never touches `done`/`unmet`/`shipped`
+- [x] Proven by an offline test suite (`tests/test_ext037_code_quality.py`): a hand-computed
+  McCabe complexity value, every smell detector firing positive/staying silent on clean code,
+  clean code scoring empty smells + `ok=True`, `build_system`'s result carrying a `quality`
+  field, the smelly-but-working advisory-not-gating proof above, and `_result`'s omitted
+  `quality` kwarg staying byte-compatible for every pre-existing caller

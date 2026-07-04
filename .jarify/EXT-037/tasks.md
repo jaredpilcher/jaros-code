@@ -648,3 +648,52 @@ executes; this task only adds the env-scrub + resource-cap SANDBOXING of the exe
 
 #### Implements
 - [REQ-7] Secure sandboxed execution of generated code + gated egress
+
+### [TASK-12] Code-quality signal on generated systems — advisory (REQ-8)
+
+Answer the owner's open question (2026-07-04) "are we checking the actual code it's writing for
+quality?" — previously honestly NO. Add a deterministic, PURE-STDLIB (`ast`-only — no
+`ruff`/`radon`/`pyflakes`; none installed, none added) code-quality signal over a built system's
+modules, and attach it as an ADDITIVE, ADVISORY `quality` field on `build_system`'s result. This
+NEVER gates the build — a working-but-smelly system stays exactly as shipped/done as before.
+
+#### Steps
+1. Create `harness/code_quality.py` with `assess_quality(sources: dict[str, str]) ->
+   QualityReport`, mirroring `harness/secure_exec.py::scan_code`'s AST-walk house pattern
+   (never raises; a single code string or a `{filename: code}` dict; unparseable source is
+   recorded as a note and skipped, not a crash).
+2. Compute per-function McCabe cyclomatic complexity (`1 + count of If/For/AsyncFor/While/
+   ExceptHandler/With-items/BoolOp-extra-values/IfExp/comprehension-if/assert/match-case`,
+   never descending into a nested function/lambda's own body so its decision points aren't
+   double-counted into the outer function's score), function length in lines, and max nesting
+   depth; aggregate into `max_complexity`/`worst_function` across the whole scanned system.
+3. Detect conservative structural smells (each a `{category, detail, lineno, file}` dict): bare
+   `except:`; `except Exception: pass` swallow; a mutable list/dict/set literal default
+   argument; a star-import; an overly-long function (> 80 lines); a high-complexity function
+   (CC > 15); deep nesting (> 5 levels). Deliberately OMIT unused-import detection (cannot be
+   done reliably from a single module's own AST — better to omit than false-positive).
+4. Define `QualityReport(ok: bool, max_complexity: int, worst_function: str | None,
+   smells: list[dict], per_file: dict, notes: list[str])`. `ok` is ADVISORY ONLY: `True` unless
+   a *critical* smell (`bare_except`/`swallowed_exception` — the two patterns that actively HIDE
+   a bug/error) fires; it MUST NOT be used to gate a build.
+5. Wire into `harness/system_builder.py::build_system`: add a `quality=None` default kwarg to
+   the shared `_result(...)` helper (mirroring the existing `security=None` kwarg), compute
+   `quality = dataclasses.asdict(assess_quality(built))` immediately AFTER the REQ-7 security
+   scan gate has already passed (built modules exist and are cleared to run), and pass
+   `quality=quality` on every RELEVANT return path that has `built` — both `done=True` and
+   `done=False` acceptance-outcome paths. Never touch the security-scan refusal logic itself,
+   and never let `quality` influence `shipped`/`done`/`unmet` on any path.
+6. Add `tests/test_ext037_code_quality.py` covering: a hand-computed known McCabe complexity
+   value; each smell detector firing on a positive example and staying silent on clean code;
+   `assess_quality` on clean code returning empty smells + `ok=True` (and never raising on
+   garbage input); a `build_system` result carrying a populated `quality` field; the
+   load-bearing proof that a deliberately-smelly-but-WORKING generated system (a bare `except:`
+   around code that never actually raises) still returns `done=True`/`shipped=True`/`unmet=[]`
+   (advisory, not gating); and `_result`'s omitted `quality` kwarg defaulting to `None`,
+   byte-compatible for every pre-existing caller.
+7. Run `python -m pytest tests/test_ext037_code_quality.py tests/test_ext036_suite.py -q` first,
+   then the full `python -m pytest tests/ -q` synchronously in the foreground to confirm the
+   whole suite is green with no regression to any prior EXT-036/EXT-037 task's tests.
+
+#### Implements
+- [REQ-8] Code-quality signal on generated systems — advisory
