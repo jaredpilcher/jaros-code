@@ -199,6 +199,24 @@ default (120s) was too short for a 7B load and left `_current` desynced — rais
 scoped out): wire actual `build_system` routing to consult this class (needs a separate build_system-routing
 analysis) — this change is admission + catalog + profile + the timeout fix only.
 
+## ★ HOST DEV TOOLBELT — CORE FUNCTIONALLY COMPLETE (2026-07-03, EXT-037 REQ-1..4)
+
+The owner-prioritized toolbelt CORE is built + committed + honest (adversarially validated each piece):
+- **REQ-1 root-jailed FS writes** (34af5ec mechanism + 00c7185 ENFORCEMENT): `path_jail` (realpath containment,
+  rejects ../ + outside-absolute + symlink-escape) now FIRES on the 2 real write paths — the sentence→system
+  product (build/modify `_jailed_write`) + the `/agent` edit loop (`Runtime(root=cwd)`). Interactive-CLI + eval loops
+  honestly still unwired (seam ready).
+- **REQ-2 gated CLI exec** (5ce8b49): shell_exec with timeout+process-tree-kill, destructive/egress denylist
+  block-by-default, `allow_unsafe` opt-in (literal True only), cwd=root, output as inert observation.
+- **REQ-3 env tools** (4f15528): env.python_detect / venv_create / venv_install / venv_pin — root-jailed venv+reqs,
+  installs venv-scoped, global-scope flags gated. Hermetic.
+- **REQ-4 git tools** (2f4dd82): git.init/commit/status/log/diff/branch/history_update — a SECRET-GUARD enumerates
+  what would actually stage (`git status --porcelain`) and refuses .env/keys/ignored (both explicit + commit-all);
+  history-rewrite gated on literal True.
+Suite grew ~1385→1454, all green; two-plane throughout (Decision→validate()→execute()→log). REMAINING = **REQ-5
+end-to-end wiring** (the orchestrator/`/buildsystem` product path actually WIELDS the toolbelt) — the piece that
+makes it live in the product; the tools exist + are safe, the orchestration to use them is the follow-up.
+
 ## ★ HOST DEV TOOLBELT — the product must DO development on the host (owner gap, 2026-07-03)
 
 Claude-Code parity requires the prompt→system CLI to not just EMIT code but ACTUALLY DO development on the host, safely.
