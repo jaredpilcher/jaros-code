@@ -382,6 +382,86 @@ def _repair_plan_entrypoint(plan: dict) -> "tuple[dict, str | None]":
 # #EXT-036-REQ-1 End
 
 
+# #EXT-036-REQ-1 Start (TASK-36: deterministic plan-repair for dangling LOCAL imports)
+def _repair_plan_dangling_imports(plan: dict) -> "tuple[dict, str | None]":
+    """Deterministic plan-repair (TASK-36, REQ-1): fixes the MEASURED DANGLING-LOCAL-IMPORT
+    coherence defect (owner-diagnosed live, 6/6 identical draws for the notes-sqlite-cli
+    task) — a module's `imports` names a LOCAL module (e.g. ``database``) that the model
+    never added to `plan["modules"]`, so ``validate_plan`` correctly rejects the whole plan
+    with ``"imports unknown '<name>'"`` and 0 modules build. Because it is deterministic,
+    best-of-k cannot help; this ADDITIVELY repairs it by generating the missing module entry
+    instead of rejecting the plan.
+
+    For every planned module's `imports`, any entry that is NEITHER already a listed module
+    name NOR a standard-library top-level name (``sys.stdlib_module_names``, dotted-safe —
+    the same exemption `validate_plan`'s TASK-34 fix applies) is a genuinely-dangling LOCAL
+    reference. A new module entry is ADDED for it (never renaming/removing anything the
+    model planned): its ``name`` matches the ``.py`` convention the plan already uses for
+    other modules (appends ``.py`` when the bare import lacks it), with a minimal
+    non-empty ``exports`` entry so it satisfies ``validate_plan``'s export-shape checks. The
+    referencing module's own dangling `imports` entry is then pointed at that exact new
+    name (unambiguous — nothing else could satisfy that reference) so the import resolves
+    for ``validate_plan``'s "imports unknown" check without inventing/guessing behavior.
+
+    Returns ``(plan, note)`` — ``note`` is ``None`` when no repair was made (already
+    coherent, no dangling local imports, or nothing safe to repair), else a short
+    human-readable description for traceability/honesty. Never raises. Only ADDS module
+    entries for genuinely-dangling LOCAL imports — stdlib/third-party imports (already
+    exempt in `validate_plan`) and imports that already resolve to a listed module are left
+    completely untouched, so a coherent plan is a no-op (idempotent: re-running on an
+    already-repaired plan changes nothing further)."""
+    if not isinstance(plan, dict):
+        return plan, None
+    mods = plan.get("modules")
+    if not isinstance(mods, list) or not mods:
+        return plan, None
+    names = [m.get("name") for m in mods if isinstance(m, dict)]
+    added: list[dict] = []
+    added_names: set[str] = set()
+    notes: list[str] = []
+    for m in mods:
+        if not isinstance(m, dict):
+            continue
+        imports = m.get("imports")
+        if not isinstance(imports, list):
+            continue
+        new_imports: list = []
+        changed = False
+        for imp in imports:
+            if not isinstance(imp, str) or not imp or imp in names or imp in added_names:
+                new_imports.append(imp)
+                continue
+            top_level = imp.split(".")[0]
+            if top_level in sys.stdlib_module_names:
+                new_imports.append(imp)
+                continue
+            # Genuinely-dangling LOCAL import -> add a module entry for it.
+            new_name = imp if imp.endswith(".py") else f"{imp}.py"
+            if new_name not in added_names and new_name not in names:
+                stem = new_name[:-3] if new_name.endswith(".py") else new_name
+                sym = stem if _IDENT_RE.match(stem) else "run"
+                added.append({
+                    "name": new_name,
+                    "responsibility": f"provide '{imp}', used by other modules",
+                    "exports": [{"name": sym, "signature": f"def {sym}():"}],
+                    "imports": [],
+                })
+                added_names.add(new_name)
+                notes.append(
+                    f"plan-repair: added missing local module {new_name} "
+                    f"(dangling import '{imp}' in {m.get('name')})"
+                )
+            new_imports.append(new_name)
+            changed = True
+        if changed:
+            m["imports"] = new_imports
+    if not added:
+        return plan, None
+    plan["modules"] = mods + added
+    return plan, "; ".join(notes)
+# #EXT-036-REQ-1 End
+
+
 # #EXT-036-REQ-3 Start
 BUILD_PROMPT = """Write the COMPLETE Python module `{name}` for this system.
 System spec: {spec}
@@ -987,7 +1067,13 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # plan isn't rejected. Never weakens validate_plan's other checks (see
     # _repair_plan_entrypoint's own multi-module conservatism).
     plan, plan_repair_note = _repair_plan_entrypoint(plan)
-    plan_repair = plan_repair_note or ""
+    # TASK-36: runs SECOND (after the entrypoint repair, while any module-count-dependent
+    # conservatism above has already had its say) so BOTH measured defects in one plan get
+    # repaired — the datastore plan trips both "imports unknown" and (sometimes)
+    # "entrypoint not listed". Additive-only; never touches a plan with no dangling local
+    # imports.
+    plan, dangling_import_note = _repair_plan_dangling_imports(plan)
+    plan_repair = "; ".join(n for n in (plan_repair_note, dangling_import_note) if n)
     # #EXT-036-REQ-1 End
     defects = validate_plan(plan)
     if defects:

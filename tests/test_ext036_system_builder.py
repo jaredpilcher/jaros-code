@@ -30,6 +30,7 @@ from harness.system_builder import (
     validate_plan,
     _decompose_requirements,
     _verify_requirement,
+    _repair_plan_dangling_imports,
 )
 
 SPEC = "A tiny two-module system: a helper module that adds two numbers, and a CLI that prints the sum."
@@ -180,6 +181,116 @@ def test_validate_plan_accepts_valid_local_cross_module_import():
     ], "entrypoint": "a.py", "acceptance": "x"}
     defects = validate_plan(plan)
     assert not any("unknown" in d for d in defects)
+
+
+# --- TASK-36 (REQ-1): deterministic plan-repair for DANGLING LOCAL imports -------------
+# MEASURED live (2026-07-04, 6/6 identical draws): the notes-sqlite-cli task's plan
+# deterministically lists a local import (e.g. `database`) that was never added as its own
+# module -> `validate_plan` correctly rejects the whole plan ("imports unknown 'database'")
+# -> 0 modules built -> 0 accept. Deterministic (not model-variance) -> best-of-k can't help
+# -> a deterministic plan-repair is the lever, mirroring `_repair_plan_entrypoint` (TASK-19).
+
+DANGLING_LOCAL_IMPORT_PLAN = {
+    "modules": [
+        {"name": "cli.py", "responsibility": "CLI commands for notes",
+         "exports": [{"name": "main", "signature": "def main():"}],
+         "imports": ["database", "sqlite3"]},
+        {"name": "main.py", "responsibility": "entrypoint dispatch",
+         "exports": [{"name": "main", "signature": "def main():"}], "imports": ["cli.py"]},
+    ],
+    "entrypoint": "main.py",
+    "acceptance": "python main.py add buy milk; python main.py list shows buy milk",
+}
+
+
+def test_repair_adds_missing_module_for_dangling_local_import():
+    """(1) a module importing an unlisted LOCAL module `database` -> after repair,
+    `database.py` is a listed module and validate_plan yields NO 'imports unknown
+    database' defect."""
+    import copy
+    plan = copy.deepcopy(DANGLING_LOCAL_IMPORT_PLAN)
+    repaired, note = _repair_plan_dangling_imports(plan)
+    names = [m["name"] for m in repaired["modules"]]
+    assert "database.py" in names
+    assert note is not None and "database.py" in note
+    defects = validate_plan(repaired)
+    assert not any("unknown 'database'" in d for d in defects)
+
+
+def test_repair_leaves_stdlib_imports_untouched():
+    """(2) a plan importing sqlite3/os (stdlib) is UNCHANGED by the repair -- no bogus
+    module added, stdlib stays exempt."""
+    plan = {"modules": [
+        {"name": "a.py", "responsibility": "does stuff",
+         "exports": [{"name": "f", "signature": "def f():"}],
+         "imports": ["sqlite3", "os"]},
+    ], "entrypoint": "a.py", "acceptance": "x"}
+    import copy
+    before = copy.deepcopy(plan)
+    repaired, note = _repair_plan_dangling_imports(plan)
+    assert note is None
+    assert repaired == before
+    assert len(repaired["modules"]) == 1
+
+
+def test_repair_is_noop_on_already_coherent_plan():
+    """(3) a plan importing a genuinely-listed local module is unchanged (idempotent,
+    no-op on coherent plans)."""
+    import copy
+    plan = json.loads(PLAN_JSON)
+    before = copy.deepcopy(plan)
+    repaired, note = _repair_plan_dangling_imports(plan)
+    assert note is None
+    assert repaired == before
+    # running it again (idempotent) is still a no-op
+    repaired2, note2 = _repair_plan_dangling_imports(repaired)
+    assert note2 is None
+    assert repaired2 == before
+
+
+def test_repair_added_module_passes_validate_plan_module_shape():
+    """(4) the repaired plan actually passes validate_plan's module-shape checks
+    (exports present/well-formed) for the newly-added module."""
+    import copy
+    plan = copy.deepcopy(DANGLING_LOCAL_IMPORT_PLAN)
+    repaired, _ = _repair_plan_dangling_imports(plan)
+    added = next(m for m in repaired["modules"] if m["name"] == "database.py")
+    assert added["exports"]
+    for e in added["exports"]:
+        assert "(" in e["signature"] or "class" in e["signature"]
+    defects = validate_plan(repaired)
+    assert not any("no exports" in d for d in defects)
+    assert not any("bad signature" in d for d in defects)
+    # entrypoint/DAG/acceptance axes remain coherent too
+    assert defects == []
+
+
+def test_repair_never_raises_on_malformed_plan_shapes():
+    assert _repair_plan_dangling_imports(None) == (None, None)
+    assert _repair_plan_dangling_imports({}) == ({}, None)
+    assert _repair_plan_dangling_imports({"modules": []}) == ({"modules": []}, None)
+    assert _repair_plan_dangling_imports({"modules": "nope"}) == ({"modules": "nope"}, None)
+    assert _repair_plan_dangling_imports({"modules": [None]}) == ({"modules": [None]}, None)
+    plan = {"modules": [{"name": "a.py", "imports": "nope"}]}
+    assert _repair_plan_dangling_imports(plan) == (plan, None)
+
+
+def test_full_pipeline_repairs_dangling_import_and_ships(tmp_path):
+    """End-to-end through build_system: without the repair this plan would be REJECTED
+    ('imports unknown database') and 0 modules built. With the repair it's coherent and the
+    build proceeds to ship all THREE modules (cli.py, main.py, and the newly-added
+    database.py)."""
+    plan_json = json.dumps(DANGLING_LOCAL_IMPORT_PLAN)
+    llm = _CannedLlm(plan=plan_json,
+                      module_first={"cli.py": CLI_OK, "main.py": CLI_OK},
+                      checklist="[]")
+    result = build_system(SPEC, tmp_path / "built", llm=llm)
+
+    assert result["shipped"] is True
+    assert "coherence" not in (result.get("note") or "")
+    assert set(result["modules"]) == {"cli.py", "main.py", "database.py"}
+    assert "database.py" in result["plan_repair"]
+    assert (tmp_path / "built" / "database.py").is_file()
 
 
 def test_syntax_ok_true_for_valid_false_for_broken():

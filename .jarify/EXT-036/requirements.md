@@ -56,6 +56,19 @@ guarantees structural coherence + repairs/rejects incoherent plans.
   (`tests/test_ext036_planrepair.py`, canned llm, no live model). CAVEAT (honest scope): this fills only the ONE
   measured defect shape; a GENERAL re-plan-on-defect loop that feeds arbitrary validator defects back to the model
   for a fresh plan (the broader criterion) remains open.
+  **EXTENDED 2026-07-04 (TASK-36):** MEASURED LIVE, 6/6 identical draws — for the notes-sqlite-cli task,
+  gemma deterministically draws a 2-module plan (e.g. `cli.py` + `main.py`) where `cli.py` lists an import
+  of a LOCAL module (e.g. `database`) never added to the plan's module list, so `validate_plan` correctly
+  rejects the whole plan (`imports unknown 'database'`) — 0 modules build. Deterministic, so best-of-k
+  cannot help. `harness/system_builder.py::_repair_plan_dangling_imports`, called right after
+  `_repair_plan_entrypoint` and before the `validate_plan` gate, scans every module's `imports` and
+  ADDITIVELY generates a module entry for any import that is neither a listed local module nor stdlib
+  (`sys.stdlib_module_names`, the TASK-34 exemption) — never renaming/removing anything the model
+  planned. Proven OFFLINE (`tests/test_ext036_system_builder.py`, canned llm, no live model): the dangling
+  import is repaired and the coherence gate passes; a stdlib import is left completely untouched (no
+  bogus module); an already-coherent plan is an idempotent no-op; the added module's exports satisfy
+  `validate_plan`'s shape checks; malformed/edge-case plan shapes never raise; and an end-to-end
+  `build_system` run on the exact measured shape now SHIPS all three modules instead of being rejected.
 - [ ] Measured on a held-out set of sentences; coherence-pass rate reported honestly
 
 ### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (PARTIAL — robust derivation DONE, TASK-6; false-done in the smoke fallback for stateful CLIs closed, TASK-35)

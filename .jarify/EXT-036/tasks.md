@@ -1443,3 +1443,64 @@ broken `__main__` dispatch branch a real invocation would hit.
   prose (closes the measured gap where the smoke fallback, and an in-process
   import-based check, can both structurally miss a bug that only a real subprocess
   invocation of the declared CLI entrypoint would surface)
+
+### [TASK-36] Deterministic plan-repair: dangling LOCAL import not listed as a module (REQ-1)
+
+MEASURED live, 6/6 identical draws (2026-07-04, owner-diagnosed): for the notes-sqlite-cli
+task, gemma DETERMINISTICALLY draws a 2-module plan (e.g. `cli.py` + `main.py`, entrypoint
+`main.py`) where `cli.py` lists an import of a LOCAL module (e.g. `database`) that is NOT
+among the plan's listed modules. `validate_plan` correctly flags `cli.py: imports unknown
+'database'` and the whole plan is rejected — 0 modules build, 0 accept. Because this is
+DETERMINISTIC (not model sampling variance), best-of-k cannot help; a deterministic
+plan-repair (the same lever TASK-19 used for the mismatched-entrypoint defect) is the fix:
+generate the missing module instead of rejecting a plan that is one module short of coherent.
+
+#### Steps
+1. In `harness/system_builder.py` (REQ-1 section, alongside `validate_plan`/
+   `_repair_plan_entrypoint`), add a deterministic
+   `_repair_plan_dangling_imports(plan: dict) -> tuple[dict, str | None]`: scan every
+   planned module's `imports`; for each entry that is NEITHER already a listed module name
+   NOR a standard-library top-level name (`sys.stdlib_module_names`, top-level split — the
+   same exemption `validate_plan`'s TASK-34 fix applies, so stdlib imports are never
+   touched), ADD a new module entry to `plan["modules"]` for that missing name (filename
+   matching the `.py` convention the plan already uses for other modules — append `.py`
+   when the bare import name lacks it) with a minimal non-empty `exports` entry (a single
+   function named after the module stem, or `run` if the stem isn't a valid identifier) so
+   it satisfies `validate_plan`'s export-shape checks, and point the referencing module's
+   dangling `imports` entry at that exact new name so the reference resolves. Only ADD
+   module entries — never remove or rename anything the model planned. Return
+   `(plan, note)` — `note` is `None` when no repair was made (no dangling local imports;
+   already coherent on this axis), else a short human-readable description. Pure/
+   deterministic, no model call, idempotent (re-running on an already-repaired plan is a
+   no-op), never raises.
+2. In `build_system`, call `_repair_plan_dangling_imports(plan)` immediately AFTER
+   `_repair_plan_entrypoint(plan)` (same call site, before the `validate_plan(plan)`
+   coherence gate) — sequenced so BOTH measured defects in one plan get repaired (the
+   datastore plan can trip both "imports unknown" and, sometimes, "entrypoint not
+   listed"); running the entrypoint repair first preserves its own single-module
+   conservatism (module count is still accurate before any modules get added). Combine
+   both repair notes (joined, non-empty ones only) into the existing `plan_repair` field —
+   no new field, no change to `_result()`'s shape.
+3. Tests, extending `tests/test_ext036_system_builder.py` (OFFLINE — canned `llm`, no
+   network): (a) a plan with a module importing an unlisted LOCAL module `database` — after
+   repair, `database.py` is a listed module and `validate_plan` yields NO "imports unknown
+   'database'" defect; (b) a plan importing `sqlite3`/`os` (stdlib) is UNCHANGED by the
+   repair — no bogus module added, stdlib stays exempt; (c) a plan importing a genuinely-
+   listed local module is unchanged (idempotent, no-op on coherent plans, including
+   re-running the repair a second time); (d) the repaired plan actually passes
+   `validate_plan`'s module-shape checks (exports present/well-formed) and is fully
+   coherent; (e) never raises on malformed/edge-case plan shapes; (f) an end-to-end
+   `build_system` run on the exact measured defect shape (2-module plan, one dangling
+   local import) now SHIPS all three modules (including the newly-added one) instead of
+   being rejected with "imports unknown". Run
+   `python -m harness.run_with_heartbeat --label "ext036 plan-repair" -- python -m pytest
+   tests/test_ext036_system_builder.py -q` then the FULL
+   `python -m harness.run_with_heartbeat --label "full suite" -- python -m pytest tests/ -q`
+   synchronously in the foreground and confirm both stay green.
+
+#### Implements
+- [REQ-1] Planner: sentence -> structured, coherence-validated plan (a deterministic
+  plan-repair for the MEASURED dangling-LOCAL-import defect — fills another slice of the
+  "plan-repair loop... feed back for a coherent re-plan" acceptance criterion, alongside
+  TASK-19's entrypoint repair; a general re-plan-on-defect loop for OTHER defect classes
+  remains open)
