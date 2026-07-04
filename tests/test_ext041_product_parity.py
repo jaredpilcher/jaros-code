@@ -26,11 +26,12 @@ def test_all_rows_have_nonempty_fields():
 
 
 def test_no_row_is_inflated_to_works_today():
-    """Honesty guard (Tenet 3): as of LAST_SYNCED, GAP-MAP records no product-surface row at
-    full CC parity yet -- this pins the current honest baseline so a future accidental
-    "works" flip is a visible diff, not a silent inflation."""
+    """Honesty guard (Tenet 3): pins the current honest baseline so a future "works" flip is a
+    visible diff, not a silent inflation. Row #14 (Project-instruction memory hierarchy) is the
+    first row genuinely delivered end-to-end (EXT-042: JCODE.md project+user auto-load + /init,
+    test-covered) -- this pin was updated deliberately alongside that landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == []
+    assert works == [14]
 
 
 def test_score_aggregate_known_mix():
@@ -68,8 +69,8 @@ def test_score_all_missing_is_0_pct():
 def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
-    assert result["n_works"] == 0
-    assert result["n_partial"] + result["n_missing"] == 16
+    assert result["n_works"] == 1   # row #14 (EXT-042: JCODE.md), the first genuine "works"
+    assert result["n_partial"] + result["n_missing"] == 15
     assert 0.0 <= result["pct"] < 100.0
 
 

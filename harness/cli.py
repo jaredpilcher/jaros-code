@@ -47,6 +47,8 @@ Commands (Claude-Code-style):
   /remember <note>              save a convention/learning to project memory (.jcode/memory.md);
                                  also captures it as a durable per-repo fact for memory-agent recall (EXT-036)
   /memory                       show the project memory + the per-repo long-term fact store
+  /init                         write a starter JCODE.md from repo comprehension (EXT-042); auto-loaded
+                                 into the orchestrator/planner context every session (project + user levels)
   /locate                       run tests + pinpoint the fault to file:line:function (deepest first)
   /deadcode [path]              public symbols referenced nowhere (dead-code candidates)
   /new                          start a fresh conversational session (EXT-036)
@@ -75,16 +77,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # #EXT-036-REQ-12 Start
 def _augment_with_history(text: str, history: "list[dict] | None", project_md: str = "",
-                           memory: "list[str] | None" = None) -> str:
+                           memory: "list[str] | None" = None, jcode_md: str = "") -> str:
     """Fold a BOUNDED recent transcript into `text` as conversation context (REQ-12), preceded
-    by an optional JAROS.md ``PROJECT INSTRUCTIONS:`` preamble (REQ-17, EXT-036 TASK-2) and an
-    optional memory-agent-selected ``RELEVANT MEMORY:`` block (REQ-16, EXT-036 TASK-3). Order is
-    PROJECT INSTRUCTIONS -> RELEVANT MEMORY -> conversation history -> the request. Absent
-    history AND absent project_md AND empty memory leaves `text` byte-identical — a fresh
-    session / repo with no JAROS.md / no recalled facts behaves exactly like the old stateless
-    routing (a graceful no-op)."""
-    # #EXT-036-REQ-17 Start
+    by an optional ``JCODE.md`` preamble (EXT-042 REQ-2, already labeled by
+    ``harness.jcode_md.load_jcode_md``), an optional JAROS.md ``PROJECT INSTRUCTIONS:`` preamble
+    (REQ-17, EXT-036 TASK-2), and an optional memory-agent-selected ``RELEVANT MEMORY:`` block
+    (REQ-16, EXT-036 TASK-3). Order is JCODE.md -> PROJECT INSTRUCTIONS -> RELEVANT MEMORY ->
+    conversation history -> the request. Absent history AND absent project_md/jcode_md AND empty
+    memory leaves `text` byte-identical — a fresh session / repo with no JAROS.md/JCODE.md / no
+    recalled facts behaves exactly like the old stateless routing (a graceful no-op)."""
+    # #EXT-042-REQ-2 Start
     parts: list[str] = []
+    if jcode_md:
+        parts.append(jcode_md)
+    # #EXT-042-REQ-2 End
+    # #EXT-036-REQ-17 Start
     if project_md:
         parts.append(f"PROJECT INSTRUCTIONS:\n{project_md}")
     # #EXT-036-REQ-17 End
@@ -204,6 +211,14 @@ class JcodeCli:
         from harness.project_md import load_project_md
         self.project_md = load_project_md(".")
         # #EXT-036-REQ-17 End
+        # #EXT-042-REQ-2 Start
+        # Per-repo + per-user JCODE.md project instructions (EXT-042 REQ-2): loaded ONCE per CLI
+        # instance (mirrors the REQ-17 JAROS.md cache above) and injected into every
+        # plain-language turn via _augment_with_history. Absent JCODE.md (both tiers) -> "" ->
+        # a graceful no-op, exactly like the JAROS.md cache.
+        from harness.jcode_md import load_jcode_md
+        self.jcode_md = load_jcode_md(".")
+        # #EXT-042-REQ-2 End
         # #EXT-036-REQ-16 Start
         # Per-repo long-term fact store (REQ-16): loaded ONCE per CLI instance (mirrors the
         # REQ-17 JAROS.md cache), NOT injected wholesale — _recall_memory asks the narrow
@@ -653,6 +668,16 @@ class JcodeCli:
             out += "\n\nlong-term facts (recall-selectable):\n" + "\n".join(f"  - {f}" for f in facts)
         # #EXT-036-REQ-16 End
         return out
+
+    # #EXT-042-REQ-4 Start
+    def cmd_init(self, _arg: str) -> str:
+        """`/init` (EXT-042 REQ-3/4): write a starter JCODE.md from deterministic repo
+        comprehension (harness/repo_map.py) — Claude Code's `/init`, for jcode. Never overwrites
+        an existing JCODE.md; the loaded content only takes effect on the NEXT CLI session (this
+        instance's self.jcode_md was cached at construction, per REQ-2)."""
+        from harness.jcode_md import init_jcode_md
+        return init_jcode_md(".")
+    # #EXT-042-REQ-4 End
 
     def cmd_undo(self, _arg: str) -> str:
         """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —
@@ -1120,7 +1145,10 @@ class JcodeCli:
         # #EXT-036-REQ-12 Start
         # #EXT-036-REQ-17 Start
         # #EXT-036-REQ-16 Start
-        instruction = _augment_with_history(request, history, getattr(self, "project_md", ""), memory)
+        # #EXT-042-REQ-2 Start
+        instruction = _augment_with_history(request, history, getattr(self, "project_md", ""), memory,
+                                             getattr(self, "jcode_md", ""))
+        # #EXT-042-REQ-2 End
         # #EXT-036-REQ-16 End
         # #EXT-036-REQ-17 End
         # #EXT-036-REQ-12 End
@@ -1246,7 +1274,10 @@ class JcodeCli:
                     # #EXT-036-REQ-16 End
                     orch = self._load_agent("orchestrator_agent.py", self.llm)
                     # #EXT-036-REQ-17 Start
-                    augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory)
+                    # #EXT-042-REQ-2 Start
+                    augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory,
+                                                       getattr(self, "jcode_md", ""))
+                    # #EXT-042-REQ-2 End
                     # #EXT-036-REQ-17 End
                     [d] = orch.decide({"request": augmented, "history": history})
                     action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")

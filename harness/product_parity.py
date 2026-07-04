@@ -13,12 +13,13 @@ transcribed rows), ``score()`` (an aggregate percentage + a ranked attack list),
 
 Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no model calls. No
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
-of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when
-GAP-MAP itself records the matching CC feature as built and working end-to-end. As of
-``LAST_SYNCED``, GAP-MAP records NO product-surface row at that bar yet -- most are ``"missing"``
-(GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
-something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
-flattering one, is the entire point of the instrument.
+of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
+matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
+lever named. As of ``LAST_SYNCED``, one row (#14, EXT-042's JCODE.md instruction hierarchy)
+is genuinely ``"works"``; most others remain ``"missing"`` (GAP-MAP state ``unmeasured``) or
+``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e. something exists but the
+CC-parity feature is not yet delivered). That honest baseline, not a flattering one, is the
+entire point of the instrument.
 
 MONTHLY RE-SYNC (owner directive): Claude Code is a moving target. Re-audit the official docs
 (code.claude.com/docs: overview, cli-reference, commands/skills, hooks, memory, MCP, sub-agents,
@@ -79,11 +80,16 @@ PARITY_ROWS: "list[ProductParityRow]" = [
     ),
     ProductParityRow(
         id=14, feature="Project-instruction memory hierarchy",
-        state="partial",
-        current_state="`.jcode/memory.md` + `/remember` + episodic store exist; no auto-loaded "
-                       "per-repo instruction file, no user level, no `/init`.",
-        next_lever="`JCODE.md` convention auto-loaded into orchestrator/planner context; "
-                    "`/init` writes it from repo comprehension.",
+        state="works",
+        current_state="EXT-042: `JCODE.md` auto-loaded at project root (`<repo>/JCODE.md`) AND "
+                       "user level (`~/.jcode/JCODE.md`), injected as a labeled "
+                       "`PROJECT INSTRUCTIONS (JCODE.md)` preamble into the orchestrator/planner "
+                       "context every plain-language turn; `/init` writes a starter JCODE.md from "
+                       "repo comprehension (harness/repo_map.py), root-jailed, never clobbering an "
+                       "existing file. Coexists with `.jcode/memory.md` + `/remember` + episodic "
+                       "store (unchanged). `@path` imports not yet implemented (deferred, minor).",
+        next_lever="`@path` import expansion inside JCODE.md; optional gemma-assisted `/init` "
+                    "overview section (deterministic repo-map scaffold ships today).",
     ),
     ProductParityRow(
         id=15, feature="Custom commands / skills",
