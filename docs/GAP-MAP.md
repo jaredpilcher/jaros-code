@@ -453,3 +453,17 @@ port, poll, HTTP-request the declared endpoints, assert status+JSON, teardown (t
 the endpoints to actually respond. Frameworks are all installed (flask/fastapi/uvicorn/sqlalchemy/pandas/networkx/pydantic);
 venv_install really installs. NEXT after the oracle: wire it into build_system acceptance + modify_system; then real
 library systems (pandas/networkx) + larger external repos. This is the honest path to "builds REAL systems from a prompt".
+
+## ★★★ HONEST MILESTONE (2026-07-04, commit 65610a3): a REAL system built from a prompt AND harness-HTTP-verified end-to-end, $0
+
+The server/HTTP acceptance oracle is now WIRED into build_system (EXT-036 REQ-22/TASK-25). Re-ran the FastAPI probe
+(`.jaros-data/real_framework_probe.py`) — build_system now reports **done=True note='DONE (web service HTTP-verified:
+GET /health, GET /add?a=5&b=3, GET /add?a=100&b=-50)'**: it detected the web service, DERIVED HTTP checks from the prompt,
+STARTED the server, HIT the endpoints, and gated done on their real responses. Independent oracle confirms
+ACTUALLY_WORKS_over_HTTP=True (/health 200 {status:ok}; /add 200 {sum:5}). So the earlier HOLLOW import-smoke pass is
+CLOSED — for a detected web service, done=True now REQUIRES real endpoints responding, and a service that can't be
+HTTP-verified reports done=False (never a hollow pass; the broken-app unit-test control proves the gate is real). This is
+the first REAL framework system built from a prompt on the local gemma at $0 AND honestly verified by the harness itself —
+the exact bar the owner set. Non-web CLI builds are byte-identical (zero regression; creation suite unaffected). NEXT on the
+real-systems roadmap: #86 external-dep/DB setup (Qdrant/Cassandra + a datastore acceptance oracle), #85 web-research plane,
+#87 repo-comprehension+planning, #89 scratch-script plane, #90 episodic memory, #91 long-horizon coherence (capstone).
