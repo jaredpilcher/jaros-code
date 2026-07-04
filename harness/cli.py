@@ -37,6 +37,11 @@ Commands (Claude-Code-style):
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
+  /gitstatus                    git.status tool: working-tree status (EXT-037 host toolbelt)
+  /gitlog [n]                   git.log tool: recent commit history (default ~10)
+  /gitdiff [file]               git.diff tool: working diff, optionally scoped to one file
+  /gitbranch                    git.branch tool: list branches (current marked with '*')
+  /commit <message>             git.commit tool: stage + commit tracked changes (secret-guarded)
   /explain <function|file>      plain-English summary of what code does
   /remember <note>              save a convention/learning to project memory (.jcode/memory.md);
                                  also captures it as a durable per-repo fact for memory-agent recall (EXT-036)
@@ -658,6 +663,138 @@ class JcodeCli:
         if not out:
             return "no changes since the last /agent checkpoint"
         return "\n".join(out[:200]) + ("\n... (diff truncated)" if len(out) > 200 else "")
+
+    # #EXT-037-REQ-5 Start
+    def _git_tool(self, dtype: str, payload: dict):
+        """Dispatch a git.* Decision through a root-anchored Runtime (REQ-5: the toolbelt
+        WIELDED by the interactive CLI, the same two-plane path as
+        harness/system_finalize.py — build a real Decision, apply it through
+        Runtime(root=...), never call the tool class directly). ``root`` defaults to the
+        CLI's cwd ('.', resolved to an absolute path), mirroring how /agent's ``edit`` step
+        and /run resolve their working directory.
+
+        NEVER raises to the REPL: any gate rejection (a not-a-repo root, a bad payload, or
+        git.commit's secret/ignored-path guard refusing the whole commit) or executor
+        failure is caught here and returned as an honest error string instead — the
+        caller's handler decides how to present it, but a git failure can never produce an
+        uncaught traceback in the REPL.
+
+        Returns ``(output, None)`` on success or ``(None, error_text)`` on any failure.
+        """
+        root = payload.get("root") or os.path.abspath(".")
+        full_payload = {**payload, "root": root}
+        try:
+            from harness.coding_loop import Runtime
+            rt = Runtime(root=root)
+            out = rt.apply(self._mk(id=f"cli-{dtype}-{uuid.uuid4().hex}", source="cli",
+                                     type=dtype, payload=full_payload))
+            return out, None
+        except Exception as exc:
+            return None, str(exc)
+
+    @staticmethod
+    def _git_read_failed(out: dict) -> "str | None":
+        """For a read-only git tool's output: None if the underlying git command
+        succeeded (exitCode 0), else an honest one-line failure reason (e.g. 'not a git
+        repository') — never raises, never assumes a key is present."""
+        if not isinstance(out, dict):
+            return "git command returned no output"
+        if out.get("exitCode") == 0:
+            return None
+        return (out.get("stderr") or out.get("stdout") or "git command failed").strip() \
+            or "not a git repository"
+
+    def cmd_gitstatus(self, _arg: str) -> str:
+        """git.status tool (EXT-037 REQ-5): working-tree status of the current project
+        root — porcelain status made readable, never raises on a non-repo directory."""
+        out, err = self._git_tool("git.status", {})
+        if err:
+            return f"git status unavailable: {err}"
+        failed = self._git_read_failed(out)
+        if failed:
+            return f"git status failed: {failed}"
+        entries = out.get("entries", [])
+        if not entries:
+            return "clean (no changes)"
+        lines = [f"  {e.get('indexStatus', '?')}{e.get('worktreeStatus', '?')} {e.get('path', '')}"
+                 for e in entries]
+        return f"{len(entries)} change(s):\n" + "\n".join(lines)
+
+    def cmd_gitlog(self, arg: str) -> str:
+        """git.log tool (EXT-037 REQ-5): recent commit history (default ~10), optionally
+        an explicit count — never raises on a non-repo/empty repo (reports honestly)."""
+        arg = arg.strip()
+        payload: dict = {"max_count": 10}
+        if arg:
+            try:
+                n = int(arg)
+            except ValueError:
+                return "usage: /gitlog [n]"
+            if n <= 0:
+                return "usage: /gitlog [n]"
+            payload["max_count"] = n
+        out, err = self._git_tool("git.log", payload)
+        if err:
+            return f"git log unavailable: {err}"
+        if not out.get("hasCommits"):
+            return "(no commits yet)"
+        commits = out.get("commits", [])
+        return "\n".join(f"  {c.get('hash', '')[:10]}  {c.get('date', '')}  {c.get('subject', '')}"
+                         for c in commits)
+
+    def cmd_gitdiff(self, arg: str) -> str:
+        """git.diff tool (EXT-037 REQ-5): working diff, optionally scoped to one file —
+        never raises on a non-repo directory (reports honestly)."""
+        arg = arg.strip()
+        payload: dict = {}
+        if arg:
+            payload["paths"] = [arg]
+        out, err = self._git_tool("git.diff", payload)
+        if err:
+            return f"git diff unavailable: {err}"
+        failed = self._git_read_failed(out)
+        if failed:
+            return f"git diff failed: {failed}"
+        if not out.get("hasChanges"):
+            return "no changes"
+        return out.get("diff", "")
+
+    def cmd_gitbranch(self, _arg: str) -> str:
+        """git.branch tool (EXT-037 REQ-5): list branches, current marked with '*' — never
+        raises on a non-repo directory (reports honestly)."""
+        out, err = self._git_tool("git.branch", {"action": "list"})
+        if err:
+            return f"git branch unavailable: {err}"
+        failed = self._git_read_failed(out)
+        if failed:
+            return f"git branch failed: {failed}"
+        branches = out.get("branches", [])
+        if not branches:
+            return "(no branches yet)"
+        current = out.get("current")
+        return "\n".join(("* " if b == current else "  ") + b for b in branches)
+
+    def cmd_commit(self, arg: str) -> str:
+        """git.commit tool (EXT-037 REQ-5): stage every tracked/untracked change and commit
+        with the given message. The tool's own secret guard refuses the WHOLE commit
+        (before any host effect) if a candidate staged path looks like a secret/ignored
+        path (.env, keys, credentials, logs, __pycache__, ...) — that rejection reason is
+        surfaced honestly here, never forced through. Requires a non-empty message."""
+        message = arg.strip()
+        if not message:
+            return "usage: /commit <message>"
+        out, err = self._git_tool("git.commit", {"message": message})
+        if err:
+            return f"commit refused: {err}"
+        if not out.get("committed"):
+            commit_result = out.get("commit") if isinstance(out.get("commit"), dict) else {}
+            reason = (commit_result.get("stderr") or commit_result.get("stdout")
+                      or "commit failed").strip()
+            return f"commit failed: {reason}"
+        staged = out.get("staged", [])
+        commit_hash = (out.get("commitHash") or "")[:12]
+        return f"committed {commit_hash} ({len(staged)} file(s)): {message}"
+    # #EXT-037-REQ-5 End
 
     def cmd_explain(self, arg: str) -> str:
         """Explain a function or file in plain English — Claude-Code's 'what does this do'. For a

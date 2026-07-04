@@ -344,3 +344,51 @@ Runtime-mediated Decision, closing REQ-5's own bar end to end.
 
 #### Implements
 - [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end
+
+### [TASK-7] Interactive CLI wields the git toolbelt (REQ-5)
+
+TASK-5 built the git tools and TASK-6 wired them into the automated `/buildsystem`
+finalize step, but a REPL user still had no direct way to inspect or commit git
+state — the only place the CLI touched git was that one post-build finalize call.
+This task adds five REPL commands (`/gitstatus`, `/gitlog [n]`, `/gitdiff [file]`,
+`/gitbranch`, `/commit <message>`) to `harness/cli.py`, each dispatching the
+existing git.* Decision through a root-anchored `Runtime`, the SAME two-plane path
+`harness/system_finalize.py` already uses — no new tool logic, purely a new caller
+of the existing REQ-4 toolbelt.
+
+#### Steps
+1. In `harness/cli.py`, add a `JcodeCli._git_tool(dtype, payload)` helper that
+   defaults `payload["root"]` to `os.path.abspath(".")` (mirroring how `/agent`'s
+   `cwd`-aware steps resolve their root), builds a Decision via
+   `self._mk(...)`, applies it through a fresh `Runtime(root=root)`, and NEVER
+   raises — any gate rejection (a not-a-repo root, git.commit's secret/ignored-path
+   guard) or executor failure is caught and returned as `(None, error_text)` instead
+   of propagating to the REPL.
+2. Add a `_git_read_failed(out)` static helper that reports an honest one-line
+   failure reason for a read-only git tool's output (`exitCode != 0`), used by the
+   read commands to detect a non-repo directory without raising.
+3. Add `cmd_gitstatus`, `cmd_gitlog`, `cmd_gitdiff`, `cmd_gitbranch` — each calls
+   `_git_tool` with the corresponding `git.status`/`git.log`/`git.diff`/
+   `git.branch` type and formats the returned observation as readable text
+   (`/gitlog` accepts an optional count argument; `/gitdiff` accepts an optional
+   file argument scoping the diff via `paths`).
+4. Add `cmd_commit` — requires a non-empty message (else returns a usage string),
+   calls `_git_tool("git.commit", {"message": message})`, and surfaces the tool's
+   secret-guard rejection reason honestly (never forces the commit through) or the
+   new commit hash + staged file count on success.
+5. Add the five new commands to the module docstring's `/help` text, grouped near
+   `/diff`/`/undo`. No explicit `dispatch()` registration needed — `dispatch()`
+   already resolves `cmd_<name>` via `getattr` reflection.
+6. Add `tests/test_ext037_cli_git.py` (offline, no network, skip-if-no-git,
+   mirrors `tests/test_ext037_git_tools.py`'s temp-repo conventions) covering: each
+   read command against a real dirty/clean temp repo; `/gitlog [n]` respecting an
+   explicit count and rejecting a non-numeric one; `/commit <msg>` growing the real
+   git log and requiring a non-empty message; a `.env` file present triggers a
+   refused/rejected commit (no new commit created); and every handler returning a
+   clean string (never raising) in a directory that is not a git repo at all.
+7. Run `python -m pytest tests/ -q` to confirm the full suite is green (baseline
+   1454 passed, 1 skipped, plus the 11 new REQ-5 CLI tests) with no regression to
+   any prior EXT-037 task's tests or the EXT-004 CLI tests.
+
+#### Implements
+- [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end
