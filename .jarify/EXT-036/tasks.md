@@ -688,3 +688,67 @@ logic (change/replace/tighten), not just append new code at the end.
   constraint-tightening, algorithm-swap, branch-addition, and cross-cutting change
   classes -- the harder, edit-precision-testing classes the requirement calls out; live
   gemma-vs-escalating measurement against the grown suite remains an open follow-up)
+
+### [TASK-21] Deterministic import smoke-gate for modify_system (REQ-14 hardening)
+
+MEASURED BUG (live multi-file-modification probe, 2026-07-03): `modify_system`'s regression
+gate (TASK-7) only re-runs the model-derived `baseline_passing` acceptance checks; those
+checks can ALL exercise only a subset of modules. Replicated case: a 2-file system
+(`statlib.py` exporting `mean`, `main.py` doing `from statlib import mean`) modified by "add
+a max subcommand" produced a `main.py` with `from statlib import max` (a name `statlib`
+never exports) -- `main.py` no longer imports AT ALL -- yet `modify_system` returned
+`applied=True, regressed=[]`, because both surviving `baseline_passing` checks only did
+`import statlib; assert statlib.mean(...)` and never imported `main` (the one check that did
+import `main` had already failed on the ORIGINAL system, so it was excluded from
+`baseline_passing`). A modification that breaks the whole system's import was silently
+accepted as "no regression" -- a false honesty signal. Fix with a DETERMINISTIC,
+model-independent import smoke-gate, additive to (never replacing) the existing
+model-derived-check regression gate.
+
+#### Steps
+1. In `harness/system_builder.py::modify_system`, right after the current system is
+   assembled onto `root` and BEFORE the modules are regenerated (around where
+   `baseline_passing` is computed), add a deterministic helper (e.g.
+   `_importable_modules(modules, root, python_exe=None) -> set[str]`) that, for each module
+   name (e.g. `statlib.py`, `main.py`), runs `[sys.executable, "-c", "import <stem>"]` with
+   `cwd=root`, a short timeout (e.g. 15s), `capture_output=True`, and treats the module as
+   importable iff `returncode == 0`. Any subprocess error (`OSError`, timeout, etc.) counts
+   that module as NOT importable -- never raises. Compute `baseline_importable =
+   _importable_modules(modules, root)` (the set of module names that import cleanly BEFORE
+   any modification).
+2. In the regression-gate step (alongside the existing `regressed` computation, after the
+   modified modules are assembled onto `root`), re-run `_importable_modules` on the
+   POST-MODIFICATION `root` and compute `import_regressed = {name for name in
+   baseline_importable if name not in post_mod_importable}` -- modules that imported cleanly
+   at baseline but no longer import after the change. A module NOT importable at baseline
+   must never appear in `import_regressed` even if it's still broken after (only
+   baseline-importable-to-now-broken counts).
+3. Trigger the EXISTING revert path (revert `changed_names` to `pre_mod` on disk via the
+   same jailed-write mechanism already used, and in the returned `modules` dict, set
+   `applied=False`) when EITHER the existing behavioral `regressed` is non-empty OR
+   `import_regressed` is non-empty. Merge `import_regressed` into the reported `regressed`
+   list so the returned `note` honestly reflects an import-breaking modification (e.g.
+   include "import-broken: <names>" in the note text). Keep the returned dict's existing keys
+   (`modules`, `applied`, `regressed`, `new_behavior_ok`, `note`) backward-compatible --
+   additive fields only.
+4. Do not weaken or remove the existing model-derived-check regression logic (TASK-7); this
+   is purely additive. `modify_system` must still never raise -- wrap all subprocess calls in
+   `try/except`.
+5. Tests (add to `tests/test_ext036_modify.py`, OFFLINE -- canned/fake llm, no live model,
+   mirroring the existing fake-llm injection pattern in that file): (a) REPRODUCE THE BUG -- a
+   2-file system (`statlib.py`/`main.py`) where an injected fake llm regenerates `main.py`
+   with a broken `from statlib import max` import; assert `modify_system` now returns
+   `applied=False`, `main.py` is REVERTED to its original content both in the returned
+   `modules` dict and on disk, and the import break is reflected in `regressed`/`note`; (b) NO
+   FALSE REVERT -- a good modification that keeps all imports working still returns
+   `applied=True` (add a 2-file happy-path test if none already covers one); (c) a module NOT
+   importable at BASELINE (a deliberately broken start system) does not, by itself, cause a
+   spurious revert when it remains not-importable after modification. Run the FULL `python -m
+   pytest tests/ -q` synchronously in the foreground and confirm it stays green at the new
+   count.
+
+#### Implements
+- [REQ-14] Modification from a sentence — evolve an existing system (hardens the
+  regression gate with a deterministic, model-independent import smoke-check so a modification
+  that breaks the whole system's import can no longer slip past `applied=True` just because the
+  surviving model-derived checks happened not to exercise the broken module)

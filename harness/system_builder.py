@@ -88,6 +88,9 @@ import json
 import os
 import py_compile
 import re
+# #EXT-036-REQ-14 Start
+import subprocess  # TASK-21: deterministic import smoke-gate (modify_system regression hardening)
+# #EXT-036-REQ-14 End
 import sys
 import tempfile
 from pathlib import Path
@@ -839,6 +842,35 @@ def _modify_result(*, modules, applied: bool, regressed=None, new_behavior_ok: b
             "new_behavior_ok": new_behavior_ok, "note": note}
 
 
+# TASK-21 (REQ-14 hardening): MEASURED BUG — the model-derived ``baseline_passing`` regression
+# gate above can miss a modification that breaks a module's IMPORT entirely, if every surviving
+# baseline check happens to exercise only a subset of modules (e.g. only the library, never the
+# entrypoint that imports it). Add a DETERMINISTIC, model-independent import smoke-gate: a
+# module is "importable" iff ``python -c "import <stem>"`` exits 0 in ``root``. This is additive
+# to (never a replacement for) the existing behavioral regression gate.
+def _importable_modules(modules: dict, root: Path, python_exe: "str | None" = None) -> set:
+    """Return the subset of ``modules`` (by name, e.g. ``"statlib.py"``) that import cleanly
+    from ``root`` right now. Deterministic, no model call. Never raises — any subprocess
+    failure (missing interpreter, timeout, OSError) conservatively counts that module as NOT
+    importable, so it can never later cause a spurious revert."""
+    exe = python_exe or sys.executable or "python"
+    importable = set()
+    for name in (modules or {}):
+        stem = Path(name).stem
+        if not stem:
+            continue
+        try:
+            proc = subprocess.run(
+                [exe, "-c", f"import {stem}"],
+                cwd=str(root), capture_output=True, timeout=15,
+            )
+            if proc.returncode == 0:
+                importable.add(name)
+        except Exception:
+            pass  # not importable — never raises
+    return importable
+
+
 def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None) -> dict:
     """Modify an EXISTING system (``modules``: ``{name: code}``) from a one-sentence change
     request, regression-gated (REQ-14). NEVER raises — any stage failure or a modification
@@ -900,6 +932,10 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     except Exception:
         baseline_checks = []
     baseline_passing = {c.get("name", "?") for c in baseline_checks if _run_check(root, c)}
+    # TASK-21 (REQ-14 hardening): a DETERMINISTIC, model-independent baseline of which modules
+    # import cleanly right now — complements the (possibly narrow) model-derived checks above,
+    # since the surviving baseline_passing checks may never happen to import every module.
+    baseline_importable = _importable_modules(modules, root)
 
     # 2. IDENTIFY + REGENERATE the targeted module(s) WITH the change.
     targets = _identify_targets(modules, mod_sentence, llm)
@@ -941,14 +977,25 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     # 4. REGRESSION GATE — re-run the baseline-passing checks; ANY regression -> REVERT.
     regressed = [c.get("name", "?") for c in baseline_checks
                  if c.get("name", "?") in baseline_passing and not _run_check(root, c)]
-    if regressed:
+    # TASK-21 (REQ-14 hardening): DETERMINISTIC import smoke-gate, additive to the behavioral
+    # regression gate above — a module that imported cleanly at baseline but no longer imports
+    # after the change is an honest regression even when no surviving model-derived check
+    # happened to exercise it (the MEASURED false-honesty-signal bug: a broken `main.py` import
+    # slipped past a checklist that only ever imported the library module).
+    post_mod_importable = _importable_modules(modules, root)
+    import_regressed = sorted(baseline_importable - post_mod_importable)
+    if regressed or import_regressed:
         for name in changed_names:
             modules[name] = pre_mod[name]
             # #EXT-037-REQ-1 Start
             _jailed_write(root, name, pre_mod[name])
             # #EXT-037-REQ-1 End
-        return _modify_result(modules=modules, applied=False, regressed=regressed,
-                               note="modification regressed existing behavior — reverted: " + ", ".join(regressed))
+        all_regressed = regressed + [n for n in import_regressed if n not in regressed]
+        note = "modification regressed existing behavior — reverted: " + ", ".join(regressed) if regressed else \
+            "modification reverted"
+        if import_regressed:
+            note += ("; " if regressed else " — ") + "import-broken: " + ", ".join(import_regressed)
+        return _modify_result(modules=modules, applied=False, regressed=all_regressed, note=note)
 
     # 5. Best-effort NEW-behavior check, derived from the mod_sentence itself.
     try:

@@ -314,7 +314,7 @@ the honest lever, and its offline core is now built.
   LIVE gemma-vs-escalating measurement run against the grown `FIRST_SLICE` suite (REQ-20), remain OPEN
   follow-ups -- this task wires the routing, it does not re-run the live measurement.
 
-### [REQ-14] Modification from a sentence — evolve an existing system  (PARTIAL — regression-gated modify_system DONE, TASK-7)
+### [REQ-14] Modification from a sentence — evolve an existing system  (PARTIAL — regression-gated modify_system DONE, TASK-7; import smoke-gate hardening DONE, TASK-21)
 
 Not just create — MODIFY an existing codebase from a sentence ("add rate-limiting to the shortener", "make the CSV
 CLI also output median"). Compose the existing edit capabilities (fix/edit/refactor/multi_file + repo-context REQ-10):
@@ -340,6 +340,24 @@ break existing behavior (regression-gated).
   regression-causing modification is reverted (asserted byte-identical to the pre-mod source, both in the returned
   dict and on disk), and unparseable model output at every stage never raises. Wired as `/modifysystem [<dir> ::]
   <sentence>` in `harness/cli.py` (operates on the last `/buildsystem` output by default, or an explicit dir).
+- [x] The regression gate must not miss an import-breaking modification just because the surviving model-derived
+  checks never happen to exercise the broken module — **DONE 2026-07-03** (TASK-21, MEASURED BUG found by a live
+  multi-file-modification probe): a 2-file system (`statlib.py`+`main.py`) modified to "add a max subcommand"
+  produced a `main.py` with `from statlib import max` (a name `statlib` never exports) — `main.py` no longer
+  imported AT ALL — yet `modify_system` returned `applied=True, regressed=[]`, because both surviving
+  `baseline_passing` checks only ever imported `statlib`, never `main` (the one check that did import `main` had
+  already failed on the ORIGINAL system and was excluded from `baseline_passing`). FIX: `harness/system_builder.py`
+  now runs a DETERMINISTIC, model-independent import smoke-gate (`_importable_modules`, a guarded
+  `python -c "import <stem>"` subprocess per module) both BEFORE modification (`baseline_importable`) and AFTER
+  assembling the modified modules; any module importable at baseline that is no longer importable
+  (`import_regressed`) triggers the SAME revert path as a behavioral regression (module(s) restored to pre-mod
+  content, disk + dict, `applied=False`), merged into the reported `regressed`/`note`. Additive to (never
+  replacing) the existing model-derived-check gate; a module NOT importable at baseline never counts, so a
+  genuinely-broken start system doesn't cause a spurious revert. Proven OFFLINE (`tests/test_ext036_modify.py`):
+  the exact reproduction above now reverts `main.py` and reports `applied=False`; a clean 2-file modification that
+  keeps every module importable still applies (no false revert); a module broken at baseline that remains broken
+  doesn't trigger a revert by itself; the helper never raises on a bad/missing root. Full `tests/` suite stays
+  green (1470 passed, 1 skipped).
 - [ ] Measured across difficulty tiers, like REQ-13 — open (this task proves the mechanism on a small canned/live
   case; a held-out difficulty-tier sweep, like REQ-13's, has not been run)
 

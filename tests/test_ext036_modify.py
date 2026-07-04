@@ -17,6 +17,7 @@ present in the prompt), and "SYNTAX ERROR" (the shared syntax-repair loop).
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -161,6 +162,131 @@ def test_out_of_range_target_name_is_ignored_never_raises(tmp_path):
     result = modify_system({"calc.py": CALC_ORIGINAL}, MOD_SENTENCE, root, llm=llm)
     assert result["applied"] is False
     assert result["modules"] == {"calc.py": CALC_ORIGINAL}
+
+
+# --- TASK-21 (REQ-14 hardening): deterministic import smoke-gate ---------------------------
+# MEASURED BUG: the model-derived baseline_passing regression gate above can miss a
+# modification that breaks a module's IMPORT entirely, if every surviving baseline check
+# happens to exercise only a SUBSET of modules — replicated here with a 2-file system
+# (statlib.py + main.py) where the baseline checklist only ever imports statlib, never main.
+
+STATLIB_ORIGINAL = "def mean(xs):\n    return sum(xs) / len(xs)\n"
+MAIN_ORIGINAL = (
+    "from statlib import mean\n\n\n"
+    "def run():\n    return mean([1, 2, 3])\n\n\n"
+    "if __name__ == '__main__':\n    print(run())\n"
+)
+# a "modification" that adds a max subcommand but imports a name statlib never exports ->
+# main.py no longer imports AT ALL.
+MAIN_BROKEN_IMPORT = (
+    "from statlib import max\n\n\n"
+    "def run():\n    return max([1, 2, 3])\n\n\n"
+    "if __name__ == '__main__':\n    print(run())\n"
+)
+# a clean modification: main.py still imports fine, behavior preserved.
+MAIN_CLEAN_MOD = (
+    "from statlib import mean\n\n\n"
+    "def run():\n    return mean([1, 2, 3, 4])\n\n\n"
+    "if __name__ == '__main__':\n    print(run())\n"
+)
+
+TWO_FILE_MOD_SENTENCE = "add a max subcommand to main.py"
+# the baseline checklist ONLY ever imports statlib (never main.py) — this is exactly the
+# measured shape that let the bug slip past the behavioral regression gate.
+TWO_FILE_BASELINE_CHECKLIST = (
+    '[{"name": "mean works", "code": "from statlib import mean\\nassert mean([1, 2, 3]) == 2\\n"}]'
+)
+
+
+class _CannedTwoFileModifyLlm:
+    """Same convention as ``_CannedModifyLlm`` but for the 2-module (statlib.py + main.py)
+    fixture used to reproduce the import-smoke-gate bug/fix."""
+
+    def __init__(self, *, target='["main.py"]', modified=MAIN_BROKEN_IMPORT,
+                 baseline_checklist=TWO_FILE_BASELINE_CHECKLIST) -> None:
+        self.target = target
+        self.modified = modified
+        self.baseline_checklist = baseline_checklist
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "MODIFICATION TARGET" in prompt:
+            return _Resp(self.target)
+        if "APPLY MODIFICATION" in prompt:
+            return _Resp(self.modified)
+        if "SYNTAX ERROR" in prompt:
+            return _Resp("")
+        if "RUNNABLE PYTHON CODE" in prompt:
+            return _Resp("[]")
+        if "ACCEPTANCE CHECKS" in prompt:
+            if TWO_FILE_MOD_SENTENCE in prompt:
+                return _Resp("[]")   # no new-behavior checklist needed for these tests
+            return _Resp(self.baseline_checklist)
+        return _Resp("")
+
+
+def test_import_breaking_modification_is_reverted_even_when_baseline_checks_never_import_it(tmp_path):
+    """REPRODUCE THE BUG: the surviving baseline check only ever imports `statlib` (never
+    `main`), so the OLD behavioral-only regression gate would have missed a modification that
+    breaks `main.py`'s import entirely. The new deterministic import smoke-gate must catch it."""
+    root = tmp_path / "sys"
+    llm = _CannedTwoFileModifyLlm(modified=MAIN_BROKEN_IMPORT)
+    result = modify_system(
+        {"statlib.py": STATLIB_ORIGINAL, "main.py": MAIN_ORIGINAL},
+        TWO_FILE_MOD_SENTENCE, root, llm=llm,
+    )
+
+    assert result["applied"] is False
+    assert "main.py" in result["regressed"]
+    # reverted to the ORIGINAL content, both in the returned dict and on disk
+    assert result["modules"]["main.py"] == MAIN_ORIGINAL
+    assert (root / "main.py").read_text() == MAIN_ORIGINAL
+    assert result["note"]
+    assert "import-broken" in result["note"].lower() or "reverted" in result["note"].lower()
+
+
+def test_clean_two_file_modification_still_applies_no_false_revert(tmp_path):
+    """NO FALSE REVERT: a modification that keeps every module importable still applies."""
+    root = tmp_path / "sys"
+    llm = _CannedTwoFileModifyLlm(modified=MAIN_CLEAN_MOD)
+    result = modify_system(
+        {"statlib.py": STATLIB_ORIGINAL, "main.py": MAIN_ORIGINAL},
+        TWO_FILE_MOD_SENTENCE, root, llm=llm,
+    )
+
+    assert result["applied"] is True
+    assert result["regressed"] == []
+    assert result["modules"]["main.py"].strip() == MAIN_CLEAN_MOD.strip()
+    assert (root / "main.py").read_text().strip() == MAIN_CLEAN_MOD.strip()
+
+
+def test_baseline_broken_module_import_does_not_cause_spurious_revert(tmp_path):
+    """A module that was ALREADY not importable at baseline (a genuinely broken start system)
+    must not, by itself, trigger a revert just because it's still not importable after —
+    only a baseline-importable -> now-broken transition counts."""
+    root = tmp_path / "sys"
+    broken_original = "this is not ) python at all (:\n"  # never importable, even at baseline
+    llm = _CannedTwoFileModifyLlm(modified=MAIN_CLEAN_MOD)
+    result = modify_system(
+        {"statlib.py": STATLIB_ORIGINAL, "main.py": MAIN_ORIGINAL, "broken.py": broken_original},
+        TWO_FILE_MOD_SENTENCE, root, llm=llm,
+    )
+
+    # the pre-existing broken module was never a target and is never importable either side —
+    # it must not, by itself, cause a revert of an otherwise-clean modification.
+    assert result["applied"] is True
+    assert result["regressed"] == []
+
+
+def test_import_smoke_gate_helper_never_raises_on_bad_input():
+    from harness.system_builder import _importable_modules
+
+    # nonexistent root -> subprocess fails -> conservatively not importable, never raises
+    assert _importable_modules({"x.py": "pass\n"}, Path("Z:/does/not/exist/at/all")) == set()
+    assert _importable_modules({}, Path(".")) == set()
+    assert _importable_modules(None, Path(".")) == set()
 
 
 def test_uses_build_llm_when_llm_is_none(tmp_path, monkeypatch):
