@@ -90,6 +90,47 @@ act; every effect logged):
         ▼
 ```
 
+## The product surface — Claude Code CLI parity checklist (owner directive, 2026-07-04)
+
+The bar is the **whole Claude Code CLI product**, researched from the official docs
+(code.claude.com/docs: overview, cli-reference, commands/skills, hooks, memory, MCP,
+sub-agents, checkpointing, settings) — not just solving capability. GAP-MAP rows #12–27
+carry the live states; the **Product-Parity Checklist** (works / partial / missing per
+feature, re-synced from the official docs MONTHLY — the target moves) is the instrument.
+Every surface lands on the two planes; the notable placements:
+
+- **Sessions (-c/-r/fork/name):** pure execution-plane — the hash-chained decision log IS
+  the transcript; continue/resume replays durable state, zero model calls (Tenet 3 makes
+  this cheap and exact where Claude Code must approximate).
+- **Headless/piping/JSON output:** a deterministic output layer over the existing one-shot
+  CLI path; stream events straight from the decision log as they commit.
+- **Instruction memory (`JCODE.md`):** an auto-loaded per-repo instruction file (+ user
+  level, + `/init` generated from repo comprehension) injected into orchestrator/planner
+  context — the CLAUDE.md analogue, distinct from the episodic store.
+- **Custom commands/skills:** `.jcode/skills/<name>.md` drop-ins registered by the
+  deterministic router; the body is a plan template the orchestrator executes through the
+  normal gated pipeline.
+- **User hooks:** consumed by the clerk at the EXISTING validate()/execute() seam
+  (PreToolUse/PostToolUse/SessionStart/Stop) — Jaros's gate is precisely the hook point;
+  hooks are user-supplied deterministic extensions, never model-side.
+- **MCP client:** each external server tool is wrapped as a **gated Jaros tool**
+  (validate() applies our safety rules to the foreign tool's proposed effects) — the
+  two-plane discipline extends over the ecosystem instead of being bypassed by it.
+- **Permissions UX:** allow/ask/deny per tool-pattern + mode cycle (plan → default →
+  accept-edits) as clerk-side config; ASK renders an interactive approval in the REPL.
+  Our existing hard gates (egress, destructive, secrets, path-jail) remain the
+  non-negotiable floor UNDER user rules.
+- **Checkpoint/rewind:** per-edit checkpoint ring on the existing snapshot tool;
+  `/rewind` restores code, conversation, or both.
+- **Interrupt-and-steer:** cooperative cancel points between plan steps (clerk checks an
+  interrupt flag; checkpoints preserve partial state).
+- **Background runs:** `jcode --bg` submits through the existing inbox/daemon;
+  attach/logs/stop read the Jaros log — the runner infra already exists, this is surface.
+- **Install/health:** `pipx`-installable package (macOS/Linux/Windows) + `/doctor`
+  running deterministic environment checks (Jetson reachable, model served, Docker, git).
+- **Multimodal input:** vision-capable roster members (Gemma e2b/e4b on the Jetson) make
+  screenshot→build a real, probe-able row — routed like any other class.
+
 ## The two planes
 
 ```text
