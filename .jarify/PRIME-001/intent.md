@@ -74,9 +74,18 @@ at the end, every requirement is traced to work that is honestly verified. This 
 **HOW it solves all of the above — the prime-directive method, applied REFLEXIVELY (owner directive,
 2026-07-04).** The product tackles a problem with the SAME disciplined method by which this directive itself is
 pursued — there is ONE method, used both to *build jaros-code* and *by jaros-code to build/modify/solve*:
-**decompose** the problem into the smallest verifiable steps; climb the **escalation ladder cheapest-rung-first**
-(prompt → decompose → plane-shift → retrieve → recall → reduce → route → train), never reaching for a heavier
-lever than the failure needs; **VERIFY, don't assume — and suspect your own harness/plan before blaming the model
+**decompose** the problem into the smallest verifiable steps; climb the **FULL escalation ladder cheapest-rung-first**
+(L0 prompt → L1 decompose → L2 plane-shift → L3 retrieve → L4 experience-recall → L5 reduce → L6 route to a fitting
+model → **L7 train a LoRA specialist → L8 train a micro-model / self-distill**, powered by the self-distillation
+flywheel — the test gate turns verified solves into free training data), never reaching for a heavier lever than the
+failure needs. **Yes — the ladder includes model FINE-TUNING (L7/L8): it is the TOP, most expensive rung, reached
+only after the cheaper rungs are honestly exhausted for a genuinely model-bound class, and it grants NO exemption
+from measurement — a trained adapter is scored on the same held-out scoreboard as everything else (Tenet 3; we have
+already measured a case where training cut held-out loss yet moved the scoreboard zero, and banked the built stack
+rather than overclaim).** At the PRODUCT level the cheap rungs (L0–L6) run inline within a build; the training rungs
+(L7/L8) are the long-horizon FLYWHEEL lever — accumulate verified data across many runs, train a specialist, the whole
+roster gets more capable over time — the mechanism by which the same $250 device grows indefinitely (design §training
+plane / flywheel). The reflexive method spans the WHOLE ladder for both levels; **VERIFY, don't assume — and suspect your own harness/plan before blaming the model
 or the environment** (raw-probe what actually happened first; a zero/absurd result is a bug in the approach until
 proven otherwise); accept only **HONEST completion** — real acceptance that exercises the real behavior, **never a
 hollow pass**, a failure reported as a failure (Tenet 3); when a grain is a judgement the model can't reliably
