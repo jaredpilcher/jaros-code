@@ -249,11 +249,18 @@
       "endLine": 156
     }
   ],
-  "REQ-20": [
+  "REQ-6": [
     {
-      "file": "harness/system_suite.py",
-      "startLine": 41,
-      "endLine": 451
+      "file": "harness/multi_tests.py",
+      "startLine": 33,
+      "endLine": 153
+    }
+  ],
+  "REQ-21": [
+    {
+      "file": "harness/modification_suite.py",
+      "startLine": 51,
+      "endLine": 738
     }
   ],
   "REQ-1": [
@@ -294,18 +301,11 @@
       "endLine": 741
     }
   ],
-  "REQ-6": [
+  "REQ-20": [
     {
-      "file": "harness/multi_tests.py",
-      "startLine": 33,
-      "endLine": 153
-    }
-  ],
-  "REQ-21": [
-    {
-      "file": "harness/modification_suite.py",
-      "startLine": 42,
-      "endLine": 561
+      "file": "harness/system_suite.py",
+      "startLine": 41,
+      "endLine": 451
     }
   ]
 }

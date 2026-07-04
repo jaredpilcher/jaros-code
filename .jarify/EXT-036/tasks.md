@@ -752,3 +752,50 @@ model-derived-check regression gate.
   regression gate with a deterministic, model-independent import smoke-check so a modification
   that breaks the whole system's import can no longer slip past `applied=True` just because the
   surviving model-derived checks happened not to exercise the broken module)
+
+### [TASK-22] Grow modification suite — multi-file modification tier (REQ-21)
+
+`FIRST_SLICE` is entirely single-file (`main.py`-only) and gemma aces it 10/10 (saturated per
+PRIME-001's ratchet). `run_modification_suite` already writes EVERY file in a task's
+`start_system` onto the temp root and drives an independent black-box CLI oracle against the
+resolved `main.py` entrypoint, so multi-file start systems already work at the framework
+level — this task is mostly DATA (a new `MULTIFILE_SLICE`) plus a docstring correction.
+
+#### Steps
+1. In `harness/modification_suite.py`, correct the `ModificationTask` and module docstrings
+   (previously implying a single-file-only convention) to note `start_system` MAY contain
+   multiple modules, always with `main.py` as the CLI entrypoint.
+2. Add `MULTIFILE_SLICE: list[ModificationTask]` (inside the existing `#EXT-036-REQ-21`
+   traceability span) with 5 hand-verified tasks: 3 on a 2-file `statlib.py`+`main.py`
+   stats-cli base (`mf-add-median-subcmd`, `mf-add-total-subcmd`, `mf-empty-guard`) and 2 on
+   a 3-file `mathlib.py`+`formatter.py`+`main.py` calculator base (`mf3-add-mul-op`,
+   `mf3-change-format`). Each `start_system` genuinely passes its own `regression_checks`
+   unmodified, and a correct implementation of its `mod_sentence` satisfies its `new_checks`
+   (Tenet 3). Fix two fixture defects caught by the suite's own no-op-rejection test: give
+   `mf-add-median-subcmd` input values where the median genuinely differs from the mean
+   (the mod sentence's literal example numbers coincidentally have median == mean), and give
+   `mf-empty-guard` a `statlib.py` variant without the pre-existing empty-input ternary guard
+   (otherwise the task's premise — "the mean path currently crashes on empty input" — is
+   already false against the unmodified fixture).
+3. Add `ALL_TASKS = FIRST_SLICE + MULTIFILE_SLICE`; keep `run_modification_suite`'s default
+   `tasks=FIRST_SLICE` unchanged (backward-compatible) — callers opt into the fuller set by
+   passing `ALL_TASKS` or `MULTIFILE_SLICE`.
+4. Add tests to `tests/test_ext036_modsuite.py`: (a) TENET-3 fixture coherence — for every
+   task in `MULTIFILE_SLICE`, write its `start_system` to a temp dir and assert the
+   unmodified system passes all its `regression_checks` (reusing
+   `harness.system_suite._run_single_check`); (b) `run_modification_suite` accepts
+   `MULTIFILE_SLICE` with a no-op `modify_fn` and rejects (`accepted=False`) every task,
+   proving the oracle isn't trivially passing; (c) every `MULTIFILE_SLICE` task has a
+   multi-file `start_system` (`len(start_system) >= 2`) with a `main.py` key; (d) a
+   hand-verified correct `modify_fn` for each of the 5 new tasks is `accepted=True` through
+   the real `run_modification_suite` oracle (proves the new_checks are honestly satisfiable,
+   not just well-shaped).
+5. Run the FULL `python -m pytest tests/ -q` and confirm it stays green at the new count.
+   Update `.jarify/EXT-036/index.json`'s `REQ-21` range(s) to the grown file's line count.
+
+#### Implements
+- [REQ-21] Parity instrument: matching sentence->system MODIFICATION classes (grows the
+  change-class coverage with a MULTI-FILE modification tier — editing a helper module, or
+  editing `main.py`'s wiring to a helper module, while a resolved-entrypoint CLI oracle checks
+  the whole system — the measured next frontier now `FIRST_SLICE` is single-file-saturated;
+  live gemma-vs-escalating measurement against the grown suite remains an open follow-up)

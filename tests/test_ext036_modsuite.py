@@ -11,9 +11,18 @@ critical case -- the SUITE'S OWN independent regression gate) without needing a 
 
 from __future__ import annotations
 
+import sys
+import tempfile
 from pathlib import Path
 
-from harness.modification_suite import FIRST_SLICE, ModificationTask, run_modification_suite
+from harness.modification_suite import (
+    ALL_TASKS,
+    FIRST_SLICE,
+    MULTIFILE_SLICE,
+    ModificationTask,
+    run_modification_suite,
+)
+from harness.system_suite import _run_single_check
 
 _SUM_CLI = (
     "import sys\n"
@@ -441,3 +450,179 @@ def test_harder_task_regression_breaking_modification_is_not_accepted():
     assert rec["new_behavior_ok"] is True  # * and / genuinely work
     assert rec["no_regression"] is False   # but '+' broke, and the oracle catches it
     assert rec["accepted"] is False        # so it is correctly rejected overall
+
+
+# --- TASK-20 GROWTH (2026-07-03): MULTIFILE_SLICE -------------------------------------------
+# ``FIRST_SLICE`` is entirely single-file (``main.py`` only); ``MULTIFILE_SLICE`` grows the
+# suite with a multi-file modification tier (a helper module imported by ``main.py``).
+
+def test_multifile_slice_fixture_coherence_regression_checks_pass_unmodified():
+    """TENET-3 FIXTURE COHERENCE (deterministic, no model): for EVERY task in
+    MULTIFILE_SLICE, the UNMODIFIED start_system must already pass ALL its regression_checks
+    -- the honesty precondition that each fixture is genuinely correct before any
+    modification is even attempted. Reuses ``_run_single_check`` exactly as the suite does."""
+    python_exe = sys.executable or "python"
+    for task in MULTIFILE_SLICE:
+        with tempfile.TemporaryDirectory(prefix="s2s_modsuite_coherence_") as tmp:
+            root = Path(tmp)
+            for fname, code in task.start_system.items():
+                (root / fname).write_text(code, encoding="utf-8", newline="\n")
+            for check in task.regression_checks:
+                assert _run_single_check(check, root, None, python_exe), (
+                    f"{task.name}: unmodified start_system failed regression check {check}"
+                )
+
+
+def test_multifile_slice_tasks_are_multi_file_with_main_entrypoint():
+    for task in MULTIFILE_SLICE:
+        assert len(task.start_system) >= 2, f"{task.name}: expected a multi-file start_system"
+        assert "main.py" in task.start_system, f"{task.name}: missing main.py entrypoint"
+
+
+def test_run_modification_suite_accepts_multifile_slice_no_op_never_trivially_passes():
+    """A no-op modify_fn (never touches root) run against MULTIFILE_SLICE must be rejected for
+    every task with at least one new_check -- proving the oracle genuinely exercises the
+    multi-file system rather than trivially passing."""
+    result = run_modification_suite(_no_op_modify_fn, tasks=MULTIFILE_SLICE)
+    assert len(result["results"]) == len(MULTIFILE_SLICE)
+    for rec in result["results"]:
+        assert rec["applied"] is False
+        assert rec["accepted"] is False
+
+
+def test_all_tasks_is_first_slice_plus_multifile_slice():
+    assert ALL_TASKS == FIRST_SLICE + MULTIFILE_SLICE
+    assert len(ALL_TASKS) == len(FIRST_SLICE) + len(MULTIFILE_SLICE)
+
+
+def _correct_multifile_modify_fn_for(name: str):
+    """A hand-verified CORRECT implementation of each MULTIFILE_SLICE mod_sentence, proving
+    the new_checks are themselves solvable/coherent (Tenet 3), mirroring
+    ``_correct_modify_fn_for`` for FIRST_SLICE above."""
+    def _stats_main_with_median():
+        return (
+            "import sys\n"
+            "from statlib import mean\n"
+            "\n"
+            "def main():\n"
+            "    args = sys.argv[1:]\n"
+            "    nums = [int(x) for x in sys.stdin.readline().split()]\n"
+            "    if args and args[0] == 'median':\n"
+            "        s = sorted(nums)\n"
+            "        m = len(s)\n"
+            "        median = s[m // 2] if m % 2 == 1 else (s[m // 2 - 1] + s[m // 2]) / 2\n"
+            "        print(median)\n"
+            "    else:\n"
+            "        print(mean(nums))\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        )
+
+    def _statlib_with_total():
+        return (
+            "def mean(nums):\n"
+            "    return sum(nums) / len(nums) if nums else 0\n"
+            "\n"
+            "def total(nums):\n"
+            "    return sum(nums)\n"
+        )
+
+    def _stats_main_with_total():
+        return (
+            "import sys\n"
+            "from statlib import mean, total\n"
+            "\n"
+            "def main():\n"
+            "    args = sys.argv[1:]\n"
+            "    nums = [int(x) for x in sys.stdin.readline().split()]\n"
+            "    if args and args[0] == 'total':\n"
+            "        print(total(nums))\n"
+            "    else:\n"
+            "        print(mean(nums))\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        )
+
+    def _stats_main_empty_guard():
+        return (
+            "import sys\n"
+            "from statlib import mean\n"
+            "\n"
+            "def main():\n"
+            "    line = sys.stdin.readline()\n"
+            "    nums = [int(x) for x in line.split()]\n"
+            "    if not nums:\n"
+            "        print(0)\n"
+            "    else:\n"
+            "        print(mean(nums))\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        )
+
+    def _mathlib_with_mul():
+        return (
+            "def add(a, b):\n"
+            "    return a + b\n"
+            "\n"
+            "def sub(a, b):\n"
+            "    return a - b\n"
+            "\n"
+            "def mul(a, b):\n"
+            "    return a * b\n"
+        )
+
+    def _calc3_main_with_mul():
+        return (
+            "import sys\n"
+            "from mathlib import add, sub, mul\n"
+            "from formatter import fmt\n"
+            "\n"
+            "def main():\n"
+            "    parts = sys.stdin.readline().split()\n"
+            "    op, a, b = parts[0], int(parts[1]), int(parts[2])\n"
+            "    if op == 'add':\n"
+            "        result = add(a, b)\n"
+            "    elif op == 'sub':\n"
+            "        result = sub(a, b)\n"
+            "    else:\n"
+            "        result = mul(a, b)\n"
+            "    print(fmt(op, result))\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        )
+
+    def _formatter_with_eq_format():
+        return (
+            "def fmt(label, value):\n"
+            "    return f'{label} = {value}'\n"
+        )
+
+    table = {
+        "mf-add-median-subcmd": {"main.py": _stats_main_with_median()},
+        "mf-add-total-subcmd": {"statlib.py": _statlib_with_total(), "main.py": _stats_main_with_total()},
+        "mf-empty-guard": {"main.py": _stats_main_empty_guard()},
+        "mf3-add-mul-op": {"mathlib.py": _mathlib_with_mul(), "main.py": _calc3_main_with_mul()},
+        "mf3-change-format": {"formatter.py": _formatter_with_eq_format()},
+    }
+    changed = table[name]
+
+    def _fn(modules, mod_sentence, root):
+        root = Path(root)
+        for fname, code in changed.items():
+            (root / fname).write_text(code, encoding="utf-8")
+        return {"modules": {**modules, **changed}, "applied": True}
+    return _fn
+
+
+def test_multifile_slice_tasks_are_internally_coherent():
+    """A straightforward CORRECT implementation of each mod_sentence satisfies BOTH the
+    new_checks and the regression_checks -- proving the fixtures + checks are genuinely
+    solvable/verifiable, not just well-shaped (Tenet 3)."""
+    for task in MULTIFILE_SLICE:
+        result = run_modification_suite(_correct_multifile_modify_fn_for(task.name), tasks=[task])
+        rec = result["results"][0]
+        assert rec["accepted"] is True, f"{task.name}: {rec}"

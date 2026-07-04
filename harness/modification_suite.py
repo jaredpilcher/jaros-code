@@ -27,6 +27,15 @@ task's honest ``accepted=False`` and the suite moves on to the next task.
 Live gemma-vs-escalating-system measurement against this suite, and growing the change-class
 coverage beyond this first slice, are explicit OUT-OF-SCOPE follow-ups for this task -- this
 module only builds the framework + a first concrete slice (2 easy / 2 medium / 1 hard).
+
+TASK-22 GROWTH (2026-07-03): ``MULTIFILE_SLICE`` grows the suite with a MULTI-FILE modification
+tier -- ``FIRST_SLICE`` is entirely single-file (``main.py``-only) and gemma aces it 10/10
+(saturated per PRIME-001's ratchet); multi-file modification (editing a helper module, or
+editing ``main.py``'s wiring to a helper module, while a resolved-entrypoint CLI oracle checks
+the whole system) is the measured next frontier and is now part of the held-out instrument.
+``ALL_TASKS = FIRST_SLICE + MULTIFILE_SLICE`` is provided for callers that want the fuller set;
+``run_modification_suite``'s default ``tasks=FIRST_SLICE`` is unchanged for backward
+compatibility.
 """
 
 from __future__ import annotations
@@ -46,10 +55,14 @@ from harness.system_suite import _run_single_check
 class ModificationTask:
     """One held-out sentence->system MODIFICATION task (REQ-21). ``start_system`` is a small,
     hand-written KNOWN-GOOD system (``{filename: code}``, always with a ``main.py`` entrypoint
-    containing an ``if __name__ == "__main__":`` block -- the same single-file CLI convention
-    ``harness/system_suite.py``'s ``FIRST_SLICE`` uses) that is written onto a fresh temp root
+    containing an ``if __name__ == "__main__":`` block) that is written onto a fresh temp root
     BEFORE the modification is attempted, so the task measures editing a FIXED known-good
     system, never a model-built one (isolating modification from creation capability).
+    ``start_system`` MAY contain more than one module (e.g. ``statlib.py`` + ``main.py``) --
+    ``run_modification_suite`` writes every file in ``start_system`` onto the temp root before
+    running ``modify_fn``, so multi-file systems work at the framework level unchanged; the
+    CLI oracle always resolves and runs ``main.py`` as the single entrypoint regardless of how
+    many supporting modules exist alongside it (see ``MULTIFILE_SLICE`` below).
 
     ``new_checks``/``regression_checks`` are each a list of ``(argv, stdin,
     expected_substring)`` black-box CLI checks, run against ``root``'s resolved entrypoint
@@ -558,4 +571,168 @@ FIRST_SLICE: "list[ModificationTask]" = [
         ],
     ),
 ]
+
+
+# --- MULTIFILE_SLICE (2026-07-03): MULTI-FILE modification tier -----------------------------
+# FIRST_SLICE above is entirely single-file (``main.py`` only) and gemma aces it 10/10
+# (saturated); real editing work is often on a system with a helper module IMPORTED by
+# main.py, and the correct change may live in the helper, in main.py's wiring, or both. Each
+# start_system here is a genuinely-correct, hand-written multi-file fixture (>= 2 modules,
+# always with ``main.py`` as the resolved CLI entrypoint) that verifiably passes its own
+# regression_checks BEFORE any modification (Tenet 3). No check depends on wall-clock timing.
+
+_STATLIB_MEAN = (
+    '"""Small stats helpers."""\n'
+    "\n"
+    "def mean(nums):\n"
+    "    return sum(nums) / len(nums) if nums else 0\n"
+)
+
+_STATS_MAIN = (
+    "import sys\n"
+    "from statlib import mean\n"
+    "\n"
+    "def main():\n"
+    "    nums = [int(x) for x in sys.stdin.readline().split()]\n"
+    "    print(mean(nums))\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_STATS_BASE_SYSTEM = {"statlib.py": _STATLIB_MEAN, "main.py": _STATS_MAIN}
+
+# A variant of statlib.py WITHOUT the empty-input guard, used only by ``mf-empty-guard``
+# below: with the guarded ``_STATLIB_MEAN`` (used by the other two stats-cli tasks), the
+# mean-of-empty-input case is already handled and the task's mod_sentence would require no
+# real change (a trivially-already-passing fixture) -- MEASURED via this suite's own
+# no-op-modify_fn test, which must reject every MULTIFILE_SLICE task.
+_STATLIB_MEAN_CRASHES_ON_EMPTY = (
+    '"""Small stats helpers."""\n'
+    "\n"
+    "def mean(nums):\n"
+    "    return sum(nums) / len(nums)\n"
+)
+
+_MATHLIB = (
+    '"""Arithmetic helpers."""\n'
+    "\n"
+    "def add(a, b):\n"
+    "    return a + b\n"
+    "\n"
+    "def sub(a, b):\n"
+    "    return a - b\n"
+)
+
+_FORMATTER = (
+    '"""Output formatting."""\n'
+    "\n"
+    "def fmt(label, value):\n"
+    "    return f\"{label}: {value}\"\n"
+)
+
+_CALC3_MAIN = (
+    "import sys\n"
+    "from mathlib import add, sub\n"
+    "from formatter import fmt\n"
+    "\n"
+    "def main():\n"
+    "    parts = sys.stdin.readline().split()\n"
+    "    op, a, b = parts[0], int(parts[1]), int(parts[2])\n"
+    "    result = add(a, b) if op == \"add\" else sub(a, b)\n"
+    "    print(fmt(op, result))\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_CALC3_BASE_SYSTEM = {"mathlib.py": _MATHLIB, "formatter.py": _FORMATTER, "main.py": _CALC3_MAIN}
+
+MULTIFILE_SLICE: "list[ModificationTask]" = [
+    ModificationTask(
+        name="mf-add-median-subcmd", cls="stats-cli", tier="medium",
+        start_system=dict(_STATS_BASE_SYSTEM),
+        mod_sentence=(
+            "Add a median feature: when run as `python main.py median` it reads the stdin "
+            "integers and prints their median (average of the two middle values if the count "
+            "is even); with no argument it still prints the mean."
+        ),
+        # NOTE: input values are chosen so the median genuinely DIFFERS from the mean (the
+        # mod_sentence's literal example numbers 1 2 3 4 / 1 2 3 4 5 coincidentally have
+        # median == mean, which would let an unmodified/no-op system trivially pass -- caught
+        # by this suite's own no-op-modify_fn test).
+        new_checks=[
+            (["median"], "1 2 3 10\n", "2.5"),      # sorted [1,2,3,10]: median=2.5, mean=4.0
+            (["median"], "1 2 3 4 100\n", "3"),     # sorted [1,2,3,4,100]: median=3, mean=22.0
+        ],
+        regression_checks=[
+            ([], "1 2 3 4\n", "2.5"),
+        ],
+    ),
+    ModificationTask(
+        name="mf-add-total-subcmd", cls="stats-cli", tier="medium",
+        start_system=dict(_STATS_BASE_SYSTEM),
+        mod_sentence=(
+            "Change statlib.py so it also provides a `total` function returning the sum of "
+            "the numbers, and make `python main.py total` print that sum; no argument still "
+            "prints the mean."
+        ),
+        new_checks=[
+            (["total"], "1 2 3\n", "6"),
+            (["total"], "10 20\n", "30"),
+        ],
+        regression_checks=[
+            ([], "1 2 3\n", "2"),
+        ],
+    ),
+    ModificationTask(
+        name="mf-empty-guard", cls="stats-cli", tier="easy",
+        start_system={"statlib.py": _STATLIB_MEAN_CRASHES_ON_EMPTY, "main.py": _STATS_MAIN},
+        mod_sentence=(
+            "Make the program robust to empty input: if stdin has no integers, print 0 "
+            "instead of crashing, for the mean path. Keep normal mean behavior unchanged."
+        ),
+        new_checks=[
+            ([], "\n", "0"),
+        ],
+        regression_checks=[
+            ([], "4 6\n", "5"),
+        ],
+    ),
+    ModificationTask(
+        name="mf3-add-mul-op", cls="calculator", tier="hard",
+        start_system=dict(_CALC3_BASE_SYSTEM),
+        mod_sentence=(
+            "Add a multiply operation: when the op (first stdin token) is `mul`, multiply "
+            "the two integers. Add a `mul` function to mathlib.py and wire it into main.py. "
+            "Keep add and sub working."
+        ),
+        new_checks=[
+            ([], "mul 4 5\n", "mul: 20"),
+        ],
+        regression_checks=[
+            ([], "add 2 3\n", "add: 5"),
+            ([], "sub 7 2\n", "sub: 5"),
+        ],
+    ),
+    ModificationTask(
+        name="mf3-change-format", cls="calculator", tier="medium",
+        start_system=dict(_CALC3_BASE_SYSTEM),
+        mod_sentence=(
+            "Change the output format so it prints the result as `<op> = <value>` (for "
+            "example `add = 5`) instead of `<op>: <value>`. This should only require editing "
+            "formatter.py."
+        ),
+        new_checks=[
+            ([], "add 2 3\n", "add = 5"),
+            ([], "sub 9 4\n", "sub = 5"),
+        ],
+        # no old-format regression check by design -- the change alters the sole output, so
+        # there is nothing PRE-EXISTING left to regress-check; new_checks alone pin correctness
+        # (see module docstring / task-source notes for the honesty rationale).
+        regression_checks=[],
+    ),
+]
+
+ALL_TASKS: "list[ModificationTask]" = FIRST_SLICE + MULTIFILE_SLICE
 # #EXT-036-REQ-21 End
