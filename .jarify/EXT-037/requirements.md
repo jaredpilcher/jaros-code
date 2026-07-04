@@ -23,7 +23,7 @@ Foundational primitives already exist as Jaros tools (`.jaros-data/tools/`: `fs_
 them (root-jail on writes, gates on exec) and (b) the MISSING capabilities (environments, git). This spec covers
 both, decomposed below. Measured end-to-end by a held-out toolbelt eval (each op has a deterministic pass/fail).
 
-### [REQ-1] Root-jailed filesystem writes — create/write/update confined to the project root  (PARTIAL — mechanism + validate()-gate landed & tested; production ENFORCEMENT pending root-threading, task #77)
+### [REQ-1] Root-jailed filesystem writes — create/write/update confined to the project root  (PARTIAL — mechanism, gate, AND enforcement landed on the two real write paths; interactive-CLI path honestly still unwired)
 
 Reads may range broadly, but every CREATE/WRITE/UPDATE effect (`write_file`, `apply_patch`, `search_replace`, and
 any future writer) MUST be confined to the project root folder. A deterministic path-jail resolves the target to an
@@ -32,13 +32,26 @@ absolute paths outside root, and symlink escape (resolve symlinks, then check co
 intent: "very limited and safeguarded write and update operations such as being limited to only the folder that
 it's in, the root folder of the project."
 
-**HONEST STATUS (Tenet 3):** the path-jail helper + the `validate()`-gate in all three writers are BUILT and TESTED —
-the jail fires **when a `root` is supplied** in the write Decision. But it is dormant in production today: NO current
-caller (the code/editor/rewriter/plan/test-writer agents) threads `root` into its `code.write_file` /
-`code.apply_patch` / `code.search_replace` Decisions, so writes are NOT yet confined in practice. Delivering the
-owner's actual ask (writes limited to the root folder) requires threading `root` from every caller — that is **task
-#77** (the enforcement half; end-to-end under REQ-5). Do NOT read the checked boxes below as "writes are already
-jailed end-to-end" — they mean the MECHANISM is proven, not that it is wired live yet.
+**HONEST STATUS (Tenet 3, updated by TASK-2):** the path-jail helper + the `validate()`-gate in all three writers
+were BUILT and TESTED first (TASK-1), then TASK-2 threaded an actual `root` into the two real write paths so the
+jail now genuinely FIRES in production:
+- **The sentence→system product surface** (`harness.system_builder.build_system`/`modify_system`, EXT-036) writes
+  module files DIRECTLY (bypassing the Decision/tool layer), so it got its own `path_jail`-backed
+  `_jailed_write` guard at every model-controlled-name write site (plan ASSEMBLE, acceptance-repair apply/revert,
+  modify assemble/regenerate/revert) — a model-authored module name that escapes the given `root` (e.g.
+  `"../../evil.py"`) is refused, no file written outside root.
+- **The Jaros-native Decision-dispatch choke point** (`harness.coding_loop.Runtime`) gained an opt-in `root`
+  (default `None`, fully backward compatible) that stamps onto every `code.write_file`/`code.apply_patch`/
+  `code.search_replace` Decision just before `validate_decision`. This is wired LIVE by the `/agent` loop's `edit`
+  step (`harness.agent_loop.execute_step`, EXT-009), where `cwd` is already the loop's authoritative project root.
+- **Honestly still UNWIRED:** the general interactive CLI's `Runtime` (`harness.cli.JcodeCli.rt`, backing
+  `/patch`, `/fix`, etc.) does NOT get a default `root=cwd` — its existing commands legitimately target paths
+  outside the process cwd today (proven by `tests/test_ext004_cli.py::test_files_and_patch_wire_those_tools`,
+  which patches a `tmp_path` file via a bare `Runtime()`), so forcing cwd-as-root there would be a regression, not
+  a fix. Any other `Runtime()` caller that does not pass `root` (SWE-bench/eval solve loops, `commit_replay`,
+  `spec_loop`, `intent_loop`, `solve_routed`, `mutation_repair_loop`/`fix_loop`) is likewise unchanged/unjailed —
+  the seam exists (`Runtime(root=...)`) for any of those to adopt when their own "project root" concept is
+  established, but none has been threaded here.
 
 #### Acceptance Criteria
 - [x] A single deterministic `path_jail(root, target) -> resolved_path | reject` helper (real-path + containment),
@@ -47,8 +60,10 @@ jailed end-to-end" — they mean the MECHANISM is proven, not that it is wired l
   `root` is supplied** — `..` escape, outside-absolute, and symlink-to-outside — proven by tests
 - [x] Legitimate in-root writes still succeed unchanged (no regression to the sentence→system build/modify path)
 - [x] Rejection is honest + logged (a rejected Decision is recorded, not silently dropped)
-- [ ] **ENFORCEMENT (task #77 / REQ-5): every real caller threads `root` so the jail actually fires in production** —
-  NOT done here; the mechanism is inert until this lands
+- [x] **ENFORCEMENT (TASK-2 / REQ-5): the sentence→system build/modify path and the `/agent` loop's `edit` step
+  (via `Runtime(root=...)`) thread an actual root so the jail fires in production for those two paths** — the
+  general interactive CLI (`JcodeCli.rt`) and the SWE-bench/eval solve loops remain honestly UNWIRED (see status
+  note above); a future task may thread `root` into those once each has an unambiguous root concept to supply
 
 ### [REQ-2] Gated host CLI execution — run commands as a deterministic, safeguarded tool  (uncovered)
 

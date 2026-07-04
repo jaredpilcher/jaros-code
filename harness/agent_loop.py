@@ -93,7 +93,15 @@ def execute_step(step: Step, cwd: str) -> tuple[bool, str]:
             {"path": str(p), "content": content, "instruction": instr, "feedback": ""})
         if d.type not in ("code.write_file", "code.apply_patch", "code.search_replace"):
             return (False, f"{agent_file.replace('_agent.py', '')} produced no edit")
-        Runtime().apply(d)                           # two-plane: the tool performs the write
+        # #EXT-037-REQ-1 Start
+        # TASK-2: `cwd` is this loop's authoritative project root (it already grounds
+        # find/read/run/fix); stamping it onto the write Decision closes the path-jail
+        # for this real interactive write path -- a plan step naming a file outside
+        # `cwd` (e.g. `"../../etc/passwd: ..."`) is now refused, not silently honored.
+        # Rejection raises RuntimeError, same as any other gate/executor refusal here
+        # (unsafe-generated-code, oversized content, ...) -- no new error-handling class.
+        Runtime(root=cwd).apply(d)                    # two-plane: the tool performs the write
+        # #EXT-037-REQ-1 End
         return (True, f"edited {fname} via {agent_file.replace('_agent.py', '')}")
     if a == "build":                                 # generative spine
         from harness.intent_loop import build_in_dir

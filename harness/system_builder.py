@@ -88,8 +88,44 @@ import json
 import os
 import py_compile
 import re
+import sys
 import tempfile
 from pathlib import Path
+
+# #EXT-037-REQ-1 Start
+# TASK-2: root-jail every module write this module performs directly (bypassing the
+# Decision/tool layer entirely -- `build_system`/`modify_system` write files straight to
+# disk by a model-chosen module NAME, so this is the product path's own choke point).
+_TOOLS_DIR = str(Path(__file__).resolve().parents[1] / ".jaros-data" / "tools")
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+try:
+    from _pathjail import PathEscapeError, path_jail  # root-jail helper (EXT-037 / REQ-1)
+except Exception:  # pragma: no cover - fail safe if helper missing
+    class PathEscapeError(Exception):  # type: ignore
+        pass
+
+    def path_jail(root, target):  # type: ignore
+        return os.path.join(root, target) if not os.path.isabs(target) else target
+
+
+def _jailed_write(root: Path, name: str, content: str) -> "str | None":
+    """Write ``content`` to module ``name`` under ``root`` iff it stays contained.
+
+    Returns ``None`` on a successful write, or a human rejection reason (NO write
+    performed) when ``name`` resolves outside ``root`` -- e.g. a model-authored plan or
+    modification naming a module ``"../../evil.py"``. Never raises."""
+    try:
+        resolved = path_jail(str(root), name)
+    except PathEscapeError as exc:
+        return str(exc)
+    try:
+        Path(resolved).parent.mkdir(parents=True, exist_ok=True)
+        Path(resolved).write_text(content, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        return str(exc)
+    return None
+# #EXT-037-REQ-1 End
 
 # #EXT-036-REQ-1 Start
 PLAN_PROMPT = """You are a software architect. Turn this one-sentence spec into a concrete build PLAN for a small Python system.
@@ -555,13 +591,12 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
                                                     max_tokens=BUILD_MAX_TOKENS))
                         syn_ok, syn_err = syntax_ok(code)
                     if syn_ok:
-                        try:
-                            (root / name).write_text(code, encoding="utf-8", newline="\n")
+                        # #EXT-037-REQ-1 Start
+                        if _jailed_write(root, name, code) is None:
                             built[name] = code
                             record["applied"] = True
                             record["module"] = name
-                        except OSError:
-                            pass
+                        # #EXT-037-REQ-1 End
                 round_repairs.append(record)
 
             new_unmet_list = [c.get("name", "?") for c in checks if not _run_check(root, c)]
@@ -576,10 +611,9 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
                     prev_code = pre_round_built.get(name)
                     if prev_code is None:
                         continue
-                    try:
-                        (root / name).write_text(prev_code, encoding="utf-8", newline="\n")
-                    except OSError:
-                        pass
+                    # #EXT-037-REQ-1 Start
+                    _jailed_write(root, name, prev_code)
+                    # #EXT-037-REQ-1 End
                     built[name] = prev_code
                 for r in round_repairs:
                     if r["applied"]:
@@ -676,11 +710,16 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # 3. ASSEMBLE
     try:
         root.mkdir(parents=True, exist_ok=True)
-        for name, code in built.items():
-            (root / name).write_text(code, encoding="utf-8", newline="\n")
     except OSError as exc:
         return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                         note=f"assembly failed: {exc}")
+    # #EXT-037-REQ-1 Start
+    for name, code in built.items():
+        escape = _jailed_write(root, name, code)
+        if escape is not None:
+            return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
+                            note=f"assembly failed: module {name!r} refused: {escape}")
+    # #EXT-037-REQ-1 End
 
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
     checks = _derive_acceptance_checklist(spec, mods, llm)
@@ -842,10 +881,15 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     # truth (a caller may pass a dict without `root` yet reflecting it).
     try:
         root.mkdir(parents=True, exist_ok=True)
-        for name, code in modules.items():
-            (root / name).write_text(code, encoding="utf-8", newline="\n")
     except OSError as exc:
         return _modify_result(modules=modules, applied=False, note=f"could not assemble current system: {exc}")
+    # #EXT-037-REQ-1 Start
+    for name, code in modules.items():
+        escape = _jailed_write(root, name, code)
+        if escape is not None:
+            return _modify_result(modules=modules, applied=False,
+                                   note=f"could not assemble current system: module {name!r} refused: {escape}")
+    # #EXT-037-REQ-1 End
 
     mods = _mods_from_code(modules)
 
@@ -880,17 +924,19 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
                                note="modification produced no syntactically valid change — no change made")
 
     # 3. ASSEMBLE the modified module(s).
-    try:
-        for name in changed_names:
-            (root / name).write_text(modules[name], encoding="utf-8", newline="\n")
-    except OSError as exc:
+    # #EXT-037-REQ-1 Start
+    _assembly_error: "str | None" = None
+    for name in changed_names:
+        escape = _jailed_write(root, name, modules[name])
+        if escape is not None:
+            _assembly_error = escape
+            break
+    if _assembly_error is not None:
         for name in changed_names:                # never leave a half-written system
             modules[name] = pre_mod[name]
-            try:
-                (root / name).write_text(pre_mod[name], encoding="utf-8", newline="\n")
-            except OSError:
-                pass
-        return _modify_result(modules=modules, applied=False, note=f"assembly failed: {exc}")
+            _jailed_write(root, name, pre_mod[name])
+        return _modify_result(modules=modules, applied=False, note=f"assembly failed: {_assembly_error}")
+    # #EXT-037-REQ-1 End
 
     # 4. REGRESSION GATE — re-run the baseline-passing checks; ANY regression -> REVERT.
     regressed = [c.get("name", "?") for c in baseline_checks
@@ -898,10 +944,9 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     if regressed:
         for name in changed_names:
             modules[name] = pre_mod[name]
-            try:
-                (root / name).write_text(pre_mod[name], encoding="utf-8", newline="\n")
-            except OSError:
-                pass
+            # #EXT-037-REQ-1 Start
+            _jailed_write(root, name, pre_mod[name])
+            # #EXT-037-REQ-1 End
         return _modify_result(modules=modules, applied=False, regressed=regressed,
                                note="modification regressed existing behavior — reverted: " + ", ".join(regressed))
 

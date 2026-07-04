@@ -17,7 +17,7 @@ import re
 import sys
 import uuid
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dataclass_replace
 from pathlib import Path
 
 # Windows consoles default to cp1252; force UTF-8 so the transcript never crashes.
@@ -109,10 +109,20 @@ def reset_tool_usage() -> None:
 
 
 # #EXT-003-REQ-1 Start
+# #EXT-037-REQ-1 Start
+# TASK-2: the writer tools' `validate()` gates a `root`-jail on an OPTIONAL `root` key in
+# the Decision payload (EXT-037), but no caller supplied one -- the jail was dormant in
+# production. `Runtime` is the ONE real Jaros-native choke point every write Decision
+# passes through (gate -> executor -> log), so an opt-in `root` here is the single place
+# that can stamp it onto every write Decision universally, with zero change to callers
+# that don't pass `root` (default `None`, fully backward compatible).
+_ROOT_JAILED_DECISION_TYPES = frozenset(
+    {"code.write_file", "code.apply_patch", "code.search_replace"})
+# #EXT-037-REQ-1 End
 class Runtime:
     """Faithful Jaros execution path: gate -> executor -> decision log."""
 
-    def __init__(self, data_dir: Path = DATA_DIR) -> None:
+    def __init__(self, data_dir: Path = DATA_DIR, root: "str | None" = None) -> None:
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
         executor.register_handler("advance", make_advance_handler())
@@ -121,9 +131,17 @@ class Runtime:
         self._log.ensure()
         self._dlog = DecisionLog(state_dir)
         self._dlog.ensure()
+        # #EXT-037-REQ-1 Start
+        self._root = root  # project root to stamp onto write Decisions (opt-in; see above)
+        # #EXT-037-REQ-1 End
 
     def apply(self, decision):
         """Validate at the gate, then execute, recording the accepted Decision."""
+        # #EXT-037-REQ-1 Start
+        if (self._root and decision.type in _ROOT_JAILED_DECISION_TYPES
+                and isinstance(decision.payload, dict) and "root" not in decision.payload):
+            decision = _dataclass_replace(decision, payload={**decision.payload, "root": self._root})
+        # #EXT-037-REQ-1 End
         gated = validate_decision(decision)
         if not gated.ok:
             raise RuntimeError(f"gate rejected {decision.type}: {gated.reason}")
