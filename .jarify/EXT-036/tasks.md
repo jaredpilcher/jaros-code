@@ -1027,3 +1027,56 @@ from code OR acceptance, realizing PRIME-001 intent capability (g).
   instrument measures; a live gemma-vs-escalating measurement run of `build_system` vs `build_system_governed`
   against a grown, harder `FIRST_SLICE`, and wiring `build_system_governed` into the `/buildsystem` CLI command,
   remain explicit open follow-ups)
+
+### [TASK-28] Fix build_system_governed's live-caught defects — parser, black-box checks, no-regress floor (REQ-23)
+
+A LIVE gemma diagnostic (`.jaros-data/diag_decompose.py`, run before fixing) caught `build_system_governed`
+(TASK-27) LIVE-BROKE: 0 requirements decomposed -> 0/11, WORSE than plain `build_system`'s 10/11. Root cause,
+confirmed from the raw model output, is THREE defects: (A) gemma emits the decompose list as ONE JSON ARRAY PER
+LINE (`[{"req_id":"R1",...}]` then `[{"req_id":"R2",...}]` on separate lines), which the naive
+single-outermost-bracket extractor cannot parse, silently yielding 0 requirements; (B) gemma's per-requirement
+`check` assumes an imagined import-and-assert-class API (`import main; main.KeyValueStore().set(...)`) that never
+matches the ACTUAL built system (a stdin-driven CLI, `python main.py`), so even a parsed check errors against the
+real interface and every requirement is falsely "unmet"; (C) `build_system_governed` must never do worse than
+plain `build_system` — a 0-requirement decompose must degrade gracefully to `build_system`'s own result, never a
+hollow 0/N regression.
+
+#### Steps
+1. In `harness/system_builder.py`, add `_extract_requirements_json(raw: str) -> list`: try the single COMBINED
+   JSON array/object case first (back-compat), then fall back to a line-by-line scan collecting every parseable
+   JSON array or bare object — handling one-array-per-line, multiple arrays, or bare JSONL objects alike. Wire it
+   into `_decompose_requirements` in place of the old single-outermost-bracket `_extract_json(raw, "[", "]")` call.
+2. Change `GOVERNED_DECOMPOSE_PROMPT` to tell the model the system is run as `python main.py` reading commands
+   from STDIN, and to emit each requirement's check as a BLACK-BOX `{"argv": [...], "stdin": "...", "expect":
+   "<substring>"}` object instead of standalone import-and-assert Python code. Add
+   `_is_blackbox_requirement_check` (validates `argv` is a list of strings, `stdin` is a string, `expect` is a
+   non-empty string) and update `_dedup_requirements` to filter/de-dup on this shape instead of
+   `_is_executable_check`. Update `GOVERNED_REPAIR_PROMPT` and `_repair_module_for_requirement` to describe the
+   unmet requirement's black-box check (argv/stdin/expect) instead of Python check code.
+3. Add `_verify_requirement(root, plan, req, python_exe=None) -> tuple[bool, str]`: verifies ONE decomposed
+   requirement via the PROVEN black-box CLI oracle, reusing `harness.system_suite._run_cli`/`_resolve_entry`
+   (resolving the entrypoint from `plan`, falling back to `root/main.py`) rather than an imagined class API. Wire
+   it into `build_system_governed`'s `_verify_all`/repair-loop verification calls in place of
+   `_run_check`/`_run_check_verbose`.
+4. In `build_system_governed`, ALWAYS run the underlying `build_system(spec, root, llm=llm)` pipeline — even when
+   `_decompose_requirements` yields nothing — so a decompose failure degrades to `build_system`'s own
+   `shipped`/`done`/`modules` result (the NO-REGRESS FLOOR) instead of returning early with a hollow
+   0-requirement/0-module result. Add a defensive final check ensuring the returned module set is never smaller
+   than `build_system`'s own. Do not modify `build_system` itself or its return shape.
+5. Update `tests/test_ext036_system_builder.py`: rewrite the governed-path fixtures
+   (`SPEC_GOV`/`GOVERNED_DECOMPOSE_JSON`/`GOV_PLAN_JSON`/`MAIN_MISSING_MUL`/`MAIN_WITH_MUL`/`MAIN_MUL_DROPS_SUB`)
+   to a real stdin-driven CLI with black-box (argv/stdin/expect) checks; adapt the existing lift/anti-regression/
+   honesty tests to verify via `_verify_requirement` against the actual built CLI; add tests proving (a)
+   `_decompose_requirements` parses the ONE-ARRAY-PER-LINE format into ALL N requirements, (b) a single combined
+   array still works (back-compat), (c) an old imagined-class `check` shape is correctly dropped by the black-box
+   filter, and (d) an empty/garbage decompose falls back to `build_system`'s own shipped/done result (never a
+   degenerate 0-module regression) when `build_system` itself ships. Run the FULL `python -m pytest tests/ -q`
+   synchronously in the foreground and confirm it stays green at the new count.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (fixes the GOVERNED build path's THREE live-caught defects — a
+  robust decompose parser, black-box argv/stdin/expect requirement checks matching the system's real CLI
+  interface instead of an imagined class API, and a no-regress floor that falls back to `build_system`'s own
+  result — so the mechanism genuinely LIFTS live coherence instead of regressing it; a live gemma-vs-escalating
+  re-measurement after this fix, and wiring `build_system_governed` into the `/buildsystem` CLI command, remain
+  open)

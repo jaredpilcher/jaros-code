@@ -634,7 +634,7 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
 
-### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27, 2026-07-04)
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28, 2026-07-04)
 
 **Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
 the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
@@ -701,3 +701,38 @@ matter for the follow-on capstone build.
   command, and a LIVE gemma-vs-escalating measurement run of `build_system` vs `build_system_governed` against
   a grown, harder `FIRST_SLICE` (e.g. the 11-requirement kvdb-cli that originally measured the 10/11 drop),
   remain open — this task builds + proves the governed mechanism, it does not yet re-run that live measurement.
+- [x] FIX the LIVE-CAUGHT regression a first live run of `build_system_governed` measured — **DONE 2026-07-04**
+  (`harness/system_builder.py`, EXT-036 TASK-28). MEASURED (a live diagnostic against real gemma,
+  `.jaros-data/diag_decompose.py`, verified before fixing): the TASK-27 mechanism 0/11-ed on the 11-requirement
+  kvdb-cli — WORSE than plain `build_system`'s own 10/11 — from THREE defects in the raw model output. (A)
+  **PARSE BUG:** live gemma emits the decompose list as ONE JSON ARRAY PER LINE
+  (`[{"req_id":"R1",...}]` then `[{"req_id":"R2",...}]` on separate lines), which the old single-outermost-bracket
+  extractor's greedy match spans across every line at once — not valid JSON — silently parsing to ZERO
+  requirements. FIXED: `_extract_requirements_json` tries the single COMBINED array/object case first
+  (back-compat), then falls back to a line-by-line scan collecting every parseable JSON array or bare object,
+  handling one-array-per-line/multiple-arrays/bare-JSONL alike. (B) **CHECK-INTERFACE MISMATCH (the actual LIFT
+  blocker):** gemma's per-requirement `check` assumed an imagined import-and-assert-class API
+  (`import main; main.KeyValueStore().set(...)`) that never matches the ACTUAL built system (a stdin-driven CLI,
+  `python main.py`), so even a parsed check errored against the real interface and every requirement was falsely
+  "unmet." FIXED: requirements are now decomposed AND verified as BLACK-BOX CLI checks
+  (`{"argv": [...], "stdin": "...", "expect": "<substring>"}`, in the system's own `python main.py`-reads-stdin
+  terms) via `_verify_requirement`, reusing `harness.system_suite._run_cli`/`_resolve_entry` — the SAME proven
+  black-box oracle REQ-20/21 already built — never an imagined class API; `_is_blackbox_requirement_check` +
+  `_dedup_requirements` deterministically filter/de-dup on this shape, replacing the old
+  import-and-assert-class `_is_executable_check` gate for this decomposed list (build_system's OWN self-derived
+  checklist, used elsewhere, is untouched). (C) **NO-REGRESS FLOOR:** `build_system_governed` now ALWAYS runs the
+  underlying `build_system` pipeline — even when decompose yields zero requirements — so a decompose failure
+  degrades to `build_system`'s own shipped/done/modules result rather than a hollow 0-requirement/0-module
+  regression; a defensive final check also ensures the returned module set is never smaller than
+  `build_system`'s own. Proven OFFLINE (`tests/test_ext036_system_builder.py`, a fake llm mirroring the
+  `_CannedLlm` pattern, no live model): the CORE LIFT/anti-regression/honesty tests were adapted to a real
+  stdin-driven CLI fixture with black-box (argv/stdin/expect) checks verified via `_verify_requirement` against
+  an ACTUAL built `main.py` (proving the verification matches the CLI's real interface); new tests prove
+  `_decompose_requirements` parses the ONE-ARRAY-PER-LINE format into ALL N requirements (not 0/1), a single
+  combined array still works (back-compat), an old imagined-class `check` shape is correctly dropped by the
+  black-box filter (never silently misinterpreted), and an empty/garbage decompose falls back to
+  `build_system`'s own shipped=True/done=True result (never a degenerate 0-module regression) when
+  `build_system` itself ships. Full `tests/` suite stays green (1537 passed, 1 skipped, up from 1533/1). CAVEAT
+  (honest scope): a fresh LIVE gemma re-measurement of `build_system_governed` against the 11-requirement
+  kvdb-cli after this fix (the explicit next step to confirm the LIFT actually reaches >= single-pass live), and
+  wiring `build_system_governed` into the `/buildsystem` CLI command, remain open follow-ups.

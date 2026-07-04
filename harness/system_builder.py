@@ -107,6 +107,27 @@ RE-GROUND repair call that feeds the model the FULL requirement list (not just t
 so a fix can't silently re-drop a different requirement; if it does anyway, the round is
 REVERTED (mirrors TASK-5's ``_repair_system`` non-degrading guard) so ``requirements_met`` never
 regresses across repair rounds. Never modifies ``build_system`` itself.
+
+TASK-28 (REQ-23) fixes THREE defects a LIVE gemma diagnostic caught in TASK-27's mechanism
+(``.jaros-data/diag_decompose.py``, confirmed before fixing): (A) PARSE BUG — live gemma emits
+the decompose list as ONE JSON ARRAY PER LINE (``[{"req_id":"R1",...}]`` then
+``[{"req_id":"R2",...}]`` on separate lines), not one combined array; the old single-outermost
+``[..]`` extractor's greedy match spans every line at once, which isn't valid JSON, so it
+silently returned ZERO requirements. ``_extract_requirements_json`` now tries the single
+combined-array case first (back-compat), then falls back to a line-by-line scan collecting
+every parseable JSON array/object — handling one-array-per-line, multiple arrays, or bare
+JSONL objects alike. (B) CHECK-INTERFACE MISMATCH — gemma's ``check`` field assumed an
+imagined import-and-assert-class API (``import main; main.KeyValueStore().set(...)``) that
+never matches the ACTUAL built system (a stdin-driven CLI, ``python main.py``), so even a
+parsed check errored against the real interface and every requirement was falsely "unmet".
+Requirements are now decomposed as BLACK-BOX CLI checks (``argv``/``stdin``/``expect``, in the
+system's own ``python main.py``-reads-stdin terms) and verified via
+``harness.system_suite._run_cli``/``_resolve_entry`` — the SAME proven black-box oracle
+REQ-20/21 already built — never an imagined class API. (C) NO-REGRESS FLOOR —
+``build_system_governed`` now ALWAYS runs the underlying ``build_system`` pipeline (even when
+decompose yields zero requirements), so a decompose failure degrades to build_system's own
+shipped/done result rather than a hollow 0-requirement/0-module regression; a defensive final
+check also ensures the returned module set is never smaller than build_system's own.
 """
 
 from __future__ import annotations
@@ -1231,29 +1252,47 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
 # model the FULL requirement list (not just the failing one) so a fix can't blindly re-drop a
 # different requirement -- and if it does anyway, the round is REVERTED (mirrors TASK-5's
 # `_repair_system` non-degrading guard) so `requirements_met` never regresses across rounds.
+#
+# TASK-28 (REQ-23): LIVE gemma diagnostic (`.jaros-data/diag_decompose.py`) caught the governed
+# path 0/11-ing on live gemma (WORSE than plain build_system's 10/11) from three defects, fixed
+# here: (A) gemma emits the decompose list as ONE JSON ARRAY PER LINE, which the naive
+# single-outermost-bracket extractor cannot parse -> `_extract_requirements_json` is now robust
+# to one-array-per-line/JSONL/a single combined array; (B) gemma's `check` assumed an imagined
+# import-and-assert-class API that never matches the REAL built interface (a stdin-driven CLI)
+# -> requirements are now decomposed + verified as BLACK-BOX CLI checks (argv/stdin/expect) via
+# the proven `harness.system_suite._run_cli`/`_resolve_entry` oracle; (C) `build_system_governed`
+# now ALWAYS runs `build_system` (even when decompose yields nothing) so it degrades to
+# build_system's own result rather than a hollow 0-requirement/0-module regression.
 
 GOVERNED_DECOMPOSE_PROMPT = (
     "GOVERNED-BUILD DECOMPOSE: read this spec and enumerate every DISTINCT, INDEPENDENT "
     "requirement it implies -- do not drop or merge any, even small ones.\n\n"
     "SPEC: {spec}\n\n"
-    "For EACH requirement, also write an executable ACCEPTANCE CHECK for that ONE requirement "
-    "alone: standalone Python code (no prose) that, once the system is built, imports/exercises "
-    "the built module(s) and asserts that this ONE requirement's behavior actually holds (a real "
-    "`assert` on real behavior -- never a prose description).\n\n"
+    "The system you are decomposing WILL be run as a command-line program: `python main.py`, "
+    "reading ONE command per line from STDIN and printing results to STDOUT -- it is NEVER an "
+    "importable class/object API.\n\n"
+    "For EACH requirement, write a BLACK-BOX ACCEPTANCE CHECK for that ONE requirement alone, "
+    "in the system's own CLI terms: the `argv` command-line arguments (usually an empty list), "
+    "the exact `stdin` text to feed the program (one or more commands, each ending in a "
+    "newline), and the `expect` substring that MUST appear in the program's combined stdout for "
+    "this ONE requirement to be satisfied.\n\n"
     "Output ONLY a JSON list (no markdown fences, no prose): "
     '[{{"req_id": "<short unique id>", "description": "<one line>", '
-    '"check": "<standalone python code with a real assert>"}}]'
+    '"argv": [], "stdin": "<the exact stdin commands for this requirement>", '
+    '"expect": "<substring that must appear in stdout>"}}]'
 )
 
 GOVERNED_REPAIR_PROMPT = (
     "GOVERNED-BUILD REPAIR: this build must satisfy ALL of the following independently-verified "
     "requirements (the SPEC OF RECORD), but at least one is UNMET. Re-ground on the FULL list "
     "before fixing -- do NOT remove or break any requirement that already works.\n\n"
+    "The system is run as a command-line program: `python main.py`, reading commands from "
+    "STDIN and printing results to STDOUT.\n\n"
     "ALL REQUIREMENTS:\n{all_reqs}\n\n"
     "UNMET REQUIREMENT: {req_id} -- {req_desc}\n"
-    "ITS CHECK:\n{req_check}\n"
-    "RUN ERROR:\n{error}\n\n"
-    "CURRENT MODULE SOURCES:\n{sources}\n\n"
+    "ITS BLACK-BOX CHECK: run with argv={req_argv}, feed this STDIN:\n{req_stdin}\n"
+    "EXPECTED STDOUT TO CONTAIN: {req_expect}\n"
+    "ACTUAL RUN OUTPUT:\n{error}\n\n"
     "Identify which ONE module needs to change to ADD/FIX this requirement WITHOUT removing or "
     "breaking any other already-working requirement, and provide its COMPLETE corrected content. "
     "Output ONLY a JSON object (no prose, no markdown fences): "
@@ -1263,10 +1302,71 @@ GOVERNED_REPAIR_PROMPT = (
 MAX_GOVERNED_REPAIR_ROUNDS = 3   # bounded RE-GROUND repair loop, REQ-23
 
 
+def _is_blackbox_requirement_check(req) -> bool:
+    """The deterministic BLACK-BOX check filter (TASK-28 fix, defect B): a decomposed
+    requirement survives only if it carries a well-formed black-box CLI check -- `argv` (a
+    list of strings, possibly empty), `stdin` (a string, possibly empty), and a non-empty
+    `expect` substring. Replaces the earlier import-and-assert-class check shape, which
+    assumed an API the ACTUAL built system (a stdin-driven CLI, `python main.py`) never
+    exposes -- so a parsed check would error against the real interface and every
+    requirement would be falsely reported unmet. Never raises."""
+    if not isinstance(req, dict):
+        return False
+    argv = req.get("argv", [])
+    stdin = req.get("stdin", "")
+    expect = req.get("expect")
+    if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+        return False
+    if not isinstance(stdin, str):
+        return False
+    if not isinstance(expect, str) or not expect.strip():
+        return False
+    return True
+
+
+def _extract_requirements_json(raw: str) -> list:
+    """Robust JSON extraction for the DECOMPOSE stage (TASK-28 fix, defect A). MEASURED (live
+    gemma diagnostic, `.jaros-data/diag_decompose.py`): gemma emits the requirement list as ONE
+    JSON ARRAY PER LINE -- `[{"req_id":"R1",...}]` then `[{"req_id":"R2",...}]` on separate
+    lines -- not one combined array. The naive single-outermost-bracket extractor
+    (`_extract_json`)'s greedy first-'['-to-last-']' match spans every line at once, which is
+    not valid JSON, so it silently parsed to nothing (0 requirements). This tries the single
+    COMBINED array/object case first (back-compat with a well-formed one-array response), then
+    falls back to a line-by-line scan collecting every parseable JSON array or bare object --
+    handling one-array-per-line, several arrays, or bare JSONL objects alike. De-dup is the
+    caller's job (`_dedup_requirements`). Never raises."""
+    if not raw or not raw.strip():
+        return []
+    whole = _extract_json(raw, "[", "]")
+    if isinstance(whole, list) and whole and all(isinstance(x, dict) for x in whole):
+        return whole
+    objs: list = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for opener, closer in (("[", "]"), ("{", "}")):
+            if opener not in line or closer not in line:
+                continue
+            m = re.search(re.escape(opener) + r".*" + re.escape(closer), line, re.DOTALL)
+            if not m:
+                continue
+            try:
+                val = json.loads(m.group(0))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(val, list):
+                objs.extend(x for x in val if isinstance(x, dict))
+            elif isinstance(val, dict):
+                objs.append(val)
+            break
+    return objs
+
+
 def _dedup_requirements(reqs: list) -> list:
     """Deterministic de-dup + filter of the decomposed requirement list: keep only entries with
-    a non-empty `req_id` AND an executable `check` (reusing `_is_executable_check`'s
-    parse-and-assert discipline), dropping duplicate req_ids/checks. Never raises."""
+    a non-empty `req_id` AND a well-formed black-box check (`_is_blackbox_requirement_check`,
+    TASK-28), dropping duplicate req_ids/checks. Never raises."""
     seen_ids: set = set()
     seen_checks: set = set()
     out: list = []
@@ -1274,32 +1374,35 @@ def _dedup_requirements(reqs: list) -> list:
         if not isinstance(r, dict):
             continue
         req_id = r.get("req_id")
-        check = r.get("check")
-        if not isinstance(req_id, str) or not req_id.strip() or not _is_executable_check(check):
+        if not isinstance(req_id, str) or not req_id.strip() or not _is_blackbox_requirement_check(r):
             continue
         req_id = req_id.strip()
-        check_key = check.strip()
+        argv = [str(a) for a in (r.get("argv") or [])]
+        stdin = r.get("stdin") or ""
+        expect = r.get("expect").strip()
+        check_key = (tuple(argv), stdin, expect)
         if req_id in seen_ids or check_key in seen_checks:
             continue
         seen_ids.add(req_id)
         seen_checks.add(check_key)
-        out.append({"req_id": req_id, "description": r.get("description", ""), "check": check})
+        out.append({"req_id": req_id, "description": r.get("description", ""),
+                     "argv": argv, "stdin": stdin, "expect": expect})
     return out
 
 
 def _decompose_requirements(spec: str, llm) -> list:
     """One model round-trip enumerating the DISTINCT requirements implied by `spec`, each with
-    its own executable check -- the INDEPENDENT spec-of-record `build_system_governed` verifies
-    against (never the build's own self-derived acceptance checklist). Deterministically
-    filtered + de-duped (`_dedup_requirements`). Guarded -- returns [] on any model/parse
-    failure or when nothing survives the filter; never raises, never fabricates a requirement."""
+    its own BLACK-BOX check (`argv`/`stdin`/`expect`, TASK-28) -- the INDEPENDENT spec-of-record
+    `build_system_governed` verifies against (never the build's own self-derived acceptance
+    checklist, and never an imagined import-and-assert-class API). Robustly parsed
+    (`_extract_requirements_json`) then filtered + de-duped (`_dedup_requirements`). Guarded --
+    returns [] on any model/parse failure or when nothing survives the filter; never raises,
+    never fabricates a requirement."""
     try:
         raw = _call(llm, GOVERNED_DECOMPOSE_PROMPT.format(spec=spec), max_tokens=CHECKLIST_MAX_TOKENS)
     except Exception:
         return []
-    reqs = _extract_json(raw, "[", "]")
-    if not isinstance(reqs, list):
-        return []
+    reqs = _extract_requirements_json(raw)
     return _dedup_requirements(reqs)
 
 
@@ -1313,7 +1416,8 @@ def _repair_module_for_requirement(all_reqs_blob: str, req: dict, error: str,
     try:
         raw = _call(llm, GOVERNED_REPAIR_PROMPT.format(
             all_reqs=all_reqs_blob, req_id=req.get("req_id", "?"),
-            req_desc=req.get("description", ""), req_check=req.get("check", ""),
+            req_desc=req.get("description", ""), req_argv=req.get("argv") or [],
+            req_stdin=req.get("stdin", ""), req_expect=req.get("expect", ""),
             error=(error or "")[:500], sources=_sources_blob(built)), max_tokens=BUILD_MAX_TOKENS)
     except Exception:
         return None
@@ -1324,6 +1428,36 @@ def _repair_module_for_requirement(all_reqs_blob: str, req: dict, error: str,
     if not name or name not in built or not code:
         return None
     return {"module": name, "code": code}
+
+
+def _verify_requirement(root: Path, plan: "dict | None", req: dict,
+                         python_exe: "str | None" = None) -> "tuple[bool, str]":
+    """Independently verify ONE decomposed requirement against the ASSEMBLED system via the
+    PROVEN BLACK-BOX CLI oracle (TASK-28 fix, defect B) -- reuses
+    `harness.system_suite._run_cli`/`_resolve_entry` (the SAME primitives REQ-20/21 already
+    built + proved) rather than an imagined import-and-assert-class API the actual built
+    system (a stdin-driven CLI) never exposes. Resolves the entrypoint from `plan`, falling
+    back to `root/main.py` (mirrors `system_suite._run_single_check`'s convention) when the
+    plan's declared entrypoint doesn't resolve to a real file. Returns
+    ``(ok, combined stdout+stderr diagnostic)``. Never raises."""
+    try:
+        from harness.system_suite import _resolve_entry, _run_cli
+
+        exe = python_exe or sys.executable or "python"
+        entry = _resolve_entry(plan) if isinstance(plan, dict) else None
+        entry_path = (root / entry) if entry else None
+        if entry_path is None or not entry_path.is_file():
+            fallback = root / "main.py"
+            entry_path = fallback if fallback.is_file() else None
+        if entry_path is None:
+            return False, "no resolvable entrypoint"
+        ok, out = _run_cli(exe, entry_path, req.get("argv") or [], req.get("stdin") or "", root)
+        if not ok:
+            return False, out
+        expect = req.get("expect") or ""
+        return (expect in out), out
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _governed_result(*, modules=None, shipped: bool, done: bool, requirements_total: int = 0,
@@ -1337,21 +1471,28 @@ def _governed_result(*, modules=None, shipped: bool, done: bool, requirements_to
 
 def build_system_governed(spec: str, root: "str | Path", *, llm=None,
                            max_repair: int = MAX_GOVERNED_REPAIR_ROUNDS) -> dict:
-    """The GOVERNED build path (REQ-23, TASK-27) -- realizes PRIME-001 intent capability (g) by
-    LIFTING long-horizon build coherence with an explicit, INDEPENDENTLY-verified requirement
-    list, so no requirement is silently dropped from code OR acceptance (the measured
-    `coherence_suite` failure: `build_system` dropped a requirement AND its self-derived
-    acceptance checklist shared the same blind spot, so it reported `done=True` anyway).
+    """The GOVERNED build path (REQ-23, TASK-27; hardened by TASK-28) -- realizes PRIME-001
+    intent capability (g) by LIFTING long-horizon build coherence with an explicit,
+    INDEPENDENTLY-verified requirement list, so no requirement is silently dropped from code OR
+    acceptance (the measured `coherence_suite` failure: `build_system` dropped a requirement AND
+    its self-derived acceptance checklist shared the same blind spot, so it reported `done=True`
+    anyway).
 
     Pipeline:
       1. DECOMPOSE (`_decompose_requirements`) -- ONE model call enumerates the DISTINCT
-         requirements implied by `spec`, each with its own executable check. This list is the
-         SPEC OF RECORD, independent of whatever `build_system`'s own checklist later contains.
+         requirements implied by `spec`, each with its own BLACK-BOX check (`argv`/`stdin`/
+         `expect`, in the system's own `python main.py`-reads-stdin terms, TASK-28). This list
+         is the SPEC OF RECORD, independent of whatever `build_system`'s own checklist later
+         contains.
       2. BUILD -- via the existing, UNMODIFIED `build_system(spec, root, llm=llm)` pipeline
-         (plan -> topo-build -> assemble -> its own acceptance/repair). Only `shipped`/`modules`
-         are consumed here; `build_system`'s own `done` verdict is never trusted.
-      3. VERIFY EACH -- every enumerated requirement's check is run (reusing `_run_check`)
-         against the assembled system; the set of UNMET requirements is recorded.
+         (plan -> topo-build -> assemble -> its own acceptance/repair). Only `shipped`/`modules`/
+         `plan` are consumed here; `build_system`'s own `done` verdict is never trusted. ALWAYS
+         runs (TASK-28 fix, defect C — the NO-REGRESS FLOOR), even when decompose below yielded
+         nothing, so a decompose failure degrades to `build_system`'s own result rather than a
+         hollow 0-requirement/0-module regression.
+      3. VERIFY EACH -- every enumerated requirement's check is run via the proven BLACK-BOX CLI
+         oracle (`_verify_requirement`, reusing `harness.system_suite._run_cli`/`_resolve_entry`,
+         TASK-28) against the assembled system; the set of UNMET requirements is recorded.
       4. RE-GROUND + REPAIR -- for each unmet requirement, a repair call
          (`_repair_module_for_requirement`) feeds the model the FULL requirement list + the
          specific unmet one + the current module sources, asking it to ADD/fix that requirement
@@ -1382,11 +1523,10 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
         requirements = _decompose_requirements(spec, llm)
     except Exception:
         requirements = []
-    if not requirements:
-        return _governed_result(shipped=False, done=False,
-                                 note="no requirements could be decomposed from the spec")
 
-    # 2. BUILD via the existing, unmodified pipeline.
+    # 2. BUILD via the existing, unmodified pipeline -- ALWAYS (TASK-28 defect C, the
+    #    NO-REGRESS FLOOR): even a decompose failure below must degrade to `build_system`'s
+    #    own shipped/done result, never a hollow 0-requirement/0-module regression.
     try:
         build = build_system(spec, root, llm=llm)
     except Exception as exc:
@@ -1396,6 +1536,19 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
                                  note=f"build_system raised: {exc}")
     built = dict(build.get("modules") or {}) if isinstance(build, dict) else {}
     shipped = bool(isinstance(build, dict) and build.get("shipped"))
+    plan = build.get("plan") if isinstance(build, dict) else None
+
+    if not requirements:
+        # NO-REGRESS FLOOR: nothing was independently decomposed to verify against -- fall
+        # back to build_system's own (shipped/done) result instead of a degenerate 0/0.
+        base_done = bool(isinstance(build, dict) and build.get("done"))
+        return _governed_result(
+            modules=built, shipped=shipped, done=base_done, requirements_total=0,
+            requirements_met=0, unmet=[],
+            note=("no requirements could be decomposed from the spec -- fell back to "
+                  f"build_system's own result (shipped={shipped}, done={base_done})"),
+        )
+
     if not shipped:
         return _governed_result(
             modules=built, shipped=False, done=False,
@@ -1404,9 +1557,10 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
             note=f"build failed to ship: {(build or {}).get('note', '')}",
         )
 
-    # 3. VERIFY EACH enumerated requirement independently.
+    # 3. VERIFY EACH enumerated requirement independently (BLACK-BOX, matching the built
+    #    system's REAL CLI interface -- never an imagined import-and-assert-class API).
     def _verify_all() -> list:
-        return [r["req_id"] for r in requirements if not _run_check(root, {"code": r["check"]})]
+        return [r["req_id"] for r in requirements if not _verify_requirement(root, plan, r)[0]]
 
     unmet_ids = _verify_all()
     best_built, best_unmet = dict(built), list(unmet_ids)
@@ -1426,7 +1580,7 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
                 req = by_id.get(req_id)
                 if req is None:
                     continue
-                ok, err = _run_check_verbose(root, {"code": req["check"]})
+                ok, err = _verify_requirement(root, plan, req)
                 if ok:
                     continue   # an earlier fix this round already resolved it
                 fix = _repair_module_for_requirement(all_reqs_blob, req, err, built, llm)
@@ -1471,6 +1625,13 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     # Final safety net: never return worse than the best-seen (non-regressing) state.
     if len(unmet_ids) > len(best_unmet):
         built, unmet_ids = best_built, best_unmet
+
+    # NO-REGRESS FLOOR, defensive final check (TASK-28 defect C): repair rounds only ever
+    # overwrite existing module keys (never delete), so this should already be guaranteed --
+    # kept explicit rather than merely incidental, per the honest-floor requirement.
+    base_modules = build.get("modules") or {} if isinstance(build, dict) else {}
+    if len(built) < len(base_modules):
+        built = dict(base_modules)
 
     done = not unmet_ids
     total = len(requirements)

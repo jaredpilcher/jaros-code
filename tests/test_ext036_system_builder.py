@@ -27,7 +27,8 @@ from harness.system_builder import (
     build_system_governed,
     syntax_ok,
     validate_plan,
-    _run_check,
+    _decompose_requirements,
+    _verify_requirement,
 )
 
 SPEC = "A tiny two-module system: a helper module that adds two numbers, and a CLI that prints the sum."
@@ -424,7 +425,7 @@ def test_non_web_cli_build_regression_unaffected_by_web_wiring(tmp_path):
     assert not [p for p in llm.prompts if "HTTP ENDPOINT CHECKS" in p]
 
 
-# --- (5) TASK-27 (REQ-23): build_system_governed -- the GOVERNED build path -------------
+# --- (5) TASK-27/TASK-28 (REQ-23): build_system_governed -- the GOVERNED build path -----
 # MEASURED failure this fixes (`harness/coherence_suite.py`): `build_system` on an
 # 11-requirement kvdb-cli SHIPPED but reported `done=True` while silently dropping ONE
 # requirement (`incr`), because the code AND its own self-derived acceptance checklist come
@@ -432,60 +433,107 @@ def test_non_web_cli_build_regression_unaffected_by_web_wiring(tmp_path):
 # an INDEPENDENTLY-decomposed requirement list (a separate model call, made before any code
 # exists) as the spec-of-record; `done` is judged ONLY against that list.
 #
-# The fake llm here mirrors the incr defect at small scale: a single-module calculator plan
-# (`main.py` with `add`/`sub`/`mul`) whose FIRST build drops `mul` -- exactly one of three
+# TASK-28 hardens this against THREE live-caught defects: (A) gemma may emit the decompose
+# list as ONE JSON ARRAY PER LINE rather than one combined array; (B) gemma's `check` must be
+# a BLACK-BOX CLI check (argv/stdin/expect) matching the ACTUAL built system's real interface
+# (a stdin-driven `python main.py` CLI) -- never an imagined import-and-assert-class API; (C) a
+# decompose failure must degrade to `build_system`'s own result, never a hollow 0/0.
+#
+# The fake llm here mirrors the incr defect at small scale: a single-module calculator CLI
+# (`main.py`, reading ONE command per line from stdin: "add A B" / "sub A B" / "mul A B",
+# printing the result) whose FIRST build drops the `mul` command -- exactly one of three
 # independently-decomposed requirements -- while `build_system`'s own (deliberately narrow)
-# acceptance checklist only exercises `add`, so the underlying build still ships/dones
-# normally, hiding the drop from anything that isn't independently checking every requirement.
+# acceptance checklist only exercises `add` via an import-based check, so the underlying build
+# still ships/dones normally, hiding the drop from anything that isn't independently checking
+# every requirement via the REAL CLI interface.
 
-SPEC_GOV = ("A tiny calculator module main.py exposing add(a, b), sub(a, b), and mul(a, b), "
-            "each returning the correct arithmetic result.")
+SPEC_GOV = ("A tiny calculator CLI in main.py: reads ONE command per line from stdin -- "
+            "'add A B', 'sub A B', or 'mul A B' -- and prints the integer result of each on "
+            "its own line.")
 
+# BLACK-BOX (argv/stdin/expect) requirements -- the spec-of-record TASK-28 now decomposes,
+# verified against the REAL `python main.py` CLI, never an imagined class API.
 GOVERNED_DECOMPOSE_JSON = """[
-  {"req_id": "add", "description": "add(a,b) returns a+b",
-   "check": "import main\\nassert main.add(2, 3) == 5\\n"},
-  {"req_id": "sub", "description": "sub(a,b) returns a-b",
-   "check": "import main\\nassert main.sub(5, 3) == 2\\n"},
-  {"req_id": "mul", "description": "mul(a,b) returns a*b",
-   "check": "import main\\nassert main.mul(3, 4) == 12\\n"}
+  {"req_id": "add", "description": "add command prints the sum",
+   "argv": [], "stdin": "add 2 3\\n", "expect": "5"},
+  {"req_id": "sub", "description": "sub command prints the difference",
+   "argv": [], "stdin": "sub 5 3\\n", "expect": "2"},
+  {"req_id": "mul", "description": "mul command prints the product",
+   "argv": [], "stdin": "mul 3 4\\n", "expect": "12"}
 ]"""
 
 GOV_PLAN_JSON = """{
   "modules": [
-    {"name": "main.py", "responsibility": "calculator: add/sub/mul",
+    {"name": "main.py", "responsibility": "calculator CLI: add/sub/mul over stdin",
      "exports": [{"name": "add", "signature": "def add(a, b):"},
                  {"name": "sub", "signature": "def sub(a, b):"},
-                 {"name": "mul", "signature": "def mul(a, b):"}],
+                 {"name": "mul", "signature": "def mul(a, b):"},
+                 {"name": "main", "signature": "def main():"}],
      "imports": []}
   ],
   "entrypoint": "main.py",
-  "acceptance": "add/sub/mul work"
+  "acceptance": "add/sub/mul commands work over stdin"
 }"""
 
-# GOVERNED_BUILD_CHECKLIST only ever exercises `add` -- mirroring the MEASURED defect where
-# `build_system`'s own narrow self-derived checklist shares the blind spot with the code and
-# so does NOT itself catch the dropped `mul` requirement (it still ships+dones normally).
+# GOVERNED_BUILD_CHECKLIST only ever exercises `add` (via an IMPORT, not the CLI) -- mirroring
+# the MEASURED defect where `build_system`'s own narrow self-derived checklist shares the
+# blind spot with the code and so does NOT itself catch the dropped `mul` requirement (it
+# still ships+dones normally). This is build_system's OWN checklist shape (unchanged by
+# TASK-28 -- only the GOVERNED spec-of-record's check shape changed).
 GOVERNED_BUILD_CHECKLIST = """[{"name": "adds", "code": "import main\\nassert main.add(1, 2) == 3\\n"}]"""
 
+_CLI_DISPATCH = (
+    "def main():\n"
+    "    import sys\n"
+    "    for line in sys.stdin:\n"
+    "        line = line.strip()\n"
+    "        if not line:\n"
+    "            continue\n"
+    "        parts = line.split()\n"
+    "        cmd = parts[0]\n"
+    "{body}"
+    "        else:\n"
+    "            print('unknown')\n"
+)
+
+# A real stdin-driven CLI missing the `mul` command entirely (the MEASURED single-requirement
+# drop, at small scale) -- `add`/`sub` both dispatch correctly.
 MAIN_MISSING_MUL = (
     "def add(a, b):\n    return a + b\n\n\n"
     "def sub(a, b):\n    return a - b\n\n\n"
-    "if __name__ == '__main__':\n    pass\n"
+    + _CLI_DISPATCH.format(
+        body="        if cmd == 'add':\n            print(add(int(parts[1]), int(parts[2])))\n"
+             "        elif cmd == 'sub':\n            print(sub(int(parts[1]), int(parts[2])))\n"
+    )
+    + "\n\nif __name__ == '__main__':\n    main()\n"
 )
 
+# The correctly-repaired CLI: `add`/`sub`/`mul` all dispatch correctly.
 MAIN_WITH_MUL = (
     "def add(a, b):\n    return a + b\n\n\n"
     "def sub(a, b):\n    return a - b\n\n\n"
     "def mul(a, b):\n    return a * b\n\n\n"
-    "if __name__ == '__main__':\n    pass\n"
+    + _CLI_DISPATCH.format(
+        body="        if cmd == 'add':\n            print(add(int(parts[1]), int(parts[2])))\n"
+             "        elif cmd == 'sub':\n            print(sub(int(parts[1]), int(parts[2])))\n"
+             "        elif cmd == 'mul':\n            print(mul(int(parts[1]), int(parts[2])))\n"
+    )
+    + "\n\nif __name__ == '__main__':\n    main()\n"
 )
 
-# A "bad" repair: adds the requested `mul` but silently DROPS `sub` -- the swap-regression
-# shape the non-degrading guard must catch (mirrors TASK-5's dedicated regression test).
+# A "bad" repair: adds the requested `mul` dispatch but silently DROPS the `sub` dispatch --
+# the swap-regression shape the non-degrading guard must catch (mirrors TASK-5's dedicated
+# regression test). `sub` is still defined as a function (so build_system's own import-based
+# checklist, which never calls `sub`, stays fooled) but the CLI no longer routes to it.
 MAIN_MUL_DROPS_SUB = (
     "def add(a, b):\n    return a + b\n\n\n"
+    "def sub(a, b):\n    return a - b\n\n\n"
     "def mul(a, b):\n    return a * b\n\n\n"
-    "if __name__ == '__main__':\n    pass\n"
+    + _CLI_DISPATCH.format(
+        body="        if cmd == 'add':\n            print(add(int(parts[1]), int(parts[2])))\n"
+             "        elif cmd == 'mul':\n            print(mul(int(parts[1]), int(parts[2])))\n"
+    )
+    + "\n\nif __name__ == '__main__':\n    main()\n"
 )
 
 
@@ -524,24 +572,35 @@ class _GovernedCannedLlm:
         return _Resp("")
 
 
+def _verified_count(build_result: dict, root, reqs: list) -> int:
+    """Test helper: how many BLACK-BOX (argv/stdin/expect) requirements pass against a real
+    assembled system, using the SAME `_verify_requirement` oracle `build_system_governed`
+    itself uses (reuses `harness.system_suite._run_cli`/`_resolve_entry` under the hood) --
+    proving the verification matches the built CLI's REAL interface, not an imagined API."""
+    plan = build_result.get("plan")
+    return sum(1 for r in reqs if _verify_requirement(root, plan, r)[0])
+
+
 def test_governed_lift_from_n_minus_1_to_n(tmp_path):
     """THE CORE LIFT TEST: the underlying (ungoverned) build genuinely drops one of three
     independently-decomposed requirements (mirroring the measured `incr`-dropping defect);
     `build_system_governed` LIFTS coherence from (N-1)/N to N/N via its one re-ground repair
-    round -- proving the whole point of this task."""
-    # CONTROL: prove the plain, ungoverned `build_system` really does drop `mul` -- only
-    # 2 of the 3 independently-decomposed requirements hold against its output, even though
-    # `build_system` itself reports shipped=True/done=True (its own narrow checklist never
-    # notices the drop).
+    round -- proving the whole point of this task. Verification is BLACK-BOX (argv/stdin/
+    expect) against the REAL, actually-built `main.py` stdin CLI -- not an imagined
+    import-and-assert-class API."""
+    # CONTROL: prove the plain, ungoverned `build_system` really does drop the `mul` command
+    # -- only 2 of the 3 independently-decomposed requirements hold against its REAL CLI
+    # output, even though `build_system` itself reports shipped=True/done=True (its own
+    # narrow import-based checklist never notices the drop).
     plain = build_system(SPEC_GOV, tmp_path / "plain", llm=_GovernedCannedLlm())
     assert plain["shipped"] is True
     assert plain["done"] is True   # build_system's OWN (narrow) checklist is fooled
     reqs = json.loads(GOVERNED_DECOMPOSE_JSON)
-    plain_met = sum(1 for r in reqs if _run_check(tmp_path / "plain", {"code": r["check"]}))
+    plain_met = _verified_count(plain, tmp_path / "plain", reqs)
     assert plain_met == 2   # add + sub hold, mul is silently missing -- the measured defect
 
     # GOVERNED: the SAME fake llm, but build_system_governed independently verifies all 3
-    # and repairs the drop -- reaching full coherence.
+    # (BLACK-BOX, against the real CLI) and repairs the drop -- reaching full coherence.
     llm = _GovernedCannedLlm()
     result = build_system_governed(SPEC_GOV, tmp_path / "governed", llm=llm)
     assert result["shipped"] is True
@@ -552,6 +611,8 @@ def test_governed_lift_from_n_minus_1_to_n(tmp_path):
     assert result["rounds"] == 1
     assert llm.repair_calls == 1
     assert (tmp_path / "governed" / "main.py").read_text().strip() == MAIN_WITH_MUL.strip()
+    # the resulting main.py is a REAL, runnable CLI: re-verify directly via a fresh subprocess.
+    assert _verified_count(result, tmp_path / "governed", reqs) == 3
 
 
 def test_governed_repair_regression_is_caught_and_reverted(tmp_path):
@@ -581,16 +642,93 @@ def test_governed_honesty_never_done_when_repair_budget_exhausted(tmp_path):
     assert result["shipped"] is True
 
 
-def test_governed_never_raises_when_no_requirements_decomposed(tmp_path):
-    """HONESTY: an unparseable/empty decompose response never fabricates a requirement list
-    -- an honest failure, never raises."""
+def test_governed_floor_falls_back_to_build_system_when_decompose_empty(tmp_path):
+    """NO-REGRESS FLOOR (TASK-28, defect C): when decompose yields NOTHING (unparseable/empty
+    model output), `build_system_governed` must NEVER regress to a degenerate 0-module/
+    0-behavior result when the underlying `build_system` itself genuinely shipped something --
+    it falls back to build_system's own shipped/done result, gracefully degrading rather than
+    hollowing out."""
     llm = _GovernedCannedLlm(decompose="not a json list at all")
+    result = build_system_governed(SPEC_GOV, tmp_path / "built", llm=llm)
+
+    assert result["requirements_total"] == 0
+    assert "no requirements" in result["note"]
+    # THE FLOOR: build_system itself ships this fixture -- governed must carry that through,
+    # never falling back to a hollow shipped=False/0-module result.
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert set(result["modules"]) == {"main.py"}
+    assert result["modules"]["main.py"].strip() == MAIN_MISSING_MUL.strip()
+
+
+def test_governed_never_raises_when_decompose_and_build_both_fail(tmp_path):
+    """HONESTY: when decompose yields nothing AND the underlying build_system itself never
+    ships (a broken plan), the floor has nothing to fall back to -- an honest shipped=False,
+    never a raise, never a fabricated success."""
+    llm = _GovernedCannedLlm(decompose="not a json list at all", plan="not a json plan at all")
     result = build_system_governed(SPEC_GOV, tmp_path / "built", llm=llm)
 
     assert result["shipped"] is False
     assert result["done"] is False
     assert result["requirements_total"] == 0
-    assert "decompose" in result["note"] or "no requirements" in result["note"]
+
+
+def test_decompose_requirements_parses_one_array_per_line(tmp_path):
+    """PARSE ROBUSTNESS (TASK-28, defect A): live gemma was MEASURED
+    (`.jaros-data/diag_decompose.py`) to emit the decompose list as ONE JSON ARRAY PER LINE --
+    `[{"req_id":"R1",...}]` then `[{"req_id":"R2",...}]` on separate lines -- not one combined
+    array. `_decompose_requirements` must yield ALL N requirements from this shape, not 0/1."""
+    one_per_line = "\n".join(
+        json.dumps([{"req_id": f"R{i}", "description": f"req {i}",
+                     "argv": [], "stdin": f"cmd{i}\n", "expect": f"out{i}"}])
+        for i in range(1, 6)
+    )
+
+    class _DecomposeOnlyLlm:
+        def complete(self, request):
+            return _Resp(one_per_line)
+
+    reqs = _decompose_requirements("irrelevant spec", _DecomposeOnlyLlm())
+    assert len(reqs) == 5
+    assert {r["req_id"] for r in reqs} == {f"R{i}" for i in range(1, 6)}
+    assert all(r["expect"] for r in reqs)
+
+
+def test_decompose_requirements_parses_single_combined_array(tmp_path):
+    """BACK-COMPAT: a single COMBINED JSON array (all N objects in one `[...]`) still parses
+    correctly -- the robust extractor's fast path."""
+    combined = json.dumps([
+        {"req_id": "A", "description": "a", "argv": [], "stdin": "x\n", "expect": "1"},
+        {"req_id": "B", "description": "b", "argv": [], "stdin": "y\n", "expect": "2"},
+        {"req_id": "C", "description": "c", "argv": [], "stdin": "z\n", "expect": "3"},
+    ])
+
+    class _DecomposeOnlyLlm:
+        def complete(self, request):
+            return _Resp(combined)
+
+    reqs = _decompose_requirements("irrelevant spec", _DecomposeOnlyLlm())
+    assert len(reqs) == 3
+    assert {r["req_id"] for r in reqs} == {"A", "B", "C"}
+
+
+def test_decompose_requirements_drops_imagined_class_api_check_shape(tmp_path):
+    """CHECK-INTERFACE MISMATCH GUARD (TASK-28, defect B): an old-shape decomposed requirement
+    carrying an imagined import-and-assert-class `check` (no `argv`/`stdin`/`expect`) is
+    correctly DROPPED by the black-box filter -- never silently misinterpreted as a valid
+    black-box check."""
+    imagined_api = json.dumps([
+        {"req_id": "R1", "description": "set works",
+         "check": "import main\nstore = main.KeyValueStore()\nstore.set('a', 1)\n"
+                  "assert store.get('a') == 1\n"},
+    ])
+
+    class _DecomposeOnlyLlm:
+        def complete(self, request):
+            return _Resp(imagined_api)
+
+    reqs = _decompose_requirements("irrelevant spec", _DecomposeOnlyLlm())
+    assert reqs == []
 
 
 def test_governed_build_system_itself_is_untouched(tmp_path):
