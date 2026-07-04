@@ -11,6 +11,11 @@ signal to look harder and generate the next horizon, never to stop.
 
 - **What it holds that tasks don't:** the *forward* plan across specs — which specs/requirements
   we intend to **create** and **implement** next, organized by horizon, before tasks exist for them.
+- **Roadmap vs. tasks (two complementary layers — the roadmap does NOT replace tasks):** the Roadmap is
+  the **longer-horizon** forward plan; the **task list is the SHORT-TERM immediate work**, executed exactly
+  as before (TaskCreate/TaskUpdate → builder → architect). The Roadmap **feeds** the tasks — a `NOW` item,
+  when it becomes the immediate work, is decomposed into concrete tasks and executed the normal way. Both
+  run every tick; neither replaces the other.
 - **Relationship to `docs/GAP-MAP.md`:** GAP-MAP is the detailed **measured-findings appendix**
   (honest numbers, why each gap is what it is). This Roadmap is the organized forward plan that
   draws on it. GAP-MAP detail folds into this paradigm over time.
@@ -39,9 +44,19 @@ toy-CLI suites.
 
 ## NOW (in flight — the top of the loop)
 
-- **[#86 datastore re-measure]** re-run notes-sqlite-cli live now that the stdlib-unblock (27120d8)
-  + false-done subprocess-acceptance tier (ca493a1) landed — confirm broken draws honestly report
-  `done=False` and record the honest accept-rate — high · closes the #86 sqlite loop honestly.
+- **[plan-repair: dangling-local-import]** deterministic plan-repair for `imports unknown '<local>'` —
+  when a planned module imports a name that is neither listed nor stdlib, add the missing module to the
+  plan (or resolve/drop the dangling ref), analogous to the entrypoint-not-listed repair (20fe5db) —
+  **high** · MEASURED the real #86 datastore blocker: gemma DETERMINISTICALLY (6/6) draws a 2-module
+  notes-cli plan whose `cli.py` imports an unlisted `database` module → validate_plan rejects → 0 accept.
+  Because it's deterministic, best-of-k CANNOT help this; a deterministic plan-repair is the lever.
+
+## RE-MEASURED — #86 datastore (2026-07-04)
+
+- **False-done CLOSED (honest win):** with the subprocess-acceptance tier (ca493a1), 0/5 then 0/6 builds
+  falsely report done — the done-signal is honest on live output. Accept-rate 0/6, but NOT a reasoning
+  limit: 6/6 fail at the SAME coherence defect (`cli.py: imports unknown 'database'`), a repairable
+  planning incoherence → moved the lever to the plan-repair NOW item above (not best-of-k).
 
 ## NEXT (planned specs/requirements to create + implement — this week)
 
