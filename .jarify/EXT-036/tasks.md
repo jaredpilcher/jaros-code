@@ -1206,3 +1206,54 @@ The instrument needs to build each task `k` times and aggregate, distinguishing 
   `run_coherence_suite`, motivated by a MEASURED single-pass high-variance draw on the hard tier; a live
   gemma-vs-escalating measurement run WITH `repeats>1` against `HARD_SLICE` — the actual stabilized number
   this task was motivated by — remains an open follow-up)
+
+### [TASK-32] Episodic (action+rationale) memory store + deterministic recall (REQ-24)
+
+PRIME-001 intent capability (f): a durable, referenceable record of what the system DID and WHY, so a
+planner can retrieve similar past work and reconcile a new plan against it. GUARD (measured negative, see
+memory `jaros-code-retrieval-fewshot-negative`): this is PLAN + PROVENANCE recall, NOT behavior-keyed
+few-shot CODE examples — recall informs the plan's context, it never pastes stale code. v1 is
+DETERMINISTIC — no model call, no embeddings (lexical/tag match only); embeddings are an explicit later
+follow-up. Self-contained new module, isolated from every other harness path (wiring is a follow-up).
+
+#### Steps
+1. Create `harness/episodic_memory.py`: a `DEFAULT_STORE` path constant under the data dir (e.g.
+   `.jaros-data/artifacts/episodic/actions.jsonl`). `record_action(action, rationale, *, tags=None,
+   outcome=None, meta=None, store=DEFAULT_STORE) -> dict` appends one JSON record `{seq, action,
+   rationale, tags, outcome, meta}` to the JSONL store (creating parent dirs as needed); `seq` is a
+   monotonic integer counter derived from the current line count of the store (no wall-clock dependency,
+   Python's `time`/`datetime` are NOT required — a simple incrementing counter is sufficient and
+   deterministic for ordering). Never raises: any bad/garbage/non-serializable input is coerced to a safe
+   string/`None` before writing, and a write failure (e.g. unwritable path) is swallowed, returning the
+   attempted record dict regardless.
+2. Add `load_actions(store=DEFAULT_STORE) -> list[dict]`: reads and `json.loads`s each line of the JSONL
+   store, SKIPPING any line that fails to parse (malformed JSON) or isn't a dict, and returning `[]` when
+   the store file doesn't exist — never raises.
+3. Add `recall_similar(query, *, k=5, tags=None, store=DEFAULT_STORE) -> list[dict]`: loads all actions via
+   `load_actions`, computes a DETERMINISTIC similarity score per action — token-set Jaccard overlap between
+   the lowercased whitespace-tokenized `query` and the action's `action + " " + rationale` text, PLUS a
+   fixed bonus per shared tag when `tags` overlaps the action's own `tags` — filters to a `tags` argument
+   when given (only actions containing at least one of the requested tags are considered), sorts by score
+   descending with ties broken by INSERTION ORDER/`seq` (stable, reproducible — never Python's unstable
+   dict/set iteration), and returns the top `k`. Empty store, no matches (all scores 0 and none share a
+   tag), or bad/`None`/non-string `query` all return `[]`; never raises.
+4. Add a `reset(store=DEFAULT_STORE)` helper that deletes/truncates the given store file (best-effort, no
+   error if it doesn't exist) so tests and callers can isolate state with a scoped/temp store path passed
+   via the `store=` keyword on every function above.
+5. Do NOT modify `harness/system_builder.py`, `harness/coherence_suite.py`, `harness/cli.py`, or any other
+   existing harness module — wiring `record_action`/`recall_similar` into the planner/orchestrator is an
+   explicit follow-up (noted in REQ-24), out of this task's scope.
+6. Tests (`tests/test_episodic_memory.py`, OFFLINE — no model, no network, each test uses a scoped temp
+   `store=` path via `reset()`/a tmp_path fixture so no test shares state): (a) record several actions with
+   distinct action/rationale text and tags, then assert `recall_similar(query)` returns the most
+   lexically/tag-similar ones in the EXACT expected rank order for a hand-crafted set; (b) a `tags` filter
+   narrows results to only actions sharing a requested tag; (c) `k` bounds the returned count; (d) an empty
+   store and a query with no lexical/tag overlap both return `[]` without raising; (e) a JSONL store file
+   with one malformed/non-JSON line among valid ones is skipped by `load_actions`/`recall_similar` without
+   raising; (f) garbage input to `record_action`/`recall_similar` (e.g. `None` action, non-string rationale,
+   non-list tags) never raises; (g) `reset(store)` isolates state — two different scoped stores never see
+   each other's actions. Run `python -m pytest tests/test_episodic_memory.py -q` then the FULL
+   `python -m pytest tests/ -q` synchronously in the foreground and confirm both stay green.
+
+#### Implements
+- [REQ-24] Episodic (action+rationale) memory — groundwork + experience-recall for planning

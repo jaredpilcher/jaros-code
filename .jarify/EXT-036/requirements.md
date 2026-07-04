@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -829,3 +829,51 @@ matter for the follow-on capstone build.
   `build_system_governed` against `HARD_SLICE` with `repeats>1` (the actual stabilized number this task was
   motivated by) remains an open follow-up — this task builds + proves the instrument's stability mechanism,
   it does not itself re-run that live measurement.
+
+### [REQ-24] Episodic (action+rationale) memory — groundwork + experience-recall for planning  (PARTIAL — store + deterministic recall DONE, EXT-036 TASK-32, 2026-07-04; wiring the planner is an open follow-up)
+
+**Owner directive (2026-07-04):** PRIME-001 intent capability (f) — the system must remember what it did
+and WHY, keeping a durable, referenceable record of its actions and the rationale behind them (an
+episodic/provenance memory), so that when the user says "do that again" or refers to something done
+earlier, it can recall the exact prior work; and while forming a new plan it first retrieves any similar
+past work and reconciles the new plan against it — past experience is part of the upcoming plan's
+context, not forgotten each run. This is DISTINCT from the existing memory subsystems: REQ-15 condenses
+the CURRENT session's own transcript (short-term, in-session); REQ-16 stores durable per-repo FACTS (user
+preferences/decisions) selectively recalled by a memory-agent. REQ-24 is a new axis — a chronological log
+of DISCRETE ACTIONS the system took (what + why), queryable by similarity, so a planner can retrieve and
+reconcile against relevant PRIOR WORK regardless of which session produced it.
+
+**GUARD (Tenet 3, from a measured negative — see memory `jaros-code-retrieval-fewshot-negative`):** this is
+PLAN + PROVENANCE recall, NOT behavior-keyed few-shot CODE examples — that mechanism measured NEGATIVE for
+solving quality on the 2B (probed behavior-keyed RAG few-shot lowered the pass rate). Recall here informs
+the PLAN's context (what was done before and why, so a repeat/similar request can be recognized and
+reconciled) — it must NEVER paste stale code into a solving prompt as an example to imitate.
+
+**v1 is DETERMINISTIC (no model call, no embeddings):** lexical/tag-based retrieval only. Embeddings-based
+semantic recall is an explicit, separate, later follow-up — this requirement's job is the durable store +
+a genuinely-ranked deterministic recall mechanism, proven offline.
+
+#### Acceptance Criteria
+- [x] A durable, append-only store of past actions: `record_action(action, rationale, *, tags=None,
+  outcome=None, meta=None)` persists `{action, rationale, tags, outcome, meta, seq/ts}` to a JSONL store
+  under the data dir; never raises on any input (garbage/None/non-string arguments degrade gracefully,
+  never crash the caller) — **DONE 2026-07-04** (`harness/episodic_memory.py::record_action`, TASK-32)
+- [x] Deterministic similarity recall: `recall_similar(query, *, k=5, tags=None)` returns up to `k` past
+  actions ranked by DETERMINISTIC lexical/tag overlap (e.g. token-set Jaccard over action+rationale text,
+  with a bonus for shared tags) — NOT a model call, NOT embeddings (that is an explicit later follow-up);
+  ties broken stably (e.g. recency/insertion order) so results are reproducible; empty store / no match /
+  bad input returns `[]`, never raises — **DONE 2026-07-04** (`harness/episodic_memory.py::recall_similar`,
+  TASK-32: token-set Jaccard over `action + rationale` text plus a fixed per-shared-tag bonus, ties broken
+  by descending `seq` i.e. most-recent-wins)
+- [x] A scoped/reset store option so callers and tests can isolate state (no cross-test/cross-repo bleed) —
+  DONE (`reset(store)` plus every function accepting a `store=` keyword defaulting to `DEFAULT_STORE`)
+- [x] Read-back: `load_actions()` parses the JSONL, skipping malformed lines, never raising — DONE
+- [x] Proven offline (deterministic unit tests): recall ranks a crafted set of distinct actions in the
+  correct, exact order; a tag filter narrows results; `k` bounds the count; an empty store and a
+  non-matching query both return `[]` without raising; a malformed JSONL line is skipped, not fatal —
+  DONE (`tests/test_episodic_memory.py`, 10 tests, no model/network; full `tests/` suite stays green:
+  1590 passed, 1 skipped, up from 1580/1)
+- [ ] EXPLICIT FOLLOW-UP (not required by this requirement): wiring `record_action`/`recall_similar` into
+  `build_system`/`build_system_governed`/the CLI orchestrator so every real build records its action+
+  rationale and every new plan retrieves+reconciles against similar past work before planning — this
+  requirement builds and proves the mechanism only; wiring is an open follow-up (out of TASK-32's scope)
