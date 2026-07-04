@@ -939,3 +939,46 @@ Tenet-3 hollow pass on exactly the class of system this product most needs to na
 - [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds (wires the standalone TASK-23 oracle into
   `build_system` so a detected web service is HONESTLY HTTP-verified — closing the measured hollow-pass gap;
   `done=True` on a web-service build now REQUIRES a real `serve_and_check` pass)
+
+### [TASK-26] Long-horizon build coherence instrument — minimal first version (REQ-23)
+
+PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is the north-star measurement: the
+creation suite (REQ-20) and modification suite (REQ-21) each measure a SINGLE-behavior prompt end to end; neither
+measures whether a build stays ALIGNED across a LARGE, MULTI-REQUIREMENT ask without drift. Build the MINIMAL
+first version of that instrument — deterministic + independent-oracle-graded, starting at minute-scale — before
+wiring the full governed decompose->task->alignment-gate loop that would LIFT the number (an explicit follow-up
+capstone, not this task).
+
+#### Steps
+1. New `harness/coherence_suite.py` (mirroring `harness/system_suite.py`'s structure/oracle discipline): a
+   `CoherenceTask` dataclass (`name`, `tier`, `prompt` — ONE contract-precise sentence/paragraph describing a
+   system with N DISTINCT requirements, `requirements` — a list of `(req_id, argv, stdin, expected_substring)`
+   tuples, each an INDEPENDENT black-box CLI check for exactly ONE requirement). REUSE
+   `harness.system_suite._run_cli`/`_resolve_entry` (the same proven subprocess-execution/entrypoint-resolution
+   primitives REQ-20/21 already built) rather than duplicating that logic; do NOT modify `system_suite.py`.
+2. `run_coherence_suite(build_fn, tasks=None, python_exe=None) -> dict`: for each task, build via
+   `build_fn(prompt, root)` (same positional shape as `build_system(sentence, root, llm=...)` — callers pass a
+   partial binding `llm`), then run EVERY requirement's independent check against the built entrypoint. Record
+   per task `requirements_total`, `requirements_satisfied` (count of checks that pass), `coherence =
+   satisfied/total`, `all_satisfied` (bool), and `wall_seconds` (the build's measured duration — reported only,
+   never a correctness dependency). Aggregate mean coherence + fully-coherent rate, overall and per tier. NEVER
+   raises: a build/exec failure records that task's honest `requirements_satisfied=0` and the suite continues.
+3. Define a FIRST_SLICE of 2-3 minute-scale `CoherenceTask`s (4-5 requirements each) across tiers, each
+   contract-precise (pins a single `main.py` entrypoint, exact argv/stdin invocation, exact stdout format, `if
+   __name__ == "__main__":` required) and INTERNALLY COHERENT (Tenet 3): a correct reference implementation must
+   satisfy ALL its requirements.
+4. Tests `tests/test_ext036_coherence.py` (OFFLINE — no live model, no network): for each FIRST_SLICE task, a
+   known-correct reference implementation (stub `build_fn` writing it) run through `run_coherence_suite` asserts
+   `all_satisfied=True`/`coherence=1.0`; a DELIBERATELY PARTIAL implementation (satisfies only k of N
+   requirements, with the unmet ones genuinely wrong) scores `coherence = k/N` EXACTLY, proving the instrument
+   measures per-requirement coverage (the drift signal), not all-or-nothing; a no-op `build_fn` (writes nothing)
+   scores `coherence=0.0` for every task (no trivial pass); aggregate shape is well-formed (including an empty
+   task list and a mixed fully-coherent/zero-coherent pair); a raising/non-dict-returning `build_fn` never aborts
+   the suite. Run the FULL `python -m pytest tests/ -q` synchronously in the foreground and confirm it stays
+   green at the new count.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (the minimal, deterministic + independent-oracle-graded
+  measurement instrument itself, proven internally coherent on a first minute-scale slice; wiring the governed
+  decompose->task->alignment-gate loop that LIFTS the coherence number, and a live gemma-vs-escalating
+  measurement run, remain explicit open follow-ups)

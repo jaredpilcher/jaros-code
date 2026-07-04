@@ -1,4 +1,11 @@
 {
+  "REQ-23": [
+    {
+      "file": "harness/coherence_suite.py",
+      "startLine": 46,
+      "endLine": 244
+    }
+  ],
   "REQ-17": [
     {
       "file": "harness/cli.py",
@@ -249,18 +256,18 @@
       "endLine": 156
     }
   ],
-  "REQ-6": [
-    {
-      "file": "harness/multi_tests.py",
-      "startLine": 33,
-      "endLine": 153
-    }
-  ],
   "REQ-21": [
     {
       "file": "harness/modification_suite.py",
       "startLine": 51,
       "endLine": 738
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": "harness/multi_tests.py",
+      "startLine": 33,
+      "endLine": 153
     }
   ],
   "REQ-22": [
@@ -278,6 +285,13 @@
       "file": "harness/system_builder.py",
       "startLine": 814,
       "endLine": 849
+    }
+  ],
+  "REQ-20": [
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 41,
+      "endLine": 628
     }
   ],
   "REQ-1": [
@@ -316,13 +330,6 @@
       "file": "harness/system_builder.py",
       "startLine": 857,
       "endLine": 863
-    }
-  ],
-  "REQ-20": [
-    {
-      "file": "harness/system_suite.py",
-      "startLine": 41,
-      "endLine": 628
     }
   ]
 }

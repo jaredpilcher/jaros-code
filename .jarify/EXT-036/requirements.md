@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -633,3 +633,46 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   "not HTTP-verified" note (never a hollow `done=True`); a normal non-web CLI build (the pre-existing canned-llm
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
+
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26, 2026-07-04)
+
+**Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
+the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
+single-behavior prompt end to end (shipped/done/accepted y-or-n) — neither measures whether a build STAYS ALIGNED
+across a LARGE, MULTI-REQUIREMENT ask without drift. Before building the full jarify-native
+decompose->task->alignment-gate loop that would LIFT this number, the harness needs the INSTRUMENT that measures
+coherence honestly: given a prompt stating N distinct requirements, how many does the built system actually
+satisfy (each independently, black-box verified), and by how much did it drift? That number ranks which planes
+matter for the follow-on capstone build.
+
+#### Acceptance Criteria
+- [x] A `CoherenceTask` dataclass (`name`, `tier`, `prompt` — one contract-precise sentence/paragraph describing a
+  system with N distinct requirements, `requirements` — a list of independent `(req_id, argv, stdin,
+  expected_substring)` black-box CLI checks, one per requirement) — **DONE 2026-07-04**
+  (`harness/coherence_suite.py::CoherenceTask`). REUSES `harness.system_suite._run_cli`/`_resolve_entry` (the
+  SAME proven oracle primitives REQ-20/21 already built and proved) rather than duplicating subprocess-execution
+  or entrypoint-resolution logic; `harness/system_suite.py` itself is untouched.
+- [x] `run_coherence_suite(build_fn, tasks=None, python_exe=None) -> dict`: builds each task via
+  `build_fn(prompt, root)` (same positional shape as `build_system`), independently checks EVERY requirement
+  against the built entrypoint, and records per task `requirements_total`, `requirements_satisfied`, `coherence =
+  satisfied/total` (the drift/partial signal — NOT all-or-nothing), `all_satisfied`, and `wall_seconds` (the
+  build's measured duration, reported only — never a correctness dependency) — **DONE 2026-07-04**
+  (`harness/coherence_suite.py::run_coherence_suite`). Aggregates mean coherence + fully-coherent rate, overall
+  and per tier. NEVER raises: a build/exec failure records that task's honest `requirements_satisfied=0` and the
+  suite continues — proven OFFLINE (a raising `build_fn` never aborts the suite; a non-dict/`None` build result
+  is handled without raising).
+- [x] A FIRST_SLICE of contract-precise, internally-coherent minute-scale tasks (Tenet 3: a correct reference
+  implementation satisfies ALL its requirements) — **DONE 2026-07-04**: 3 tasks (`stats-cli` easy/4 reqs,
+  `text-tools-cli` medium/5 reqs, `ledger-cli` hard/5 reqs) across tiers, each a single-file `main.py` CLI
+  contract following the same convention `harness.system_suite.FIRST_SLICE` proved (exact argv/stdin invocation,
+  exact stdout format, `if __name__ == "__main__":` required). Proven OFFLINE
+  (`tests/test_ext036_coherence.py`, no live model): a known-correct reference implementation of each task scores
+  `all_satisfied=True`/`coherence=1.0`; a deliberately PARTIAL implementation (satisfying only k of N
+  requirements per task, with the unmet requirements genuinely wrong, not just mis-worded) scores `coherence =
+  k/N` EXACTLY, proving the instrument measures per-requirement coverage (the drift signal), not an
+  all-or-nothing pass; a no-op `build_fn` (writes nothing) scores `coherence=0.0` for every task (no trivial
+  pass); aggregate shape (`overall`/`by_tier`, mean coherence, fully-coherent rate) is well-formed, including on
+  an empty task list and on a mixed fully-coherent/zero-coherent pair. Full `tests/` suite stays green.
+- [ ] WIRING the governed decompose->task->alignment-gate loop that LIFTS the coherence number, and a live
+  gemma-vs-escalating measurement run against a grown, harder FIRST_SLICE — open follow-ups (the explicit
+  capstone this instrument sets up, not built here).
