@@ -10,6 +10,7 @@ the two planes.
 Commands (Claude-Code-style):
   /help                         list commands
   /status                       model + latest pass rate + census
+  /parity                       Product-Parity Checklist: CC-product-surface parity score (EXT-041)
   /agents  /tools               the live fleet/catalog
   /report                       latest convergence report
   /trend                        pass-rate history (full runs)
@@ -248,6 +249,18 @@ class JcodeCli:
                 f"latest: {rep.get('headline','(no eval yet)')}\n"
                 f"census: agents={c['agents']} tools={c['tools']} capabilities={c['capabilities']} "
                 f"evals={c['evals']}+{c['harnessEvals']} specs={c['specs']}")
+
+    # #EXT-041-REQ-1 Start
+    def cmd_parity(self, _arg: str) -> str:
+        """Product-Parity Checklist (EXT-041): CC-product-surface parity score, honest baseline
+        against docs/GAP-MAP.md's "## Product-surface parity" rows (#12-27). Deterministic --
+        no model call -- and never raises (mirrors /status's observability discipline)."""
+        try:
+            from harness.product_parity import render as _render_parity
+            return _render_parity()
+        except Exception:
+            return "Product-Parity Checklist: (unavailable -- see harness/product_parity.py)"
+    # #EXT-041-REQ-1 End
 
     def cmd_agents(self, _arg: str) -> str:
         d = ROOT / ".jaros-data" / "agents"

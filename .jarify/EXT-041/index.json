@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 253,
+      "endLine": 263
+    },
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 29,
+      "endLine": 279
+    }
+  ]
+}
