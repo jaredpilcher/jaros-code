@@ -128,6 +128,29 @@ REQ-20/21 already built — never an imagined class API. (C) NO-REGRESS FLOOR �
 decompose yields zero requirements), so a decompose failure degrades to build_system's own
 shipped/done result rather than a hollow 0-requirement/0-module regression; a defensive final
 check also ensures the returned module set is never smaller than build_system's own.
+
+TASK-29 (REQ-23) makes the NO-REGRESS FLOOR from TASK-28's defect (C) actually HOLD end to end.
+A LIVE measurement (an 11-requirement kvdb-cli) caught the gap: ``build_system`` (single-pass)
+satisfied 10/11 behavioral requirements, but ``build_system_governed``'s re-ground REPAIR
+LOOP — chasing its own unmet requirements — DAMAGED previously-working behavior, ending at
+8/11 on an independent behavioral check: a genuine regression below single-pass, one the prior
+(count-only, in-memory) tracking did not actually guarantee against end to end — e.g. an
+exception aborting a repair round mid-way (after some of its module write(s) already landed on
+disk, before that round's own end-of-round regression check ever ran) left stale bookkeeping
+that could report the pre-round unmet set unchanged while a genuinely-worse system shipped on
+disk. The fix: capture build_system's INITIAL output as an explicit BASELINE (its modules,
+verified against the SAME independently-decomposed requirement checks, computed BEFORE any
+governed repair runs) and, after the repair loop, independently RE-VERIFY the actual
+CURRENT on-disk state from scratch (never trust the loop's own bookkeeping). If that final
+verified count is worse than the baseline's (or the final state fails to re-verify at all),
+REVERT — re-assemble the baseline's modules back onto ``root`` and return the baseline's own
+modules/shipped/done/``requirements_met``, with an honest note that governed repair did not
+improve on ``build_system`` so the single-pass result was kept. This GUARANTEES
+``build_system_governed`` is always ``max(baseline, governed)`` on the independently-decomposed
+requirement set — never worse than a plain ``build_system`` call. Honest scope (no fabricated
+lift): this floor does NOT claim to fix decompose-completeness blind spots (a requirement the
+decompose call never enumerates at all is invisible to this check set, same as before) — it
+only guarantees governed never regresses BELOW build_system on the requirements it does check.
 """
 
 from __future__ import annotations
@@ -1562,7 +1585,21 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     def _verify_all() -> list:
         return [r["req_id"] for r in requirements if not _verify_requirement(root, plan, r)[0]]
 
-    unmet_ids = _verify_all()
+    # #EXT-036-REQ-23 TASK-29 Start
+    # NO-REGRESS FLOOR (TASK-29): capture build_system's INITIAL output -- its own modules,
+    # already assembled on `root` -- as the BASELINE, verified against these SAME
+    # independently-decomposed requirement checks, BEFORE any governed repair runs. A LIVE
+    # measurement (kvdb-cli, 11 requirements) caught the repair loop chasing unmet
+    # requirements (incr/keys) DAMAGING previously-working behavior (clear/usage broke),
+    # ending net WORSE than a plain `build_system` call -- a Tenet-3 safety regression the
+    # (count-only, in-memory) tracking below did not actually guarantee end-to-end. This
+    # baseline is the floor `build_system_governed` may never end up worse than.
+    baseline_built = dict(built)
+    baseline_unmet_ids = _verify_all()
+    baseline_met = len(requirements) - len(baseline_unmet_ids)
+    # #EXT-036-REQ-23 TASK-29 End
+
+    unmet_ids = list(baseline_unmet_ids)
     best_built, best_unmet = dict(built), list(unmet_ids)
     all_reqs_blob = "\n".join(f"- {r['req_id']}: {r.get('description', '')}" for r in requirements)
     by_id = {r["req_id"]: r for r in requirements}
@@ -1620,9 +1657,12 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
             if len(unmet_ids) >= len(pre_round_unmet):
                 break   # no progress this round -- stop (no infinite loop)
     except Exception:
-        pass   # never raise -- fall through with whatever progress was made
+        pass   # never raise -- the NO-REGRESS FLOOR below independently RE-VERIFIES the
+               # actual on-disk state regardless of whatever (possibly partial/dirty)
+               # in-memory bookkeeping this loop leaves behind on an aborted round.
 
-    # Final safety net: never return worse than the best-seen (non-regressing) state.
+    # Final safety net: never return worse than the best-seen (non-regressing) state the
+    # round loop itself tracked.
     if len(unmet_ids) > len(best_unmet):
         built, unmet_ids = best_built, best_unmet
 
@@ -1633,8 +1673,47 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     if len(built) < len(base_modules):
         built = dict(base_modules)
 
-    done = not unmet_ids
     total = len(requirements)
+
+    # #EXT-036-REQ-23 TASK-29 Start
+    # THE FLOOR (TASK-29): independently RE-VERIFY the actual CURRENT on-disk state from
+    # scratch -- never trust the loop's own bookkeeping above, which can go stale if a round
+    # aborts mid-way (e.g. an exception raised partway through a repair round, after some of
+    # its module write(s) already landed on disk but before that round's own end-of-round
+    # regression check ever ran) -- against the SAME baseline requirement checks. If the
+    # governed repair's final result is WORSE than build_system's own initial (pre-repair)
+    # output on this check set -- fewer requirements independently satisfied, or the
+    # governed state fails to re-verify at all -- REVERT: re-assemble the BASELINE's modules
+    # back onto `root` (undoing whatever the repair loop left on disk) and return the
+    # baseline's own modules/met-count. This GUARANTEES `build_system_governed`'s result is
+    # always max(baseline, governed) on the independently-decomposed requirement set -- never
+    # worse than a plain `build_system` call (Tenet 3: a safety FLOOR, not a claimed lift).
+    try:
+        final_unmet_ids = _verify_all()
+        governed_met = total - len(final_unmet_ids)
+    except Exception:
+        final_unmet_ids, governed_met = None, -1
+    if final_unmet_ids is None or governed_met < baseline_met:
+        for name, code in baseline_built.items():
+            _jailed_write(root, name, code)
+        built = dict(baseline_built)
+        unmet_ids = list(baseline_unmet_ids)
+        done = not unmet_ids
+        met = baseline_met
+        shown_governed_met = governed_met if governed_met >= 0 else "?"
+        note = (
+            f"GOVERNED repair did not improve on build_system (baseline {baseline_met}/{total} "
+            f"vs repaired {shown_governed_met}/{total}) -- kept the single-pass build_system "
+            "result (no-regress floor)"
+        )
+        note += ("; all requirements satisfied by the single-pass build" if not unmet_ids
+                  else "; unmet: " + ", ".join(unmet_ids))
+        return _governed_result(modules=built, shipped=True, done=done, requirements_total=total,
+                                 requirements_met=met, unmet=unmet_ids, note=note, rounds=rounds)
+    unmet_ids = final_unmet_ids
+    # #EXT-036-REQ-23 TASK-29 End
+
+    done = not unmet_ids
     met = total - len(unmet_ids)
     note = (f"GOVERNED DONE: all {total} independently-verified requirement(s) satisfied" if done
             else f"GOVERNED NOT DONE: {met}/{total} requirement(s) satisfied -- unmet: " + ", ".join(unmet_ids))

@@ -1080,3 +1080,49 @@ hollow 0/N regression.
   result — so the mechanism genuinely LIFTS live coherence instead of regressing it; a live gemma-vs-escalating
   re-measurement after this fix, and wiring `build_system_governed` into the `/buildsystem` CLI command, remain
   open)
+
+### [TASK-29] Make build_system_governed's NO-REGRESS FLOOR actually hold end to end (REQ-23)
+
+A LIVE measurement (an 11-requirement kvdb-cli) caught a safety-critical gap TASK-28's defect-(C) floor did not
+actually close: `build_system` (single-pass) satisfies 10/11 behavioral requirements, but
+`build_system_governed`'s re-ground REPAIR LOOP — chasing its own unmet requirements (incr/keys) — DAMAGES
+previously-working behavior (clear/usage broke), ending at 8/11 on an independent behavioral check: a genuine
+regression BELOW single-pass. The existing floor only falls back to `build_system` when decompose yields ZERO
+requirements; it never compared the governed repair loop's FINAL verified quality against `build_system`'s own
+initial output, so a repaired-but-worse system could ship.
+
+#### Steps
+1. In `harness/system_builder.py::build_system_governed`, right after ASSEMBLE (before any governed repair
+   round runs), capture `build_system`'s own INITIAL output as an explicit BASELINE: its modules (already
+   assembled on `root`) plus their verified count against the SAME independently-decomposed requirement checks
+   (`_verify_requirement`) — `baseline_built`/`baseline_unmet_ids`/`baseline_met`.
+2. After the existing re-ground repair loop finishes (regardless of how it ended — done, budget-exhausted, or
+   aborted by an exception mid-round), independently RE-VERIFY the actual CURRENT on-disk state FRESH (never
+   trust the loop's own in-memory bookkeeping, which can go stale if a round aborts mid-way after some of its
+   writes already landed on disk) — `governed_met`.
+3. If `governed_met < baseline_met` (repair made it WORSE) OR the final state fails to re-verify at all, REVERT:
+   re-assemble the baseline's modules back onto `root` (undoing whatever the repair loop left on disk) and
+   return the baseline's own modules/shipped/done/`requirements_met`, with an honest note that governed repair
+   did not improve on `build_system` so the single-pass result was kept (no-regress floor).
+4. Keep the existing TASK-28 empty-decompose fallback and the round-level non-degrading guard untouched
+   (defense-in-depth, not a replacement) — this is an ADDITIONAL, explicit, independently-re-verified final
+   guarantee layered on top. Keep NEVER-RAISE.
+5. Update `tests/test_ext036_system_builder.py`: add a dedicated fake-llm floor test where the initial build
+   satisfies K requirements and the repair round genuinely ends up satisfying FEWER than K (including a
+   round aborted mid-way by a simulated model/network failure, so the round's own end-of-round check never
+   runs) — assert `build_system_governed` returns the BASELINE (K met), not the regressed result, and that the
+   returned `main.py` on disk is the baseline's (re-verified by running it for real). Keep the existing lift
+   test, the round-level anti-regression test, the empty-decompose fallback test, the never-raises test, and
+   the `build_system`-unchanged confirmation. Run the FULL `python -m pytest tests/ -q` synchronously in the
+   foreground and confirm it stays green at the new count.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (the NO-REGRESS FLOOR now actually holds end to end: an
+  explicit baseline captured before repair, and an independent final re-verification of the ACTUAL on-disk
+  state — never stale in-memory bookkeeping — guarantee `build_system_governed` is always
+  `max(baseline, governed)` on the independently-decomposed requirement set, reverting to `build_system`'s own
+  single-pass result with a disk re-sync whenever repair ends up worse. Honest scope: this does not fix
+  decompose-completeness blind spots — a requirement decompose never enumerates at all remains invisible to
+  this check set — it only guarantees governed never regresses below build_system on the requirements it does
+  check. A live gemma re-measurement against the kvdb-cli confirming the floor holds live remains an explicit
+  follow-up.)

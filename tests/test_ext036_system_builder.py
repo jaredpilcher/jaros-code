@@ -630,6 +630,97 @@ def test_governed_repair_regression_is_caught_and_reverted(tmp_path):
     assert result["modules"]["main.py"].strip() == MAIN_MISSING_MUL.strip()
 
 
+# --- (5b) TASK-29 (REQ-23): the explicit outer NO-REGRESS FLOOR ------------------------
+# A LIVE measurement (kvdb-cli, 11 requirements) caught `build_system_governed` regressing
+# BELOW plain `build_system`'s own single-pass result: its repair loop chased unmet
+# requirements and DAMAGED previously-working behavior, ending net WORSE. The fixtures below
+# reproduce the SHAPE of that gap at small scale: the underlying build only satisfies `add`
+# (baseline met=1/3), and the repair round makes things WORSE, not better -- its fix for `sub`
+# regresses the whole system to satisfy NOTHING, and its fix for `mul` is syntactically
+# invalid, whose syntax-repair retry then RAISES (a simulated live model/network failure),
+# aborting the round mid-way -- BEFORE the round's own end-of-round regression check ever
+# runs. Without an explicit, independent RE-VERIFICATION of the final on-disk state, stale
+# in-memory bookkeeping could keep reporting the pre-round baseline unmet set unchanged while
+# the genuinely-worse (all-broken) system ships on disk -- exactly the live-measured defect.
+
+MAIN_ADD_ONLY = (
+    "def add(a, b):\n    return a + b\n\n\n"
+    + _CLI_DISPATCH.format(
+        body="        if cmd == 'add':\n            print(add(int(parts[1]), int(parts[2])))\n"
+    )
+    + "\n\nif __name__ == '__main__':\n    main()\n"
+)
+
+# The "repair" for `sub`: valid syntax, but regresses the WHOLE system to satisfy NOTHING --
+# not even `add`, which worked at baseline (the dispatch never matches any real command).
+MAIN_ALL_BROKEN = (
+    "def add(a, b):\n    return a + b\n\n\n"
+    "def sub(a, b):\n    return a - b\n\n\n"
+    "def mul(a, b):\n    return a * b\n\n\n"
+    + _CLI_DISPATCH.format(body="        if cmd == 'noop':\n            pass\n")
+    + "\n\nif __name__ == '__main__':\n    main()\n"
+)
+
+# The "repair" for `mul`: syntactically INVALID (missing colon) -- forces the syntax-repair
+# retry loop, which the fake llm below then fails (simulating a live model/network failure).
+MUL_FIX_BAD_SYNTAX = "def mul(a, b)\n    return a * b\n"
+
+
+class _FloorNoRegressLlm:
+    """Fake llm for the outer NO-REGRESS FLOOR test. Routes by the same prompt markers as
+    `_GovernedCannedLlm`: the INITIAL build (`build_system`'s own pipeline) only satisfies
+    `add`; the repair fix for `sub` regresses the system to satisfy NOTHING; the repair fix
+    for `mul` is syntactically invalid and its syntax-repair retry RAISES, aborting the round
+    via exception before its own end-of-round regression check ever runs."""
+
+    def complete(self, request):
+        prompt = request.prompt
+        if "GOVERNED-BUILD DECOMPOSE" in prompt:
+            return _Resp(GOVERNED_DECOMPOSE_JSON)
+        if "build PLAN" in prompt:
+            return _Resp(GOV_PLAN_JSON)
+        if "ACCEPTANCE CHECKS" in prompt:
+            return _Resp(GOVERNED_BUILD_CHECKLIST)
+        if "GOVERNED-BUILD REPAIR" in prompt and "UNMET REQUIREMENT: sub" in prompt:
+            return _Resp('{"module": "main.py", "code": %s}' % json.dumps(MAIN_ALL_BROKEN))
+        if "GOVERNED-BUILD REPAIR" in prompt and "UNMET REQUIREMENT: mul" in prompt:
+            return _Resp('{"module": "main.py", "code": %s}' % json.dumps(MUL_FIX_BAD_SYNTAX))
+        if "SYNTAX ERROR" in prompt:
+            raise RuntimeError("simulated live model/network failure mid-repair")
+        if "COMPLETE Python module" in prompt:
+            return _Resp(MAIN_ADD_ONLY)
+        return _Resp("")
+
+
+def test_governed_no_regress_floor_reverts_when_repair_ends_up_worse_than_baseline(tmp_path):
+    """THE FLOOR (TASK-29, the point of this task): build_system's own INITIAL output only
+    satisfies 1 of 3 independently-decomposed requirements (`add`; `sub`/`mul` unmet). The
+    re-ground repair round then makes things WORSE: its fix for `sub` regresses the system to
+    satisfy NOTHING (not even `add` any more), and its fix for `mul` is syntactically invalid
+    -- the syntax-repair retry then RAISES (simulated live failure), aborting the round via
+    exception BEFORE its own end-of-round regression check ever runs. `build_system_governed`
+    must NEVER return (or ship on disk) a system worse than build_system's own baseline on the
+    governed requirement set -- it must REVERT to the baseline instead."""
+    root = tmp_path / "floor"
+    llm = _FloorNoRegressLlm()
+    result = build_system_governed(SPEC_GOV, root, llm=llm, max_repair=2)
+
+    reqs = json.loads(GOVERNED_DECOMPOSE_JSON)
+    # THE FLOOR: never worse than build_system's own initial output on this check set.
+    assert result["requirements_met"] == 1            # baseline's `add`-only count, NOT 0
+    assert set(result["unmet"]) == {"sub", "mul"}      # the honest baseline unmet set
+    assert result["shipped"] is True
+    assert result["done"] is False
+    assert "no-regress floor" in result["note"]
+    # neither the returned dict NOR the actual files on disk are the regressed all-broken
+    # main.py -- both must be the BASELINE (build_system's own) content.
+    assert result["modules"]["main.py"].strip() == MAIN_ADD_ONLY.strip()
+    assert root.joinpath("main.py").read_text().strip() == MAIN_ADD_ONLY.strip()
+    # re-verify directly against the real (reverted) CLI -- `add` genuinely works, `sub`/`mul`
+    # genuinely don't -- proving the reverted system is REALLY the baseline, not a fabrication.
+    assert _verified_count(result, root, reqs) == 1
+
+
 def test_governed_honesty_never_done_when_repair_budget_exhausted(tmp_path):
     """HONESTY: when the repair never actually fixes the unmet requirement, `done` stays
     False with the unmet requirement honestly listed -- never a false `done=True`."""

@@ -634,7 +634,7 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
 
-### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28, 2026-07-04)
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28; NO-REGRESS FLOOR hardened end to end, EXT-036 TASK-29, 2026-07-04)
 
 **Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
 the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
@@ -736,3 +736,40 @@ matter for the follow-on capstone build.
   (honest scope): a fresh LIVE gemma re-measurement of `build_system_governed` against the 11-requirement
   kvdb-cli after this fix (the explicit next step to confirm the LIFT actually reaches >= single-pass live), and
   wiring `build_system_governed` into the `/buildsystem` CLI command, remain open follow-ups.
+- [x] Make the NO-REGRESS FLOOR actually HOLD end to end (not just on the empty-decompose fallback) —
+  **DONE 2026-07-04** (`harness/system_builder.py::build_system_governed`, EXT-036 TASK-29). A LIVE measurement
+  (an 11-requirement kvdb-cli) caught a safety-critical gap TASK-28's defect-(C) floor did not close: plain
+  `build_system` (single-pass) satisfied 10/11 behavioral requirements, but `build_system_governed`'s re-ground
+  REPAIR LOOP — chasing its own unmet requirements (incr/keys) — DAMAGED previously-working behavior (clear/
+  usage broke), ending at 8/11 on an independent behavioral check: a genuine regression BELOW single-pass. The
+  prior floor only fell back to `build_system` when decompose yielded ZERO requirements; it never compared the
+  repair loop's FINAL verified quality against `build_system`'s own initial output, so a repaired-but-worse
+  system could ship (and, if a repair round aborted mid-way — e.g. an exception after some of its writes
+  already landed on disk, before that round's own end-of-round regression check ran — the loop's in-memory
+  bookkeeping could go stale, reporting the pre-round unmet set unchanged while the genuinely-worse system
+  shipped on disk). FIXED: `build_system_governed` now captures `build_system`'s own INITIAL output as an
+  explicit BASELINE right after assembly (its modules + their verified count against the SAME
+  independently-decomposed requirement checks, `_verify_requirement`, computed BEFORE any governed repair
+  runs), then — after the repair loop finishes, however it ended — independently RE-VERIFIES the actual
+  CURRENT on-disk state FRESH (never trusting the loop's own in-memory bookkeeping). If that final verified
+  count is worse than the baseline's, or the final state fails to re-verify at all, it REVERTS: re-assembles
+  the baseline's modules back onto `root` (undoing whatever the repair loop left on disk) and returns the
+  baseline's own modules/shipped/done/`requirements_met`, with an honest note that governed repair did not
+  improve on `build_system` so the single-pass result was kept. This GUARANTEES `build_system_governed` is
+  always `max(baseline, governed)` on the independently-decomposed requirement set — never worse than a plain
+  `build_system` call. Additive: the existing TASK-28 empty-decompose fallback and the round-level
+  non-degrading guard are untouched (defense-in-depth, not replaced). Proven OFFLINE
+  (`tests/test_ext036_system_builder.py`, a fake llm, no live model): a dedicated FLOOR test where the initial
+  build satisfies only 1 of 3 independently-decomposed requirements and the repair round genuinely regresses to
+  0 (one fix silently breaks the previously-working requirement, the other fix is syntactically invalid and its
+  repair-retry call RAISES — simulating a live model/network failure — aborting the round mid-way before its
+  own end-of-round check runs) — `build_system_governed` returns the BASELINE (`requirements_met=1`, the
+  honest baseline unmet set), never the regressed 0-met result, and the actual `main.py` on disk (re-verified
+  by running it for real) is the baseline's, not the regressed one. The existing lift test, the round-level
+  anti-regression test, the honesty test, the empty-decompose fallback test, the never-raises test, and the
+  `build_system`-unchanged confirmation all stay green (unchanged behavior on those paths). Full `tests/` suite
+  stays green. HONEST SCOPE (no fabricated lift, Tenet 3): this floor does NOT fix decompose-completeness blind
+  spots — a requirement the decompose call never enumerates at all remains invisible to this check set — it
+  only guarantees governed never regresses BELOW build_system on the requirements it does check; a live gemma
+  re-measurement against the kvdb-cli confirming the floor holds live (`requirements_met >= 10/11`) remains the
+  explicit next follow-up.
