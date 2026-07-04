@@ -128,6 +128,32 @@ benchmarks where they exist (e.g. SWE-bench / SWE-bench-Verified, HumanEval/MBPP
 Aider's edit benchmark) so the bar is an external, recognized one — not a yardstick
 we drew ourselves. Progress is the benchmark trend, not a feeling.
 
+**"In ALL ways" means the WHOLE PRODUCT, not just the model's task-solving (owner
+clarification, 2026-07-04).** The bar is the **Claude Code CLI as a product** — everything
+a developer actually experiences at the terminal — researched from the OFFICIAL Claude Code
+documentation and tracked as its own instrument. Concretely, parity spans, beyond solving
+capability: **sessions** (continue / resume / fork / named, durable transcripts);
+**headless + Unix composability** (print mode, stdin piping, JSON/stream output,
+scriptable in CI); **instruction memory** (an auto-loaded per-project instruction file +
+user level + `/init`, alongside the episodic store); **user extensibility** (custom
+commands/skills as drop-in files, user-configurable lifecycle hooks at the clerk's gate,
+user-authored subagents); **an external-tool protocol client** (MCP — each server tool
+wrapped as a gated deterministic tool, two-plane preserved); **permission rules + modes
+UX** (allow/ask/deny per tool-pattern, plan / accept-edits modes, interactive approvals);
+**fine-grained checkpoint/rewind**; **interrupt-and-steer mid-run**; **long-session
+context management**; **a background-runs surface** (start, attach, logs, stop);
+**terminal UX** (streaming output, progress, statusline, discoverability); **an install +
+health story** (one-command install on macOS/Linux/Windows, `/doctor`); and eventually
+**multimodal input** (the Jetson roster's vision-capable members make this reachable).
+These live as the **Product-surface parity rows (#12–27) of `docs/GAP-MAP.md`**, and their
+instrument is the **Product-Parity Checklist**: feature-by-feature scoring (works /
+partial / missing) against the official docs, **re-synced from those docs monthly**
+because Claude Code is a moving target — parity with a moving target requires tracking
+the target. The capability scoreboard measures how WELL it solves; this checklist
+measures whether the PRODUCT is actually there. Both must converge; neither substitutes
+for the other. Deliberately deferred surfaces (IDE/desktop/web integrations) are RECORDED
+as deferred (GAP-MAP #27) so scope is stated, never silent.
+
 **Scope: PYTHON-FIRST (owner directive, 2026-06-28).** The system focuses on a SINGLE language —
 **Python** — for now. The evals, the problem **classes** + their taxonomy, the deterministic
 classifier's signals (Python AST + traceback/error parsing), and each model's measured profile are

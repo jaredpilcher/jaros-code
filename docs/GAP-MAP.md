@@ -599,3 +599,40 @@ Owner asked: are we checking generated code for quality + gating it to be SECURE
 - **PER-HOST GATED EGRESS** (EgressPolicy): default-deny + allow-list, FAIL-CLOSED, exact-host match (no substring bypass: evil-pypi.org.attacker.com blocked under allow('pypi.org')) — research/deps get controlled egress, nothing else.
 - governed/escalating/best_of_k/modify_system inherit the gate (all call build_system / _run_check).
 HONEST REMAINING (named, not dropped): (1) server_oracle uvicorn + system_suite._run_cli still run unsandboxed (scan-gate refusal DOES cover them; env-scrub/caps sandboxing of those 2 sites is the next task); (2) runtime network-egress enforcement (OS namespace/firewall on the Jetson) is static-gate-only. (3) CODE-QUALITY gate (ruff/radon) not yet built. Suite 1621 green.
+
+---
+
+## Product-surface parity — the CLI as a PRODUCT (added 2026-07-04, researched from the official Claude Code docs)
+
+**Why this section exists (owner directive):** the bar is parity with **the Claude Code CLI
+product running Opus 4.8 — the ENTIRE product experience — not just what the model does.**
+The 11 capability rows above measure solving; these rows measure the PRODUCT SURFACE,
+researched from the official docs (code.claude.com/docs: overview, cli-reference,
+commands/skills, hooks, memory, MCP, sub-agents, checkpointing, settings). Claude Code is a
+moving target: **re-audit the official docs monthly** and add rows for anything new.
+Placement discipline: every row lands Jaros-native (judgments = agents; effects = gated
+deterministic tools; hooks/permissions = clerk-side config; sessions = durable state).
+
+| # | Gap (CC feature surface) | State | Current honest state in jcode | Next lever |
+|---|--------------------------|-------|-------------------------------|------------|
+| 12 | **Sessions: continue / resume / fork / name** (`-c`, `-r <id\|name>`, `--fork-session`, durable transcripts) | lever-named | EXT-036 persists build-run state; NO conversation-session continue/resume UX at the REPL | durable session store + `jcode -c` / `-r` (deterministic; Jaros log is already the transcript) |
+| 13 | **Headless + piping + structured output** (`-p`, stdin pipe, `--output-format json/stream-json`, `--json-schema`, `--max-turns`, exit codes — the Unix/CI surface) | probed | one-shot `python -m harness.cli "req"` exists; no stdin pipe, no JSON/stream output, no turn caps | thin deterministic output layer over the existing one-shot path |
+| 14 | **Project-instruction memory hierarchy** (CLAUDE.md-equivalent: project + user levels, auto-loaded every session, imports, `/init` generator, auto-memory) | lever-named | `.jcode/memory.md` + `/remember` + episodic store exist; no auto-loaded per-repo instruction file, no user level, no `/init` | `JCODE.md` convention: auto-load into orchestrator/planner context; `/init` writes it from repo comprehension |
+| 15 | **Custom commands / skills** (user-drops-a-markdown-file → new `/command`; args; model-invocable when relevant) | unmeasured | none — all commands are built-in Python | `.jcode/skills/<name>.md` registry read by the deterministic router; body = plan template the orchestrator executes |
+| 16 | **User-configurable hooks** (shell hooks on PreToolUse/PostToolUse/SessionStart/Stop — deterministic user extensions) | unmeasured | Jaros gate is exactly the right seam; no user-facing hook config | hooks config consumed by the clerk at the existing validate()/execute() seam — pure execution-plane |
+| 17 | **Permission rules + modes UX** (allow/ask/deny per tool-pattern, settings hierarchy, `plan`/`acceptEdits`/`bypass` modes, interactive approval prompts) | lever-named | HARD gates exist (egress, destructive ops, secrets, path-jail) but not user-configurable; `--plan` exists for /agent only | permission-rules file + ASK prompt flow in the REPL; mode cycle (plan → default → acceptEdits) |
+| 18 | **External-tool extensibility protocol (MCP client)** (connect stdio/HTTP tool servers; tools join the toolbelt; the ecosystem standard) | unmeasured | none | implement an MCP CLIENT as execution-plane adapters: each server tool wrapped as a gated Jaros tool (two-plane preserved; instant ecosystem access) |
+| 19 | **Subagent authoring surface** (user-defined agents: prompt/tools/model in a markdown file; delegate-with-own-context) | probed | agents exist as Python in `.jaros-data/agents/` (builder-authored, not user-friendly); no user-authoring format | markdown agent spec → loader compiles to a Jaros agent; router can delegate |
+| 20 | **Fine-grained checkpoint / rewind** (auto-checkpoint before EACH edit; `/rewind` code, conversation, or both) | probed | whole-run checkpoint + `/undo` exist (EXT-009) | per-edit checkpoint ring on the existing snapshot tool; `/rewind <n>` |
+| 21 | **Interrupt + steer mid-run** (Esc to stop safely mid-task, queue a correction, agent adjusts) | unmeasured | Ctrl-C guards exist for crash-safety; no graceful interrupt-and-steer loop | cooperative cancel points between plan steps (clerk checks an interrupt flag; partial state preserved via checkpoints) |
+| 22 | **Context management for long sessions** (auto-compact, context meter, `@file` references, `/compact`) | lever-named | compaction deferred earlier (bounded flows didn't need it); long-horizon runs now DO; no @-refs | deterministic compactor (summarize decided/verified state into the spec — jarify IS the compaction target); `@path` expansion in the REPL |
+| 23 | **Background runs surface** (`--bg`, attach/logs/stop, agent view — kick off a long build, keep working) | probed | runner/daemon infra exists internally (run_forever, experiment chain); not exposed as a product surface | `jcode --bg` submits through the existing inbox; `jcode logs/attach/stop <id>` read the Jaros log |
+| 24 | **Terminal UX polish** (streaming output, progress display, statusline, `/help` discoverability, `/export`, tab-completion, themes) | probed | REPL prints results; no streaming/progress/statusline; `/help` exists | stream tool events as they log (the hash-chain already has them); statusline = model + class + $0 + latency |
+| 25 | **Install + health story** (one-command install macOS/Linux/Windows, auto-update, `/doctor` diagnostics) | lever-named | serve.sh/ps1 + jcode.sh/ps1 exist (repo-local); no packaging, no `/doctor` | `pipx install jaros-code` packaging; `/doctor` = deterministic checks (Jetson reachable, model served, Docker, git) |
+| 26 | **Multimodal input (images)** (paste a screenshot/mockup → build/debug UI) | unmeasured | none; NOTE Gemma e2b/e4b are vision-capable on the Jetson (VLA demos) — genuinely reachable | probe: image → e4b vision → structured UI description → existing build pipeline |
+| 27 | **Deliberately deferred surfaces (honest scope)** — IDE extensions, desktop app, web/cloud sessions, Slack/GitHub-Actions integrations, remote control | probed | out of scope for the CLI-parity pursuit FOR NOW; recorded so the scope is stated, not silent | revisit after CLI-product parity; none block the terminal product |
+
+**Instrument for this section (new):** the **Product-Parity Checklist** — feature-by-feature
+scoring vs the official docs (works / partial / missing), re-synced from the docs monthly.
+It joins the scoreboard beside the daily-driver suite: the suite measures how WELL the
+product solves; the checklist measures whether the PRODUCT is actually there.
