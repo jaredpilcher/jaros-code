@@ -529,3 +529,22 @@ NEVER be worse than single-pass. After that, if governed only ever EQUALS single
 floor-safe-but-no-measured-lift (a bookmark, like the training-scoreboard-null finding) — do NOT force/claim a lift that
 isn't in the live number. Possible deeper truth: single-pass 10/11 may be near the model's ceiling for this task and the
 repair can't reliably improve it (damages ~ as much as it fixes) — an honest negative to accept if it holds.
+
+## ★ NORTH-STAR CAPSTONE — BANKED as an HONEST NEGATIVE (2026-07-04, after 3 live attempts)
+
+build_system_governed (governed decompose->verify->repair for long-horizon coherence) across THREE live attempts on the
+11-req kvdb-cli: attempt 1 = 0/11 (decompose parse broken); attempt 2 = 8/11 (parse fixed, but repair DAMAGED working
+behavior, regressed below single-pass); attempt 3 (floor active) = 0/11 (broken build, 0 repair rounds, floor did not
+reliably hold live). Single-pass build_system = 10/11 throughout. VERDICT: the governed approach as built is NET-NEGATIVE
+and UNRELIABLE on the hard multi-requirement class — NEVER a measured lift, and it can produce systems WORSE than
+single-pass. Root issues found + fixed along the way (all committed, real): decompose parse for gemma's one-array-per-line
+output (498209a); black-box CLI verification vs the model's imagined class-API checks; a no-regress floor that re-verifies
+final on-disk state (4706aa3). The instrument + parser + black-box verify + floor are REUSABLE. But the CORE lever
+(decompose->repair lifts coherence) is UNPROVEN/negative: gemma's repair damages ~ as much as it fixes, its 14 self-
+decomposed requirements are a noisy proxy that doesn't align with true behavior, and single-pass ~10/11 may be near the
+model's ceiling for this task. HONEST BOOKMARK (like training-scoreboard-null): revisit with a stronger base, a
+deterministic (not model-authored) requirement-check derivation, or a fundamentally different anti-drift mechanism.
+DO NOT wire build_system_governed into /buildsystem (it can regress) — single-pass build_system stays the product default.
+KEY LESSON REINFORCED: the coherence INSTRUMENT + live re-measure caught a unit-green, architect-approved capstone
+regressing 3x — the number is the truth, not the tests. The night's real WIN is the FastAPI real-system HTTP-verification,
+NOT this capstone.
