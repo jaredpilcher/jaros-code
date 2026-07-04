@@ -435,3 +435,21 @@ to the Jetson + a `models.json` catalog entry + serve + test build_system's comp
 + restore gemma. Authorized roster-growth (Jetson-fit, $0, cloud-forbidden), but a substantial op with serving-desync
 risk — greenlight/timing best from the owner. This is the depth lever on the TRUE parity gap (the reasoning frontier);
 the overnight EXT-036 work is breadth. QUEUED for a careful active-hours execution.
+
+## ★★ REAL-SYSTEMS FRONTIER — first honest measurement (owner directive 2026-07-03): FastAPI-from-a-prompt
+
+Owner reframed the bar: build/modify REAL framework systems from a prompt (servers/API frameworks/libraries), AUTOMATICALLY —
+not toy stdin/stdout CLIs. FIRST HONEST PROBE (`.jaros-data/real_framework_probe.py`): gave build_system a prompt for a
+FastAPI service (/health -> {"status":"ok"}, /add?a,b -> {"sum":a+b}) then INDEPENDENTLY started uvicorn + hit the endpoints
+over real HTTP. RESULT — mixed, honestly: (1) ✅ the local gemma GENERATED framework-correct FastAPI code (app object, typed
+query params, correct JSON) and it ACTUALLY SERVES real HTTP (200 {"status":"ok"}; 200 {"sum":5}) — a REAL system working
+end-to-end at $0. (2) ✗ BUT build_system reported done=True "all acceptance checks pass" as a HOLLOW PASS: the generated
+service has no __main__/stdout, so the stdout oracle's model-derived checks were filtered out and it fell back to
+`_smoke_checklist` = `import main; assert hasattr(main,'app')` — which passes the instant the module imports, NEVER exercising
+an endpoint. So "DONE" meant "it imports", not "the API works" — the code was right by good generation, not by verification.
+Tenet-3 gap: for real services the harness can't actually validate behavior. LEVER (task #84, the primary convergence lever
+now): a deterministic SERVER/HTTP ACCEPTANCE ORACLE — detect a web service (FastAPI/ASGI, Flask/WSGI), start it on a free
+port, poll, HTTP-request the declared endpoints, assert status+JSON, teardown (tree-kill); done=True for a service REQUIRES
+the endpoints to actually respond. Frameworks are all installed (flask/fastapi/uvicorn/sqlalchemy/pandas/networkx/pydantic);
+venv_install really installs. NEXT after the oracle: wire it into build_system acceptance + modify_system; then real
+library systems (pandas/networkx) + larger external repos. This is the honest path to "builds REAL systems from a prompt".
