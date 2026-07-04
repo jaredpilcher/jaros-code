@@ -93,6 +93,8 @@ toy-CLI suites.
 
 ## LANDED (recent trail — newest first)
 
+- **[governance: every spec has intent+design]** rule set (jarify-manage-specs) + governance-loop enforces/backfills; 17 intent.md + 6 design.md backfilled — completes the convergence chain (each spec states its intent + how it converges toward PRIME-001) — 18d4ad3 (owner).
+- **[governance: Jarify Roadmap]** this artifact — the official living forward-plan layer + jarify-manage-roadmap skill + PRIME-001 binding + convergence-hierarchy wiring (specs→Prime Directive) — 23ac171 (owner).
 - **[EXT-040]** observability heartbeat + `/status` live phase + anti-wedge runner + 5-min watchdog (owner) — 3030b3d/485adf8/36524cc.
 - **[EXT-036 TASK-35]** closed a concrete build_system FALSE-DONE (subprocess-driven acceptance tier) — ca493a1.
 - **[EXT-036 TASK-34]** validate_plan exempts stdlib imports (unblocked the whole datastore class) — 27120d8.
