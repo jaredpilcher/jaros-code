@@ -1,5 +1,10 @@
 # GAP-MAP — the Claude-Code capability surface, every gap in exactly one state
 
+> **APPENDIX to `.jarify/ROADMAP.md`** (the official Jarify Roadmap, owner directive 2026-07-04).
+> The Roadmap is the organized FORWARD plan (NOW/NEXT/LATER horizons of specs/requirements) and the
+> single source of truth for what's coming; THIS file is its detailed **measured-findings appendix**
+> (the honest numbers + evidence behind each gap). Governed by the `jarify-manage-roadmap` skill.
+
 **The steering wheel of THE PURSUIT** (`docs/PURSUIT.md` §2.7 / §9.3). Work always flows to the
 highest **(impact × tractability)** gap here. Living document — updated every cycle; never "done."
 
