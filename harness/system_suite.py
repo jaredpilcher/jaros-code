@@ -614,3 +614,72 @@ HARDER_SLICE: "list[CreationTask]" = [
 
 ALL_CREATION_TASKS: "list[CreationTask]" = FIRST_SLICE + HARDER_SLICE
 # #EXT-036-REQ-20 End
+
+
+# --- DATASTORE_SLICE (EXT-039 TASK-1, 2026-07-04): the first datastore-backed creation task -----
+# Every task above is checked by the black-box stdout oracle alone. A CLI that CLAIMS to persist
+# ("Saved!") but never actually writes to a datastore -- or keeps state only in-process -- can
+# still fool a stdout-only check as long as the SAME build's own process memory happens to answer
+# later `list`/`count` checks correctly within a single suite run. This task closes that hollow-done
+# class for the sqlite case: its checks include an INDEPENDENT `datastore_oracle.verify_persistence`
+# call that opens the resulting notes.db file itself and asserts real rows, never trusting stdout.
+# #EXT-039-REQ-1 Start
+# TASK-1
+def _notes_db_persists(root: Path, plan) -> bool:
+    """Callable check (the ``callable(root, plan) -> bool`` shape ``CreationTask.checks`` already
+    supports) that drives the built notes CLI through the INDEPENDENT sqlite datastore oracle
+    (``harness.datastore_oracle.verify_persistence``) rather than the black-box stdout checks
+    above -- it opens the resulting ``notes.db`` itself and asserts a real row exists, and that the
+    row survives a second, entirely fresh CLI invocation. Imported locally (not at module import
+    time) to avoid a circular import, since ``datastore_oracle`` itself reuses this module's
+    ``_run_cli``. Never raises -- any failure (missing datastore_oracle, a broken build, an
+    unexpected exception) is an honest ``False``, never a fabricated pass."""
+    try:
+        from harness.datastore_oracle import count_all_rows, verify_persistence
+        result = verify_persistence(
+            root, db_path="notes.db",
+            drive_cmds=[(["add", "harness", "probe", "note"], None)],
+            assertions=[lambda cur: count_all_rows(cur) == 1],
+            cross_invocation_cmd=(["count"], None),
+        )
+        return bool(result.ok)
+    except Exception:
+        return False
+
+
+DATASTORE_SLICE: "list[CreationTask]" = [
+    CreationTask(
+        name="notes-sqlite-cli", cls="datastore", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py that persists notes "
+            "to a SQLite database file named notes.db in the current directory (use the standard "
+            "library sqlite3 module; create the database file and any table it needs the first "
+            "time it is run). Running it as `python main.py add <text...>` (one or more "
+            "command-line arguments after `add`, joined with single spaces to form the note's "
+            "text) stores a new note with that text in notes.db and prints ONLY `added` followed "
+            "by a newline, to standard output (nothing else). Running it as `python main.py list` "
+            "prints every stored note, in the order the notes were added, one note per line, each "
+            "line containing EXACTLY that note's text (no numbering, no extra characters) "
+            "followed by a newline; if there are no stored notes, `list` prints nothing. Running "
+            "it as `python main.py count` prints ONLY the number of stored notes, as a single "
+            "integer followed by a newline, to standard output (nothing else). Every note added "
+            "in one run of the program MUST still be present (via `list` and `count`) in a "
+            "COMPLETELY SEPARATE, later run of the program -- notes must be persisted to the "
+            "notes.db file on disk, not just kept in memory for the current run. The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            (["add", "buy", "milk"], None, "added"),
+            (["add", "walk", "dog"], None, "added"),
+            (["list"], None, "buy milk\nwalk dog"),
+            (["count"], None, "2"),
+            _notes_db_persists,
+        ],
+    ),
+]
+# DATASTORE_SLICE is deliberately kept as its own SIBLING list, not merged into
+# ALL_CREATION_TASKS -- EXT-036/REQ-20's own suite asserts the invariant
+# ``ALL_CREATION_TASKS == FIRST_SLICE + HARDER_SLICE`` (tests/test_ext036_suite.py), which this
+# spec must not disturb (out of EXT-039's scope). A caller wanting the datastore tier runs
+# ``run_creation_suite(build_fn, tasks=DATASTORE_SLICE)`` explicitly.
+# #EXT-039-REQ-1 End
