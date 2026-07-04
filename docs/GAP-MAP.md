@@ -548,3 +548,15 @@ DO NOT wire build_system_governed into /buildsystem (it can regress) — single-
 KEY LESSON REINFORCED: the coherence INSTRUMENT + live re-measure caught a unit-green, architect-approved capstone
 regressing 3x — the number is the truth, not the tests. The night's real WIN is the FastAPI real-system HTTP-verification,
 NOT this capstone.
+
+## ★ HARDENED coherence instrument — DISCRIMINATES + reveals build-reliability variance (2026-07-04)
+
+Ran the hardened coherence HARD_SLICE (kvdb-cli, taskmgr-cli; 11 interdependent reqs each) live vs single-pass
+build_system(gemma): kvdb-cli 0/11 (49s), taskmgr-cli 11/11 (152s). HONEST READ: (1) the instrument now DISCRIMINATES —
+it does NOT saturate at 1.0 like the minute-scale FIRST_SLICE (which read 1.00); that was the point of hardening it.
+(2) The real signal is BUILD-RELIABILITY VARIANCE: kvdb's 0/11 was a FAST BROKEN build (49s vs 152s), and across runs it
+swung 0/11 -> 10/11 -> 8/11; taskmgr hit a clean 11/11. So on hard 11-req interdependent tasks, single-pass build_system is
+HIGH-VARIANCE at n=1 — it either mostly-nails it (10-11/11) or fails hard (0/11 broken build), draw-dependent. A single run
+is NOT a stable coherence number. NEXT (real instrument improvement the data demands): add an n>1 (median-of-k) option to
+run_coherence_suite so the coherence number is STABLE, and separate "build failed entirely" from "dropped a requirement"
+in the report. Honest — do NOT headline a single noisy 0/11 or 11/11.
