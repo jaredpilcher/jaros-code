@@ -252,6 +252,25 @@ hash-chain logged. This is what lets the product build+modify REAL projects (run
 not just source files. Likely its own EXT- spec. Impact HIGH (completes the product); tractable (deterministic tools + a
 path-jail; the shell/fs primitives partly exist per design.md). NEXT: scope the spec + build the path-jailed fs + gated exec first.
 
+## ★ MULTI-FILE MODIFICATION MEASURED + a regression-gate HONESTY hole FIXED (2026-07-03, commit 20d2afe)
+
+Single-file modification is saturated (gemma 10/10), so probed the real frontier: MULTI-FILE modify. Batch of 4 diverse
+2-file (statlib.py+main.py) changes, INDEPENDENT functional oracle (run the built system, check stdout): **gemma applied
+4/4, FUNCTIONALLY-CORRECT 3/4** — it localizes across interdependent modules (edits BOTH lib+CLI), preserves existing
+behavior, no regressions on the 3 wins. So the create-vs-edit strength EXTENDS past single-file (gemma edits small 2-file
+systems well). **The 1 miss surfaced a Tenet-3 hole:** `add-max` produced a `main.py` with a broken import
+(`from statlib import max`, unexported) → main.py stopped importing entirely, YET `modify_system` returned
+`applied=True, regressed=[]` (FALSE no-regression). Root cause (suspect-harness-first; first hypothesis "empty baseline"
+was WRONG — verify-don't-assume): the surviving `baseline_passing` model-derived checks only `import statlib` — they never
+import `main`, and the one check that did failed on the ORIGINAL (bad signature guess). The gate can't catch a break in a
+module NO surviving baseline check exercises — esp. the ENTRYPOINT. FIX (EXT-036 REQ-14/TASK-21, Jarify): a DETERMINISTIC
+model-independent **import smoke-gate** — `_importable_modules` (`python -c "import <stem>"`, cwd=root, timeout, rc==0) as
+`baseline_importable` before the mod, re-checked after assembly; any baseline-importable module that becomes non-importable
+→ SAME revert path → `applied=False`. Additive (behavioral gate intact), never-raise, no spurious revert from a
+baseline-broken module. Airtight proof = the deterministic import-break UNIT TEST (fake llm); suite 1470 green. A
+modification-path HONESTY floor (catches false no-regression a NO-OP/breaking edit could otherwise score as applied).
+NEXT: formalize a MULTI-FILE modification suite TIER for a held-out number; difficulty lever stays SIZE (go 3+-file/real-repo).
+
 ## ★★ prompt→system PARITY LIFTED 58%→92% by a HARNESS FIX (2026-07-03, commit 20fe5db) — headline update
 
 Suspect-harness-first on the 5 creation-suite residuals found 4/5 were ONE deterministic planner-coherence bug (gemma
