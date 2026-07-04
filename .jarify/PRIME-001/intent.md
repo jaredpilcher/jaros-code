@@ -70,6 +70,22 @@ anti-drift engine of a long run. The difficulty **ratchet applies to DURATION to
 finish in **minutes**, and expand to systems so large they take **hours or days** — a run only counts when,
 at the end, every requirement is traced to work that is honestly verified. This is the north-star form of
 "just like Claude Code": hand it something big, walk away, and it stays on-task and delivers.
+
+**HOW it solves all of the above — the prime-directive method, applied REFLEXIVELY (owner directive,
+2026-07-04).** The product tackles a problem with the SAME disciplined method by which this directive itself is
+pursued — there is ONE method, used both to *build jaros-code* and *by jaros-code to build/modify/solve*:
+**decompose** the problem into the smallest verifiable steps; climb the **escalation ladder cheapest-rung-first**
+(prompt → decompose → plane-shift → retrieve → recall → reduce → route → train), never reaching for a heavier
+lever than the failure needs; **VERIFY, don't assume — and suspect your own harness/plan before blaming the model
+or the environment** (raw-probe what actually happened first; a zero/absurd result is a bug in the approach until
+proven otherwise); accept only **HONEST completion** — real acceptance that exercises the real behavior, **never a
+hollow pass**, a failure reported as a failure (Tenet 3); when a grain is a judgement the model can't reliably
+make, **move it to the deterministic plane** rather than slicing it thinner; and **govern the whole run spec-first
+with an alignment gate (jarify)** — decompose → build → an architect-style check that the work serves the spec
+before advancing → record what was done and why (which feeds (f)'s experience memory). This method is the
+`MEASURE → DIAGNOSE → DISCOVER → PLACE → WIRE → RE-MEASURE → PRUNE` convergence loop (design §"The convergence
+loop") turned inward: the product runs it to converge on the user's prompt exactly as the supervisor runs it to
+converge on this directive. Reconciled here so the two are explicitly the same discipline, never divergent.
 **Tenet reconciliation (this does NOT weaken Tenet 2):** web research and package/service setup are
 **read-only information retrieval and build-time actions**, not inference — *every reasoning call
 still runs on the local Jetson model at $0; no cloud/paid model is ever used for thinking.* Fetching

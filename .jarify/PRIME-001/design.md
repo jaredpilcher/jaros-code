@@ -366,6 +366,14 @@ and where it belongs.
    └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Reflexive (owner directive, 2026-07-04): this loop is ALSO the product's own problem-solving method.** When
+jaros-code builds/modifies a system for a user it runs this SAME loop inward — measure (the acceptance oracle),
+diagnose (raw-probe what actually happened, suspect its own plan/harness before the model or environment), climb
+the escalation ladder cheapest-rung-first, place a judgement the model can't make onto the deterministic plane,
+accept only honest completion (real acceptance, never a hollow pass), and govern the run spec-first with an
+architect-style alignment gate (jarify). One discipline, used to build the product AND by the product — see
+intent §"HOW it solves all of the above". The two are explicitly reconciled, never divergent.
+
 Worked example (this is how the loop actually ran, not a hypothetical):
 
 ```text
