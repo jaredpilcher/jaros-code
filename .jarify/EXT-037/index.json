@@ -1,21 +1,6 @@
 {
   "REQ-1": [
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 112,
-      "endLine": 121
-    },
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 134,
-      "endLine": 136
-    },
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 140,
-      "endLine": 144
-    },
-    {
       "file": "harness/agent_loop.py",
       "startLine": 96,
       "endLine": 104
@@ -54,6 +39,21 @@
       "file": "harness/system_builder.py",
       "startLine": 947,
       "endLine": 949
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 112,
+      "endLine": 121
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 134,
+      "endLine": 136
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 140,
+      "endLine": 144
     },
     {
       "file": "tests/test_ext037_root_enforcement.py",
@@ -99,6 +99,58 @@
       "file": ".jaros-data/tools/apply_patch_tool.py",
       "startLine": 46,
       "endLine": 52
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "tests/test_ext037_git_tools.py",
+      "startLine": 36,
+      "endLine": 373
+    },
+    {
+      "file": ".jaros-data/tools/_gittools.py",
+      "startLine": 23,
+      "endLine": 70
+    },
+    {
+      "file": ".jaros-data/tools/_gitsecrets.py",
+      "startLine": 18,
+      "endLine": 50
+    },
+    {
+      "file": ".jaros-data/tools/git_status_tool.py",
+      "startLine": 23,
+      "endLine": 61
+    },
+    {
+      "file": ".jaros-data/tools/git_log_tool.py",
+      "startLine": 23,
+      "endLine": 71
+    },
+    {
+      "file": ".jaros-data/tools/git_init_tool.py",
+      "startLine": 28,
+      "endLine": 55
+    },
+    {
+      "file": ".jaros-data/tools/git_history_update_tool.py",
+      "startLine": 29,
+      "endLine": 98
+    },
+    {
+      "file": ".jaros-data/tools/git_diff_tool.py",
+      "startLine": 24,
+      "endLine": 61
+    },
+    {
+      "file": ".jaros-data/tools/git_commit_tool.py",
+      "startLine": 48,
+      "endLine": 141
+    },
+    {
+      "file": ".jaros-data/tools/git_branch_tool.py",
+      "startLine": 27,
+      "endLine": 91
     }
   ],
   "REQ-2": [

@@ -14,9 +14,19 @@ implementation:
   - .jaros-data/tools/venv_create_tool.py
   - .jaros-data/tools/venv_install_tool.py
   - .jaros-data/tools/venv_pin_tool.py
+  - .jaros-data/tools/_gittools.py
+  - .jaros-data/tools/_gitsecrets.py
+  - .jaros-data/tools/git_init_tool.py
+  - .jaros-data/tools/git_commit_tool.py
+  - .jaros-data/tools/git_status_tool.py
+  - .jaros-data/tools/git_log_tool.py
+  - .jaros-data/tools/git_diff_tool.py
+  - .jaros-data/tools/git_branch_tool.py
+  - .jaros-data/tools/git_history_update_tool.py
   - tests/test_ext037_pathjail.py
   - tests/test_ext037_gated_exec.py
   - tests/test_ext037_env_tools.py
+  - tests/test_ext037_git_tools.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -126,17 +136,35 @@ real (offline `pip freeze` against a genuinely created venv), so "record/pin dep
   install step is proven via a `dry_run` command-construction + validate()-gate test (no real PyPI network
   call in the hermetic suite, honestly noted above); venv creation and requirements pinning are proven for real
 
-### [REQ-4] Git tools — version the work like Claude Code  (uncovered)
+### [REQ-4] Git tools — version the work like Claude Code  (covered)
 
 Init a git repository in the project root, stage + commit, view and update commit history when needed, branch,
 and read status/log/diff — as native Jaros tools. Guardrails: no force-push / history-rewrite without an explicit
 gate; never stage/commit secrets (`.env`, keys) or ignored runtime/log paths (mirror jaros-code's own commit
 discipline).
 
+**HONEST STATUS (Tenet 3, TASK-5):** seven new Jaros tools land this requirement, all sharing a new `_gittools.py`
+choke point (`run_git(cwd, args, timeout_s)`, never raises — a bad `cwd`/missing binary/timeout all come back as a
+structured, honest result dict) and a new `_gitsecrets.py` deterministic secret/ignored-path guard: `git.init`
+(initializes a repo at `root`), `git.commit` (stages `paths` — or everything when omitted — and commits; every
+explicit path is root-jailed via `_pathjail`'s existing `path_escape_reason` choke point, AND `validate()` runs a
+read-only `git status --porcelain` to enumerate what would ACTUALLY be staged, whether the caller named files or
+asked for "everything", and refuses the whole commit if any candidate matches the secret/ignored-path guard —
+`.env`, `*.key`/`*.pem`, `id_rsa`, common credential files, `.log`, `__pycache__`, etc.), `git.status`/`git.log`/
+`git.diff` (read-only observations, never jailed per the existing "reads may range broadly" rule), `git.branch`
+(create/list/switch, with a name-shape sanity check), and `git.history_update` (the ONE explicitly-gated
+history-mutating operation — `amend`/`reset_hard`/`force_push` — REJECTED by `validate()` unless the payload's
+`allow_unsafe` key is the literal boolean `True`, mirroring REQ-2's `shell_exec` override exactly: never
+default-on, any other value leaves the gate fully in effect).
+**Honest limitation:** `force_push`'s gate is proven (rejected by default, and rejected even when gated without a
+complete `remote`/`branch`), but no test actually exercises a real network/remote push — there is intentionally no
+remote configured anywhere in this offline suite, so the real push codepath is unchanged but not
+network-exercised, consistent with the repo's no-network testing constraint.
+
 #### Acceptance Criteria
-- [ ] Tools to: `git init`, add, commit, log/status/diff, branch, and an explicit-gated history-update path
-- [ ] Secret/ignored paths are never committed (a deterministic guard); commits are scoped to the root repo
-- [ ] Proven by an offline test (init a temp repo, commit a file, read the log, confirm a secret path is refused)
+- [x] Tools to: `git init`, add, commit, log/status/diff, branch, and an explicit-gated history-update path
+- [x] Secret/ignored paths are never committed (a deterministic guard); commits are scoped to the root repo
+- [x] Proven by an offline test (init a temp repo, commit a file, read the log, confirm a secret path is refused)
 
 ### [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end  (uncovered)
 

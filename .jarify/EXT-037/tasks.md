@@ -205,3 +205,81 @@ cross-platform venv-python path and the global-install-flag denylist.
 
 #### Implements
 - [REQ-3] Environment tools — Python + virtualenv + dependencies
+
+### [TASK-5] Git tools — init/commit/history/branch (REQ-4)
+
+Add the missing version-control capability so the product can version its work like Claude Code:
+seven new deterministic Jaros tools (`git.init`, `git.commit`, `git.status`, `git.log`, `git.diff`,
+`git.branch`, `git.history_update`), all sharing a new `_gittools.py` git-CLI choke point (never
+raises; a bad `cwd`/missing binary/timeout comes back as a structured, honest result) and a new
+`_gitsecrets.py` deterministic secret/ignored-path guard, plus reuse of the existing `_pathjail`
+choke point (REQ-1) for every explicit path a commit stages.
+
+#### Steps
+1. Add `.jaros-data/tools/_gittools.py` (underscore-prefixed so the Jaros tool loader skips it,
+   mirroring `_pathjail.py`/`_envtools.py`): `has_git_repo(root) -> bool` (checks for a `.git`
+   entry) and `run_git(cwd, args, timeout_s=30) -> dict` (runs `git <args>` in `cwd` via
+   `subprocess.run`, never raises — a bad `cwd`, missing `git` binary, or a command exceeding the
+   timeout all come back as a structured result dict with `command`/`exitCode`/`stdout`/`stderr`/
+   `timedOut`, never an uncaught exception).
+2. Add `.jaros-data/tools/_gitsecrets.py` (underscore-prefixed): a deterministic
+   `secret_or_ignored_reason(path) -> str | None` pattern guard mirroring jaros-code's own commit
+   discipline (CLAUDE.md: never commit `.env`, secrets, logs, or runtime state) — refuses `.env`
+   (and `.env.*`), `*.pem`/`*.key`/`*.pfx`/`*.p12`/`*.jks`, SSH private keys (`id_rsa`, `id_dsa`,
+   `id_ecdsa`, `id_ed25519`), common credential/secrets files (`credentials.json`, `secrets.yaml`,
+   `.npmrc`, `.netrc`, `.pypirc`, AWS credentials), and ignored/runtime paths (`.log`,
+   `__pycache__`, `*.pyc`, `node_modules`, the runtime `.jaros-data` subpaths).
+3. Add `.jaros-data/tools/git_init_tool.py` (`git.init`): `validate()` requires a non-empty `root`
+   that already exists as a directory. `execute()` runs `git init` at `root` via `run_git` and
+   returns `{alreadyInitialized, initialized, ...}`; never raises on a bad root.
+4. Add `.jaros-data/tools/git_commit_tool.py` (`git.commit`): stages `paths` (or the whole working
+   tree via `git add -A` when `paths` is omitted) and commits with `message`. `validate()`
+   root-jails every explicit path (reusing `_pathjail.path_escape_reason`, REQ-1's choke point),
+   then runs a READ-ONLY `git status --porcelain --untracked-files=all` (scoped to `paths` when
+   given) to enumerate the candidate files a commit would ACTUALLY stage — whether the caller
+   named files or asked for "everything" — and refuses the WHOLE commit (before any `git add`
+   ever runs) if any candidate matches `_gitsecrets.secret_or_ignored_reason`. `execute()` stages
+   via `git add -A [-- paths]`, reads the actually-staged file list via
+   `git diff --cached --name-only`, commits via `git commit -m message`, and resolves the new
+   commit hash via `git rev-parse HEAD`; never raises on a bad root or failed git invocation.
+5. Add `.jaros-data/tools/git_status_tool.py` (`git.status`), `git_log_tool.py` (`git.log`), and
+   `git_diff_tool.py` (`git.diff`) as read-only observation tools (no root-jail needed — reads may
+   range broadly, mirroring the existing `_pathjail.py` rule): `git.status` parses
+   `git status --porcelain` into structured `{path, indexStatus, worktreeStatus}` entries plus a
+   `clean` flag; `git.log` parses `git log --pretty=format:...` into `{hash, author, date,
+   subject}` commits (an empty/uninitialized repo returns an honest `hasCommits: false`, not an
+   error); `git.diff` returns the raw unified diff (`staged` flag selects `--cached`) plus a
+   `hasChanges` flag.
+6. Add `.jaros-data/tools/git_branch_tool.py` (`git.branch`): `action` is `"list"` (default,
+   read-only), `"create"`, or `"switch"` (the latter two require a `name` sanity-checked against a
+   restrictive charset so it can't be mistaken for a CLI flag). `execute()` runs
+   `git branch --list`/`git branch <name>`/`git checkout [-b] <name>` respectively and returns a
+   structured result including the current branch on `list`.
+7. Add `.jaros-data/tools/git_history_update_tool.py` (`git.history_update`): the ONE
+   explicitly-gated history-mutating operation (`action` one of `amend`/`reset_hard`/
+   `force_push`). `validate()` REJECTS unless the payload's `allow_unsafe` key is the literal
+   boolean `True` (mirroring `shell_exec_tool.py`'s REQ-2 override exactly — never default-on, any
+   other value including a truthy string leaves the gate fully in effect), plus action-specific
+   required fields (`ref` for `reset_hard`; `remote`/`branch` for `force_push`). `execute()` runs
+   `git commit --amend`/`git reset --hard <ref>`/`git push --force <remote> <branch>`
+   respectively; never raises.
+8. Add `tests/test_ext037_git_tools.py` (offline, no network — no remote is ever configured, so
+   even the `force_push` gate test only proves the rejection, never runs a push), skipping cleanly
+   if `git` is not on `PATH`. Cover: `git.init` creates a real repo and never raises on a bad root;
+   `git.commit` stages + commits a file end-to-end (asserting `commitHash`/`staged`); a `.env`
+   secret file is refused whether staged implicitly ("commit everything") or named explicitly,
+   confirmed via `git.log` showing zero commits, while committing only the safe file still
+   succeeds; an out-of-root `paths` entry is rejected; `git.status`/`git.log`/`git.diff` report
+   real state (untracked files, the committed subject/hash, an unstaged diff) including the
+   honest empty-repo `git.log` case; `git.branch` creates/lists a branch and switches to a new one
+   via `create_if_missing`, and rejects a bad name; `git.history_update` is rejected by default for
+   `amend`/`reset_hard`/`force_push` (including non-boolean `allow_unsafe` values), succeeds for
+   `amend` once explicitly gated (replacing, not adding to, the commit history), and
+   `reset_hard`/`force_push` still require their action-specific fields even once gated; every
+   tool's `execute()` never raises on a bad/missing root; and the `_gitsecrets` helper is
+   unit-tested directly against representative safe/unsafe paths.
+9. Run `python -m pytest tests/ -q` to confirm the full suite is green (baseline 1434 passed, 1
+   skipped, plus the 20 new REQ-4 tests) with no regression.
+
+#### Implements
+- [REQ-4] Git tools — version the work like Claude Code
