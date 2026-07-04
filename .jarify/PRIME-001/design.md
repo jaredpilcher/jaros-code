@@ -47,6 +47,16 @@ act; every effect logged):
    verifiable plan for the change — large or small, complex or trivial — which the execution plane carries out
    and the acceptance oracle verifies. The difficulty ratchet (§"The difficulty ratchet") drives all of the
    above from easy→hard continuously, so the system must keep improving to hold parity.
+5. **Scratch research-script plane + episodic (action+rationale) memory + experience-informed planning.** A
+   deterministic tool writes throwaway investigation scripts to a **scratch location outside the target repo**,
+   runs them (probe a local or external system — DB, API, dependency, repo), and **streams output to stdout, or
+   to a file that a reader agent parses when it is too large to read inline** — the Claude-Code "write a probe,
+   run it, read the result" loop as a native capability (never mutating the target repo). Every non-trivial
+   action + its **rationale** is written to a durable **episodic/provenance store** (extends the session +
+   per-repo memory of EXT-036), so "do that again" / "like before" resolves to the exact prior work. And the
+   **planner is experience-informed**: before finalizing a plan it retrieves similar past plans/actions from
+   that store and reconciles the new plan against them (L4 experience-recall on the escalation ladder) — recall
+   feeds the plan's context, NOT stale few-shot code (which measured negative for solving on the 2B).
 
 ```text
    prompt ("build a job-queue CLI with priorities + retry" │ "add a delete command to the kv-store")

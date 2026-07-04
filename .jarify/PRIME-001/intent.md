@@ -42,7 +42,19 @@ databases/services a system needs (from the researched docs), and wire the syste
 (c) **research and comprehend large, complex repositories** it is changing — build an accurate
 mental model of an unfamiliar codebase before editing it;
 (d) **form complex, correct plans** for changes of any size — decompose a large multi-file, multi-
-component change (or a small surgical one) into a correct ordered plan, execute it, and verify.
+component change (or a small surgical one) into a correct ordered plan, execute it, and verify;
+(e) **investigate by writing throwaway research scripts** — exactly as Claude Code does: author a
+small script into a **temporary/scratch location** (outside the target repo) to probe a system
+locally *or* externally (inspect a DB, hit an API, measure a dependency, explore a repo), **run it,
+and stream its output to stdout — or to a file that it then parses when the output is too large** —
+then act on what it learned. This is a first-class investigation loop, not a side trick;
+(f) **remember what it did and WHY, and plan from experience** — keep a durable, referenceable record
+of its actions and the *rationale* behind them (an episodic/provenance memory), so that when the user
+says "do that again" or refers to something done earlier, it can recall the exact prior work; and
+**while forming a new plan it first retrieves any similar past work and reconciles the new plan
+against it** — past experience is part of the upcoming plan's context, not forgotten each run. (Guard:
+this is PLAN + provenance recall, distinct from behavior-keyed few-shot code examples, which measured
+*negative* for solving on the 2B — recall informs the plan, it does not paste stale code.)
 **Tenet reconciliation (this does NOT weaken Tenet 2):** web research and package/service setup are
 **read-only information retrieval and build-time actions**, not inference — *every reasoning call
 still runs on the local Jetson model at $0; no cloud/paid model is ever used for thinking.* Fetching
