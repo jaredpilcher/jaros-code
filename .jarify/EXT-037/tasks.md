@@ -392,3 +392,74 @@ of the existing REQ-4 toolbelt.
 
 #### Implements
 - [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end
+
+### [TASK-8] Scratch research-script investigation plane (REQ-6)
+
+Add the missing INVESTIGATION capability so the product can write a throwaway probe script,
+run it, and read the result — the exact Claude-Code "write a probe, run it, read the result"
+loop — as a native, deterministic, two-plane execution-plane module. This is invoked directly
+by orchestration code (not dispatched as a Decision), so it lands as a plain function module
+rather than a Jaros custom tool, but reuses the existing `_pathjail`/tree-kill choke points so
+it inherits the same root-jail and no-orphan guarantees as the rest of the toolbelt. The script
+and any file it writes live only in a scratch dir strictly outside the target repo; this module
+never mutates the target repo.
+
+#### Steps
+1. Add `harness/research_scripts.py` importing `path_jail`/`PathEscapeError` from
+   `.jaros-data/tools/_pathjail.py` (add its directory to `sys.path`, mirroring the existing
+   `_REPO_ROOT` pattern in `search_replace_tool.py`) and a private `_kill_tree(proc)` helper
+   copied from `shell_exec_tool.py` (`taskkill /F /T /PID` on Windows, `os.killpg` +
+   `SIGKILL` on POSIX, both wrapped so a kill failure never raises).
+2. Implement `run_research_script(code: str, *, scratch_dir: str | None = None,
+   timeout: float = 30, args: list | None = None, stdout_limit: int = 20000) -> dict`:
+   resolve `scratch_dir` to a fresh `tempfile.mkdtemp(prefix="jcode_research_")` when not
+   supplied (creating it if a caller-supplied directory doesn't yet exist), write `code` to
+   `<scratch_dir>/script.py` via `path_jail(scratch_dir, "script.py")` (rejecting, honestly,
+   if the resolved script path ever escapes scratch — it never should for a fixed filename,
+   but this keeps the same choke point as every other writer), and launch
+   `[sys.executable, script_path, *(args or [])]` with `cwd=scratch_dir`,
+   `subprocess.Popen(..., stdout=PIPE, stderr=PIPE, text=True)` (POSIX gets
+   `start_new_session=True` so `_kill_tree` can reach descendants).
+3. On `proc.communicate(timeout=timeout)`: if stdout length `<= stdout_limit`, return
+   `{"ok": returncode == 0, "returncode": returncode, "stdout": stdout,
+   "stderr": stderr[-stdout_limit:], "timed_out": False, "scratch_dir": scratch_dir,
+   "note": ...}`. If stdout exceeds `stdout_limit`, write the FULL stdout to
+   `<scratch_dir>/output.txt` (path-jailed the same way) and return
+   `{"ok": ..., "returncode": ..., "stdout_file": <path>, "stdout_head": stdout[:N],
+   "stdout_tail": stdout[-N:], "truncated": True, "total_bytes": len(stdout), "stderr": ...,
+   "timed_out": False, "scratch_dir": scratch_dir, "note": ...}` (`N` a fixed head/tail slice
+   size, e.g. 2000 chars, independent of `stdout_limit`).
+4. On `subprocess.TimeoutExpired`: call `_kill_tree(proc)`, drain any already-buffered
+   output with a short bounded `communicate(timeout=5)`, and return
+   `{"ok": False, "returncode": None, "stdout": ..., "stderr": ..., "timed_out": True,
+   "scratch_dir": scratch_dir, "note": "timed out after Ns, process tree killed"}`.
+5. Wrap the whole function body in a `try`/`except Exception` backstop (invalid `code`,
+   an unwritable `scratch_dir`, a `Popen` start failure, a `PathEscapeError`, etc.) that
+   returns `{"ok": False, "returncode": None, "stdout": "", "stderr": "", "timed_out": False,
+   "scratch_dir": scratch_dir or "", "note": f"research script failed to run: {exc}"}` instead
+   of ever raising.
+6. Implement `read_research_output(path, *, max_bytes: int = 20000) -> str`: reads `path` in
+   binary, and when the file is larger than `max_bytes` returns a head+tail slice (roughly
+   `max_bytes // 2` from the start and end, joined by a `"...[truncated N bytes]..."` marker)
+   decoded with `errors="replace"`; returns the whole decoded content when the file is small
+   enough; wraps all I/O in `try`/`except Exception` and returns a short diagnostic string
+   (never raises) on a missing/unreadable path or garbage input.
+7. Add `tests/test_ext037_research_scripts.py` covering: a script that prints a small result
+   returns `ok=True` with the result inline in `stdout`, and `scratch_dir` exists and is
+   outside the repo root; a script whose stdout exceeds `stdout_limit` returns
+   `truncated=True` with a real `stdout_file` in scratch containing the full output plus
+   non-empty `stdout_head`/`stdout_tail`, and `read_research_output` on that file returns a
+   bounded slice; a script that raises/exits non-zero returns `ok=False`,
+   `returncode != 0`, and a captured `stderr` tail, without raising; a script that hangs
+   (`while True: pass`) with a short `timeout` returns `timed_out=True`, `ok=False`, within a
+   bounded wall-clock time, and leaves no orphaned process (verified, e.g., by writing a PID
+   file from the child and confirming the PID is gone after `run_research_script` returns);
+   the repo working tree is unchanged (`git status --porcelain` empty or unaffected) after
+   every case above; and both functions never raise on garbage input (non-string `code`, a
+   nonexistent `path` for `read_research_output`, etc.).
+8. Run `python -m pytest tests/test_ext037_research_scripts.py -q` first, then the full
+   `python -m pytest tests/ -q` to confirm the whole suite is green with no regression to any
+   prior EXT-037 task's tests.
+
+#### Implements
+- [REQ-6] Scratch research-script investigation plane — throwaway probes, native two-plane

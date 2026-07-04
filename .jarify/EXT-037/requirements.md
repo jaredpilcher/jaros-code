@@ -24,11 +24,13 @@ implementation:
   - .jaros-data/tools/git_branch_tool.py
   - .jaros-data/tools/git_history_update_tool.py
   - harness/system_finalize.py
+  - harness/research_scripts.py
   - tests/test_ext037_pathjail.py
   - tests/test_ext037_gated_exec.py
   - tests/test_ext037_env_tools.py
   - tests/test_ext037_git_tools.py
   - tests/test_ext037_finalize.py
+  - tests/test_ext037_research_scripts.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -207,3 +209,44 @@ real is a later opt-in, out of this task's scope. Auto-run of the built system (
   gated, wired live into `/buildsystem` — **honest scope note:** "run it" (auto-executing the built system) is
   explicitly NOT part of this path by design (security default); the path proven end-to-end is
   build → env-setup → version, not build → env-setup → run → version
+
+### [REQ-6] Scratch research-script investigation plane — throwaway probes, native two-plane
+
+PRIME-001 intent capability (e): the product must be able to INVESTIGATE, not just build — the exact
+Claude-Code "write a probe, run it, read the result" loop. A deterministic execution-plane module
+(`harness/research_scripts.py`, not a Jaros custom tool, since it is invoked directly by orchestration
+code rather than dispatched as a Decision) writes a caller-supplied throwaway `.py` script into a SCRATCH
+location that is always OUTSIDE the target repo, runs it as a gated subprocess (timeout + process-tree
+kill, mirroring `shell_exec_tool.py`'s `_kill_tree` so a hanging probe never orphans), and returns its
+result as a bounded, honest observation — streamed inline when small, or written to a file in scratch and
+parsed in a head/tail slice when the output is too large to read inline. This tool never mutates the
+target repo; the script's own effects (importing a module, timing something, hitting a localhost service
+or an API) are the SCRIPT's business, not the tool's — the tool only runs it, root-jailed to scratch.
+
+**HONEST STATUS (Tenet 3, TASK-8):** `harness/research_scripts.py` adds `run_research_script(code, *,
+scratch_dir=None, timeout=30, args=None, stdout_limit=20000)` and `read_research_output(path, *,
+max_bytes=20000)`. Every script file and any file the script itself writes lives only under the scratch
+dir (a fresh `tempfile.mkdtemp(prefix="jcode_research_")` when `scratch_dir` is not supplied); the script
+path and the `output.txt` overflow file are both resolved through the existing `_pathjail.path_jail`
+choke point (REQ-1's mechanism) so nothing can be written outside scratch. The subprocess is invoked as
+`[sys.executable, <script>, *args]` with `cwd=<scratch dir>`, the same timeout + tree-kill discipline as
+`shell_exec_tool.py` (REQ-2) reused directly (not reimplemented) so a `while True: pass` probe is killed
+cleanly with no orphan. `run_research_script` never raises: a bad `code`/`scratch_dir`, a subprocess start
+failure, or any other exception comes back as a structured `{"ok": False, ...}` observation instead of
+propagating.
+
+#### Acceptance Criteria
+- [x] `run_research_script` writes the throwaway script under a scratch dir strictly outside the target
+  repo (a fresh `tempfile.mkdtemp` by default, or a caller-supplied `scratch_dir`), root-jailed via the
+  existing `_pathjail` choke point
+- [x] The script runs as a gated subprocess with a `timeout` and a process-TREE kill on expiry (no orphan
+  left running), mirroring `shell_exec_tool.py::_kill_tree`
+- [x] Small stdout (`<= stdout_limit`) is returned inline; stdout exceeding `stdout_limit` is written in
+  full to `output.txt` in scratch and returned as `{stdout_file, stdout_head, stdout_tail, truncated:
+  True, total_bytes}` so a reader can parse an oversized result in bounded chunks
+- [x] `read_research_output` returns a bounded head/tail slice of a large output file for a reader agent
+- [x] `run_research_script`/`read_research_output` never raise, even on garbage input, a nonexistent
+  path, or a hung/crashing script — always an honest structured result
+- [x] Proven by an offline test (small-result probe, oversized-output probe, non-zero-exit probe, a
+  hang-with-short-timeout probe with no orphan left behind, and confirmation the target repo's working
+  tree is untouched)
