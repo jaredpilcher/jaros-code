@@ -38,10 +38,26 @@ had saturated at coherence=1.00 and stopped being discriminating. ``ALL_COHERENC
 FIRST_SLICE + HARD_SLICE`` is exposed for callers that want the full, growing set;
 ``run_coherence_suite``'s own default is UNCHANGED (still ``FIRST_SLICE``) for backward
 compatibility.
+
+TASK-31 (REQ-23 stability): MEASURED (a live run of the hardened HARD_SLICE) that single-pass
+(``repeats=1``) ``build_system`` is HIGH-VARIANCE on the hard, 11-requirement tasks -- kvdb-cli
+scored 0/11 on one draw (a fast BROKEN build, ~49s) but 10/11 on another (~158s); taskmgr-cli hit
+11/11. A single run is not a stable coherence number. ``run_coherence_suite`` now accepts an
+``repeats: int = 1`` parameter (default 1 = the ORIGINAL behavior/record shape, byte-identical,
+backward-compatible); when ``repeats > 1`` each task is built + independently verified ``repeats``
+times and the per-task record is enriched with ``coherence_median``/``coherence_mean``/
+``coherence_min``/``coherence_max``/``runs`` (the per-run ``requirements_satisfied`` list) plus a
+``build_ok``-derived ``build_failed_count`` (the run's entrypoint never produced anything runnable
+-- distinct from a run that ran fine but merely DROPPED a requirement, ``dropped_requirements_count``).
+The top-level ``coherence``/``requirements_satisfied`` in the record stay the MEDIAN run's actual
+values (a stable central number for existing consumers), while ``coherence_median`` is the plain
+statistical median of the per-run coherence values. NEVER raises: a failed run counts as coherence
+0.0 for that run, never aborting the suite.
 """
 
 from __future__ import annotations
 
+import statistics
 import sys
 import tempfile
 import time
@@ -116,8 +132,121 @@ def _aggregate(results: "list[dict]") -> dict:
     return agg
 
 
+# --- TASK-31 (REQ-23 stability): repeats>1 n-of-k aggregation --------------------------------
+# A SEPARATE aggregation path (never touched by the ``repeats=1``/default path above) so the
+# original behavior/record shape stays byte-identical for existing callers/tests.
+
+def _coherence_rates_repeated(results: "list[dict]") -> dict:
+    """Like ``_coherence_rates`` but the mean is over each task's ``coherence_median`` (the
+    stable central number, per TASK-31's motivation) rather than a single noisy draw, and adds
+    ``build_failure_rate`` -- the fraction of ALL individual runs (across every task in
+    ``results``) whose entrypoint never produced anything runnable at all (``build_ok`` False),
+    as distinct from a run that ran but merely dropped a requirement."""
+    n = len(results)
+    if n == 0:
+        return {"n": 0, "mean_coherence": 0.0, "fully_coherent_rate": 0.0, "build_failure_rate": 0.0}
+    total_runs = sum(r.get("repeats", 1) for r in results)
+    total_build_failed = sum(r.get("build_failed_count", 0) for r in results)
+    return {
+        "n": n,
+        "mean_coherence": sum(r["coherence_median"] for r in results) / n,
+        "fully_coherent_rate": sum(1 for r in results if r["all_satisfied"]) / n,
+        "build_failure_rate": (total_build_failed / total_runs) if total_runs else 0.0,
+    }
+
+
+def _aggregate_repeated(results: "list[dict]") -> dict:
+    agg = {"overall": _coherence_rates_repeated(results)}
+    tiers = sorted({r["tier"] for r in results})
+    agg["by_tier"] = {
+        t: _coherence_rates_repeated([r for r in results if r["tier"] == t]) for t in tiers
+    }
+    return agg
+
+
+def _run_task_once(task: "CoherenceTask", build_fn: Callable, python_exe: str) -> dict:
+    """ONE build+verify run of ``task`` -- the repeats>1 per-run primitive. Returns
+    ``{requirements_satisfied, coherence, all_satisfied, wall_seconds, build_ok}`` where
+    ``build_ok`` is the deterministic BUILD-FAILURE vs DROPPED-REQUIREMENT distinguisher: True
+    only when the resolved entrypoint genuinely exists on disk AND (the task has zero
+    requirements OR at least one requirement was satisfied) -- i.e. the build produced SOMETHING
+    runnable, as opposed to a broken/empty draw. Never raises -- any exception (a raising
+    ``build_fn``, a missing entrypoint, a bad root) is an honest ``build_ok=False`` /
+    ``requirements_satisfied=0`` run, never a fabricated pass."""
+    total = len(task.requirements or [])
+    rec = {"requirements_satisfied": 0, "coherence": 0.0, "all_satisfied": False,
+           "wall_seconds": 0.0, "build_ok": False}
+    try:
+        with tempfile.TemporaryDirectory(prefix="coherence_suite_") as tmp:
+            root = Path(tmp)
+            t0 = time.perf_counter()
+            build = build_fn(task.prompt, root)
+            rec["wall_seconds"] = time.perf_counter() - t0
+            if isinstance(build, dict):
+                plan = build.get("plan")
+                entry = _resolve_entry(plan)
+                entry_path = (root / entry) if entry else None
+                if entry_path is None or not entry_path.is_file():
+                    fallback = root / "main.py"
+                    entry_path = fallback if fallback.is_file() else None
+                entry_exists = entry_path is not None and entry_path.is_file()
+                satisfied = sum(
+                    1 for req in (task.requirements or [])
+                    if _run_requirement_check(req, root, plan, python_exe)
+                )
+                rec["requirements_satisfied"] = satisfied
+                rec["coherence"] = (satisfied / total) if total else 0.0
+                rec["all_satisfied"] = bool(total) and satisfied == total
+                rec["build_ok"] = entry_exists and (total == 0 or satisfied > 0)
+    except Exception:
+        pass   # a build/exec failure -> the default rec (0 satisfied, build_ok False) stands
+    return rec
+
+
+def _run_task_repeated(task: "CoherenceTask", build_fn: Callable, python_exe: str,
+                        repeats: int) -> dict:
+    """Build + independently verify ``task`` ``repeats`` times and aggregate the runs into ONE
+    per-task record. The top-level ``coherence``/``requirements_satisfied``/``all_satisfied`` are
+    the MEDIAN run's own actual values (a stable, reproducible central pick: sort the per-run
+    ``requirements_satisfied`` counts and take ``statistics.median_low`` -- the lower of the two
+    middle values on a tie -- then use the FIRST run matching that count), so existing consumers
+    of those keys get a stable number instead of one noisy draw. ``coherence_median`` is the
+    plain statistical median of the per-run coherence values (may legitimately differ from the
+    selected median run's own ``coherence`` on an even ``repeats`` with a tied split -- it is a
+    separate, purely statistical figure). ``build_failed_count``/``dropped_requirements_count``
+    separate the two measured failure modes: a run whose entrypoint never produced anything
+    runnable at all (``build_ok`` False) vs. a run that ran fine but dropped >=1 requirement."""
+    total = len(task.requirements or [])
+    runs = [_run_task_once(task, build_fn, python_exe) for _ in range(repeats)]
+    satisfied_values = [r["requirements_satisfied"] for r in runs]
+    coherence_values = [r["coherence"] for r in runs]
+    med_value = statistics.median_low(satisfied_values)
+    med_idx = satisfied_values.index(med_value)
+    median_run = runs[med_idx]
+    build_failed_count = sum(1 for r in runs if not r["build_ok"])
+    dropped_requirements_count = sum(
+        1 for r in runs if r["build_ok"] and r["requirements_satisfied"] < total
+    )
+    return {
+        "name": task.name, "tier": task.tier,
+        "requirements_total": total,
+        "requirements_satisfied": median_run["requirements_satisfied"],
+        "coherence": median_run["coherence"],
+        "all_satisfied": median_run["all_satisfied"],
+        "wall_seconds": sum(r["wall_seconds"] for r in runs),
+        "coherence_median": statistics.median(coherence_values),
+        "coherence_mean": statistics.mean(coherence_values),
+        "coherence_min": min(coherence_values),
+        "coherence_max": max(coherence_values),
+        "runs": satisfied_values,
+        "build_failed_count": build_failed_count,
+        "dropped_requirements_count": dropped_requirements_count,
+        "repeats": repeats,
+    }
+
+
 def run_coherence_suite(build_fn: Callable, tasks: "list[CoherenceTask] | None" = None,
-                         python_exe: "str | None" = None) -> dict:
+                         python_exe: "str | None" = None, repeats: int = 1) -> dict:
     """Run the COHERENCE suite: for each task, build via ``build_fn(task.prompt, root)`` (same
     positional shape as ``harness.system_builder.build_system`` -- callers pass a partial binding
     ``llm``) into an isolated temp root, then run EACH requirement's independent check against the
@@ -128,40 +257,65 @@ def run_coherence_suite(build_fn: Callable, tasks: "list[CoherenceTask] | None" 
     correctness never depends on it). Returns ``{"results": [...], "aggregate": {"overall": {...},
     "by_tier": {...}}}`` reporting mean coherence + fully-coherent rate, overall and per tier.
 
-    NEVER raises: any per-task failure (a ``build_fn`` exception, a missing/broken entrypoint, a
-    hung/failing requirement check) is recorded as that task's honest
-    ``requirements_satisfied=0``/``coherence=0.0`` and the suite continues to the next task -- one
-    bad task can never abort the whole measurement run."""
+    ``repeats`` (TASK-31, default 1) -- when <= 1 this is the ORIGINAL single-pass behavior above,
+    byte-identical record/aggregate shape (backward-compatible). When > 1, MEASURED single-pass
+    variance on hard tasks (a live run of ``HARD_SLICE`` scored kvdb-cli 0/11 on one draw, 10/11 on
+    another) is smoothed by building + independently verifying each task ``repeats`` times: the
+    per-task record gains ``coherence_median``/``coherence_mean``/``coherence_min``/
+    ``coherence_max``/``runs`` (the per-run ``requirements_satisfied`` list), plus
+    ``build_failed_count`` (runs whose entrypoint never produced anything runnable at all) and
+    ``dropped_requirements_count`` (runs that ran fine but dropped >=1 requirement) -- two distinct
+    measured failure modes. The record's top-level ``coherence``/``requirements_satisfied``/
+    ``all_satisfied`` stay the MEDIAN run's own actual values (a stable central number for existing
+    consumers of those keys); the aggregate additionally reports the mean of each task's
+    ``coherence_median`` (the stable central number) and a ``build_failure_rate`` across all runs.
+
+    NEVER raises: any per-task/per-run failure (a ``build_fn`` exception, a missing/broken
+    entrypoint, a hung/failing requirement check) is recorded as that run's honest
+    ``requirements_satisfied=0``/``coherence=0.0`` (and, at ``repeats > 1``, a ``build_failed``
+    run) -- the suite continues to the next task/run, one bad run can never abort the whole
+    measurement."""
     tasks = FIRST_SLICE if tasks is None else tasks
     python_exe = python_exe or sys.executable or "python"
-    results: "list[dict]" = []
-    for task in tasks:
-        total = len(task.requirements or [])
-        rec = {
-            "name": task.name, "tier": task.tier,
-            "requirements_total": total, "requirements_satisfied": 0,
-            "coherence": 0.0, "all_satisfied": False, "wall_seconds": 0.0,
-        }
-        try:
-            with tempfile.TemporaryDirectory(prefix="coherence_suite_") as tmp:
-                root = Path(tmp)
-                t0 = time.perf_counter()
-                build = build_fn(task.prompt, root)
-                rec["wall_seconds"] = time.perf_counter() - t0
-                if isinstance(build, dict):
-                    plan = build.get("plan")
-                    satisfied = sum(
-                        1 for req in (task.requirements or [])
-                        if _run_requirement_check(req, root, plan, python_exe)
-                    )
-                    rec["requirements_satisfied"] = satisfied
-                    rec["coherence"] = (satisfied / total) if total else 0.0
-                    rec["all_satisfied"] = bool(total) and satisfied == total
-        except Exception:
-            pass   # a build/exec failure -> the default rec (0 satisfied) stands
-        results.append(rec)
 
-    return {"results": results, "aggregate": _aggregate(results)}
+    if repeats is None or repeats <= 1:
+        # ORIGINAL single-pass behavior, kept byte-identical (backward-compatible record/
+        # aggregate shape) -- deliberately NOT refactored to share code with the repeats>1 path
+        # below so existing callers/tests are never affected by this task's addition.
+        results: "list[dict]" = []
+        for task in tasks:
+            total = len(task.requirements or [])
+            rec = {
+                "name": task.name, "tier": task.tier,
+                "requirements_total": total, "requirements_satisfied": 0,
+                "coherence": 0.0, "all_satisfied": False, "wall_seconds": 0.0,
+            }
+            try:
+                with tempfile.TemporaryDirectory(prefix="coherence_suite_") as tmp:
+                    root = Path(tmp)
+                    t0 = time.perf_counter()
+                    build = build_fn(task.prompt, root)
+                    rec["wall_seconds"] = time.perf_counter() - t0
+                    if isinstance(build, dict):
+                        plan = build.get("plan")
+                        satisfied = sum(
+                            1 for req in (task.requirements or [])
+                            if _run_requirement_check(req, root, plan, python_exe)
+                        )
+                        rec["requirements_satisfied"] = satisfied
+                        rec["coherence"] = (satisfied / total) if total else 0.0
+                        rec["all_satisfied"] = bool(total) and satisfied == total
+            except Exception:
+                pass   # a build/exec failure -> the default rec (0 satisfied) stands
+            results.append(rec)
+
+        return {"results": results, "aggregate": _aggregate(results)}
+
+    # repeats > 1 (TASK-31): build + independently verify each task ``repeats`` times, aggregate
+    # per task via ``_run_task_repeated``, and report the median-of-k + build-failure-rate view.
+    repeats = int(repeats)
+    results = [_run_task_repeated(task, build_fn, python_exe, repeats) for task in tasks]
+    return {"results": results, "aggregate": _aggregate_repeated(results)}
 
 
 # --- FIRST SLICE (3 tasks, 4-5 requirements each, across easy/medium/hard tiers) ------------

@@ -525,3 +525,212 @@ def test_run_coherence_suite_default_is_still_first_slice():
     # ALL_COHERENCE_TASKS, so existing callers/tests relying on the small default are unaffected.
     result = run_coherence_suite(_noop_build_fn)
     assert len(result["results"]) == len(FIRST_SLICE)
+
+
+# --- TASK-31 (REQ-23 stability): repeats>1 median-of-k ---------------------------------------
+# MEASURED (a live run of the hardened HARD_SLICE): single-pass (repeats=1) build_system is
+# HIGH-VARIANCE on the hard, many-requirement tasks -- kvdb-cli scored 0/11 on one draw (a fast
+# BROKEN build) but 10/11 on another; a single run is not a stable coherence number. These tests
+# use a call-COUNTER stub (deterministic, never randomness) so repeated calls to build_fn vary
+# exactly as scripted, proving the aggregation reflects the variation precisely.
+
+def _REC_SHAPE_REPEATS1():
+    return {"name", "tier", "requirements_total", "requirements_satisfied",
+            "coherence", "all_satisfied", "wall_seconds"}
+
+
+def test_repeats_default_is_1_and_preserves_exact_record_shape():
+    # repeats defaults to 1 -> byte-identical record shape to the pre-TASK-31 behavior (no new
+    # keys at all) -- the core back-compat guarantee.
+    task = FIRST_SLICE[0]
+    code = _REFERENCE_CODE[task.name]
+    result = run_coherence_suite(_build_fn_writing(code), tasks=[task])
+    rec = result["results"][0]
+    assert set(rec.keys()) == _REC_SHAPE_REPEATS1()
+    assert rec["requirements_satisfied"] == rec["requirements_total"] == len(task.requirements)
+    assert rec["coherence"] == 1.0
+
+
+def test_repeats_explicit_1_is_byte_identical_to_omitted():
+    task = FIRST_SLICE[0]
+    code = _REFERENCE_CODE[task.name]
+    r_omitted = run_coherence_suite(_build_fn_writing(code), tasks=[task])
+    r_explicit = run_coherence_suite(_build_fn_writing(code), tasks=[task], repeats=1)
+    # wall_seconds is a real, independently-measured duration each call -> compare everything
+    # EXCEPT that (record shape + every other value must be identical).
+    for rec in (r_omitted["results"][0], r_explicit["results"][0]):
+        rec.pop("wall_seconds", None)
+    assert r_omitted == r_explicit
+    assert set(r_omitted["aggregate"]["overall"].keys()) == {
+        "n", "mean_coherence", "fully_coherent_rate"
+    }
+
+
+def test_repeats_alternating_good_and_build_failed_reflects_exact_variation():
+    # stats-cli (FIRST_SLICE[0], 4 requirements): odd calls -> a fully-correct build; even calls
+    # -> a genuinely BROKEN draw (no entrypoint at all -- a build_failed run, not a dropped
+    # requirement). repeats=4 -> calls [good, broken, good, broken] -> runs == [4, 0, 4, 0].
+    task = FIRST_SLICE[0]
+    n = len(task.requirements)
+    calls = {"n": 0}
+
+    def build_fn(prompt, root):
+        calls["n"] += 1
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        if calls["n"] % 2 == 1:
+            (root / "main.py").write_text(_STATS_CLI_REFERENCE, encoding="utf-8")
+            return {"modules": {"main.py": _STATS_CLI_REFERENCE}, "shipped": True, "done": True,
+                    "unmet": [], "plan": {"entrypoint": "main.py"}, "note": "DONE"}
+        return {"modules": {}, "shipped": False, "done": False, "unmet": [],
+                "plan": None, "note": "broken draw"}
+
+    result = run_coherence_suite(build_fn, tasks=[task], repeats=4)
+    rec = result["results"][0]
+    assert calls["n"] == 4
+    assert rec["runs"] == [n, 0, n, 0]
+    assert rec["repeats"] == 4
+    assert rec["requirements_total"] == n
+    assert rec["coherence_max"] == 1.0
+    assert rec["coherence_min"] == 0.0
+    assert rec["coherence_mean"] == 0.5
+    assert rec["coherence_median"] == 0.5
+    # median-run selection (statistics.median_low over [4,0,4,0] -> 0, first match = run #2,
+    # the broken draw) -> the top-level fields report that ACTUAL run's values, not an average.
+    assert rec["requirements_satisfied"] == 0
+    assert rec["coherence"] == 0.0
+    assert rec["all_satisfied"] is False
+    # every broken (even) call had no entrypoint at all -> build_failed, never a dropped
+    # requirement (the good calls satisfied ALL 4, so they never drop one either).
+    assert rec["build_failed_count"] == 2
+    assert rec["dropped_requirements_count"] == 0
+
+
+def test_repeats_dropped_requirement_distinct_from_build_failed():
+    # Same task, but the "bad" draw has a REAL entrypoint that runs (build_ok True) yet only
+    # satisfies 3 of 4 requirements (the "max" requirement is deliberately wrong) -- a DROPPED
+    # requirement, not a build failure.
+    task = FIRST_SLICE[0]
+    n = len(task.requirements)
+    partial_dropping_max = (
+        "import sys\n"
+        "def main():\n"
+        "    if len(sys.argv) < 2 or sys.argv[1] not in ('sum', 'mean', 'max'):\n"
+        "        print('usage: main.py {sum|mean|max}')\n"
+        "        return\n"
+        "    cmd = sys.argv[1]\n"
+        "    line = sys.stdin.readline()\n"
+        "    nums = [int(x) for x in line.split()]\n"
+        "    if cmd == 'sum':\n"
+        "        print(sum(nums))\n"
+        "    elif cmd == 'mean':\n"
+        "        print('%.2f' % (sum(nums) / len(nums)))\n"
+        "    else:\n"
+        "        print('wrong-on-purpose')\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+    calls = {"n": 0}
+
+    def build_fn(prompt, root):
+        calls["n"] += 1
+        code = _STATS_CLI_REFERENCE if calls["n"] % 2 == 1 else partial_dropping_max
+        return _build_fn_writing(code)(prompt, root)
+
+    result = run_coherence_suite(build_fn, tasks=[task], repeats=4)
+    rec = result["results"][0]
+    assert rec["runs"] == [n, n - 1, n, n - 1]
+    assert rec["build_failed_count"] == 0
+    assert rec["dropped_requirements_count"] == 2
+    assert rec["coherence_min"] == (n - 1) / n
+    assert rec["coherence_max"] == 1.0
+
+
+def test_repeats_stub_always_fails_scores_zero_every_run_never_raises():
+    # A build_fn whose entrypoint is NEVER produced (always a broken/empty draw): every run is
+    # build_failed, coherence 0.0 for all, and the suite never raises.
+    task = FIRST_SLICE[0]
+
+    def always_broken_build_fn(prompt, root):
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        return {"modules": {}, "shipped": False, "done": False, "unmet": [],
+                "plan": None, "note": "always broken"}
+
+    result = run_coherence_suite(always_broken_build_fn, tasks=[task], repeats=5)
+    rec = result["results"][0]
+    assert rec["runs"] == [0, 0, 0, 0, 0]
+    assert rec["build_failed_count"] == 5
+    assert rec["dropped_requirements_count"] == 0
+    assert rec["coherence_median"] == 0.0
+    assert rec["coherence_mean"] == 0.0
+    assert rec["coherence_min"] == 0.0
+    assert rec["coherence_max"] == 0.0
+    assert rec["coherence"] == 0.0
+    assert rec["requirements_satisfied"] == 0
+    assert rec["all_satisfied"] is False
+
+
+def test_repeats_stub_always_fails_never_raises_on_raising_build_fn():
+    task = FIRST_SLICE[0]
+
+    def raising_build_fn(prompt, root):
+        raise RuntimeError("simulated repeated build crash")
+
+    result = run_coherence_suite(raising_build_fn, tasks=[task], repeats=3)
+    rec = result["results"][0]
+    assert rec["runs"] == [0, 0, 0]
+    assert rec["build_failed_count"] == 3
+    assert rec["coherence"] == 0.0
+
+
+def test_repeats_aggregate_reports_build_failure_rate_and_median_mean():
+    # Two tasks: one always-good (4/4 every run), one always-broken (0/4 every run, build_failed
+    # every run). repeats=3 -> 6 total runs, 3 of them build_failed -> build_failure_rate == 0.5.
+    good_task = FIRST_SLICE[0]
+    code = _REFERENCE_CODE[good_task.name]
+    bad_task = CoherenceTask(
+        name="always-broken-task", tier="easy", prompt="x",
+        requirements=[("r1", [], None, "never-matches")],
+    )
+
+    def build_fn(prompt, root):
+        if prompt == good_task.prompt:
+            return _build_fn_writing(code)(prompt, root)
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        return {"modules": {}, "shipped": False, "done": False, "unmet": [],
+                "plan": None, "note": "broken"}
+
+    result = run_coherence_suite(build_fn, tasks=[good_task, bad_task], repeats=3)
+    agg = result["aggregate"]
+    overall = agg["overall"]
+    assert overall["n"] == 2
+    # mean of each task's coherence_median: good_task's coherence_median == 1.0 (every run 4/4),
+    # bad_task's coherence_median == 0.0 (every run 0/1) -> mean == 0.5.
+    assert overall["mean_coherence"] == 0.5
+    assert overall["fully_coherent_rate"] == 0.5
+    assert overall["build_failure_rate"] == 0.5
+    assert "build_failed_count" in result["results"][0]
+    assert "build_failure_rate" in agg["by_tier"]["easy"]
+
+
+def test_repeats_never_raises_with_empty_task_list():
+    result = run_coherence_suite(_noop_build_fn, tasks=[], repeats=4)
+    assert result["results"] == []
+    assert result["aggregate"]["overall"]["n"] == 0
+    assert result["aggregate"]["overall"]["build_failure_rate"] == 0.0
+
+
+def test_hard_slice_repeats_never_raises_and_reports_build_failed_counts():
+    # A quick end-to-end sanity check on the actual HARD_SLICE tasks this task was motivated by
+    # (kvdb-cli / taskmgr-cli): a reference implementation under repeats=3 stays all_satisfied,
+    # 0 build_failed, 0 dropped -- and never raises.
+    for task in HARD_SLICE:
+        code = _HARD_REFERENCE_CODE[task.name]
+        result = run_coherence_suite(_build_fn_writing(code), tasks=[task], repeats=3)
+        rec = result["results"][0]
+        assert rec["all_satisfied"] is True, f"{task.name}: {rec}"
+        assert rec["build_failed_count"] == 0
+        assert rec["dropped_requirements_count"] == 0
+        assert rec["runs"] == [len(task.requirements)] * 3

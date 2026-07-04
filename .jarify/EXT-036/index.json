@@ -14,8 +14,8 @@
   "REQ-23": [
     {
       "file": "harness/coherence_suite.py",
-      "startLine": 54,
-      "endLine": 345
+      "startLine": 70,
+      "endLine": 499
     },
     {
       "file": "harness/system_builder.py",
@@ -275,23 +275,6 @@
       "endLine": 738
     }
   ],
-  "REQ-22": [
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 41,
-      "endLine": 323
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 528,
-      "endLine": 600
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 873,
-      "endLine": 908
-    }
-  ],
   "REQ-20": [
     {
       "file": "harness/system_suite.py",
@@ -323,6 +306,23 @@
       "file": "harness/system_builder.py",
       "startLine": 437,
       "endLine": 527
+    }
+  ],
+  "REQ-22": [
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 528,
+      "endLine": 600
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 873,
+      "endLine": 908
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 41,
+      "endLine": 323
     }
   ],
   "REQ-5": [

@@ -1162,3 +1162,47 @@ the instrument keeps measuring genuine drift instead of floor/ceiling-ing out.
   "highly-complex", many-requirement, interdependent tasks including the kvdb-cli that measurably broke the
   saturated `FIRST_SLICE` — so the instrument stays discriminating instead of floor/ceiling-ing out; growing
   `HARD_SLICE` further and a live gemma-vs-escalating measurement against it remain open follow-ups)
+
+### [TASK-31] n>1 (median-of-k) stability option for the coherence instrument (REQ-23)
+
+MEASURED (a live run of the hardened `HARD_SLICE`, TASK-30): single-pass (`repeats=1`) `build_system` is
+HIGH-VARIANCE on the hard, 11-requirement tasks — `kvdb-cli` scored 0/11 on one draw (a fast BROKEN build,
+~49s) but 10/11 on another (~158s); `taskmgr-cli` hit 11/11. A single run is not a stable coherence number.
+The instrument needs to build each task `k` times and aggregate, distinguishing a genuine BUILD FAILURE
+(the entrypoint never produced anything runnable) from a run that ran fine but DROPPED a requirement.
+
+#### Steps
+1. In `harness/coherence_suite.py::run_coherence_suite`, add a `repeats: int = 1` parameter (default 1 =
+   the ORIGINAL behavior, byte-for-byte back-compatible — implemented as a literal branch that leaves the
+   pre-existing `repeats<=1` code path untouched, never refactored to share code with the new path). When
+   `repeats > 1`, build + independently verify each task `repeats` times and aggregate per task: report
+   `coherence_median` (median of the per-run coherence values), `coherence_mean`, `coherence_min`,
+   `coherence_max`, and `runs` (the list of per-run `requirements_satisfied`). Keep `coherence`/
+   `requirements_satisfied` in the record = the MEDIAN run's own actual value (`statistics.median_low` over
+   the per-run satisfied counts, a stable, reproducible pick) so existing consumers of those keys get a
+   stable central number. NEVER raises (a failed run counts as coherence 0.0 for that run).
+2. Distinguish BUILD-FAILURE from DROPPED-REQUIREMENT in the per-run record: add a deterministic `build_ok`
+   per run (the resolved entrypoint genuinely exists on disk AND — when the task has requirements — at
+   least one was satisfied, i.e. the build produced something runnable at all). Report `build_failed_count`
+   (runs where `build_ok` is False) and `dropped_requirements_count` (runs where `build_ok` is True but not
+   every requirement was satisfied) across the `k` runs — two distinct measured failure modes.
+3. Aggregate: the suite-level aggregate reports the mean of each task's `coherence_median` (the stable
+   central number) plus a `build_failure_rate` across all individual runs (overall and per tier).
+4. Tests (`tests/test_ext036_coherence.py`, OFFLINE — a deterministic call-COUNTER stub, never randomness,
+   varying its build across calls): (a) `repeats=1` (omitted or explicit) preserves the EXACT pre-TASK-31
+   record/aggregate shape (byte-for-byte, existing tests unchanged); (b) an alternating good/build-failed
+   stub under `repeats=4` yields exact `runs`/`coherence_median`/`min`/`max`/`mean` and the correct
+   `build_failed_count`; (c) a stub whose "bad" draw runs fine but drops exactly one requirement yields
+   `build_failed_count == 0` / `dropped_requirements_count > 0` (proving the two failure modes are
+   genuinely distinguished); (d) a stub that always fails (or always raises) scores `build_failed_count`
+   equal to `repeats` and `coherence` 0.0 throughout, never raising; (e) the aggregate's
+   `build_failure_rate`/mean-of-`coherence_median` are correct on a mixed always-good/always-broken
+   two-task suite; (f) both `HARD_SLICE` tasks' reference implementations stay `all_satisfied=True` with 0
+   build-failed/dropped runs under `repeats=3`. Run the FULL `python -m pytest tests/ -q` synchronously in
+   the foreground and confirm it stays green.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (adds an n>1/median-of-k stability option to
+  `run_coherence_suite`, motivated by a MEASURED single-pass high-variance draw on the hard tier; a live
+  gemma-vs-escalating measurement run WITH `repeats>1` against `HARD_SLICE` — the actual stabilized number
+  this task was motivated by — remains an open follow-up)

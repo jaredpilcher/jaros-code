@@ -634,7 +634,7 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
 
-### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28; NO-REGRESS FLOOR hardened end to end, EXT-036 TASK-29; task slice HARDENED with a HARD_SLICE, EXT-036 TASK-30, 2026-07-04)
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27; LIVE-CAUGHT defects fixed, EXT-036 TASK-28; NO-REGRESS FLOOR hardened end to end, EXT-036 TASK-29; task slice HARDENED with a HARD_SLICE, EXT-036 TASK-30; median-of-k STABILITY option added, EXT-036 TASK-31, 2026-07-04)
 
 **Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
 the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
@@ -794,3 +794,38 @@ matter for the follow-on capstone build.
   `len(FIRST_SLICE)` results. Full `tests/` suite stays green (1571 passed, 1 skipped). CAVEAT (honest scope):
   growing `HARD_SLICE` beyond 2 tasks, and a live gemma-vs-escalating measurement run of `build_system`/
   `build_system_governed` against the grown suite, remain open follow-ups.
+- [x] STABILIZE the number against single-pass variance with an n>1 (median-of-k) option — **DONE 2026-07-04**
+  (`harness/coherence_suite.py::run_coherence_suite`, EXT-036 TASK-31). MEASURED: a live run of the hardened
+  `HARD_SLICE` showed single-pass (`repeats=1`) `build_system` is HIGH-VARIANCE on the hard, 11-requirement
+  tasks — `kvdb-cli` scored 0/11 on one draw (a fast BROKEN build, ~49s) but 10/11 on another (~158s);
+  `taskmgr-cli` hit 11/11 — so a single run is not a stable coherence number. FIX: `run_coherence_suite` gained
+  a `repeats: int = 1` parameter; at `repeats<=1` the ORIGINAL single-pass code path runs byte-identically
+  (record/aggregate shape unchanged, back-compat guaranteed by literally keeping that code path untouched and
+  branching around it, not by refactoring it). At `repeats>1`, each task is built + independently verified
+  `repeats` times and the per-task record gains `coherence_median`/`coherence_mean`/`coherence_min`/
+  `coherence_max`/`runs` (the per-run `requirements_satisfied` list); the top-level `coherence`/
+  `requirements_satisfied`/`all_satisfied` stay the MEDIAN run's own actual values (`statistics.median_low`
+  over the per-run satisfied counts, a stable reproducible pick) so existing consumers of those keys get a
+  stable central number instead of one noisy draw. BUILD-FAILURE is distinguished from DROPPED-REQUIREMENT via
+  a deterministic `build_ok` per run (the resolved entrypoint genuinely exists on disk AND — when the task has
+  requirements — at least one was satisfied, i.e. the build produced something runnable at all): a run failing
+  that is `build_failed_count`, a run passing it but not satisfying every requirement is
+  `dropped_requirements_count` — two different measured failure modes reported separately. The suite-level
+  aggregate additionally reports the mean of each task's `coherence_median` (the stable central number) and a
+  `build_failure_rate` across all individual runs. NEVER raises: a failed run counts as coherence 0.0 for that
+  run, never aborting the suite. Proven OFFLINE (`tests/test_ext036_coherence.py`, no live model, a
+  deterministic call-COUNTER stub — never randomness — varying its build across calls): `repeats=1`
+  (omitted or explicit) preserves the EXACT pre-TASK-31 record/aggregate shape (asserted via `set(rec.keys())`
+  and a full omitted-vs-explicit equality check); an alternating good/build-failed stub under `repeats=4`
+  yields `runs == [4, 0, 4, 0]`, `coherence_min/max/mean == 0.0/1.0/0.5`, `build_failed_count == 2`,
+  `dropped_requirements_count == 0`; a separate stub whose "bad" draw runs fine but drops exactly one
+  requirement yields `build_failed_count == 0`/`dropped_requirements_count == 2` (proving the two failure
+  modes are genuinely distinguished, not conflated); a stub that ALWAYS fails (or always raises) scores
+  `build_failed_count` equal to `repeats` for every run and `coherence` 0.0 throughout without raising; the
+  aggregate's `build_failure_rate`/mean-of-`coherence_median` are checked on a mixed always-good/always-broken
+  two-task suite; and both `HARD_SLICE` tasks' reference implementations stay `all_satisfied=True` with 0
+  build-failed/dropped runs under `repeats=3`. Full `tests/` suite stays green (1580 passed, 1 skipped, up
+  from 1571/1). CAVEAT (honest scope): a fresh LIVE gemma re-measurement of `build_system`/
+  `build_system_governed` against `HARD_SLICE` with `repeats>1` (the actual stabilized number this task was
+  motivated by) remains an open follow-up — this task builds + proves the instrument's stability mechanism,
+  it does not itself re-run that live measurement.
