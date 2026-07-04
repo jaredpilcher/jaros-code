@@ -38,6 +38,26 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# #EXT-037-REQ-7 Start
+# TASK-11: Reuse (not reimplement) `harness.secure_exec`'s scrubbed-environment + POSIX-resource-cap
+# building blocks for the server subprocess this module launches. `run_sandboxed` itself is NOT
+# called here: it is a blocking helper (it `communicate()`s until the child exits or times out),
+# which is fundamentally incompatible with a long-running HTTP server that must keep running
+# WHILE this module polls its port and drives real requests against it, then tears it down in a
+# `finally` block. So the launch/poll/request/kill lifecycle below stays exactly as it was;
+# only the Popen's environment/resource-limit CONSTRUCTION is now the same sandboxed mechanism
+# `run_sandboxed` uses, via its own internal helpers.
+from harness.secure_exec import EgressPolicy, _make_preexec_fn, _scrubbed_env
+
+# The server binds a LOCALHOST listen socket and this module's PARENT process (not the server
+# subprocess) makes the HTTP requests to it -- binding a socket is not egress, and the parent
+# making localhost requests is not sandboxed at all (only the launched subprocess is). This
+# policy exists to document that intent for any future runtime-egress-enforcement follow-up; it
+# is NOT itself enforced at the OS level here (same honest limitation `run_sandboxed` documents
+# -- today's gate is static/AST-scan-time only, see `harness/secure_exec.py`).
+SERVER_EGRESS_POLICY = EgressPolicy.allow("127.0.0.1", "localhost")
+# #EXT-037-REQ-7 End
+
 # #EXT-036-REQ-22 Start
 _FASTAPI_APP_RE = re.compile(r"(\w+)\s*=\s*FastAPI\s*\(")
 _STARLETTE_APP_RE = re.compile(r"(\w+)\s*=\s*Starlette\s*\(")
@@ -142,13 +162,27 @@ def _tail(path, limit: int = 800) -> str:
     return text[-limit:]
 
 
-def _launch(root: Path, service: dict, port: int, out_fh, err_fh):
+# #EXT-037-REQ-7 Start
+# TASK-11
+def _launch(root: Path, service: dict, port: int, out_fh, err_fh, *,
+            mem_mb: int = 512, cpu_budget_s: float = 120):
+    """Launch the detected web service's server subprocess SANDBOXED (REQ-7 follow-up): a
+    SCRUBBED environment (``harness.secure_exec._scrubbed_env`` -- no ambient host secrets, API
+    keys, or tokens reach the model-generated app) plus ``PYTHONUNBUFFERED``/``PYTHONPATH`` so
+    the app still imports and logs exactly as before, and (POSIX only) the same RLIMIT_AS/
+    RLIMIT_CPU resource caps ``harness.secure_exec.run_sandboxed`` applies
+    (``harness.secure_exec._make_preexec_fn``), guarded against a mem-bombing/CPU-runaway
+    generated app. ``cpu_budget_s`` is a generous cap (not the actual test-run timeout -- that is
+    still enforced by ``_wait_for_port``/the per-check ``request_timeout`` and the unconditional
+    ``_kill_tree`` teardown in :func:`serve_and_check`'s ``finally`` block), sized to comfortably
+    exceed a legitimate startup + full check run."""
     kind = service.get("kind")
     entry = service.get("entry") or "main"
     app = service.get("app") or "app"
-    env = dict(os.environ)
-    env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
+    env = _scrubbed_env({
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": str(root) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    })
     if kind == "wsgi":
         cmd = [sys.executable, "-m", "flask", "--app", f"{entry}:{app}", "run", "--port", str(port)]
     else:
@@ -157,7 +191,11 @@ def _launch(root: Path, service: dict, port: int, out_fh, err_fh):
     popen_kwargs: dict = dict(cwd=str(root), stdout=out_fh, stderr=err_fh, env=env)
     if sys.platform != "win32":
         popen_kwargs["start_new_session"] = True
+        preexec_fn = _make_preexec_fn(mem_mb, cpu_budget_s)
+        if preexec_fn is not None:
+            popen_kwargs["preexec_fn"] = preexec_fn
     return subprocess.Popen(cmd, **popen_kwargs)
+# #EXT-037-REQ-7 End
 
 
 def _subset(actual, expected) -> bool:
@@ -230,8 +268,11 @@ def _check_one(port: int, check, request_timeout: float) -> dict:
                 "reasons": [f"request error: {exc}"]}
 
 
+# #EXT-037-REQ-7 Start
+# TASK-11: new `mem_mb` parameter + docstring paragraph documenting the sandboxed launch below.
 def serve_and_check(root, service: "dict | None", http_checks, *,
-                     startup_timeout: float = 15, request_timeout: float = 5) -> dict:
+                     startup_timeout: float = 15, request_timeout: float = 5,
+                     mem_mb: int = 512) -> dict:
     """Start the detected web ``service`` (from :func:`detect_web_service`) on a FREE
     ephemeral localhost port, poll until it actually binds, then run every check in
     ``http_checks`` against it as a real HTTP request.
@@ -242,9 +283,17 @@ def serve_and_check(root, service: "dict | None", http_checks, *,
     server process (and any descendants) down in a ``finally`` block, so a failed or
     completed check run never leaves an orphaned uvicorn/flask process behind.
 
+    **SANDBOXED (EXT-037 REQ-7 follow-up, TASK-11):** the launched server subprocess runs with a
+    SCRUBBED environment and (POSIX) resource caps -- see :func:`_launch`. This module's PARENT
+    process makes the HTTP requests to the server (not sandboxed itself); the server subprocess
+    binds a localhost listen socket, which is not egress. ``SERVER_EGRESS_POLICY`` documents that
+    the server is expected to only need localhost -- it is not itself enforced at the OS level
+    (the honest static-only limitation ``harness.secure_exec`` already documents).
+
     Returns ``{"ok": bool, "results": [per-check dicts], "note": str}`` where ``ok`` is True
     only when the server bound the port AND every check in ``http_checks`` passed.
     """
+    # #EXT-037-REQ-7 End
     if not isinstance(service, dict) or not service.get("entry"):
         return {"ok": False, "results": [], "note": "no service to serve (detect_web_service found none)"}
     try:
@@ -271,7 +320,15 @@ def serve_and_check(root, service: "dict | None", http_checks, *,
         os.close(fd_err)
         out_fh = open(out_path, "w", encoding="utf-8")
         err_fh = open(err_path, "w", encoding="utf-8")
-        proc = _launch(root_path, service, port, out_fh, err_fh)
+        # #EXT-037-REQ-7 Start
+        # TASK-11: generous CPU-time budget: comfortably covers startup + every check's
+        # request_timeout, never the actual enforcement mechanism (that stays `_wait_for_port` +
+        # `_kill_tree` below) -- just a backstop resource cap against a runaway/mem-bombing
+        # generated app.
+        cpu_budget_s = float(startup_timeout) + float(request_timeout) * max(len(checks), 1) + 30
+        proc = _launch(root_path, service, port, out_fh, err_fh,
+                        mem_mb=mem_mb, cpu_budget_s=cpu_budget_s)
+        # #EXT-037-REQ-7 End
     except Exception as exc:
         for fh in (out_fh, err_fh):
             try:

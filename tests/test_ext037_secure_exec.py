@@ -325,4 +325,54 @@ def test_secure_run_generated_never_raises_on_garbage_sources(tmp_path):
     result = secure_run_generated(None, [sys.executable, "-c", "print(1)"], cwd=str(tmp_path))
     assert result["blocked"] is True
     assert result["ran"] is False
+
+
+# --- (f) run_sandboxed stdin support (TASK-11, REQ-7 follow-up) -----------------------------
+
+
+def test_run_sandboxed_stdin_feeds_child_and_still_scrubbed(tmp_path, monkeypatch):
+    """Explicitly passing ``stdin`` pipes it to the child (proven by the child echoing it back)
+    while the environment stays scrubbed (a host secret set in THIS test process is invisible to
+    the child) -- both protections hold together, not just individually."""
+    monkeypatch.setenv("SECRET_TOKEN", "sekret")
+    code = (
+        "import sys, os\n"
+        "data = sys.stdin.read()\n"
+        "print('IN:' + data.strip())\n"
+        "print('SECRET:' + os.environ.get('SECRET_TOKEN', '<none>'))\n"
+    )
+    script = tmp_path / "echo_stdin.py"
+    script.write_text(code, encoding="utf-8")
+
+    result = run_sandboxed([sys.executable, str(script)], cwd=str(tmp_path), timeout=10,
+                            stdin="hello-stdin")
+    assert result["ok"] is True
+    assert "IN:hello-stdin" in result["stdout"]
+    assert "SECRET:<none>" in result["stdout"]
+    assert "sekret" not in result["stdout"]
+
+
+def test_run_sandboxed_stdin_none_sends_immediate_eof(tmp_path):
+    """Explicitly passing ``stdin=None`` still pipes stdin (unlike omitting the parameter
+    entirely) and sends an immediate EOF -- matching the exact behavior
+    ``harness.system_suite._run_cli`` relied on before it was routed through this function."""
+    code = "import sys\ndata = sys.stdin.read()\nprint('EOF-LEN:' + str(len(data)))\n"
+    script = tmp_path / "eof_stdin.py"
+    script.write_text(code, encoding="utf-8")
+    result = run_sandboxed([sys.executable, str(script)], cwd=str(tmp_path), timeout=10,
+                            stdin=None)
+    assert result["ok"] is True
+    assert "EOF-LEN:0" in result["stdout"]
+
+
+def test_run_sandboxed_omitted_stdin_param_still_runs_fine(tmp_path):
+    """Omitting ``stdin`` entirely (the default) keeps every pre-existing caller (e.g.
+    ``harness.system_builder``'s acceptance-check runner) byte-for-byte unaffected -- no stdin
+    pipe is constructed at all, and a script that doesn't touch stdin still runs correctly."""
+    code = "print('no stdin pipe needed')\n"
+    script = tmp_path / "no_stdin.py"
+    script.write_text(code, encoding="utf-8")
+    result = run_sandboxed([sys.executable, str(script)], cwd=str(tmp_path), timeout=10)
+    assert result["ok"] is True
+    assert "no stdin pipe needed" in result["stdout"]
 # #EXT-037-REQ-7 End

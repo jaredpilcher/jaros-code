@@ -30,13 +30,16 @@ module only builds the framework + a first concrete slice (2 easy / 2 medium / 2
 
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
+
+# #EXT-037-REQ-7 Start
+# TASK-11: `_run_cli` below now runs the built CLI through `harness.secure_exec.run_sandboxed`.
+from harness.secure_exec import EgressPolicy, run_sandboxed
+# #EXT-037-REQ-7 End
 
 # #EXT-036-REQ-20 Start
 
@@ -60,42 +63,27 @@ class CreationTask:
     checks: list = field(default_factory=list)
 
 
+# #EXT-037-REQ-7 Start
 def _run_cli(python_exe: str, entry_path: Path, argv: "list[str]", stdin: "str | None",
              cwd: Path, timeout: float = DEFAULT_TIMEOUT_S) -> "tuple[bool, str]":
-    """Guarded BLACK-BOX subprocess execution of the built system's CLI entrypoint (mirrors
-    ``harness/multi_file.py::_run``'s Popen + tree-kill-on-timeout pattern, adapted for stdin).
-    Runs ``python <entry_path> <argv...>`` in ``cwd``, feeding ``stdin`` (or none). Returns
-    ``(ok, combined stdout+stderr)`` where ``ok`` means the process exited 0. Never raises -- a
-    failure to start, or a timeout, is a REAL non-passing result, never fabricated as a pass."""
+    """Guarded BLACK-BOX subprocess execution of the built system's CLI entrypoint, routed
+    through ``harness.secure_exec.run_sandboxed`` (EXT-037 / REQ-7) instead of a plain
+    ``subprocess.Popen`` call: the built CLI now runs with a SCRUBBED environment (no ambient
+    host secrets -- API keys, ``LLAMACPP_*``, tokens -- reach the model-generated program) and
+    DENY_ALL egress (a built CLI has no legitimate need for network access), on top of the same
+    timeout + process-tree-kill discipline the prior implementation already had (reused, not
+    reimplemented). Runs ``python <entry_path> <argv...>`` in ``cwd``, feeding ``stdin`` (``None``
+    still sends immediate EOF, matching the prior always-piped-stdin behavior). Returns ``(ok,
+    combined stdout+stderr)`` where ``ok`` means the process exited 0. Never raises -- a failure
+    to start, or a timeout, is a REAL non-passing result, never fabricated as a pass."""
     cmd = [python_exe, str(entry_path)] + list(argv or [])
-    try:
-        kwargs: dict = dict(cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             stdin=subprocess.PIPE, text=True)
-        if os.name != "nt":
-            kwargs["start_new_session"] = True
-        p = subprocess.Popen(cmd, **kwargs)
-    except OSError as exc:
-        return False, f"failed to start entrypoint: {exc}"
-    try:
-        stdout, stderr = p.communicate(input=stdin, timeout=timeout)
-        return p.returncode == 0, (stdout or "") + (stderr or "")
-    except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            subprocess.run(
-                f"taskkill /F /T /PID {p.pid}",
-                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        else:
-            import signal
-            try:
-                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        try:
-            p.communicate(timeout=5)
-        except Exception:
-            pass
-        return False, f"entrypoint timed out after {timeout}s (treated as not-passing)"
+    result = run_sandboxed(cmd, cwd=str(cwd), egress_policy=EgressPolicy.DENY_ALL,
+                            timeout=timeout, stdin=stdin)
+    out = (result.get("stdout") or "") + (result.get("stderr") or "")
+    if not out:
+        out = result.get("note") or ""
+    return bool(result.get("ok")), out
+# #EXT-037-REQ-7 End
 
 
 def _resolve_entry(plan) -> "str | None":

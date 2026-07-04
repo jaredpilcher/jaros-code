@@ -33,6 +33,10 @@ implementation:
   - tests/test_ext037_research_scripts.py
   - harness/secure_exec.py
   - tests/test_ext037_secure_exec.py
+  - harness/server_oracle.py
+  - harness/system_suite.py
+  - tests/test_ext036_suite.py
+  - tests/test_ext036_server_oracle.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -304,6 +308,37 @@ detected web service too (it runs before the HTTP-vs-checklist branch), so a dan
 still refused before `serve_and_check`/`uvicorn` ever starts it — only the SANDBOXING (scrubbed env/resource
 caps) of `server_oracle`'s own `uvicorn` subprocess and `system_suite._run_cli` remain outstanding.
 
+**HONEST STATUS (Tenet 3, closed by TASK-11):** both named follow-ups above are now closed.
+`harness/system_suite.py`'s `_run_cli` (shared by the creation suite, `modification_suite`, and
+`coherence_suite`) now runs the built CLI's entrypoint via `harness.secure_exec.run_sandboxed`
+(egress `DENY_ALL`, scrubbed environment, POSIX resource caps) instead of a plain
+`subprocess.Popen`, with the exact same `(ok, combined stdout+stderr)` return shape every caller
+already depends on. `harness/server_oracle.py`'s `_launch` now builds its `uvicorn`/`flask`
+subprocess's environment via `harness.secure_exec._scrubbed_env` (reused, not reimplemented) in
+place of `dict(os.environ)`, and (POSIX only) applies the same `RLIMIT_AS`/`RLIMIT_CPU`
+resource-cap `preexec_fn` `run_sandboxed` itself builds — `run_sandboxed` is NOT called directly
+for the server launch, since it is a blocking helper (`communicate()`s until exit/timeout)
+fundamentally incompatible with a long-running server the caller must poll/query/kill across its
+own lifecycle; only its scrub/cap building blocks are reused. A module-level
+`SERVER_EGRESS_POLICY = EgressPolicy.allow("127.0.0.1", "localhost")` documents that the server is
+expected to need only localhost (it binds a listen socket, which is not egress, and the PARENT
+oracle process — not sandboxed — makes the HTTP requests to it), consistent with the same
+static-only honest limitation `run_sandboxed` already documents elsewhere — it is NOT a new
+runtime enforcement mechanism. `run_sandboxed` also gained an optional `stdin: str | None`
+parameter (a private `_STDIN_UNSET` sentinel distinguishes "omitted" — unchanged, byte-for-byte
+backward-compatible behavior for every pre-existing caller — from an explicit `stdin=<str-or-
+None>`, which pipes and feeds it), needed so `_run_cli` could keep feeding each CLI check's
+`stdin` exactly as before. Proven by new offline tests: a host secret env var set in the test
+process is invisible to both the built-CLI subprocess (`tests/test_ext036_suite.py`) and the real
+FastAPI server subprocess (`tests/test_ext036_server_oracle.py`); a hanging built CLI is still
+killed cleanly with no orphaned process; every existing `server_oracle` fixture test (real
+FastAPI + Flask servers) still passes unchanged, proving the scrub doesn't break serving; and
+`run_sandboxed`'s new `stdin` parameter is proven to feed data correctly while still scrubbing
+the environment. **Still honestly outstanding (unchanged from TASK-9):** true RUNTIME
+network-egress blocking (an OS network namespace or firewall rule) is not implemented anywhere in
+this module — every egress gate in this codebase, including `SERVER_EGRESS_POLICY` above, remains
+a STATIC/documentation-time gate only.
+
 #### Acceptance Criteria
 - [x] `EgressPolicy` (default-deny, `DENY_ALL`, an `allow(*hosts)` allow-list constructor, and
   `is_host_allowed(host)`) is the one mechanism that GATES egress — never a blanket network kill
@@ -340,11 +375,16 @@ caps) of `server_oracle`'s own `uvicorn` subprocess and `system_suite._run_cli` 
   build still ships/passes unchanged, proven by three new offline fake-llm tests (security
   refusal, clean-build regression, and a live env-scrub proof) in
   `tests/test_ext036_system_builder.py`
-- [ ] **Follow-up (not in this task's scope):** `harness/server_oracle.py`'s `uvicorn` subprocess
-  (the HTTP acceptance path for a detected web service) and `harness/system_suite.py`'s
-  `_run_cli` also run model-generated code as a plain, unsandboxed subprocess today — routing
-  those through `run_sandboxed` too (the scan gate above already covers refusing a *dangerous*
-  web-service build before either runs; only the env-scrub/resource-cap SANDBOXING of their own
-  execution is still outstanding)
+- [x] **TASK-11:** `harness/server_oracle.py`'s `uvicorn`/`flask` subprocess (the HTTP
+  acceptance path for a detected web service) and `harness/system_suite.py`'s `_run_cli` (shared
+  by the creation suite, `modification_suite`, and `coherence_suite`) no longer run
+  model-generated code as a plain, unsandboxed subprocess: `_run_cli` now runs through
+  `harness.secure_exec.run_sandboxed` (scrubbed environment, POSIX resource caps, `DENY_ALL`
+  egress), and `server_oracle._launch` builds its subprocess's environment/resource caps via
+  `run_sandboxed`'s own internal building blocks (`_scrubbed_env`/`_make_preexec_fn`) since
+  `run_sandboxed` itself is a blocking call incompatible with a long-running server process —
+  proven by new offline tests including a live env-scrub check against a real FastAPI server
+  subprocess and against a built CLI's subprocess, with every existing `server_oracle` fixture
+  test (real FastAPI + Flask servers) still passing unchanged
 - [ ] **Follow-up (not in this task's scope):** real runtime egress ENFORCEMENT (a Linux network
   namespace or firewall rule on the Jetson/Linux deployment target) — today's gate is static-only

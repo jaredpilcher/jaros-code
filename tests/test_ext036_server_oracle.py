@@ -65,6 +65,21 @@ if __name__ == "__main__":
     print(len(data))
 '''
 
+# #EXT-037-REQ-7 Start
+# TASK-11: fixture app + test class proving `_launch`'s env-scrub is live for the real server.
+ENV_PROBE_FASTAPI_MAIN = '''
+from fastapi import FastAPI
+import os
+
+app = FastAPI()
+
+
+@app.get("/secret")
+def secret():
+    return {"value": os.environ.get("JCODE_TEST_SERVER_SECRET", "<none>")}
+'''
+# #EXT-037-REQ-7 End
+
 
 def _write(root, name, code):
     (root / name).write_text(code, encoding="utf-8")
@@ -171,6 +186,32 @@ class TestServeAndCheckBrokenApp:
         assert result["ok"] is False
         assert result["results"] == []
         assert "note" in result and result["note"]
+
+
+# #EXT-037-REQ-7 Start
+class TestServeAndCheckEnvScrub:
+    def test_server_subprocess_cannot_see_host_secret(self, tmp_path, monkeypatch):
+        """ENV-SCRUB PROVEN LIVE (EXT-037 / REQ-7, TASK-11): a host secret env var set in THIS
+        test process is INVISIBLE to the launched uvicorn/FastAPI server subprocess -- before
+        this task, `_launch` copied the full host environment (`dict(os.environ)`), so this
+        check would have FAILED."""
+        monkeypatch.setenv("JCODE_TEST_SERVER_SECRET", "super-secret-server-value")
+        _write(tmp_path, "main.py", ENV_PROBE_FASTAPI_MAIN)
+        service = detect_web_service({"main.py": ENV_PROBE_FASTAPI_MAIN})
+        assert service is not None
+
+        result = serve_and_check(
+            tmp_path,
+            service,
+            [{"method": "GET", "path": "/secret", "status": 200,
+              "json_contains": {"value": "<none>"}}],
+            startup_timeout=15,
+            request_timeout=5,
+        )
+
+        assert result["ok"] is True, result["note"]
+        assert result["results"][0]["passed"] is True
+# #EXT-037-REQ-7 End
 
 
 class TestServeAndCheckRobustness:

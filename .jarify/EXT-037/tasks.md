@@ -583,3 +583,68 @@ acceptance-check subprocess that used to be a plain `harness.multi_file._run` ca
 
 #### Implements
 - [REQ-7] Secure sandboxed execution of generated code + gated egress
+
+### [TASK-11] Sandbox the two remaining unsandboxed execution sites — `server_oracle` + `system_suite` (REQ-7)
+
+TASK-10 wired `harness.secure_exec` into `build_system`'s OWN acceptance path only, and named the
+two remaining live gaps as an explicit follow-up rather than silently deferring them:
+`harness/server_oracle.py`'s `serve_and_check` (the HTTP acceptance oracle for a detected web
+service) launches its `uvicorn`/`flask` subprocess as a plain, full-host-environment
+`subprocess.Popen`, and `harness/system_suite.py`'s `_run_cli` (used by the creation suite,
+`modification_suite`, and `coherence_suite`) runs the built CLI's entrypoint the same
+unsandboxed way. This task closes both gaps by routing each through
+`harness.secure_exec.run_sandboxed`, preserving EXACT existing behavior for legitimate builds
+(the scan gate from TASK-10 already refuses a *dangerous* build before either site ever
+executes; this task only adds the env-scrub + resource-cap SANDBOXING of the execution itself).
+
+#### Steps
+1. In `harness/secure_exec.py`, add an optional `stdin: str | None = None` parameter to
+   `run_sandboxed`, distinguished from "omitted entirely" via a private `_STDIN_UNSET`
+   sentinel default: when a caller explicitly passes `stdin` (a string, or `None`), the child's
+   stdin is piped (`subprocess.PIPE`) and fed via `proc.communicate(input=stdin, timeout=...)`
+   (`None` sends an immediate EOF); when `stdin` is omitted entirely, behavior is UNCHANGED from
+   before this parameter existed (no stdin pipe constructed, every existing caller stays
+   byte-for-byte backward compatible).
+2. In `harness/system_suite.py`, replace `_run_cli`'s plain `subprocess.Popen` +
+   `communicate`/`TimeoutExpired`/tree-kill implementation with a call to
+   `harness.secure_exec.run_sandboxed(cmd, cwd=str(cwd), egress_policy=EgressPolicy.DENY_ALL,
+   timeout=timeout, stdin=stdin)`, keeping the exact same `(ok, combined stdout+stderr)` return
+   shape callers (`system_suite`, `modification_suite`, `coherence_suite`) already depend on.
+   Remove the now-unused `subprocess`/`os` imports from the module.
+3. In `harness/server_oracle.py`, add a `_launch(..., *, mem_mb=512, cpu_budget_s=120)` variant
+   that builds its subprocess environment via `harness.secure_exec._scrubbed_env` (reused, not
+   reimplemented) instead of `dict(os.environ)`, and (POSIX only) applies the same
+   `harness.secure_exec._make_preexec_fn`-built `RLIMIT_AS`/`RLIMIT_CPU` resource-cap
+   `preexec_fn` `run_sandboxed` itself uses. `run_sandboxed` is NOT called directly here (it is
+   a blocking helper incompatible with a long-running server the caller must poll/query/kill
+   across its own lifecycle) — only its scrub/cap BUILDING BLOCKS are reused. `serve_and_check`
+   computes a generous `cpu_budget_s` (startup_timeout + request_timeout * len(checks) + a
+   buffer) and passes `mem_mb`/`cpu_budget_s` through to `_launch`; the existing
+   `_wait_for_port`/per-check `request_timeout`/unconditional `_kill_tree` teardown remain the
+   actual enforcement mechanism, unchanged. A module-level `SERVER_EGRESS_POLICY =
+   EgressPolicy.allow("127.0.0.1", "localhost")` documents (without newly enforcing anything
+   beyond what `run_sandboxed` already documents as static-only) that the server is expected to
+   need only localhost — it binds a listen socket (not egress) and the PARENT process makes the
+   HTTP requests to it (not sandboxed itself).
+4. Add `test_run_cli_scrubs_host_secret_env` and `test_run_cli_timeout_kills_hanging_entrypoint_no_orphan`
+   to `tests/test_ext036_suite.py` (a host secret set in the test process is invisible to the
+   built CLI's subprocess; a hanging entrypoint is killed within its timeout with no orphaned
+   process). Add `TestServeAndCheckEnvScrub::test_server_subprocess_cannot_see_host_secret` to
+   `tests/test_ext036_server_oracle.py` (a host secret is invisible to the real FastAPI server
+   subprocess, proven via a `/secret` endpoint that echoes the env var back). Add
+   `test_run_sandboxed_stdin_feeds_child_and_still_scrubbed`,
+   `test_run_sandboxed_stdin_none_sends_immediate_eof`, and
+   `test_run_sandboxed_omitted_stdin_param_still_runs_fine` to `tests/test_ext037_secure_exec.py`
+   proving the new `stdin` parameter feeds data correctly, still scrubs the environment, and
+   leaves every pre-existing (no-`stdin`) caller unaffected. Confirm every existing
+   `tests/test_ext036_server_oracle.py` fixture test (real FastAPI + Flask servers) still passes
+   unchanged — the scrub must not break serving.
+5. Run `python -m pytest tests/test_ext036_server_oracle.py tests/test_ext036_suite.py
+   tests/test_ext036_modsuite.py tests/test_ext036_coherence.py tests/test_ext037_secure_exec.py
+   -q` first, then the full `python -m pytest tests/ -q` synchronously in the foreground to
+   confirm the whole suite is green with no regression to any prior EXT-036/EXT-037 task's
+   tests, and confirm (via a process listing) no orphaned uvicorn/flask/python process survives
+   the run.
+
+#### Implements
+- [REQ-7] Secure sandboxed execution of generated code + gated egress

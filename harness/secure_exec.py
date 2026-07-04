@@ -566,10 +566,28 @@ def _make_preexec_fn(mem_mb: int, timeout: float):
     return _preexec
 
 
+# TASK-11 (REQ-7 follow-up): sentinel distinguishing "caller omitted stdin entirely" (preserve
+# the original no-stdin-pipe behavior byte-for-byte -- the child inherits the parent's stdin,
+# exactly as before this task) from "caller explicitly passed stdin=<str-or-None>" (a real value
+# -- even ``None`` -- means the caller wants stdin PIPED, so an omitted/``None`` value still
+# sends an immediate EOF instead of inheriting the parent's stdin). A plain ``None`` default
+# could not make this distinction. Already inside this module's existing REQ-7 Start/End wrap.
+_STDIN_UNSET = object()
+
+
 def run_sandboxed(cmd, *, cwd, egress_policy: "EgressPolicy | None" = None,
-                   timeout: float = 30, mem_mb: int = 512, extra_env: dict | None = None) -> dict:
+                   timeout: float = 30, mem_mb: int = 512, extra_env: dict | None = None,
+                   stdin: "str | None" = _STDIN_UNSET) -> dict:
     """Execute ``cmd`` with a scrubbed environment, a resource-capped (POSIX) subprocess, the
     caller's ``cwd``, and a timeout + process-tree kill. Never raises.
+
+    ``stdin`` (TASK-11, REQ-7 follow-up): when the caller EXPLICITLY passes ``stdin`` (a string,
+    or ``None``), the child's stdin is piped and fed that string (``None`` sends immediate EOF --
+    no data written, matching the exact behavior ``harness.system_suite._run_cli`` relied on
+    before it was routed through this function). When the caller omits ``stdin`` entirely (the
+    default), behavior is UNCHANGED from before this parameter existed: no stdin pipe is set up,
+    so the child inherits the parent's stdin -- this keeps every existing caller (e.g.
+    ``harness.system_builder``'s acceptance-check runner) byte-for-byte backward compatible.
 
     **Honest platform/egress note:** this function does NOT implement runtime network-egress
     blocking (that needs an OS network namespace or firewall rule -- a Linux/Jetson follow-up).
@@ -581,6 +599,8 @@ def run_sandboxed(cmd, *, cwd, egress_policy: "EgressPolicy | None" = None,
     honestly rather than silently skipped.
     """
     egress_policy = egress_policy or EgressPolicy.DENY_ALL
+    stdin_requested = stdin is not _STDIN_UNSET
+    stdin_value = stdin if isinstance(stdin, str) else None
     try:
         if not cmd:
             return {
@@ -601,6 +621,8 @@ def run_sandboxed(cmd, *, cwd, egress_policy: "EgressPolicy | None" = None,
             cwd=cwd, env=env, shell=use_shell,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        if stdin_requested:
+            popen_kwargs["stdin"] = subprocess.PIPE
         preexec_fn = _make_preexec_fn(mem_mb, timeout)
         if sys.platform != "win32":
             popen_kwargs["start_new_session"] = True
@@ -620,7 +642,10 @@ def run_sandboxed(cmd, *, cwd, egress_policy: "EgressPolicy | None" = None,
             }
 
         try:
-            out, err = proc.communicate(timeout=timeout)
+            if stdin_requested:
+                out, err = proc.communicate(input=stdin_value, timeout=timeout)
+            else:
+                out, err = proc.communicate(timeout=timeout)
             return {
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,

@@ -10,6 +10,11 @@ needing a live model.
 
 from __future__ import annotations
 
+# #EXT-037-REQ-7 Start
+# TASK-11: `sys`/`time`/`_run_cli` are used by the env-scrub + timeout/no-orphan tests below.
+import sys
+import time
+# #EXT-037-REQ-7 End
 from pathlib import Path
 
 from harness.system_suite import (
@@ -17,6 +22,9 @@ from harness.system_suite import (
     CreationTask,
     FIRST_SLICE,
     HARDER_SLICE,
+    # #EXT-037-REQ-7 Start
+    _run_cli,
+    # #EXT-037-REQ-7 End
     run_creation_suite,
 )
 
@@ -588,6 +596,70 @@ def test_harder_slice_registry_shape():
 
 def test_all_creation_tasks_is_first_plus_harder():
     assert ALL_CREATION_TASKS == FIRST_SLICE + HARDER_SLICE
+
+
+# #EXT-037-REQ-7 Start
+# TASK-11: `_run_cli` now runs the built CLI through `harness.secure_exec.run_sandboxed` -- a
+# SCRUBBED environment (no ambient host secrets) and DENY_ALL egress, on top of the same
+# timeout + process-tree-kill discipline it already had.
+
+def _is_pid_running(pid: int) -> bool:
+    if sys.platform == "win32":
+        out = __import__("subprocess").run(
+            ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True
+        ).stdout
+        return str(pid) in out
+    try:
+        import os
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception:
+        return False
+
+
+def test_run_cli_scrubs_host_secret_env(tmp_path, monkeypatch):
+    """ENV-SCRUB PROVEN LIVE at the `_run_cli` site: a host secret env var set in THIS test
+    process is invisible to the built CLI's subprocess -- before this task's routing through
+    `run_sandboxed`, the plain `subprocess.Popen` call inherited the FULL host environment, so
+    this check would have FAILED."""
+    monkeypatch.setenv("JCODE_TEST_SUITE_SECRET", "super-secret-suite-value")
+    script = tmp_path / "main.py"
+    script.write_text(
+        "import os\n"
+        "print(os.environ.get('JCODE_TEST_SUITE_SECRET', '<none>'))\n",
+        encoding="utf-8",
+    )
+    ok, out = _run_cli(sys.executable, script, [], None, tmp_path)
+    assert ok is True
+    assert "<none>" in out
+    assert "super-secret-suite-value" not in out
+
+
+def test_run_cli_timeout_kills_hanging_entrypoint_no_orphan(tmp_path):
+    """A hanging built CLI is killed cleanly (no orphaned process) within the given timeout --
+    the tree-kill discipline `_run_cli` reused from `run_sandboxed` unchanged."""
+    pidfile = tmp_path / "child.pid"
+    script = tmp_path / "main.py"
+    script.write_text(
+        "import os\n"
+        f"with open({str(pidfile)!r}, 'w') as f:\n"
+        "    f.write(str(os.getpid()))\n"
+        "while True:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    ok, _out = _run_cli(sys.executable, script, [], None, tmp_path, timeout=2)
+    assert ok is False
+
+    assert pidfile.exists()
+    child_pid = int(pidfile.read_text().strip())
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and _is_pid_running(child_pid):
+        time.sleep(0.2)
+    assert not _is_pid_running(child_pid)
+# #EXT-037-REQ-7 End
 
 
 def test_harder_slice_tasks_are_internally_coherent():
