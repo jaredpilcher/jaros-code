@@ -799,3 +799,90 @@ level — this task is mostly DATA (a new `MULTIFILE_SLICE`) plus a docstring co
   editing `main.py`'s wiring to a helper module, while a resolved-entrypoint CLI oracle checks
   the whole system — the measured next frontier now `FIRST_SLICE` is single-file-saturated;
   live gemma-vs-escalating measurement against the grown suite remains an open follow-up)
+
+### [TASK-23] Deterministic server/HTTP acceptance oracle for REAL web-service builds (REQ-22)
+
+MEASURED gap (owner directive 2026-07-03): `harness/system_builder.py::build_system`'s
+acceptance checklist runs each check via `_run_check`, which executes `python <entry>.py`
+and inspects STDOUT; a FastAPI/Flask service has no stdout (it blocks serving HTTP) so its
+checks get filtered out and the build silently falls back to `_smoke_checklist`
+(import-only), which passes the instant the module imports without ever starting the server
+or hitting an endpoint — a Tenet-3 hollow pass measured on a genuinely-working gemma-built
+FastAPI service. This task builds a NEW deterministic, two-plane execution-plane module
+`harness/server_oracle.py` that actually starts the detected app and HTTP-checks it.
+Explicitly scoped to the new module + its tests only — wiring it into
+`build_system`/`cli.py`/`system_suite.py` is a follow-up task, not done here.
+
+#### Steps
+1. `harness/server_oracle.py::detect_web_service(modules: dict) -> dict | None` — scans
+   module SOURCES ({filename: code}) with regex/best-effort parsing for a FastAPI/Starlette
+   app object (`= FastAPI(`/`= Starlette(` plus a `from fastapi`/`from starlette` import) or
+   a Flask app object (`= Flask(` plus a `from flask` import); returns `{"kind":
+   "asgi"|"wsgi", "entry": <module stem>, "app": <attr name>}` for the first match, else
+   None. Never raises.
+2. `harness/server_oracle.py::serve_and_check(root, service, http_checks, *,
+   startup_timeout=15, request_timeout=5) -> dict` — picks a FREE ephemeral localhost port
+   (bind :0, read the port, close), launches the detected app as a real subprocess (`python
+   -m uvicorn <entry>:<app> --port <port>` for ASGI, `python -m flask --app <entry>:<app>
+   run --port <port>` for WSGI) with `cwd=root`, polls the port until it accepts a TCP
+   connection (bounded by `startup_timeout`, bails early if the process already died), then
+   runs each `http_check` (method/path/optional status/json_contains/body_contains) as a
+   real HTTP request via `urllib` and grades it. ALWAYS tears the server process tree down
+   in a `finally` block (mirrors `.jaros-data/tools/shell_exec_tool.py::_kill_tree` —
+   `taskkill /F /T /PID` on Windows, `killpg` on POSIX). Returns `{"ok": bool, "results":
+   [...], "note": str}`; never raises — any failure (bad input, never-binds server,
+   malformed check) is reported honestly as `ok=False` with a diagnostic note.
+3. Self-contained, no model call, no dependency on `system_builder`/`cli`/`system_suite` —
+   purely an importable execution-plane utility for now.
+4. Tests `tests/test_ext036_server_oracle.py` (OFFLINE beyond 127.0.0.1; fastapi/uvicorn/
+   flask ARE installed, guarded with `pytest.importorskip`): a real FastAPI fixture app (GET
+   /health, GET /add) — detect + serve_and_check both pass with genuine HTTP responses; a
+   real Flask fixture app — detect + serve_and_check pass; a NEGATIVE check expecting a
+   wrong value genuinely fails (proves the oracle isn't a trivial pass); a broken
+   (import-crashing) app fails within the timeout without hanging and leaves no orphan
+   process; `detect_web_service` returns None for a plain stdin/stdout CLI;
+   `serve_and_check`/`detect_web_service` never raise on garbage input (bad root, non-dict
+   service, non-list checks, malformed check entries). Run the FULL `python -m pytest
+   tests/ -q` and confirm it stays green at the new count (was 1489 passed / 1 skipped).
+
+#### Implements
+- [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds (the oracle module
+  itself, proven standalone; wiring into `build_system` remains an explicit open follow-up)
+
+### [TASK-24] Grow creation suite — 8 harder + more-diverse classes (REQ-20)
+
+Owner directive (2026-07-03): "make it harder, build more classes." The creation parity
+instrument is gemma's WEAK half (~83% gemma / ~92% escalating) so it has the most headroom and
+must keep getting harder to stay informative (PRIME-001 difficulty ratchet). TASK-17 grew
+`FIRST_SLICE` to 12; this task adds a SEPARATE `HARDER_SLICE` of 8 tougher, more diverse classes
+(medium/hard/highly-complex) following the EXACT contract-precise pattern (single `main.py`
+entrypoint, exact argv/stdin invocation, exact stdout format, `if __name__ == "__main__":`
+required, deterministic checks with no wall-clock dependence), and exposes `ALL_CREATION_TASKS =
+FIRST_SLICE + HARDER_SLICE` — leaving `run_creation_suite`'s default (`FIRST_SLICE`) unchanged.
+
+#### Steps
+1. In `harness/system_suite.py` (inside the existing `#EXT-036-REQ-20` span), add
+   `HARDER_SLICE: list[CreationTask]` with 8 new contract-precise classes: `json-config-
+   validator-cli` (medium), `graph-bfs-shortest-path-cli` (hard), `bracket-balance-cli`
+   (medium), `run-length-codec-cli` (medium), `csv-column-aggregator-cli` (hard),
+   `traffic-light-sequencer-cli` (medium), `lru-cache-cli` (highly-complex),
+   `matrix-transpose-cli` (hard). Widen `CreationTask.tier`'s docstring to note the
+   `"highly-complex"` tier. Add `ALL_CREATION_TASKS = FIRST_SLICE + HARDER_SLICE`. Do NOT modify
+   `run_creation_suite`/`_run_cli`/`_resolve_entry`/`_run_single_check` or the existing
+   `FIRST_SLICE` tasks; keep `run_creation_suite`'s default `tasks=FIRST_SLICE` (backward-compatible).
+2. Update `tests/test_ext036_suite.py`: add a `HARDER_SLICE` registry-shape test, an
+   `ALL_CREATION_TASKS == FIRST_SLICE + HARDER_SLICE` composition test, and an internal-coherence
+   test that runs a known-correct REFERENCE implementation of each of the 8 tasks through the real
+   `run_creation_suite` oracle, asserting `accepted=True` — proving each contract is genuinely
+   satisfiable AND non-trivial (a no-op program is separately confirmed to score 0/8). This caught
+   and fixed a real unsatisfiable-contract bug in `lru-cache-cli` (missing `<capacity>` argv) before
+   finalizing (Tenet 3).
+3. Run the FULL `python -m pytest tests/ -q` and confirm it stays green (1503 passed / 1 skipped).
+   Update `.jarify/EXT-036/index.json`'s `REQ-20` range to the grown file's `#EXT-036-REQ-20`
+   markers (41–628).
+
+#### Implements
+- [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
+  classes (adds `HARDER_SLICE` — 8 harder/more-diverse classes incl. a highly-complex LRU cache —
+  and `ALL_CREATION_TASKS`, growing coverage to 20 tasks / 17 classes; live gemma-vs-escalating
+  measurement against the grown suite remains an open follow-up)

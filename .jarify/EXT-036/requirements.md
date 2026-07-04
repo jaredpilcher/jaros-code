@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -465,7 +465,7 @@ loop does at the meta level — exposed as a first-class user capability.
   exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
   timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
 
-### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15; grown to 12 tasks/classes, TASK-17, 2026-07-03)
+### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15; grown to 12 tasks/classes, TASK-17; grown to 20 tasks / 17 classes incl. a highly-complex tier via `HARDER_SLICE` + `ALL_CREATION_TASKS`, TASK-24, 2026-07-04)
 
 To honestly know whether jaros-code is *"really really good at building complex systems from a sentence"* we need a
 broad, DIVERSE, HELD-OUT benchmark of CREATION tasks spanning many classes × difficulty tiers — not the three sentences
@@ -481,9 +481,14 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   4-6 interdependent → highly-complex many-module + cross-cutting) — PARTIAL: `FIRST_SLICE` (TASK-14, grown TASK-17)
   now covers 12 tasks / 9 distinct classes (cli-tool [sum/wordcount/temp-converter/max-of-stdin], todo-list,
   kv-store+TTL, priority job-queue, text-transform, calculator, parser (kv-lines-sorted), pub-sub, rate-limiter)
-  across easy/medium/hard (4/4/4, TASK-17 doubled the tier counts); the broader class list above (REST/HTTP
-  service, state machine, cache+eviction/scheduler, plugin system, auth/permission, workflow engine,
-  simulation/game-loop, and the highly-complex many-module tier) remains open growth.
+  across easy/medium/hard (4/4/4, TASK-17 doubled the tier counts); **TASK-24 (2026-07-04) adds `HARDER_SLICE`
+  (8 more classes: json-config-validator, graph-bfs-shortest-path, bracket-balance, run-length-codec,
+  csv-column-aggregator, traffic-light-sequencer, lru-cache [highly-complex], matrix-transpose) + exposes
+  `ALL_CREATION_TASKS = FIRST_SLICE + HARDER_SLICE`, growing coverage to 20 tasks / 17 classes and introducing the
+  highly-complex tier** — each self-verified via a reference impl through the independent oracle (a no-op scores
+  0/8, so no contract is trivially satisfiable, Tenet 3); the remaining broader classes (REST/HTTP service, plugin
+  system, auth/permission, workflow engine, simulation/game-loop, and the many-module highly-complex tier) remain
+  open growth.
 - [x] Each task = one sentence + a deterministic, automated executable-acceptance check (done / not-done), stored so it
   is never leaked into the solving prompt (held-out; Tenet 3) — **DONE 2026-07-03** (`harness/system_suite.py`,
   TASK-14): each `CreationTask`'s `checks` are BLACK-BOX CLI checks (`(argv, stdin, expected_substring)`, run as a
@@ -577,3 +582,37 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
   tasks including the 5 harder change classes added by TASK-20, plus a dedicated regression-gate test proving the
   honesty gate rejects a dishonestly-self-reported `applied=True` modification on one of the harder tasks too, not
   just the original TASK-16 fixture).
+
+### [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds  (PARTIAL — deterministic oracle module built, EXT-036 TASK-23; wiring into build_system OPEN)
+
+**Owner directive (2026-07-03):** the crown-jewel lever for building REAL framework systems is that the product
+must actually VERIFY a web service, not hollow-pass it. MEASURED (verify-don't-assume): `harness/system_builder.py`
+`build_system`'s acceptance checklist derives checks and runs each via `_run_check`, which executes `python
+<entry>.py` and inspects STDOUT. A FastAPI/Flask service has no stdout — it blocks serving HTTP — so every
+model-proposed check for it gets FILTERED OUT by the executable-check gate and the build silently falls back to
+`_smoke_checklist` (`import main; assert hasattr(main, "app")`), which passes the instant the module IMPORTS,
+WITHOUT EVER STARTING THE SERVER OR HITTING A SINGLE ENDPOINT. A gemma-built FastAPI service (correct code,
+genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pass" with zero endpoints exercised
+— a Tenet-3 hollow pass on exactly the class of system this product most needs to nail.
+
+#### Acceptance Criteria
+- [x] `harness/server_oracle.py::detect_web_service(modules)` — best-effort, never-raise scan of module SOURCES
+  ({filename: code}) that returns `{"kind": "asgi"|"wsgi", "entry": <module stem>, "app": <attr name>}` for the
+  first module where a FastAPI/Starlette (ASGI) or Flask (WSGI) app object assignment + matching import are both
+  found, else `None` — DONE, TASK-23
+- [x] `harness/server_oracle.py::serve_and_check(root, service, http_checks, *, startup_timeout, request_timeout)`
+  — actually STARTS the detected app (uvicorn for ASGI, the Flask CLI for WSGI) on a FREE ephemeral localhost
+  port, POLLS the port until it binds (bounded by `startup_timeout`, returns honestly if the server dies first),
+  then runs each `http_check` (`method`, `path`, optional `status`/`json_contains`/`body_contains`) as a REAL HTTP
+  request via urllib and grades it — DONE, TASK-23
+- [x] Every launched server process (and descendants) is torn down in a `finally` block, no orphaned
+  uvicorn/flask process, on both the pass path and every failure path — mirrors
+  `.jaros-data/tools/shell_exec_tool.py::_kill_tree` (Windows: `taskkill /F /T /PID`; POSIX: signal the process
+  group) — DONE, proven with real fastapi + flask + uvicorn fixtures (`tests/test_ext036_server_oracle.py`, no
+  network beyond 127.0.0.1)
+- [x] Honest negative proof: a check demanding a WRONG expected value genuinely FAILS (proves the oracle really
+  inspects the response, not a trivial pass); a broken app (import-time crash) fails within `startup_timeout`
+  WITHOUT HANGING and leaves no orphan — DONE, proven OFFLINE
+- [ ] Wired into `harness/system_builder.py::build_system` so a real system build with a detected web service is
+  actually HTTP-verified end-to-end instead of silently falling back to the import-only smoke checklist — OPEN,
+  explicit follow-up task (out of scope for TASK-23: that task builds + proves the oracle module in isolation only)

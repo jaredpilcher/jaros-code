@@ -12,7 +12,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.system_suite import CreationTask, FIRST_SLICE, run_creation_suite
+from harness.system_suite import (
+    ALL_CREATION_TASKS,
+    CreationTask,
+    FIRST_SLICE,
+    HARDER_SLICE,
+    run_creation_suite,
+)
 
 SUM_CLI_CODE = (
     "import sys\n"
@@ -360,6 +366,239 @@ def test_grown_suite_tasks_are_internally_coherent():
         code = _NEW_TASK_REFERENCE_CODE.get(task.name)
         if code is None:
             continue
+        result = run_creation_suite(_reference_build_fn(code), tasks=[task])
+        rec = result["results"][0]
+        assert rec["accepted"] is True, f"{task.name}: {rec}"
+        assert rec["n_checks_passed"] == rec["n_checks"] == len(task.checks)
+
+
+# --- HARDER_SLICE: +8 more classes, medium/hard/highly-complex tiers (owner directive) ------
+# CREATION is gemma's WEAK half (~83% gemma / ~92% escalating system), so it has the most
+# headroom and is the headline instrument -- grow it with genuinely HARDER, more diverse
+# classes, following the exact TASK-15/17 contract-precise convention. Each new task gets a
+# straightforward, correct reference implementation of its OWN stated contract, run through the
+# REAL suite oracle -- proving the checks are genuinely satisfiable (not accidentally
+# unsatisfiable or trivially-always-true), mirroring the FIRST_SLICE coherence tests above.
+
+_JSON_VALIDATOR_CODE = (
+    "import sys\n"
+    "import json\n"
+    "def main():\n"
+    "    data = sys.stdin.read()\n"
+    "    try:\n"
+    "        obj = json.loads(data)\n"
+    "    except Exception:\n"
+    "        print('invalid: not valid json')\n"
+    "        return\n"
+    "    if (isinstance(obj, dict) and isinstance(obj.get('name'), str)\n"
+    "            and isinstance(obj.get('port'), int) and not isinstance(obj.get('port'), bool)):\n"
+    "        print('VALID')\n"
+    "    else:\n"
+    "        print('invalid: missing or bad field')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_GRAPH_BFS_CODE = (
+    "import sys\n"
+    "from collections import deque, defaultdict\n"
+    "def main():\n"
+    "    data = sys.stdin.read().split(chr(10))\n"
+    "    idx = 0\n"
+    "    n = int(data[idx].strip()); idx += 1\n"
+    "    adj = defaultdict(set)\n"
+    "    for _ in range(n):\n"
+    "        u, v = data[idx].split(); idx += 1\n"
+    "        adj[u].add(v)\n"
+    "        adj[v].add(u)\n"
+    "    src, dst = data[idx].split()\n"
+    "    if src == dst:\n"
+    "        print(0)\n"
+    "        return\n"
+    "    visited = {src}\n"
+    "    q = deque([(src, 0)])\n"
+    "    while q:\n"
+    "        node, dist = q.popleft()\n"
+    "        for nxt in adj.get(node, ()):\n"
+    "            if nxt == dst:\n"
+    "                print(dist + 1)\n"
+    "                return\n"
+    "            if nxt not in visited:\n"
+    "                visited.add(nxt)\n"
+    "                q.append((nxt, dist + 1))\n"
+    "    print(-1)\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_BRACKET_BALANCE_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    line = sys.stdin.readline().strip()\n"
+    "    pairs = {')': '(', ']': '[', '}': '{'}\n"
+    "    stack = []\n"
+    "    ok = True\n"
+    "    for ch in line:\n"
+    "        if ch in '([{':\n"
+    "            stack.append(ch)\n"
+    "        elif ch in ')]}':\n"
+    "            if not stack or stack.pop() != pairs[ch]:\n"
+    "                ok = False\n"
+    "                break\n"
+    "    if stack:\n"
+    "        ok = False\n"
+    "    print('balanced' if ok else 'unbalanced')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_RLE_CODEC_CODE = (
+    "import sys\n"
+    "import re\n"
+    "def _encode(s):\n"
+    "    out = []\n"
+    "    i = 0\n"
+    "    while i < len(s):\n"
+    "        j = i\n"
+    "        while j < len(s) and s[j] == s[i]:\n"
+    "            j += 1\n"
+    "        out.append(str(j - i) + s[i])\n"
+    "        i = j\n"
+    "    return ''.join(out)\n"
+    "def _decode(s):\n"
+    "    out = []\n"
+    "    for count, ch in re.findall(r'(\\d+)(\\D)', s):\n"
+    "        out.append(ch * int(count))\n"
+    "    return ''.join(out)\n"
+    "def main():\n"
+    "    mode = sys.argv[1]\n"
+    "    line = sys.stdin.readline().strip()\n"
+    "    if mode == 'encode':\n"
+    "        print(_encode(line))\n"
+    "    else:\n"
+    "        print(_decode(line))\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_CSV_AGGREGATOR_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    column, agg = sys.argv[1], sys.argv[2]\n"
+    "    lines = [ln for ln in sys.stdin.read().splitlines() if ln.strip()]\n"
+    "    header = lines[0].split(',')\n"
+    "    idx = header.index(column)\n"
+    "    values = [float(row.split(',')[idx]) for row in lines[1:]]\n"
+    "    if agg == 'sum':\n"
+    "        result = sum(values)\n"
+    "    else:\n"
+    "        result = sum(values) / len(values) if values else 0.0\n"
+    "    print('%.2f' % result)\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_TRAFFIC_LIGHT_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    n = int(sys.argv[1])\n"
+    "    states = ['RED', 'GREEN', 'YELLOW']\n"
+    "    for i in range(n):\n"
+    "        print(states[i % 3])\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_LRU_CACHE_CODE = (
+    "import sys\n"
+    "from collections import OrderedDict\n"
+    "def main():\n"
+    "    capacity = int(sys.argv[1])\n"
+    "    cache = OrderedDict()\n"
+    "    for line in sys.stdin:\n"
+    "        parts = line.split()\n"
+    "        if not parts:\n"
+    "            continue\n"
+    "        if parts[0] == 'put':\n"
+    "            key, value = parts[1], parts[2]\n"
+    "            if key in cache:\n"
+    "                del cache[key]\n"
+    "            cache[key] = value\n"
+    "            if len(cache) > capacity:\n"
+    "                cache.popitem(last=False)\n"
+    "            print('ok')\n"
+    "        elif parts[0] == 'get':\n"
+    "            key = parts[1]\n"
+    "            if key in cache:\n"
+    "                value = cache.pop(key)\n"
+    "                cache[key] = value\n"
+    "                print(value)\n"
+    "            else:\n"
+    "                print('none')\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_MATRIX_TRANSPOSE_CODE = (
+    "import sys\n"
+    "def main():\n"
+    "    data = sys.stdin.read().split()\n"
+    "    idx = 0\n"
+    "    r = int(data[idx]); idx += 1\n"
+    "    c = int(data[idx]); idx += 1\n"
+    "    matrix = []\n"
+    "    for _ in range(r):\n"
+    "        row = [int(data[idx + k]) for k in range(c)]\n"
+    "        idx += c\n"
+    "        matrix.append(row)\n"
+    "    for j in range(c):\n"
+    "        print(' '.join(str(matrix[i][j]) for i in range(r)))\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_HARDER_SLICE_REFERENCE_CODE = {
+    "json-config-validator-cli": _JSON_VALIDATOR_CODE,
+    "graph-bfs-shortest-path-cli": _GRAPH_BFS_CODE,
+    "bracket-balance-cli": _BRACKET_BALANCE_CODE,
+    "run-length-codec-cli": _RLE_CODEC_CODE,
+    "csv-column-aggregator-cli": _CSV_AGGREGATOR_CODE,
+    "traffic-light-sequencer-cli": _TRAFFIC_LIGHT_CODE,
+    "lru-cache-cli": _LRU_CACHE_CODE,
+    "matrix-transpose-cli": _MATRIX_TRANSPOSE_CODE,
+}
+
+
+def test_harder_slice_registry_shape():
+    assert len(HARDER_SLICE) == 8
+    names = [t.name for t in HARDER_SLICE]
+    assert len(names) == len(set(names))   # unique names, and distinct from FIRST_SLICE
+    assert set(names).isdisjoint({t.name for t in FIRST_SLICE})
+    tiers = [t.tier for t in HARDER_SLICE]
+    assert set(tiers) <= {"medium", "hard", "highly-complex"}
+    assert "easy" not in tiers   # HARDER_SLICE is explicitly medium/hard/highly-complex only
+    for task in HARDER_SLICE:
+        assert task.cls and isinstance(task.cls, str)
+        assert "main.py" in task.sentence   # every task pins the single-file entrypoint
+        assert task.sentence.strip()
+        assert len(task.checks) >= 2        # at least 2 deterministic checks each
+        for check in task.checks:
+            assert callable(check) or len(check) == 3
+
+
+def test_all_creation_tasks_is_first_plus_harder():
+    assert ALL_CREATION_TASKS == FIRST_SLICE + HARDER_SLICE
+
+
+def test_harder_slice_tasks_are_internally_coherent():
+    """TENET-3 coherence: every HARDER_SLICE task's ``checks`` are satisfied by a
+    straightforward correct reference implementation of its OWN stated contract, run through
+    the REAL ``run_creation_suite`` oracle -- proving each new task's contract is genuinely
+    SATISFIABLE (not accidentally unsatisfiable) and its checks are actually determined by the
+    stated sentence, not trivially-always-true."""
+    assert set(_HARDER_SLICE_REFERENCE_CODE) == {t.name for t in HARDER_SLICE}
+    for task in HARDER_SLICE:
+        code = _HARDER_SLICE_REFERENCE_CODE[task.name]
         result = run_creation_suite(_reference_build_fn(code), tasks=[task])
         rec = result["results"][0]
         assert rec["accepted"] is True, f"{task.name}: {rec}"

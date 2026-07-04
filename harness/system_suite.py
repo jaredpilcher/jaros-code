@@ -55,7 +55,7 @@ class CreationTask:
 
     name: str
     cls: str
-    tier: str                 # "easy" | "medium" | "hard"
+    tier: str                 # "easy" | "medium" | "hard" | "highly-complex"
     sentence: str
     checks: list = field(default_factory=list)
 
@@ -448,4 +448,181 @@ FIRST_SLICE: "list[CreationTask]" = [
         ],
     ),
 ]
+
+
+# --- HARDER_SLICE (owner directive 2026-07-03): +8 more classes, spread medium/hard/
+# highly-complex tiers -- CREATION is gemma's WEAK half (~83% gemma / ~92% escalating), so it
+# has the most headroom and is the headline instrument. Same contract-precise convention proven
+# by TASK-15/17 (single main.py entrypoint, exact argv/stdin invocation, exact stdout format
+# including the trailing newline, `if __name__ == "__main__":` required, deterministic checks
+# with no wall-clock dependence). New, previously-unrepresented domains: config validation,
+# graph search, stack-based parsing, run-length coding, CSV aggregation, a state machine, an
+# LRU cache (highly-complex -- recency-ordered eviction, not just FIFO), and matrix transpose.
+
+HARDER_SLICE: "list[CreationTask]" = [
+    CreationTask(
+        name="json-config-validator-cli", cls="validator", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a JSON config "
+            "validator. Running it as `python main.py` (no command-line arguments), it reads "
+            "the ENTIRE standard input as one JSON document (a JSON object) parseable via the "
+            "standard json module. A valid config MUST have a string field `name` and an "
+            "integer field `port`. If the input parses as JSON and contains a string `name` "
+            "and an integer `port`, print exactly `VALID` followed by a newline. If the input "
+            "is not valid JSON at all (fails to parse), print exactly `invalid: not valid json` "
+            "followed by a newline. Otherwise (valid JSON, but missing or wrong-typed `name` or "
+            "`port`), print exactly `invalid: missing or bad field` followed by a newline. "
+            "Print nothing else. The file must contain an `if __name__ == \"__main__\":` block "
+            "that runs this."
+        ),
+        checks=[
+            ([], '{"name": "svc", "port": 8080}\n', "VALID"),
+            ([], '{"name": "svc"}\n', "invalid: missing or bad field"),
+        ],
+    ),
+    CreationTask(
+        name="graph-bfs-shortest-path-cli", cls="graph", tier="hard",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a graph "
+            "shortest-path finder using breadth-first search (BFS) over an UNDIRECTED graph. "
+            "Running it as `python main.py` (no command-line arguments), it reads from "
+            "standard input: the first line is a single non-negative integer N (number of "
+            "edges); then exactly N lines follow, each containing two whitespace-separated "
+            "node names `u v` describing an undirected edge between them; then one final line "
+            "containing two whitespace-separated node names `src dst`. It computes the length "
+            "(number of edges) of the SHORTEST path from `src` to `dst` using BFS (each edge "
+            "has weight 1), and prints ONLY that integer, followed by a newline, to standard "
+            "output; if `src` equals `dst`, print `0`; if no path exists, print `-1` instead. "
+            "Nothing else is printed. The file must contain an `if __name__ == \"__main__\":` "
+            "block that runs this."
+        ),
+        checks=[
+            ([], "3\na b\nb c\nc d\na d\n", "3"),
+            ([], "1\na b\na c\n", "-1"),
+        ],
+    ),
+    CreationTask(
+        name="bracket-balance-cli", cls="stack", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a stack-based "
+            "bracket-balance checker. Running it as `python main.py` (no command-line "
+            "arguments), it reads ONE line from standard input containing only the bracket "
+            "characters `(`, `)`, `[`, `]`, `{`, `}` (no other characters). Using a "
+            "stack-based algorithm, it determines whether every opening bracket has a "
+            "matching closing bracket of the SAME type in the correct nested order. It prints "
+            "ONLY `balanced` followed by a newline if the brackets are balanced, or ONLY "
+            "`unbalanced` followed by a newline otherwise. Nothing else is printed. The file "
+            "must contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            ([], "([{}])\n", "balanced"),
+            ([], "([)]\n", "unbalanced"),
+        ],
+    ),
+    CreationTask(
+        name="run-length-codec-cli", cls="codec", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a run-length "
+            "encoder/decoder. Running it as `python main.py encode` (exactly one "
+            "command-line argument, the literal string `encode`), it reads ONE line of text "
+            "from standard input (letters only, no whitespace) and prints its run-length "
+            "encoding -- for each maximal run of the SAME consecutive character, the run's "
+            "length as a decimal integer immediately followed by that character, with runs "
+            "concatenated in order left-to-right -- followed by a newline, to standard output "
+            "(nothing else). Running it as `python main.py decode` (exactly one command-line "
+            "argument, the literal string `decode`), it reads ONE line of run-length-encoded "
+            "text (integer-then-character pairs, e.g. `3a2b1c`) from standard input and prints "
+            "the fully expanded string, followed by a newline, to standard output (nothing "
+            "else). The file must contain an `if __name__ == \"__main__\":` block that runs "
+            "this."
+        ),
+        checks=[
+            (["encode"], "aaabbc\n", "3a2b1c"),
+            (["decode"], "3a2b1c\n", "aaabbc"),
+        ],
+    ),
+    CreationTask(
+        name="csv-column-aggregator-cli", cls="data-aggregation", tier="hard",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a CSV column "
+            "aggregator. Running it as `python main.py <column> <agg>` (exactly two "
+            "command-line arguments: `column` is a header name, `agg` is exactly `sum` or "
+            "`mean`), it reads CSV data from standard input where the FIRST line is a "
+            "comma-separated header row and each subsequent line is a comma-separated row of "
+            "numeric values aligned to that header (no quoting/escaping needed). It computes "
+            "the sum or mean (as specified by `agg`) of the named column's numeric values "
+            "across all data rows, and prints ONLY that result, rounded to exactly 2 decimal "
+            "places, followed by a newline, to standard output (nothing else). The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            (["amount", "sum"], "name,amount\na,10\nb,20\nc,5\n", "35.00"),
+            (["amount", "mean"], "name,amount\na,10\nb,20\n", "15.00"),
+        ],
+    ),
+    CreationTask(
+        name="traffic-light-sequencer-cli", cls="state-machine", tier="medium",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a traffic-light "
+            "state-machine sequencer. Running it as `python main.py <n>` (exactly one "
+            "command-line argument, a non-negative integer `n`), it prints exactly `n` lines "
+            "to standard output, one per line, giving the sequence of the traffic light's "
+            "states starting from `RED` (the FIRST line printed, i.e. step 1, is `RED`) and "
+            "cycling in the fixed order `RED` -> `GREEN` -> `YELLOW` -> `RED` -> ... for "
+            "exactly `n` steps total. Each line is exactly one of the words `RED`, `GREEN`, or "
+            "`YELLOW`; nothing else is printed. The file must contain an `if __name__ == "
+            "\"__main__\":` block that runs this."
+        ),
+        checks=[
+            (["4"], None, "RED\nGREEN\nYELLOW\nRED"),
+            (["1"], None, "RED"),
+        ],
+    ),
+    CreationTask(
+        name="lru-cache-cli", cls="cache", tier="highly-complex",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a "
+            "fixed-capacity Least-Recently-Used (LRU) cache. Running it as `python main.py "
+            "<capacity>` (exactly one command-line argument, a positive integer `capacity`), "
+            "it then reads commands from standard input, one command per line, until "
+            "standard input is exhausted (EOF); after processing each command it immediately "
+            "prints that command's output line, followed by a newline, to standard output, in "
+            "the SAME order the commands were read. Supported commands: `put <key> <value>` "
+            "inserts or updates `<key>` with `<value>` (marking it as the MOST RECENTLY USED "
+            "entry) and prints `ok`; if this insertion would make the cache exceed `capacity` "
+            "distinct keys, first EVICT the LEAST RECENTLY USED key (the one accessed or "
+            "inserted longest ago, per both `get` and `put` operations) before inserting; "
+            "`get <key>` prints the stored value if `<key>` is present (and marks it as the "
+            "MOST RECENTLY USED entry), or prints `none` if `<key>` is absent (including if it "
+            "was evicted). Print exactly one line per command, in the order the commands were "
+            "read, and nothing else. The file must contain an `if __name__ == \"__main__\":` "
+            "block that runs this."
+        ),
+        checks=[
+            (["2"], "put a 1\nput b 2\nput c 3\nget a\nget c\n", "none\n3"),
+            (["2"], "put a 1\nput b 2\nget a\nput c 3\nget a\nget b\n", "1\nnone"),
+        ],
+    ),
+    CreationTask(
+        name="matrix-transpose-cli", cls="matrix", tier="hard",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a matrix "
+            "transposer. Running it as `python main.py` (no command-line arguments), it reads "
+            "from standard input: the first line contains two whitespace-separated positive "
+            "integers `R C` (rows and columns); then exactly `R` lines follow, each containing "
+            "exactly `C` whitespace-separated integers (one row of the matrix). It computes "
+            "the TRANSPOSE of that R-by-C matrix (a C-by-R matrix where element `[i][j]` of "
+            "the output is element `[j][i]` of the input) and prints it as exactly `C` lines, "
+            "each containing exactly `R` whitespace-separated integers (the transposed row), "
+            "separated by single spaces, in row order; nothing else is printed. The file must "
+            "contain an `if __name__ == \"__main__\":` block that runs this."
+        ),
+        checks=[
+            ([], "2 3\n1 2 3\n4 5 6\n", "1 4\n2 5\n3 6"),
+            ([], "1 2\n7 8\n", "7\n8"),
+        ],
+    ),
+]
+
+ALL_CREATION_TASKS: "list[CreationTask]" = FIRST_SLICE + HARDER_SLICE
 # #EXT-036-REQ-20 End
