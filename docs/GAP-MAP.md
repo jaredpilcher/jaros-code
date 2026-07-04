@@ -499,3 +499,17 @@ instrument is SATURATED here = a FLOOR, not parity, and it does NOT yet justify 
 CAPSTONE (no MEASURED coherence failure to fix — building it now would be speculative, against the breadth brake). DISCIPLINE
 (measure-first): RATCHET the instrument until it BREAKS — many more requirements (8-12+), INTERDEPENDENT requirements,
 MULTI-FILE systems, longer horizon — the break is what justifies + directs the capstone. Probing a harder task next.
+
+## ★ NORTH-STAR BREAK DIAGNOSED (2026-07-04) → the governed CAPSTONE is now justified + directed
+
+Ratcheted the coherence instrument: an 11-requirement INTERDEPENDENT kvdb-cli broke build_system at **10/11=0.91**.
+DIAGNOSED (suspect-harness-first, verify-don't-assume): the dropped requirement is **`incr`** — the single-pass build
+implements 10 of 11 commands and OMITS the incr branch entirely (`incr n` -> falls through to `usage`). It is a DROPPED
+requirement, NOT a wrong impl → decomposition/re-grounding is the correct lever. SECOND finding (Tenet-3): build_system
+reported **done=True "all acceptance checks pass" DESPITE the drop**, because its SELF-DERIVED acceptance checklist shares
+the code's blind spot (both generated from the same prompt by the same model, so the dropped requirement is absent from
+BOTH). Only the INDEPENDENT coherence oracle (enumerating all 11 requirements) caught it — mechanism-level proof of the
+reviewer's "don't trust self-graded instruments." LEVER (capstone #91): a GOVERNED build path that (1) decomposes the
+prompt into an EXPLICIT enumerated requirement list, (2) builds, (3) verifies EACH requirement independently, (4) repairs
+any UNMET requirement (feed the full list + the unmet one, regenerate, re-verify ALL so none is re-dropped), done=ALL-met.
+Target: lift the kvdb-cli coherence 10/11 -> 11/11. Directed by a real, diagnosed failure — not speculative.
