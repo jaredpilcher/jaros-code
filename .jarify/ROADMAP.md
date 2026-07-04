@@ -50,6 +50,9 @@ toy-CLI suites.
   **high** · MEASURED the real #86 datastore blocker: gemma DETERMINISTICALLY (6/6) draws a 2-module
   notes-cli plan whose `cli.py` imports an unlisted `database` module → validate_plan rejects → 0 accept.
   Because it's deterministic, best-of-k CANNOT help this; a deterministic plan-repair is the lever.
+- **[#86 datastore end-to-end verify]** once the plan-repair lands, re-measure the notes-sqlite-cli
+  accept-rate live — does the repaired multi-file plan now BUILD and PASS acceptance (real rows persist),
+  or does the next honest blocker appear? — high · the payoff check that closes the #86 sqlite loop with a number.
 
 ## RE-MEASURED — #86 datastore (2026-07-04)
 
@@ -73,6 +76,13 @@ toy-CLI suites.
   the honesty follow-up.
 - **[EXT-041 (new spec)]** repo-comprehension + complex planning for large real repos: accurate
   repo map + plan changes across a real multi-file repo — med · #87, extends `harness/repo_map.py`.
+- **[acceptance-completeness at scale]** widen the false-done probe across MANY creation classes (not
+  just datastore) to confirm zero false-done broadly, and grow the subprocess-acceptance coverage — med
+  · Tenet-3 honesty of the done-signal at scale (the false-done fix was one measured case).
+- **[real-library systems tier (new REQ under EXT-036/EXT-039)]** build systems that USE real
+  third-party libraries the intent names — pandas, networkx, SQLAlchemy — via the dep-install path +
+  an acceptance oracle that exercises the library behavior — med · the real-systems RATCHET (toy CLIs
+  are the floor; real frameworks/libraries are the frontier). Flask/FastAPI already have the HTTP oracle.
 
 ## LATER (weeks — the hard bar + the flywheel)
 
@@ -81,6 +91,14 @@ toy-CLI suites.
   current 2–3B base — do NOT re-grind training on this base).
 - **[flywheel]** accumulate verified solutions (`record_verified` on the real solve paths, not just
   the daily-driver) toward an eventual distill when a better base lands — med · sovereign data.
+- **[parity instruments — mature the honest scoreboard]** the daily-driver suite (#51, 80+ CLI tasks
+  end-to-end, dev/holdout split) as the parity number; the **shadow-mode parity log** (owner's REAL
+  Claude Code tasks replayed against jcode) which becomes the headline instrument as it accumulates;
+  the **amortization ratio** (% served from memory/deterministic paths without a full model solve) — med
+  · PRIME-001 scoreboard instruments; progress = these trends, not commit count.
+- **[multi-model / router maturation]** migrate the multi-model router layer to be truly Jaros-native
+  (#25) and admit orthogonal roster models by MARGINAL coverage (decorrelation-gated, #42/#44) — low·med
+  · roster value pays only via hard-class coverage (measured), so admit sparingly + honestly.
 - **[#91 coherence capstone]** long-horizon build coherence via **best-of-k** on the coherence
   suite — med · the governed decompose→repair path measured net-negative and is BANKED; don't restart it.
 - **[EXT-040 REQ-3 follow-up]** `run_creation_suite` per-task beats; roll `run_with_heartbeat`
