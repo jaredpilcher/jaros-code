@@ -886,3 +886,56 @@ FIRST_SLICE + HARDER_SLICE` — leaving `run_creation_suite`'s default (`FIRST_S
   classes (adds `HARDER_SLICE` — 8 harder/more-diverse classes incl. a highly-complex LRU cache —
   and `ALL_CREATION_TASKS`, growing coverage to 20 tasks / 17 classes; live gemma-vs-escalating
   measurement against the grown suite remains an open follow-up)
+
+### [TASK-25] Wire server/HTTP acceptance oracle into build_system (REQ-22)
+
+MEASURED gap (owner directive 2026-07-03, TASK-23's explicit follow-up): `harness/system_builder.py::build_system`'s
+acceptance checklist derives checks and runs each via the stdout-based `_run_check`; a FastAPI/Flask service has no
+stdout, so every proposed check for it is filtered out and the build silently falls back to the import-only
+`_smoke_checklist`, reporting `done=True` the instant the module imports without ever hitting an endpoint — a
+Tenet-3 hollow pass on exactly the class of system this product most needs to nail. `harness/server_oracle.py`
+(TASK-23) already builds + proves the real HTTP-verification primitives standalone (`detect_web_service`,
+`serve_and_check`); this task wires them into `build_system` so a detected web service is HONESTLY HTTP-verified.
+
+#### Steps
+1. In `harness/system_builder.py::build_system`, immediately after ASSEMBLE (before the existing stdout-based
+   acceptance derivation), call `detect_web_service(built)` (lazy-imported from `harness/server_oracle.py`, never
+   raises). If it detects a service:
+   a. Derive `http_checks` for it via a NEW model round-trip (`_derive_http_checklist`/`HTTP_CHECKLIST_PROMPT`)
+      that proposes HTTP endpoint checks from the SPEC (the prompt already describes the endpoints + expected
+      responses) — each `{"method","path","status"(opt),"json_contains"(opt),"body_contains"(opt)}` —
+      deterministically FILTERED to well-formed http-check dicts by a new `_is_http_check` gate (mirrors
+      `_is_executable_check`'s parse-and-assert discipline: a check must assert at least one of
+      status/json_contains/body_contains to survive — an assertion-free check is dropped as a vacuous pass, same
+      as a prose/"conceptual" stdout check). Guarded: never raises, returns `[]` on any model/parse failure.
+   b. If `http_checks` is non-empty, run `serve_and_check(root, service, http_checks)` and GATE `done` on its
+      `ok` field — folding the per-check pass/fail into the returned `note`/`unmet` for transparency (which
+      endpoints passed/failed).
+   c. HONESTY (Tenet 3): if `http_checks` is empty (no valid checks derivable), return `done=False` with an
+      explicit "not HTTP-verified" note/unmet entry — `shipped=True` (the app assembled + imports fine) but
+      `done` is never hollow. A detected web service NEVER falls through to the stdout/smoke acceptance path
+      below this new block, regardless of the http_checks/serve_and_check outcome.
+2. Non-web-service builds are COMPLETELY UNCHANGED: `detect_web_service` returns `None` for a plain CLI/library
+   system, so control falls through to the existing stdout-based `_derive_acceptance_checklist`/`_run_check`
+   path exactly as before (byte-identical behavior; no change to `_repair_system`/TASK-5's repair loop, which
+   stays scoped to the non-web stdout path). Do not modify `harness/server_oracle.py`, `harness/cli.py`, or
+   `harness/system_suite.py` — this task is `build_system`'s wiring only.
+3. `build_system` must NEVER raise (mirrors every existing stage); the `build_system_escalating` wrapper
+   (TASK-13) needs no changes — it composes `build_system` unmodified.
+4. Tests (added to `tests/test_ext036_system_builder.py`, OFFLINE via an injected fake `llm` mirroring the
+   existing `_CannedLlm` pattern; `fastapi`/`uvicorn` ARE installed, guarded with `pytest.importorskip`): (a)
+   POSITIVE — a fake llm plans a single-file FastAPI service, writes a CORRECT app (`app=FastAPI()`, GET
+   /health -> `{"status": "ok"}`), and derives an http check for `/health` expecting
+   `json_contains={"status":"ok"}` -> `build_system` detects the service, runs `serve_and_check`, and returns
+   `done=True`; (b) CONTROL — the SAME flow with a BROKEN app (`/health` returns `{"status":"bad"}`) ->
+   `done=False` (proves the pass above is real, not coincidental); (c) HONESTY — a fake llm returns a FastAPI app
+   but NO derivable `http_checks` -> `done=False` with the "not HTTP-verified" note (never a hollow `done=True`);
+   (d) REGRESSION — the pre-existing non-web `_CannedLlm` fixture's full-pipeline test still returns the exact
+   same `done=True`/`shipped=True`/`unmet=[]`, and the new HTTP-checklist prompt is never even issued for it. Run
+   the FULL `python -m pytest tests/ -q` synchronously in the foreground and confirm it stays green at the new
+   count (was 1503 passed / 1 skipped). Verify no orphaned uvicorn processes survive the run.
+
+#### Implements
+- [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds (wires the standalone TASK-23 oracle into
+  `build_system` so a detected web service is HONESTLY HTTP-verified — closing the measured hollow-pass gap;
+  `done=True` on a web-service build now REQUIRES a real `serve_and_check` pass)

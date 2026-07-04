@@ -79,6 +79,19 @@ better of the two results by a fixed rule (shipped > done > module count). Never
 ``swap_fn``/fallback-build failure gracefully falls back to the primary-only result. Live
 CLI/Jetson wiring of ``swap_fn`` is an explicit out-of-scope follow-up — this task only builds
 the offline-testable core.
+
+TASK-25 (REQ-22) wires ``harness/server_oracle.py`` (built standalone in TASK-23) into
+``build_system``'s acceptance step. MEASURED gap: a FastAPI/Flask service has no stdout, so
+its model-proposed checks get filtered out by the stdout-based executable-check gate and the
+build silently fell back to the import-only ``_smoke_checklist`` — a Tenet-3 hollow pass that
+reports ``done=True`` without ever hitting an endpoint. Fix: immediately after ASSEMBLE,
+``detect_web_service(built)`` is called; when it finds a service, the model proposes HTTP
+endpoint checks from the spec (``_derive_http_checklist``, deterministically filtered by
+``_is_http_check`` to well-formed, actually-assertive dicts), and ``done`` is GATED on a real
+``serve_and_check`` run — never on the stdout checklist/smoke fallback. If no valid
+``http_checks`` can be derived, ``done=False`` with an honest "not HTTP-verified" note
+(``shipped`` may still be True). Non-web-service builds are completely unaffected — the
+stdout/smoke acceptance path below is reached only when no web service is detected.
 """
 
 from __future__ import annotations
@@ -453,6 +466,79 @@ def _derive_acceptance_checklist(spec: str, mods: list[dict], llm) -> list[dict]
         checks = _smoke_checklist(mods)
     return checks
 # #EXT-036-REQ-2 End
+# #EXT-036-REQ-22 Start
+# TASK-25: wiring `harness/server_oracle.py` into `build_system`'s acceptance so a DETECTED
+# web service is HONESTLY HTTP-verified instead of falling back to the import-only
+# `_smoke_checklist` (the measured hollow-pass gap, REQ-22). Deterministic filtering mirrors
+# `_is_executable_check`/`_propose_checklist` above: the model proposes HTTP endpoint checks
+# from the SPEC (which already describes the endpoints + expected responses), a deterministic
+# gate keeps only well-formed http-check dicts, and — critical for honesty — a check must
+# assert at least one of status/json_contains/body_contains to survive (an assertion-free
+# check would be a vacuous pass, the HTTP analog of a prose/"conceptual" check).
+
+HTTP_CHECKLIST_PROMPT = (
+    "SPEC: {spec}\nThe system is a WEB SERVICE exposing this API: {api}\n\n"
+    "Write 2-4 concrete HTTP ENDPOINT CHECKS proving the SPEC's endpoints behave as "
+    "described. Each check is a JSON object describing ONE real HTTP request and the "
+    "expected response. Output ONLY a JSON list: "
+    '[{{"method": "GET"|"POST"|"PUT"|"PATCH"|"DELETE", "path": "/endpoint", '
+    '"status": <optional expected int status code>, '
+    '"json_contains": <optional dict subset the JSON response must contain>, '
+    '"body_contains": <optional substring the response body must contain>}}]. '
+    "Every check MUST specify at least one of status/json_contains/body_contains. No prose."
+)
+
+_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
+
+def _is_http_check(check) -> bool:
+    """The deterministic HTTP-check filter (REQ-22): a proposed check survives only if it
+    is a well-formed dict with a non-empty string `path`, an optional `method` that is a
+    real HTTP verb, and at least one real assertion (`status` an int, `json_contains` a
+    dict, or `body_contains` a string). A check asserting nothing is dropped — the HTTP
+    analog of `_is_executable_check` rejecting a prose/non-assertion check. Never raises."""
+    if not isinstance(check, dict):
+        return False
+    path = check.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return False
+    method = check.get("method")
+    if method is not None and (not isinstance(method, str) or method.strip().upper() not in _HTTP_METHODS):
+        return False
+    status = check.get("status")
+    if status is not None and (isinstance(status, bool) or not isinstance(status, int)):
+        return False
+    json_contains = check.get("json_contains")
+    if json_contains is not None and not isinstance(json_contains, dict):
+        return False
+    body_contains = check.get("body_contains")
+    if body_contains is not None and not isinstance(body_contains, str):
+        return False
+    return status is not None or json_contains is not None or body_contains is not None
+
+
+def _derive_http_checklist(spec: str, mods: list[dict], llm) -> list[dict]:
+    """One model round-trip proposing HTTP endpoint checks for a DETECTED web service,
+    deterministically filtered to well-formed http-check dicts (`_is_http_check`). Guarded
+    — returns [] on any model/parse failure or when nothing survives the filter; never a
+    fabricated pass. The prompt already carries the spec (which describes the endpoints +
+    expected responses), so no extra context beyond the module API is needed."""
+    api = _module_api(mods)
+    try:
+        raw = _call(llm, HTTP_CHECKLIST_PROMPT.format(spec=spec, api=api), max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    checks = _extract_json(raw, "[", "]")
+    if not isinstance(checks, list):
+        return []
+    return [c for c in checks if _is_http_check(c)]
+
+
+def _http_check_label(check: dict) -> str:
+    method = str(check.get("method") or "GET").upper()
+    path = check.get("path") or "/"
+    return f"{method} {path}"
+# #EXT-036-REQ-22 End
 # #EXT-036-REQ-4 Start
 
 
@@ -725,6 +811,42 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     # #EXT-037-REQ-1 End
 
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
+    # #EXT-036-REQ-22 Start
+    # TASK-25: a DETECTED web service is HONESTLY HTTP-verified — never allowed to fall
+    # through to the stdout-based checklist / import-only `_smoke_checklist` below, which
+    # would hollow-pass the instant the module imports without ever hitting an endpoint.
+    try:
+        from harness.server_oracle import detect_web_service, serve_and_check
+        service = detect_web_service(built)
+    except Exception:
+        service = None
+    if service:
+        http_checks = _derive_http_checklist(spec, mods, llm)
+        if not http_checks:
+            return _result(
+                modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
+                unmet=["web service present but not HTTP-verified"],
+                note="shipped, but a web service was detected and no derivable HTTP "
+                     "acceptance checks were found — not HTTP-verified",
+            )
+        try:
+            http_result = serve_and_check(root, service, http_checks)
+        except Exception as exc:
+            http_result = {"ok": False, "results": [], "note": f"serve_and_check failed: {exc}"}
+        done = bool(http_result.get("ok"))
+        unmet = [] if done else [
+            _http_check_label(r.get("check") or {})
+            for r in (http_result.get("results") or []) if not r.get("passed")
+        ]
+        if done:
+            note = "DONE (web service HTTP-verified: " + ", ".join(
+                _http_check_label(c) for c in http_checks) + ")"
+        else:
+            note = "NOT DONE — web service HTTP checks failed: " + \
+                (", ".join(unmet) if unmet else (http_result.get("note") or "unknown failure"))
+        return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet,
+                        note=note, plan_repair=plan_repair)
+    # #EXT-036-REQ-22 End
     checks = _derive_acceptance_checklist(spec, mods, llm)
     if not checks:
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,

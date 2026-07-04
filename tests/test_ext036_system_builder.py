@@ -283,3 +283,135 @@ def test_cli_build_command_unaffected_by_buildsystem_addition(tmp_path, monkeypa
     cli = JcodeCli()
     out = cli.dispatch("/build")
     assert "usage: /build <func_name> <intent>" in out
+
+
+# --- (4) TASK-25 (REQ-22): web-service builds are HONESTLY HTTP-verified ----------------
+# `harness/server_oracle.py` is wired into `build_system`'s acceptance step: a DETECTED
+# web service must be gated on a real `serve_and_check` pass, never the stdout/smoke path.
+# fastapi + uvicorn are installed in this environment (see tests/test_ext036_server_oracle.py);
+# guarded with `pytest.importorskip` per-test so the rest of this file never depends on them.
+
+WEB_SPEC = ("A tiny FastAPI web service in a single module with one GET /health endpoint "
+            "that returns JSON {\"status\": \"ok\"}.")
+
+FASTAPI_PLAN_JSON = """{
+  "modules": [
+    {"name": "main.py", "responsibility": "FastAPI service exposing GET /health",
+     "exports": [{"name": "app", "signature": "app = FastAPI()"}], "imports": []}
+  ],
+  "entrypoint": "main.py",
+  "acceptance": "GET /health returns {\\"status\\": \\"ok\\"}"
+}"""
+
+FASTAPI_MAIN_OK = '''
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+'''
+
+FASTAPI_MAIN_BROKEN = '''
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    return {"status": "bad"}
+'''
+
+HTTP_CHECKLIST_JSON = """[
+  {"method": "GET", "path": "/health", "status": 200, "json_contains": {"status": "ok"}}
+]"""
+
+
+class _WebCannedLlm:
+    """Same `.complete(LlmRequest) -> .text` convention as `_CannedLlm`, but routes the
+    NEW HTTP-endpoint-checklist prompt (REQ-22/TASK-25) too, keyed on its distinctive
+    "HTTP ENDPOINT CHECKS" substring (never overlapping the stdout-checklist's
+    "ACCEPTANCE CHECKS" keying — the two prompts are never confused)."""
+
+    def __init__(self, *, plan=FASTAPI_PLAN_JSON, module_first=None,
+                 http_checklist=HTTP_CHECKLIST_JSON) -> None:
+        self.plan = plan
+        self.module_first = module_first or {"main.py": FASTAPI_MAIN_OK}
+        self.http_checklist = http_checklist
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "build PLAN" in prompt:
+            return _Resp(self.plan)
+        if "HTTP ENDPOINT CHECKS" in prompt:
+            return _Resp(self.http_checklist)
+        if "SYNTAX ERROR" in prompt or "COMPLETE Python module" in prompt:
+            m = _MODULE_NAME_RE.search(prompt)
+            name = m.group(1) if m else None
+            return _Resp(self.module_first.get(name, ""))
+        return _Resp("")
+
+
+def test_web_service_detected_and_http_verified_done_true(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("uvicorn")
+    llm = _WebCannedLlm()
+    result = build_system(WEB_SPEC, tmp_path / "built", llm=llm)
+
+    assert result["shipped"] is True
+    assert result["done"] is True, result["note"]
+    assert result["unmet"] == []
+    assert "HTTP-verified" in result["note"]
+    # the real app was actually assembled onto disk (not a hollow import-only pass)
+    assert (tmp_path / "built" / "main.py").is_file()
+
+
+def test_web_service_broken_endpoint_genuinely_fails_control(tmp_path):
+    """CONTROL proving the pass above is REAL: the exact same flow with a BROKEN app
+    (the endpoint returns the wrong JSON) must genuinely fail — not a coincidental pass."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("uvicorn")
+    llm = _WebCannedLlm(module_first={"main.py": FASTAPI_MAIN_BROKEN})
+    result = build_system(WEB_SPEC, tmp_path / "built", llm=llm)
+
+    assert result["shipped"] is True          # the app still builds + imports fine
+    assert result["done"] is False            # but the endpoint genuinely returns the wrong body
+    assert result["unmet"]
+    assert "GET /health" in result["unmet"][0]
+
+
+def test_web_service_no_derivable_http_checks_is_honest_not_hollow(tmp_path):
+    """HONESTY: a detected web service with NO derivable http_checks must NOT hollow-pass
+    via the old import-only `_smoke_checklist` — it must report `done=False` with a clear
+    "not HTTP-verified" note, even though the app itself builds fine (`shipped=True`)."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("uvicorn")
+    llm = _WebCannedLlm(http_checklist="not a json list at all")
+    result = build_system(WEB_SPEC, tmp_path / "built", llm=llm)
+
+    assert result["shipped"] is True
+    assert result["done"] is False
+    assert "not HTTP-verified" in result["note"]
+    assert any("not HTTP-verified" in u for u in result["unmet"])
+
+
+def test_non_web_cli_build_regression_unaffected_by_web_wiring(tmp_path):
+    """REGRESSION: a normal non-web CLI build (the pre-existing `_CannedLlm` fixture) is
+    completely unchanged by the REQ-22 wiring — `detect_web_service` finds nothing in a
+    plain helper+CLI system, so it still falls through to the stdout/smoke acceptance path
+    exactly as before, with the exact same done/shipped outcome as the original test."""
+    root = tmp_path / "built"
+    llm = _CannedLlm()
+    result = build_system(SPEC, root, llm=llm)
+
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert "HTTP-verified" not in result["note"]
+    # none of the HTTP-checklist prompt was ever issued for a non-web system
+    assert not [p for p in llm.prompts if "HTTP ENDPOINT CHECKS" in p]

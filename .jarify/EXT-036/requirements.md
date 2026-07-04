@@ -583,7 +583,7 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
   honesty gate rejects a dishonestly-self-reported `applied=True` modification on one of the harder tasks too, not
   just the original TASK-16 fixture).
 
-### [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds  (PARTIAL — deterministic oracle module built, EXT-036 TASK-23; wiring into build_system OPEN)
+### [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds  (DONE — deterministic oracle module built, EXT-036 TASK-23; wired into build_system, TASK-25, 2026-07-04)
 
 **Owner directive (2026-07-03):** the crown-jewel lever for building REAL framework systems is that the product
 must actually VERIFY a web service, not hollow-pass it. MEASURED (verify-don't-assume): `harness/system_builder.py`
@@ -613,6 +613,23 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
 - [x] Honest negative proof: a check demanding a WRONG expected value genuinely FAILS (proves the oracle really
   inspects the response, not a trivial pass); a broken app (import-time crash) fails within `startup_timeout`
   WITHOUT HANGING and leaves no orphan — DONE, proven OFFLINE
-- [ ] Wired into `harness/system_builder.py::build_system` so a real system build with a detected web service is
-  actually HTTP-verified end-to-end instead of silently falling back to the import-only smoke checklist — OPEN,
-  explicit follow-up task (out of scope for TASK-23: that task builds + proves the oracle module in isolation only)
+- [x] Wired into `harness/system_builder.py::build_system` so a real system build with a detected web service is
+  actually HTTP-verified end-to-end instead of silently falling back to the import-only smoke checklist —
+  **DONE 2026-07-04** (`harness/system_builder.py::build_system`, TASK-25): immediately after ASSEMBLE,
+  `detect_web_service(built)` is called; when it finds a service, the model proposes HTTP endpoint checks from
+  the SPEC (`_derive_http_checklist`, deterministically filtered by `_is_http_check` to well-formed dicts that
+  assert at least one of `status`/`json_contains`/`body_contains` — mirroring `_is_executable_check`'s
+  parse-and-assert gate), and `done` is now GATED on a real `serve_and_check` pass — the stdout-based
+  checklist / import-only `_smoke_checklist` is NEVER reached for a detected web service, closing the hollow-pass
+  gap. HONESTY (Tenet 3): if no valid `http_checks` can be derived, `done=False` with an explicit "not
+  HTTP-verified" note/unmet entry (`shipped` may still be True — the code assembled + imports fine, but `done`
+  never lies). Non-web-service builds are byte-for-byte unaffected — `detect_web_service` finds nothing in a
+  plain CLI system, so the pre-existing stdout/smoke acceptance path is reached exactly as before (proven: the
+  full creation-suite/system_builder test path stays green at the same behavior). Proven OFFLINE
+  (`tests/test_ext036_system_builder.py`, canned llm + a real FastAPI/uvicorn fixture, no live model, no network
+  beyond 127.0.0.1): a correct single-module FastAPI service with a derivable `/health` check → `shipped=True,
+  done=True`, HTTP-verified; the SAME flow with a BROKEN app (wrong JSON body) → `done=False` (a genuine control,
+  not a coincidental pass); a service with no derivable `http_checks` → `done=False` with the honest
+  "not HTTP-verified" note (never a hollow `done=True`); a normal non-web CLI build (the pre-existing canned-llm
+  fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
+  issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
