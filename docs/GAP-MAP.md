@@ -488,3 +488,14 @@ A reviewing agent flagged three things; all correct, all now binding:
    plane (not seven half-built things), so this is a caution, not a defect — but impact×tractability ranking here is
    the brake, and the **long-horizon coherence instrument (#91, the north-star) PULLS the roadmap**: build the
    minimal coherence instrument SOON so it ranks which planes matter, rather than adding planes speculatively.
+
+## ★ NORTH-STAR: first LIVE coherence number (2026-07-04) — SATURATED at minute-scale (a FLOOR, not parity)
+
+Ran the coherence instrument (690b6a6) LIVE against build_system(gemma): 3 multi-requirement tasks, each requirement
+independently oracle-verified. RESULT: **mean_coherence=1.00, fully_coherent_rate=1.00** — stats-cli 4/4, text-tools-cli
+5/5, ledger-cli 5/5 (builds 94-203s). HONEST READ (no spin — this is the north-star): at 4-5 requirements / single-file
+CLI / minute-scale, the SINGLE-PASS build_system already stays FULLY coherent — it does NOT drop requirements. So the
+instrument is SATURATED here = a FLOOR, not parity, and it does NOT yet justify the governed decompose->task->alignment-gate
+CAPSTONE (no MEASURED coherence failure to fix — building it now would be speculative, against the breadth brake). DISCIPLINE
+(measure-first): RATCHET the instrument until it BREAKS — many more requirements (8-12+), INTERDEPENDENT requirements,
+MULTI-FILE systems, longer horizon — the break is what justifies + directs the capstone. Probing a harder task next.
