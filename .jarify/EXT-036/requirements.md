@@ -36,7 +36,14 @@ guarantees structural coherence + repairs/rejects incoherent plans.
 
 #### Acceptance Criteria
 - [x] Model emits a parseable JSON plan for a one-sentence spec (probed: simple/medium/complex all parse)
-- [x] Deterministic coherence validator (DAG/signatures/imports/entrypoint) — probed, all three pass
+- [x] Deterministic coherence validator (DAG/signatures/imports/entrypoint) — probed, all three pass.
+  **FIXED 2026-07-04 (TASK-34):** MEASURED LIVE that the imports check false-positived on STDLIB imports
+  (e.g. `sqlite3`) — any module listing a standard-library import was flagged `imports unknown '<name>'`
+  and the whole plan rejected, blocking the datastore/DB-backed system class (`notes-sqlite-cli`).
+  `validate_plan` now exempts an import from that defect when its top-level name
+  (`imp.split(".")[0]`) is in `sys.stdlib_module_names`, while a genuinely-missing LOCAL module
+  reference is still flagged exactly as before (value-preserving; proven in
+  `tests/test_ext036_system_builder.py`).
 - [~] A plan-repair loop: when the validator finds defects, feed them back for a coherent re-plan (analog of the write-tests repair loop) — **PARTIAL, 2026-07-03 (TASK-19)**: MEASURED
   (`.jaros-data/diag_residuals.py`) that 4/5 creation-suite residuals hit the SAME defect — gemma's plan lists
   exactly ONE module but sets `entrypoint` to a DIFFERENT filename it clearly intends as the entrypoint (just

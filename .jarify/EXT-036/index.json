@@ -26,8 +26,8 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1284,
-      "endLine": 1743
+      "startLine": 1382,
+      "endLine": 1841
     }
   ],
   "REQ-17": [
@@ -164,8 +164,8 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1214,
-      "endLine": 1281
+      "startLine": 1312,
+      "endLine": 1379
     }
   ],
   "REQ-14": [
@@ -191,8 +191,8 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 953,
-      "endLine": 1211
+      "startLine": 1051,
+      "endLine": 1309
     }
   ],
   "REQ-4": [
@@ -203,23 +203,23 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 431,
-      "endLine": 455
+      "startLine": 453,
+      "endLine": 477
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 620,
-      "endLine": 645
+      "startLine": 642,
+      "endLine": 686
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 808,
-      "endLine": 934
+      "startLine": 849,
+      "endLine": 1030
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 942,
-      "endLine": 950
+      "startLine": 1038,
+      "endLine": 1048
     }
   ],
   "REQ-18": [
@@ -282,73 +282,78 @@
       "endLine": 738
     }
   ],
+  "REQ-22": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 61,
+      "endLine": 380
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 569,
+      "endLine": 641
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 980,
+      "endLine": 1020
+    }
+  ],
   "REQ-20": [
     {
       "file": "harness/system_suite.py",
-      "startLine": 41,
-      "endLine": 628
+      "startLine": 44,
+      "endLine": 616
     }
   ],
   "REQ-1": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 224,
-      "endLine": 360
+      "startLine": 240,
+      "endLine": 302
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 844,
-      "endLine": 851
+      "startLine": 294,
+      "endLine": 382
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 896,
+      "endLine": 903
     }
   ],
   "REQ-3": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 363,
-      "endLine": 428
+      "startLine": 385,
+      "endLine": 450
     }
   ],
   "REQ-2": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 456,
-      "endLine": 546
-    }
-  ],
-  "REQ-22": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 547,
-      "endLine": 619
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 892,
-      "endLine": 927
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 41,
-      "endLine": 323
+      "startLine": 478,
+      "endLine": 568
     }
   ],
   "REQ-5": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 646,
-      "endLine": 806
+      "startLine": 687,
+      "endLine": 847
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 935,
-      "endLine": 941
+      "startLine": 1031,
+      "endLine": 1037
     }
   ],
   "REQ-25": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 1746,
-      "endLine": 1868
+      "startLine": 1844,
+      "endLine": 1966
     }
   ]
 }

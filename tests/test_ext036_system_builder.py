@@ -134,6 +134,54 @@ def test_validate_plan_flags_unknown_import():
     assert any("unknown" in d for d in defects)
 
 
+# --- TASK-34 (REQ-1): stdlib imports must not be flagged as "unknown" dangling references --
+
+def test_validate_plan_exempts_stdlib_import():
+    """MEASURED bug: a module listing a stdlib import (e.g. `sqlite3`) in its `imports` was
+    flagged 'imports unknown' because `sqlite3` is not a planned LOCAL module name -> the whole
+    plan was rejected as incoherent, blocking any system with a stdlib import in a non-entry
+    module (e.g. the notes-sqlite-cli DATASTORE_SLICE task)."""
+    plan = {"modules": [
+        {"name": "database.py", "responsibility": "sqlite-backed storage",
+         "exports": [{"name": "save", "signature": "def save(x):"}], "imports": ["sqlite3"]},
+    ], "entrypoint": "database.py", "acceptance": "x"}
+    defects = validate_plan(plan)
+    assert not any("unknown" in d for d in defects)
+
+
+def test_validate_plan_exempts_common_stdlib_and_dotted_imports():
+    plan = {"modules": [
+        {"name": "a.py", "responsibility": "does stuff",
+         "exports": [{"name": "f", "signature": "def f():"}],
+         "imports": ["os", "json", "datetime", "os.path"]},
+    ], "entrypoint": "a.py", "acceptance": "x"}
+    defects = validate_plan(plan)
+    assert not any("unknown" in d for d in defects)
+
+
+def test_validate_plan_still_flags_dangling_local_import():
+    """VALUE-PRESERVING: a genuinely-missing LOCAL module (neither listed nor stdlib) must
+    still be flagged -- the stdlib exemption must not neuter the check's ability to catch a
+    real dangling reference."""
+    plan = {"modules": [
+        {"name": "a.py", "responsibility": "does stuff",
+         "exports": [{"name": "f", "signature": "def f():"}], "imports": ["helpers"]},
+    ], "entrypoint": "a.py", "acceptance": "x"}
+    defects = validate_plan(plan)
+    assert any("imports unknown 'helpers'" in d for d in defects)
+
+
+def test_validate_plan_accepts_valid_local_cross_module_import():
+    plan = {"modules": [
+        {"name": "b.py", "responsibility": "helper",
+         "exports": [{"name": "g", "signature": "def g():"}], "imports": []},
+        {"name": "a.py", "responsibility": "uses b",
+         "exports": [{"name": "f", "signature": "def f():"}], "imports": ["b.py"]},
+    ], "entrypoint": "a.py", "acceptance": "x"}
+    defects = validate_plan(plan)
+    assert not any("unknown" in d for d in defects)
+
+
 def test_syntax_ok_true_for_valid_false_for_broken():
     assert syntax_ok("def f():\n    return 1\n")[0] is True
     assert syntax_ok("def f(\n    return 1\n")[0] is False

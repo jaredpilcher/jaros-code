@@ -291,9 +291,15 @@ def validate_plan(plan: dict) -> list[str]:
             sig = str(e.get("signature", "")) if isinstance(e, dict) else ""
             if not sig or ("(" not in sig and "class" not in sig):
                 d.append(f"{m.get('name')}: export '{e.get('name') if isinstance(e, dict) else e}' bad signature")
+        # #EXT-036-REQ-1 Start (TASK-34: stdlib imports are not dangling local references)
         for imp in m.get("imports", []) or []:
-            if imp not in names:
-                d.append(f"{m.get('name')}: imports unknown '{imp}'")
+            if imp in names:
+                continue
+            top_level = str(imp).split(".")[0] if imp else ""
+            if top_level in sys.stdlib_module_names:
+                continue
+            d.append(f"{m.get('name')}: imports unknown '{imp}'")
+        # #EXT-036-REQ-1 End
     if plan.get("entrypoint") not in names:
         d.append("entrypoint not a listed module")
     if not plan.get("acceptance"):

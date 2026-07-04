@@ -1318,3 +1318,47 @@ behavior/signature is untouched.
 
 #### Implements
 - [REQ-25] Best-of-k build reliability — mask occasional total build failure
+
+### [TASK-34] Fix validate_plan: stdlib imports wrongly flagged as dangling local references (REQ-1)
+
+MEASURED LIVE (2026-07-04): building the `notes-sqlite-cli` DATASTORE_SLICE task
+(`harness/system_suite.py`) produced `done=False`, an empty root, and the note
+`plan failed coherence validation: database.py: imports unknown 'sqlite3'; entrypoint not
+a listed module`. ROOT CAUSE: `validate_plan`'s import-coherence check
+(`harness/system_builder.py`) treats EVERY entry in a module's `imports` list as a
+reference to another PLANNED LOCAL module — when gemma legitimately lists a STDLIB import
+(`sqlite3`, and by extension `os`/`json`/`datetime`/etc.) the check flags it as
+`imports unknown '<stdlib module>'` and the WHOLE plan is rejected as incoherent, so 0
+modules build. This blocks any system whose plan cross-references a standard-library
+module by name (the datastore capability and others). The check's real job — catching a
+genuinely-missing LOCAL module reference — must be preserved; only stdlib names should be
+exempted.
+
+#### Steps
+1. In `harness/system_builder.py::validate_plan`'s per-module `imports` loop, change the
+   "unknown import" test from `if imp not in names` to also exempt standard-library
+   modules: for each `imp`, skip it (no defect) when `imp in names` (already-listed local
+   module, existing behavior) OR when its TOP-LEVEL name (`imp.split(".")[0]` to handle
+   dotted imports like `os.path`) is a member of `sys.stdlib_module_names` (already
+   imported as `sys` at the top of the file). Only append `f"{m.get('name')}: imports
+   unknown '{imp}'"` when NEITHER condition holds — a genuinely-missing local module (not
+   listed, not stdlib) must still be flagged exactly as before.
+2. Do not change any other `validate_plan` check (exports, entrypoint-listed, acceptance
+   present, import-cycle DFS) and do not touch `_repair_plan_entrypoint` (TASK-19) or any
+   other function — the cycle-check's graph (`if i in names`) already naturally excludes
+   stdlib imports from the DAG, so it needs no change.
+3. Tests, appended to `tests/test_ext036_system_builder.py` (OFFLINE, pure unit tests
+   against `validate_plan` — no model/network needed): (a) a module whose `imports` lists
+   a stdlib module (`sqlite3`) yields NO "imports unknown" defect; (b) `os`, `json`,
+   `datetime`, and a dotted `os.path` are all exempt in one plan; (c) VALUE-PRESERVING — a
+   module importing a genuinely-missing LOCAL module (`helpers`, neither listed nor
+   stdlib) STILL yields `imports unknown 'helpers'`; (d) a valid cross-module LOCAL import
+   (module `a.py` imports listed module `b.py`) remains coherent. Run
+   `python -m pytest tests/test_ext036_system_builder.py -q` then the FULL
+   `python -m pytest tests/ -q` synchronously in the foreground and confirm both stay
+   green.
+
+#### Implements
+- [REQ-1] Planner: sentence -> structured, coherence-validated plan (fixes a coherence-
+  validator FALSE POSITIVE that rejected otherwise-valid plans referencing a stdlib module
+  by name, unblocking the datastore/DB-backed system class)
