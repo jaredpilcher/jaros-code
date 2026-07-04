@@ -136,6 +136,67 @@ def test_finalize_detects_dependency_from_import_scan_without_requirements_txt(t
     assert "numpy" in req_path.read_text(encoding="utf-8")
 
 
+# --- (b2) live-demo bug fix: a build's own __pycache__ artifact must never block the
+#          commit -- finalize writes a .gitignore before git.init/git.commit ------------------
+
+
+def test_finalize_writes_gitignore_and_excludes_pycache_artifact_from_commit(tmp_path):
+    root = tmp_path / "sys_with_pycache_artifact"
+    root.mkdir()
+    main_src = "def run():\n    return 1\n"
+    (root / "main.py").write_text(main_src, encoding="utf-8")
+    # Simulate the acceptance-test run's artifact (the live-demo failure): running the
+    # built main.py creates a __pycache__ dir with a compiled .pyc inside root.
+    pycache_dir = root / "__pycache__"
+    pycache_dir.mkdir()
+    (pycache_dir / "main.cpython-312.pyc").write_bytes(b"\x00\x01fake-bytecode")
+
+    subprocess.run(["git", "init"], cwd=str(root), check=True, capture_output=True)
+    _configure_local_git_identity(root)
+
+    out = finalize_system(str(root), {"main.py": main_src}, git=True, venv="off",
+                           data_dir=tmp_path / "state")
+
+    assert out["ok"] is True
+    commit_step = next(s for s in out["steps"] if s["step"] == "git.commit")
+    assert commit_step["ok"] is True
+    assert commit_step["output"]["committed"] is True
+    assert _git_log_subjects(root)  # non-empty: something was actually committed
+
+    gitignore_path = root / ".gitignore"
+    assert gitignore_path.is_file()
+    assert "__pycache__/" in gitignore_path.read_text(encoding="utf-8")
+
+    ls_files = subprocess.run(["git", "ls-files"], cwd=str(root), capture_output=True,
+                               text=True, check=True).stdout
+    assert "main.cpython-312.pyc" not in ls_files
+    assert ".gitignore" in ls_files.replace("\\", "/")
+
+
+def test_finalize_does_not_overwrite_an_existing_gitignore(tmp_path):
+    root = tmp_path / "sys_with_own_gitignore"
+    root.mkdir()
+    main_src = "def run():\n    return 1\n"
+    (root / "main.py").write_text(main_src, encoding="utf-8")
+    own_gitignore = "# my own project ignores\ncustom_ignore_me/\n"
+    (root / ".gitignore").write_text(own_gitignore, encoding="utf-8")
+
+    subprocess.run(["git", "init"], cwd=str(root), check=True, capture_output=True)
+    _configure_local_git_identity(root)
+
+    out = finalize_system(str(root), {"main.py": main_src}, git=True, venv="off",
+                           data_dir=tmp_path / "state")
+
+    gitignore_step = next(s for s in out["steps"] if s["step"] == "gitignore")
+    assert gitignore_step["ok"] is True
+    assert gitignore_step.get("skipped") == "exists"
+    assert (root / ".gitignore").read_text(encoding="utf-8") == own_gitignore  # untouched
+
+    commit_step = next(s for s in out["steps"] if s["step"] == "git.commit")
+    assert commit_step["ok"] is True
+    assert _git_log_subjects(root)
+
+
 # --- (c) secrets never committed, even through finalize -----------------------------------
 
 

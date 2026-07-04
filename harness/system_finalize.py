@@ -64,6 +64,25 @@ from harness.coding_loop import DATA_DIR, Runtime  # noqa: E402
 _DEFAULT_VENV_PATH = ".venv"
 _DEFAULT_REQUIREMENTS = "requirements.txt"
 _DEFAULT_COMMIT_MESSAGE = "Initial commit: system built by /buildsystem"
+_DEFAULT_GITIGNORE_NAME = ".gitignore"
+# Bug fix (live end-to-end demo, EXT-037 / REQ-5): the acceptance test that verifies a
+# freshly built system runs `main.py`, which creates `__pycache__/*.pyc` in `root`.
+# `git.commit`'s `git add -A` then stages that artifact and the secret/ignored-path
+# guard correctly REFUSES the whole commit (it matches `__pycache__/`), so a shipped,
+# runnable system was silently never committed. Writing a standard Python .gitignore
+# BEFORE git.init/git.commit keeps those artifacts out of the staged set entirely.
+_DEFAULT_GITIGNORE_CONTENT = (
+    "__pycache__/\n"
+    "*.py[cod]\n"
+    ".venv/\n"
+    "venv/\n"
+    "*.egg-info/\n"
+    "*.egg-info\n"
+    ".pytest_cache/\n"
+    "build/\n"
+    "dist/\n"
+    ".mypy_cache/\n"
+)
 
 # Conservative dependency-detection heuristic: anything NOT in the stdlib (and not
 # one of the system's own module names) counts as a declared third-party dependency.
@@ -139,6 +158,22 @@ def finalize_system(root, modules: "dict | None" = None, *, git: bool = True,
 
         # --- 1. git-init + commit -------------------------------------------------
         if git:
+            gitignore_path = os.path.join(root, _DEFAULT_GITIGNORE_NAME)
+            if os.path.isfile(gitignore_path):
+                # Respect a user's/build's own .gitignore -- never overwrite it.
+                steps.append({"step": "gitignore", "ok": True, "skipped": "exists"})
+            else:
+                try:
+                    gi_out = rt.apply(_decision(
+                        "code.write_file",
+                        {"path": gitignore_path, "content": _DEFAULT_GITIGNORE_CONTENT}))
+                    steps.append({"step": "gitignore", "ok": bool(gi_out.get("applied")),
+                                  "output": gi_out})
+                except Exception as exc:
+                    # Never block finalize on a failed .gitignore write -- git.commit may
+                    # still succeed below if no ignorable artifacts are actually present.
+                    steps.append({"step": "gitignore", "ok": False, "error": str(exc)})
+
             try:
                 init_out = rt.apply(_decision("git.init", {"root": root}))
                 steps.append({"step": "git.init", "ok": True, "output": init_out})
