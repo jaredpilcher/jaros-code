@@ -92,6 +92,21 @@ endpoint checks from the spec (``_derive_http_checklist``, deterministically fil
 ``http_checks`` can be derived, ``done=False`` with an honest "not HTTP-verified" note
 (``shipped`` may still be True). Non-web-service builds are completely unaffected — the
 stdout/smoke acceptance path below is reached only when no web service is detected.
+
+TASK-27 (REQ-23) adds ``build_system_governed(spec, root, *, llm=None, max_repair=3)`` — the
+GOVERNED build path that LIFTS long-horizon build coherence (``harness/coherence_suite.py``),
+realizing PRIME-001 intent capability (g). MEASURED gap: ``build_system`` on an 11-requirement
+interdependent kvdb-cli SHIPPED but silently dropped one requirement (``incr``) AND reported
+``done=True`` anyway, because its self-derived acceptance checklist is generated from the SAME
+prompt as the code — sharing the same blind spot. ``build_system_governed`` fixes this with an
+explicit, INDEPENDENTLY-decomposed requirement list (a separate model call, made BEFORE any
+code exists) that is the SPEC OF RECORD: it builds via the unmodified ``build_system`` pipeline,
+then verifies EVERY enumerated requirement's own executable check against the assembled system
+— never trusting ``build_system``'s own checklist for `done`. Unmet requirements trigger a
+RE-GROUND repair call that feeds the model the FULL requirement list (not just the failing one)
+so a fix can't silently re-drop a different requirement; if it does anyway, the round is
+REVERTED (mirrors TASK-5's ``_repair_system`` non-degrading guard) so ``requirements_met`` never
+regresses across repair rounds. Never modifies ``build_system`` itself.
 """
 
 from __future__ import annotations
@@ -1201,3 +1216,269 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
     model_tag = "fallback" if winner is fallback_result else "primary"
     return {**winner, "escalated": True, "model": model_tag}
 # #EXT-036-REQ-13 End
+
+
+# #EXT-036-REQ-23 Start
+# TASK-27 (REQ-23): the GOVERNED build path -- an explicit, INDEPENDENTLY-verified requirement
+# list so no requirement is silently dropped from code OR acceptance. MEASURED gap
+# (`harness/coherence_suite.py`): `build_system` on an 11-requirement interdependent kvdb-cli
+# SHIPPED but reported `done=True` while silently dropping ONE requirement (`incr`) -- because
+# both the code AND its own self-derived acceptance checklist are generated from the SAME
+# prompt, sharing the same blind spot. `build_system_governed` fixes this with a SPEC-OF-RECORD:
+# an independently DECOMPOSED requirement list (a separate model call, before any code exists),
+# each with its own executable check; `done` is judged ONLY against that list, never against
+# `build_system`'s own checklist. When a requirement is unmet, a RE-GROUND repair call feeds the
+# model the FULL requirement list (not just the failing one) so a fix can't blindly re-drop a
+# different requirement -- and if it does anyway, the round is REVERTED (mirrors TASK-5's
+# `_repair_system` non-degrading guard) so `requirements_met` never regresses across rounds.
+
+GOVERNED_DECOMPOSE_PROMPT = (
+    "GOVERNED-BUILD DECOMPOSE: read this spec and enumerate every DISTINCT, INDEPENDENT "
+    "requirement it implies -- do not drop or merge any, even small ones.\n\n"
+    "SPEC: {spec}\n\n"
+    "For EACH requirement, also write an executable ACCEPTANCE CHECK for that ONE requirement "
+    "alone: standalone Python code (no prose) that, once the system is built, imports/exercises "
+    "the built module(s) and asserts that this ONE requirement's behavior actually holds (a real "
+    "`assert` on real behavior -- never a prose description).\n\n"
+    "Output ONLY a JSON list (no markdown fences, no prose): "
+    '[{{"req_id": "<short unique id>", "description": "<one line>", '
+    '"check": "<standalone python code with a real assert>"}}]'
+)
+
+GOVERNED_REPAIR_PROMPT = (
+    "GOVERNED-BUILD REPAIR: this build must satisfy ALL of the following independently-verified "
+    "requirements (the SPEC OF RECORD), but at least one is UNMET. Re-ground on the FULL list "
+    "before fixing -- do NOT remove or break any requirement that already works.\n\n"
+    "ALL REQUIREMENTS:\n{all_reqs}\n\n"
+    "UNMET REQUIREMENT: {req_id} -- {req_desc}\n"
+    "ITS CHECK:\n{req_check}\n"
+    "RUN ERROR:\n{error}\n\n"
+    "CURRENT MODULE SOURCES:\n{sources}\n\n"
+    "Identify which ONE module needs to change to ADD/FIX this requirement WITHOUT removing or "
+    "breaking any other already-working requirement, and provide its COMPLETE corrected content. "
+    "Output ONLY a JSON object (no prose, no markdown fences): "
+    '{{"module": "<module_name>.py", "code": "<complete corrected module source>"}}'
+)
+
+MAX_GOVERNED_REPAIR_ROUNDS = 3   # bounded RE-GROUND repair loop, REQ-23
+
+
+def _dedup_requirements(reqs: list) -> list:
+    """Deterministic de-dup + filter of the decomposed requirement list: keep only entries with
+    a non-empty `req_id` AND an executable `check` (reusing `_is_executable_check`'s
+    parse-and-assert discipline), dropping duplicate req_ids/checks. Never raises."""
+    seen_ids: set = set()
+    seen_checks: set = set()
+    out: list = []
+    for r in reqs or []:
+        if not isinstance(r, dict):
+            continue
+        req_id = r.get("req_id")
+        check = r.get("check")
+        if not isinstance(req_id, str) or not req_id.strip() or not _is_executable_check(check):
+            continue
+        req_id = req_id.strip()
+        check_key = check.strip()
+        if req_id in seen_ids or check_key in seen_checks:
+            continue
+        seen_ids.add(req_id)
+        seen_checks.add(check_key)
+        out.append({"req_id": req_id, "description": r.get("description", ""), "check": check})
+    return out
+
+
+def _decompose_requirements(spec: str, llm) -> list:
+    """One model round-trip enumerating the DISTINCT requirements implied by `spec`, each with
+    its own executable check -- the INDEPENDENT spec-of-record `build_system_governed` verifies
+    against (never the build's own self-derived acceptance checklist). Deterministically
+    filtered + de-duped (`_dedup_requirements`). Guarded -- returns [] on any model/parse
+    failure or when nothing survives the filter; never raises, never fabricates a requirement."""
+    try:
+        raw = _call(llm, GOVERNED_DECOMPOSE_PROMPT.format(spec=spec), max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    reqs = _extract_json(raw, "[", "]")
+    if not isinstance(reqs, list):
+        return []
+    return _dedup_requirements(reqs)
+
+
+def _repair_module_for_requirement(all_reqs_blob: str, req: dict, error: str,
+                                    built: "dict[str, str]", llm) -> "dict | None":
+    """RE-GROUND repair call (REQ-23): asks the model to fix ONE unmet requirement while feeding
+    it the FULL requirement list (`all_reqs_blob`) so it re-grounds on everything, not just the
+    failing check -- the anti-drift mechanism. Returns `{"module": name, "code": code}` or None
+    on any model/parse failure or an out-of-range module name (mirrors
+    `_repair_module_for_check`; never raises, never a fabricated fix)."""
+    try:
+        raw = _call(llm, GOVERNED_REPAIR_PROMPT.format(
+            all_reqs=all_reqs_blob, req_id=req.get("req_id", "?"),
+            req_desc=req.get("description", ""), req_check=req.get("check", ""),
+            error=(error or "")[:500], sources=_sources_blob(built)), max_tokens=BUILD_MAX_TOKENS)
+    except Exception:
+        return None
+    fix = _extract_json(raw, "{", "}")
+    if not isinstance(fix, dict):
+        return None
+    name, code = fix.get("module"), fix.get("code")
+    if not name or name not in built or not code:
+        return None
+    return {"module": name, "code": code}
+
+
+def _governed_result(*, modules=None, shipped: bool, done: bool, requirements_total: int = 0,
+                      requirements_met: int = 0, unmet=None, note: str = "", rounds: int = 0) -> dict:
+    return {
+        "modules": modules or {}, "shipped": shipped, "done": done,
+        "requirements_total": requirements_total, "requirements_met": requirements_met,
+        "unmet": unmet or [], "note": note, "rounds": rounds,
+    }
+
+
+def build_system_governed(spec: str, root: "str | Path", *, llm=None,
+                           max_repair: int = MAX_GOVERNED_REPAIR_ROUNDS) -> dict:
+    """The GOVERNED build path (REQ-23, TASK-27) -- realizes PRIME-001 intent capability (g) by
+    LIFTING long-horizon build coherence with an explicit, INDEPENDENTLY-verified requirement
+    list, so no requirement is silently dropped from code OR acceptance (the measured
+    `coherence_suite` failure: `build_system` dropped a requirement AND its self-derived
+    acceptance checklist shared the same blind spot, so it reported `done=True` anyway).
+
+    Pipeline:
+      1. DECOMPOSE (`_decompose_requirements`) -- ONE model call enumerates the DISTINCT
+         requirements implied by `spec`, each with its own executable check. This list is the
+         SPEC OF RECORD, independent of whatever `build_system`'s own checklist later contains.
+      2. BUILD -- via the existing, UNMODIFIED `build_system(spec, root, llm=llm)` pipeline
+         (plan -> topo-build -> assemble -> its own acceptance/repair). Only `shipped`/`modules`
+         are consumed here; `build_system`'s own `done` verdict is never trusted.
+      3. VERIFY EACH -- every enumerated requirement's check is run (reusing `_run_check`)
+         against the assembled system; the set of UNMET requirements is recorded.
+      4. RE-GROUND + REPAIR -- for each unmet requirement, a repair call
+         (`_repair_module_for_requirement`) feeds the model the FULL requirement list + the
+         specific unmet one + the current module sources, asking it to ADD/fix that requirement
+         WITHOUT removing already-working behavior; the fix is syntax-gated (reusing
+         `syntax_ok`/`REPAIR_PROMPT`), applied, and ALL requirements are RE-VERIFIED (so a repair
+         that re-drops a different requirement is caught, mirroring TASK-5's `_repair_system`
+         non-degrading guard: any round that regresses a previously-met requirement is REVERTED
+         and the loop stops; best-seen `(built, unmet)` is tracked). Bounded to `max_repair`
+         rounds (default 3).
+      5. DONE = every enumerated requirement independently verified -- NEVER the model's own
+         self-checklist.
+
+    Returns `{modules, shipped, done, requirements_total, requirements_met, unmet: [...], note,
+    rounds}`. NEVER raises: any stage failure returns `shipped`/`done` False with a diagnostic
+    `note`. Uses `harness.coding_loop.build_llm()` when `llm` is None (mirrors `build_system`);
+    an injected `llm` (`.complete(LlmRequest) -> .text`) drives fully offline testing.
+    """
+    root = Path(root)
+    if llm is None:
+        try:
+            from harness.coding_loop import build_llm
+            llm = build_llm()
+        except Exception as exc:
+            return _governed_result(shipped=False, done=False, note=f"llm unavailable: {exc}")
+
+    # 1. DECOMPOSE -- the independent spec-of-record (never `build_system`'s own checklist).
+    try:
+        requirements = _decompose_requirements(spec, llm)
+    except Exception:
+        requirements = []
+    if not requirements:
+        return _governed_result(shipped=False, done=False,
+                                 note="no requirements could be decomposed from the spec")
+
+    # 2. BUILD via the existing, unmodified pipeline.
+    try:
+        build = build_system(spec, root, llm=llm)
+    except Exception as exc:
+        return _governed_result(shipped=False, done=False,
+                                 requirements_total=len(requirements),
+                                 unmet=[r["req_id"] for r in requirements],
+                                 note=f"build_system raised: {exc}")
+    built = dict(build.get("modules") or {}) if isinstance(build, dict) else {}
+    shipped = bool(isinstance(build, dict) and build.get("shipped"))
+    if not shipped:
+        return _governed_result(
+            modules=built, shipped=False, done=False,
+            requirements_total=len(requirements), requirements_met=0,
+            unmet=[r["req_id"] for r in requirements],
+            note=f"build failed to ship: {(build or {}).get('note', '')}",
+        )
+
+    # 3. VERIFY EACH enumerated requirement independently.
+    def _verify_all() -> list:
+        return [r["req_id"] for r in requirements if not _run_check(root, {"code": r["check"]})]
+
+    unmet_ids = _verify_all()
+    best_built, best_unmet = dict(built), list(unmet_ids)
+    all_reqs_blob = "\n".join(f"- {r['req_id']}: {r.get('description', '')}" for r in requirements)
+    by_id = {r["req_id"]: r for r in requirements}
+    rounds = 0
+
+    # 4. RE-GROUND + REPAIR (bounded, non-degrading -- mirrors TASK-5's `_repair_system`).
+    try:
+        for round_no in range(1, max_repair + 1):
+            if not unmet_ids:
+                break
+            rounds = round_no
+            pre_round_built = dict(built)
+            pre_round_unmet = set(unmet_ids)
+            for req_id in list(unmet_ids):
+                req = by_id.get(req_id)
+                if req is None:
+                    continue
+                ok, err = _run_check_verbose(root, {"code": req["check"]})
+                if ok:
+                    continue   # an earlier fix this round already resolved it
+                fix = _repair_module_for_requirement(all_reqs_blob, req, err, built, llm)
+                if not fix:
+                    continue
+                name, code = fix["module"], fix["code"]
+                if name not in built:
+                    continue
+                syn_ok, syn_err = syntax_ok(code)
+                for _ in range(MAX_REPAIR_ATTEMPTS):
+                    if syn_ok:
+                        break
+                    code = _strip_fences(_call(llm, REPAIR_PROMPT.format(name=name, err=syn_err, code=code),
+                                                max_tokens=BUILD_MAX_TOKENS))
+                    syn_ok, syn_err = syntax_ok(code)
+                if syn_ok:
+                    if _jailed_write(root, name, code) is None:
+                        built[name] = code
+
+            new_unmet = _verify_all()
+            new_unmet_set = set(new_unmet)
+            passed_before_round = {r["req_id"] for r in requirements} - pre_round_unmet
+            regressed = passed_before_round & new_unmet_set
+            if regressed:
+                # a fix for one requirement silently re-dropped a DIFFERENT, previously-met one
+                # -- revert this round's writes entirely and reject it (non-degrading).
+                for name, code in pre_round_built.items():
+                    if built.get(name) != code:
+                        _jailed_write(root, name, code)
+                built = pre_round_built
+                unmet_ids = sorted(pre_round_unmet)
+                break
+
+            unmet_ids = new_unmet
+            if len(unmet_ids) < len(best_unmet):
+                best_built, best_unmet = dict(built), list(unmet_ids)
+            if len(unmet_ids) >= len(pre_round_unmet):
+                break   # no progress this round -- stop (no infinite loop)
+    except Exception:
+        pass   # never raise -- fall through with whatever progress was made
+
+    # Final safety net: never return worse than the best-seen (non-regressing) state.
+    if len(unmet_ids) > len(best_unmet):
+        built, unmet_ids = best_built, best_unmet
+
+    done = not unmet_ids
+    total = len(requirements)
+    met = total - len(unmet_ids)
+    note = (f"GOVERNED DONE: all {total} independently-verified requirement(s) satisfied" if done
+            else f"GOVERNED NOT DONE: {met}/{total} requirement(s) satisfied -- unmet: " + ", ".join(unmet_ids))
+    if rounds:
+        note += f" (after {rounds} repair round(s))"
+    return _governed_result(modules=built, shipped=True, done=done, requirements_total=total,
+                             requirements_met=met, unmet=unmet_ids, note=note, rounds=rounds)
+# #EXT-036-REQ-23 End

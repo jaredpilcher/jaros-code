@@ -982,3 +982,48 @@ capstone, not this task).
   measurement instrument itself, proven internally coherent on a first minute-scale slice; wiring the governed
   decompose->task->alignment-gate loop that LIFTS the coherence number, and a live gemma-vs-escalating
   measurement run, remain explicit open follow-ups)
+
+### [TASK-27] Governed build path — decompose->build->independently-verify->re-ground-repair (REQ-23)
+
+TASK-26 built the INSTRUMENT that measures long-horizon build coherence honestly (a MEASURED 10/11 = 0.91 on an
+11-requirement kvdb-cli, with `build_system` silently dropping `incr` and its own self-derived checklist sharing
+the same blind spot, reporting `done=True` anyway). This task builds the GOVERNED build path that LIFTS the
+coherence number — an explicit, INDEPENDENTLY-verified requirement list so no requirement is silently dropped
+from code OR acceptance, realizing PRIME-001 intent capability (g).
+
+#### Steps
+1. Add `harness/system_builder.py::build_system_governed(prompt, root, *, llm=None, max_repair=3) -> dict` (a
+   NEW function; `build_system`'s existing behavior/signature is UNCHANGED). Pipeline: (a) DECOMPOSE — one
+   model call enumerates the DISTINCT requirements from the prompt as `[{req_id, description, check}]`, each
+   `check` an executable acceptance for that ONE requirement (deterministically filtered to real assertions via
+   `_is_executable_check`, de-duped) — this list is the SPEC OF RECORD, independent of whatever
+   `build_system`'s own checklist later contains; (b) BUILD via the existing, unmodified `build_system` pipeline
+   (plan -> topo-build -> assemble); (c) VERIFY EACH enumerated requirement's check against the assembled system
+   (reusing `_run_check`), recording the UNMET set; (d) RE-GROUND + REPAIR — for each unmet requirement, a
+   repair call feeds the model the FULL requirement list (not just the failing one) + the current module
+   sources, asking it to ADD/fix that requirement WITHOUT removing already-working behavior; re-assemble;
+   RE-VERIFY ALL requirements so a repair that re-drops a different requirement is caught (mirrors TASK-5's
+   `_repair_system` non-degrading guard — a regressing round is REVERTED, best-seen `(built, unmet)` tracked),
+   bounded to `max_repair` rounds; (e) DONE = ALL enumerated requirements independently verified — NEVER
+   `build_system`'s own self-checklist. Returns `{modules, shipped, done, requirements_total, requirements_met,
+   unmet: [...], note, rounds}`. NEVER raises. Reuses `_call`, `_derive_acceptance_checklist`'s executable-check
+   filter (`_is_executable_check`), `_run_check`/`_run_check_verbose`, `syntax_ok`, and the jailed-write/assemble
+   patterns wherever possible — no duplicated oracle logic.
+2. Tests (`tests/test_ext036_system_builder.py`, OFFLINE — a fake llm mirroring the `_CannedLlm` pattern, no live
+   model): (a) THE CORE LIFT TEST — a fake llm whose first (ungoverned) build genuinely drops one of N
+   independently-decomposed requirements (mirroring the measured `incr`-dropping defect at small scale) while
+   `build_system`'s own narrow checklist is fooled (still ships+dones); `build_system_governed` reaches
+   `requirements_met == N`/`done=True` via its re-ground repair round — proving the LIFT from (N-1)/N to N/N;
+   (b) ANTI-REGRESSION — a repair round that fixes the unmet requirement but silently BREAKS a different,
+   previously-met one is REJECTED (reverted), the met-count never decreases, and `done` reflects the true
+   independently-verified state; (c) HONESTY — when the repair budget is exhausted with a requirement still
+   unmet, `done=False` with the unmet requirement listed, never a false `done=True`; (d) CONFIRM `build_system`'s
+   existing tests stay byte-identical (this is an additive, new function only). Run the FULL
+   `python -m pytest tests/ -q` synchronously in the foreground and confirm it stays green at the new count.
+
+#### Implements
+- [REQ-23] Long-horizon build coherence instrument (the GOVERNED build path — decompose -> build ->
+  independently-verify-every-requirement -> re-ground-repair — that LIFTS the coherence number the TASK-26
+  instrument measures; a live gemma-vs-escalating measurement run of `build_system` vs `build_system_governed`
+  against a grown, harder `FIRST_SLICE`, and wiring `build_system_governed` into the `/buildsystem` CLI command,
+  remain explicit open follow-ups)

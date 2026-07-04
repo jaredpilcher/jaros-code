@@ -14,6 +14,7 @@ exact production module has not been re-run here.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -21,7 +22,13 @@ import pytest
 
 os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
 
-from harness.system_builder import build_system, syntax_ok, validate_plan
+from harness.system_builder import (
+    build_system,
+    build_system_governed,
+    syntax_ok,
+    validate_plan,
+    _run_check,
+)
 
 SPEC = "A tiny two-module system: a helper module that adds two numbers, and a CLI that prints the sum."
 
@@ -415,3 +422,184 @@ def test_non_web_cli_build_regression_unaffected_by_web_wiring(tmp_path):
     assert "HTTP-verified" not in result["note"]
     # none of the HTTP-checklist prompt was ever issued for a non-web system
     assert not [p for p in llm.prompts if "HTTP ENDPOINT CHECKS" in p]
+
+
+# --- (5) TASK-27 (REQ-23): build_system_governed -- the GOVERNED build path -------------
+# MEASURED failure this fixes (`harness/coherence_suite.py`): `build_system` on an
+# 11-requirement kvdb-cli SHIPPED but reported `done=True` while silently dropping ONE
+# requirement (`incr`), because the code AND its own self-derived acceptance checklist come
+# from the SAME prompt and share the same blind spot. `build_system_governed` fixes this with
+# an INDEPENDENTLY-decomposed requirement list (a separate model call, made before any code
+# exists) as the spec-of-record; `done` is judged ONLY against that list.
+#
+# The fake llm here mirrors the incr defect at small scale: a single-module calculator plan
+# (`main.py` with `add`/`sub`/`mul`) whose FIRST build drops `mul` -- exactly one of three
+# independently-decomposed requirements -- while `build_system`'s own (deliberately narrow)
+# acceptance checklist only exercises `add`, so the underlying build still ships/dones
+# normally, hiding the drop from anything that isn't independently checking every requirement.
+
+SPEC_GOV = ("A tiny calculator module main.py exposing add(a, b), sub(a, b), and mul(a, b), "
+            "each returning the correct arithmetic result.")
+
+GOVERNED_DECOMPOSE_JSON = """[
+  {"req_id": "add", "description": "add(a,b) returns a+b",
+   "check": "import main\\nassert main.add(2, 3) == 5\\n"},
+  {"req_id": "sub", "description": "sub(a,b) returns a-b",
+   "check": "import main\\nassert main.sub(5, 3) == 2\\n"},
+  {"req_id": "mul", "description": "mul(a,b) returns a*b",
+   "check": "import main\\nassert main.mul(3, 4) == 12\\n"}
+]"""
+
+GOV_PLAN_JSON = """{
+  "modules": [
+    {"name": "main.py", "responsibility": "calculator: add/sub/mul",
+     "exports": [{"name": "add", "signature": "def add(a, b):"},
+                 {"name": "sub", "signature": "def sub(a, b):"},
+                 {"name": "mul", "signature": "def mul(a, b):"}],
+     "imports": []}
+  ],
+  "entrypoint": "main.py",
+  "acceptance": "add/sub/mul work"
+}"""
+
+# GOVERNED_BUILD_CHECKLIST only ever exercises `add` -- mirroring the MEASURED defect where
+# `build_system`'s own narrow self-derived checklist shares the blind spot with the code and
+# so does NOT itself catch the dropped `mul` requirement (it still ships+dones normally).
+GOVERNED_BUILD_CHECKLIST = """[{"name": "adds", "code": "import main\\nassert main.add(1, 2) == 3\\n"}]"""
+
+MAIN_MISSING_MUL = (
+    "def add(a, b):\n    return a + b\n\n\n"
+    "def sub(a, b):\n    return a - b\n\n\n"
+    "if __name__ == '__main__':\n    pass\n"
+)
+
+MAIN_WITH_MUL = (
+    "def add(a, b):\n    return a + b\n\n\n"
+    "def sub(a, b):\n    return a - b\n\n\n"
+    "def mul(a, b):\n    return a * b\n\n\n"
+    "if __name__ == '__main__':\n    pass\n"
+)
+
+# A "bad" repair: adds the requested `mul` but silently DROPS `sub` -- the swap-regression
+# shape the non-degrading guard must catch (mirrors TASK-5's dedicated regression test).
+MAIN_MUL_DROPS_SUB = (
+    "def add(a, b):\n    return a + b\n\n\n"
+    "def mul(a, b):\n    return a * b\n\n\n"
+    "if __name__ == '__main__':\n    pass\n"
+)
+
+
+class _GovernedCannedLlm:
+    """Routes each `.complete()` call by the GOVERNED prompt's distinctive marker (the
+    decompose call, `build_system`'s own plan/module/checklist prompts, and the governed
+    re-ground repair call) -- mirrors `_CannedLlm`'s `.complete(LlmRequest) -> .text`
+    convention. `repair_response` may be a plain string (every repair call gets the same
+    canned fix) to exercise both a genuinely-fixing repair and a budget-exhausting one."""
+
+    def __init__(self, *, decompose=GOVERNED_DECOMPOSE_JSON, plan=GOV_PLAN_JSON,
+                 module_first=MAIN_MISSING_MUL, repair_response=MAIN_WITH_MUL,
+                 checklist=GOVERNED_BUILD_CHECKLIST) -> None:
+        self.decompose = decompose
+        self.plan = plan
+        self.module_first = module_first
+        self.repair_response = repair_response
+        self.checklist = checklist
+        self.repair_calls = 0
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "GOVERNED-BUILD DECOMPOSE" in prompt:
+            return _Resp(self.decompose)
+        if "GOVERNED-BUILD REPAIR" in prompt:
+            self.repair_calls += 1
+            return _Resp('{"module": "main.py", "code": %s}' % json.dumps(self.repair_response))
+        if "build PLAN" in prompt:
+            return _Resp(self.plan)
+        if "ACCEPTANCE CHECKS" in prompt:
+            return _Resp(self.checklist)
+        if "SYNTAX ERROR" in prompt or "COMPLETE Python module" in prompt:
+            return _Resp(self.module_first)
+        return _Resp("")
+
+
+def test_governed_lift_from_n_minus_1_to_n(tmp_path):
+    """THE CORE LIFT TEST: the underlying (ungoverned) build genuinely drops one of three
+    independently-decomposed requirements (mirroring the measured `incr`-dropping defect);
+    `build_system_governed` LIFTS coherence from (N-1)/N to N/N via its one re-ground repair
+    round -- proving the whole point of this task."""
+    # CONTROL: prove the plain, ungoverned `build_system` really does drop `mul` -- only
+    # 2 of the 3 independently-decomposed requirements hold against its output, even though
+    # `build_system` itself reports shipped=True/done=True (its own narrow checklist never
+    # notices the drop).
+    plain = build_system(SPEC_GOV, tmp_path / "plain", llm=_GovernedCannedLlm())
+    assert plain["shipped"] is True
+    assert plain["done"] is True   # build_system's OWN (narrow) checklist is fooled
+    reqs = json.loads(GOVERNED_DECOMPOSE_JSON)
+    plain_met = sum(1 for r in reqs if _run_check(tmp_path / "plain", {"code": r["check"]}))
+    assert plain_met == 2   # add + sub hold, mul is silently missing -- the measured defect
+
+    # GOVERNED: the SAME fake llm, but build_system_governed independently verifies all 3
+    # and repairs the drop -- reaching full coherence.
+    llm = _GovernedCannedLlm()
+    result = build_system_governed(SPEC_GOV, tmp_path / "governed", llm=llm)
+    assert result["shipped"] is True
+    assert result["requirements_total"] == 3
+    assert result["requirements_met"] == 3
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert result["rounds"] == 1
+    assert llm.repair_calls == 1
+    assert (tmp_path / "governed" / "main.py").read_text().strip() == MAIN_WITH_MUL.strip()
+
+
+def test_governed_repair_regression_is_caught_and_reverted(tmp_path):
+    """ANTI-REGRESSION: a repair round that fixes `mul` but silently BREAKS a previously-met
+    requirement (`sub`) must be REJECTED -- the met-count never decreases, and `done` reflects
+    the true independently-verified state, never a hollow pass."""
+    llm = _GovernedCannedLlm(repair_response=MAIN_MUL_DROPS_SUB)
+    result = build_system_governed(SPEC_GOV, tmp_path / "built", llm=llm, max_repair=2)
+
+    assert result["done"] is False
+    assert result["requirements_met"] == 2          # never regresses below the pre-repair 2/3
+    assert result["unmet"] == ["mul"]                # still honestly missing mul, not "mul+sub"
+    # the regressing round's write was REVERTED -- main.py is back to its pre-round content
+    assert (tmp_path / "built" / "main.py").read_text().strip() == MAIN_MISSING_MUL.strip()
+    assert result["modules"]["main.py"].strip() == MAIN_MISSING_MUL.strip()
+
+
+def test_governed_honesty_never_done_when_repair_budget_exhausted(tmp_path):
+    """HONESTY: when the repair never actually fixes the unmet requirement, `done` stays
+    False with the unmet requirement honestly listed -- never a false `done=True`."""
+    llm = _GovernedCannedLlm(repair_response=MAIN_MISSING_MUL)   # repair changes nothing
+    result = build_system_governed(SPEC_GOV, tmp_path / "built", llm=llm, max_repair=2)
+
+    assert result["done"] is False
+    assert result["unmet"] == ["mul"]
+    assert result["requirements_met"] == 2
+    assert result["shipped"] is True
+
+
+def test_governed_never_raises_when_no_requirements_decomposed(tmp_path):
+    """HONESTY: an unparseable/empty decompose response never fabricates a requirement list
+    -- an honest failure, never raises."""
+    llm = _GovernedCannedLlm(decompose="not a json list at all")
+    result = build_system_governed(SPEC_GOV, tmp_path / "built", llm=llm)
+
+    assert result["shipped"] is False
+    assert result["done"] is False
+    assert result["requirements_total"] == 0
+    assert "decompose" in result["note"] or "no requirements" in result["note"]
+
+
+def test_governed_build_system_itself_is_untouched(tmp_path):
+    """CONFIRM: `build_system`'s own existing behavior (the ORIGINAL fixture/spec used
+    throughout this file) is byte-identical -- `build_system_governed` is additive only."""
+    root = tmp_path / "built"
+    llm = _CannedLlm()
+    result = build_system(SPEC, root, llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert set(result["modules"]) == {"helper.py", "cli.py"}

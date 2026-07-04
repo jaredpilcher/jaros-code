@@ -634,7 +634,7 @@ genuinely serves HTTP) was measured to get `done=True` "all acceptance checks pa
   fixture) is unchanged (`done=True` via the stdout/smoke path, the new HTTP-checklist prompt is never even
   issued). Full `tests/` suite stays green (1507 passed, 1 skipped, up from 1503/1).
 
-### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26, 2026-07-04)
+### [REQ-23] Long-horizon build coherence instrument  (PARTIAL — minimal first version DONE, EXT-036 TASK-26; GOVERNED build path (the LIFT mechanism) DONE, EXT-036 TASK-27, 2026-07-04)
 
 **Owner directive (2026-07-04):** PRIME-001 intent capability (g), the LONG-HORIZON BUILD COHERENCE instrument, is
 the north-star measurement. The creation suite (REQ-20) and modification suite (REQ-21) each measure ONE
@@ -673,6 +673,31 @@ matter for the follow-on capstone build.
   all-or-nothing pass; a no-op `build_fn` (writes nothing) scores `coherence=0.0` for every task (no trivial
   pass); aggregate shape (`overall`/`by_tier`, mean coherence, fully-coherent rate) is well-formed, including on
   an empty task list and on a mixed fully-coherent/zero-coherent pair. Full `tests/` suite stays green.
-- [ ] WIRING the governed decompose->task->alignment-gate loop that LIFTS the coherence number, and a live
-  gemma-vs-escalating measurement run against a grown, harder FIRST_SLICE — open follow-ups (the explicit
-  capstone this instrument sets up, not built here).
+- [x] WIRING the governed decompose->build->independently-verify->re-ground-repair loop that LIFTS the
+  coherence number — **DONE 2026-07-04** (`harness/system_builder.py::build_system_governed`, EXT-036
+  TASK-27): a NEW function (`build_system`'s existing behavior/signature untouched) that (1) DECOMPOSES the
+  prompt's distinct requirements via ONE independent model call — `[{req_id, description, check}]`, each
+  `check` an executable acceptance for that ONE requirement, deterministically filtered
+  (`_is_executable_check`) + de-duped — the SPEC OF RECORD, kept separate from whatever `build_system`'s own
+  self-derived checklist later contains; (2) BUILDS via the existing, unmodified `build_system` pipeline; (3)
+  VERIFIES EVERY enumerated requirement independently against the assembled system (reusing `_run_check`),
+  never trusting `build_system`'s own `done` verdict; (4) RE-GROUNDS + REPAIRS each unmet requirement with a
+  call that feeds the model the FULL requirement list (not just the failing one) plus the current module
+  sources, then RE-VERIFIES ALL requirements — a repair that silently re-drops a different, previously-met
+  requirement is CAUGHT and the round REVERTED (mirrors TASK-5's `_repair_system` non-degrading guard;
+  best-seen `(built, unmet)` tracked), bounded to `max_repair` rounds (default 3); (5) `done` is judged ONLY
+  against the independently-decomposed list, never the model's own self-checklist. Returns `{modules, shipped,
+  done, requirements_total, requirements_met, unmet: [...], note, rounds}`. NEVER raises. Proven OFFLINE
+  (`tests/test_ext036_system_builder.py`, a fake llm mirroring the `_CannedLlm` pattern, no live model): a
+  CORE LIFT TEST where the underlying build genuinely drops one of three independently-decomposed requirements
+  (mirroring the measured `incr`-dropping defect at small scale) while `build_system`'s own narrow checklist is
+  fooled into `done=True` — `build_system_governed` LIFTS `requirements_met` from 2/3 to 3/3 via one re-ground
+  repair round, proving the mechanism's whole point; an ANTI-REGRESSION test where a repair round fixes the
+  unmet requirement but silently breaks a different, previously-met one is REJECTED (reverted, met-count never
+  decreases); an HONESTY test where the repair never actually fixes the requirement stays `done=False` with the
+  unmet requirement honestly listed (never a false `done=True`); and a confirmation that `build_system`'s
+  existing tests are byte-identical (additive-only). Full `tests/` suite stays green (1533 passed, 1 skipped).
+  CAVEAT (honest scope, explicit follow-ups): wiring `build_system_governed` into the `/buildsystem` CLI
+  command, and a LIVE gemma-vs-escalating measurement run of `build_system` vs `build_system_governed` against
+  a grown, harder `FIRST_SLICE` (e.g. the 11-requirement kvdb-cli that originally measured the 10/11 drop),
+  remain open — this task builds + proves the governed mechanism, it does not yet re-run that live measurement.
