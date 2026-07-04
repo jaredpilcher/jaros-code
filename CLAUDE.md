@@ -29,6 +29,29 @@ tenets are non-negotiable; a lower tenet is never weakened for a higher one:
 When a change would violate a tenet, **STOP and flag the conflict** — do not
 silently resolve it.
 
+## 🧭 JARIFY IS THE HARNESS; THE ROADMAP IS WHAT WE EXECUTE (owner directive, 2026-07-04 — binds every run)
+
+**Jarify is HOW we harness the model to build Jaros. Use the Jarify skills for EVERYTHING —
+always, no ad-hoc edits.** Every change (a capability build, a bug fix, a compliance fix, a spec
+or requirement) flows through the Jarify skills and agents:
+`jarify-manage-specs` / `jarify-manage-tasks` / `jarify-manage-links` / `jarify-manage-roadmap`
+→ **jarify-builder** (implements one task, tests) → **jarify-architect** (validates + commits),
+all driven by the standing **`jarify-governance-loop`**. Spec + code change in the same commit
+(spec-first). This is non-negotiable and must survive context loss: constantly remind yourself
+that **Jarify is the mechanism of convergence** — the harness through which the small local model
+builds this system.
+
+**The Roadmap (`.jarify/ROADMAP.md`) is what we EXECUTE — near and far term — WITH the Jarify
+skills, to converge on the intent of the Prime Directive.** It is the official living forward-plan
+artifact (NOW / NEXT / LATER / PARKED horizons of planned specs+requirements). The convergence
+hierarchy: **code → requirements → each spec's `intent.md` → the Prime Directive (PRIME-001)** —
+every spec has both `intent.md` and `design.md`, and every roadmap item traces up to the Prime
+Directive. The `jarify-governance-loop` reads the Roadmap every tick, works its top `NOW` item
+**through the Jarify workflow**, maintains it (land/park/promote), and regenerates the next horizon
+to keep closing the gap to the intent — the pursuit is unbounded, never "done." Roadmap ≠ tasks:
+the Roadmap is the longer-horizon plan; **tasks are the short-term immediate work** (executed exactly
+as before, TaskCreate/Update → builder → architect); the Roadmap FEEDS the tasks, never replaces them.
+
 ## ⭐ STANDING ORDER — AUTO-STEER FROM THE PRIME DIRECTIVE (owner directive, 2026-07-02)
 
 **Every cycle: read the PRIME-001 intent + design, and choose the BEST course of action to converge on
