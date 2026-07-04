@@ -23,10 +23,12 @@ implementation:
   - .jaros-data/tools/git_diff_tool.py
   - .jaros-data/tools/git_branch_tool.py
   - .jaros-data/tools/git_history_update_tool.py
+  - harness/system_finalize.py
   - tests/test_ext037_pathjail.py
   - tests/test_ext037_gated_exec.py
   - tests/test_ext037_env_tools.py
   - tests/test_ext037_git_tools.py
+  - tests/test_ext037_finalize.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -166,13 +168,42 @@ network-exercised, consistent with the repo's no-network testing constraint.
 - [x] Secret/ignored paths are never committed (a deterministic guard); commits are scoped to the root repo
 - [x] Proven by an offline test (init a temp repo, commit a file, read the log, confirm a secret path is refused)
 
-### [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end  (uncovered)
+### [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end  (covered)
 
 Every tool above lands AS Jaros (inert `Decision` → `validate()` gate → `execute()` → hash-chain log → replay),
 under the Foundry safety envelope. The orchestrator wields the toolbelt to actually build + modify + set up + run
 + version a real project from a prompt (the PRIME-001 product), not just emit source.
 
+**HONEST STATUS (Tenet 3, TASK-6):** `harness/system_finalize.py`'s `finalize_system(root, modules, *, git=True,
+venv="auto", ...)` is the FINISHER that wires the toolbelt into the live product: after a shipped `/buildsystem`
+build, it git-inits + commits the shipped system (through the secret-guarded `git.init`/`git.commit` tools,
+REQ-4) and, only when the system actually DECLARES a dependency (an existing `requirements.txt`, or a detected
+non-stdlib top-level import across the built modules), creates a root venv and pins the detected package names
+into `requirements.txt` (REQ-3) — a stdlib-only system (the common case) skips the venv entirely, no noise. Every
+finalize effect is dispatched as a real `Decision` through `harness.coding_loop.Runtime(root=root)` — the SAME
+gate → executor → decision-log choke point every other Runtime-mediated effect in this codebase goes through —
+so finalize's effects are genuinely hash-chain logged and replayable, not called ad hoc. `harness/cli.py`'s
+`cmd_buildsystem` calls `finalize_system` after every shipped build, gated by `_buildsystem_finalize_config()`
+(env-var driven: `JCODE_FINALIZE_SYSTEM` disables the whole step, `JCODE_FINALIZE_GIT` disables only git,
+`JCODE_FINALIZE_VENV` overrides `auto`/`always`/`off`) — defaulting to git-commit ON (the Claude-Code-like safe
+default), venv `"auto"`, and auto-run unconditionally OFF (`finalize_system` never executes the built system;
+that remains an explicit later opt-in). `finalize_system` NEVER raises — a rejected commit, a venv failure, a
+missing git binary, or any unexpected exception is caught and reported in the returned `steps`/`note`, never
+propagated, so a finalize failure can never break a successful build.
+**Honest limitation:** venv-if-deps only CREATES the venv and PINS detected dependency names into
+`requirements.txt` — no package is actually installed over the network by this step, consistent with the
+toolbelt's own "no external network egress by default" safety envelope; installing declared dependencies for
+real is a later opt-in, out of this task's scope. Auto-run of the built system (even behind the gated
+`shell_exec`) is likewise explicitly deferred, per the owner's scoping of this task.
+
 #### Acceptance Criteria
-- [ ] All toolbelt effects are deterministic Jaros tools with `validate()`/`execute()`, logged + replayable
-- [ ] The safety envelope holds (read-free, write root-jailed, no egress, no destructive-outside-root, no secrets)
-- [ ] An end-to-end path: prompt → build a system → set up its env → run it → git-commit it, all in-root, gated
+- [x] All toolbelt effects are deterministic Jaros tools with `validate()`/`execute()`, logged + replayable —
+  proven for the finalize path specifically by routing every effect through `Runtime` (real gate/executor/log)
+- [x] The safety envelope holds (read-free, write root-jailed, no egress, no destructive-outside-root, no
+  secrets) — finalize commits are refused whenever the secret guard would refuse them (proven: a `.env` in the
+  build root is never committed, even via the finalize path), and no network egress is ever attempted (venv
+  creation/pin are both offline; no real dependency install runs)
+- [x] An end-to-end path: prompt → build a system → set up its env (venv-if-deps) → git-commit it, all in-root,
+  gated, wired live into `/buildsystem` — **honest scope note:** "run it" (auto-executing the built system) is
+  explicitly NOT part of this path by design (security default); the path proven end-to-end is
+  build → env-setup → version, not build → env-setup → run → version

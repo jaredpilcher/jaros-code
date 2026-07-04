@@ -1,6 +1,21 @@
 {
   "REQ-1": [
     {
+      "file": "harness/coding_loop.py",
+      "startLine": 112,
+      "endLine": 121
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 134,
+      "endLine": 136
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 140,
+      "endLine": 144
+    },
+    {
       "file": "harness/agent_loop.py",
       "startLine": 96,
       "endLine": 104
@@ -41,29 +56,14 @@
       "endLine": 949
     },
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 112,
-      "endLine": 121
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 23,
+      "endLine": 29
     },
     {
-      "file": "harness/coding_loop.py",
-      "startLine": 134,
-      "endLine": 136
-    },
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 140,
-      "endLine": 144
-    },
-    {
-      "file": "tests/test_ext037_root_enforcement.py",
-      "startLine": 29,
-      "endLine": 212
-    },
-    {
-      "file": "tests/test_ext037_pathjail.py",
-      "startLine": 26,
-      "endLine": 162
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 46,
+      "endLine": 52
     },
     {
       "file": ".jaros-data/tools/_pathjail.py",
@@ -91,32 +91,39 @@
       "endLine": 76
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 23,
-      "endLine": 29
+      "file": "tests/test_ext037_root_enforcement.py",
+      "startLine": 29,
+      "endLine": 212
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 46,
-      "endLine": 52
+      "file": "tests/test_ext037_pathjail.py",
+      "startLine": 26,
+      "endLine": 162
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 142,
+      "endLine": 164
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 520,
+      "endLine": 534
+    },
+    {
+      "file": "harness/system_finalize.py",
+      "startLine": 59,
+      "endLine": 192
+    },
+    {
+      "file": "tests/test_ext037_finalize.py",
+      "startLine": 26,
+      "endLine": 235
     }
   ],
   "REQ-4": [
-    {
-      "file": "tests/test_ext037_git_tools.py",
-      "startLine": 36,
-      "endLine": 373
-    },
-    {
-      "file": ".jaros-data/tools/_gittools.py",
-      "startLine": 23,
-      "endLine": 70
-    },
-    {
-      "file": ".jaros-data/tools/_gitsecrets.py",
-      "startLine": 18,
-      "endLine": 50
-    },
     {
       "file": ".jaros-data/tools/git_status_tool.py",
       "startLine": 23,
@@ -151,36 +158,24 @@
       "file": ".jaros-data/tools/git_branch_tool.py",
       "startLine": 27,
       "endLine": 91
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "tests/test_ext037_gated_exec.py",
-      "startLine": 34,
-      "endLine": 148
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 86,
-      "endLine": 101
+      "file": ".jaros-data/tools/_gittools.py",
+      "startLine": 23,
+      "endLine": 70
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 106,
-      "endLine": 111
+      "file": ".jaros-data/tools/_gitsecrets.py",
+      "startLine": 18,
+      "endLine": 50
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 120,
-      "endLine": 136
+      "file": "tests/test_ext037_git_tools.py",
+      "startLine": 36,
+      "endLine": 373
     }
   ],
   "REQ-3": [
-    {
-      "file": "tests/test_ext037_env_tools.py",
-      "startLine": 31,
-      "endLine": 256
-    },
     {
       "file": ".jaros-data/tools/_envtools.py",
       "startLine": 12,
@@ -205,6 +200,33 @@
       "file": ".jaros-data/tools/python_detect_tool.py",
       "startLine": 19,
       "endLine": 70
+    },
+    {
+      "file": "tests/test_ext037_env_tools.py",
+      "startLine": 31,
+      "endLine": 256
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 86,
+      "endLine": 101
+    },
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 106,
+      "endLine": 111
+    },
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 120,
+      "endLine": 136
+    },
+    {
+      "file": "tests/test_ext037_gated_exec.py",
+      "startLine": 34,
+      "endLine": 148
     }
   ]
 }

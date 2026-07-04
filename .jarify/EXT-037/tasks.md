@@ -283,3 +283,64 @@ choke point (REQ-1) for every explicit path a commit stages.
 
 #### Implements
 - [REQ-4] Git tools — version the work like Claude Code
+
+### [TASK-6] Orchestrator wields the toolbelt in `/buildsystem` (REQ-5)
+
+TASK-1 through TASK-5 built and hardened the toolbelt itself, but nothing in the
+product actually CALLED the git/env tools yet — `/buildsystem` shipped source files
+and stopped. This task adds a deterministic, conservative post-build FINALIZE step
+(`harness.system_finalize.finalize_system`) that runs after a successful
+`/buildsystem` ship: git-init + commit the shipped system (through the
+secret-guarded `git.init`/`git.commit` tools, REQ-4), create a root venv only when
+the system actually declares a dependency (an existing `requirements.txt`, or a
+detected non-stdlib top-level import) and pin the detected package names into
+`requirements.txt` (REQ-3) — never installing anything over the network — and NEVER
+auto-run the generated code. Every finalize effect is dispatched through
+`harness.coding_loop.Runtime` (the real gate -> executor -> decision-log choke
+point), so the effects are hash-chain logged and replayable exactly like any other
+Runtime-mediated Decision, closing REQ-5's own bar end to end.
+
+#### Steps
+1. Add `harness/system_finalize.py` with `finalize_system(root, modules=None, *,
+   git=True, venv="auto", commit_message=None, data_dir=None) -> dict`: dispatches
+   `git.init`/`git.commit` (when `git=True`) and, when a dependency is detected (an
+   existing `requirements.txt` in `root`, or a non-stdlib top-level import found by
+   an `ast`-based scan across `modules`) and `venv` is `"auto"` (or always when
+   `venv="always"`), `env.venv_create` plus `env.venv_pin` (explicit `packages`
+   mode, only when no `requirements.txt` already exists) — every effect built as a
+   real `Decision` and routed through `harness.coding_loop.Runtime(root=root)` so
+   it is validated by the real gate and hash-chain logged via the real
+   `DecisionLog`/`TransitionLog`, not called ad hoc. `venv="off"` and `git=False`
+   independently and cleanly disable each half. NEVER raises: every `Runtime.apply`
+   call is wrapped so a rejected commit (e.g. a secret path), a venv failure, or any
+   other exception is caught and reported in the returned `steps`/`note`, and the
+   whole function is wrapped in an outer try/except as a final backstop.
+2. Wire `harness/cli.py`'s `cmd_buildsystem` to call `finalize_system` after a
+   shipped build, gated by a new `_buildsystem_finalize_config()` helper: env-var
+   driven (`JCODE_FINALIZE_SYSTEM` to disable the whole step, `JCODE_FINALIZE_GIT`
+   to disable only git, `JCODE_FINALIZE_VENV` to override `auto`/`always`/`off`),
+   defaulting to git-commit ON, venv `"auto"`, and (always, unconditionally)
+   auto-run OFF — `finalize_system` never executes the built system. The
+   finalize outcome (`ok`/which steps ran) is appended to the command's report
+   text; a disabled finalize is reported honestly too. No change to
+   `build_system`/`build_system_escalating`/the escalation core, or to the
+   built system's own files/output.
+3. Add `tests/test_ext037_finalize.py` (offline, no network, skip-if-no-git)
+   covering: `finalize_system` git-inits + commits a shipped build end-to-end
+   (`git log` shows the commit); a system with a `requirements.txt` (or a detected
+   non-stdlib import) triggers `env.venv_create` (a real offline venv) and pins
+   detected packages into `requirements.txt` via `env.venv_pin` when one doesn't
+   already exist; a stdlib-only system skips the venv step entirely (no `.venv`
+   created); a `.env` secret in the build root is refused by the existing secret
+   guard and NOT committed, confirmed via zero commits in `git log`; a simulated
+   `Runtime` failure (monkeypatched) and a nonexistent root both prove
+   `finalize_system` never raises and reports honestly instead; `git=False` and
+   `venv="off"` cleanly skip both halves; and the CLI's
+   `_buildsystem_finalize_config()` env-var gate is unit-tested directly (default
+   config, each override, and a bogus env value falling back to the safe default).
+4. Run `python -m pytest tests/ -q` to confirm the full suite is green (baseline
+   1454 passed, 1 skipped, plus the 10 new REQ-5 tests) with no regression to the
+   EXT-036 `/buildsystem` tests or any prior EXT-037 task's tests.
+
+#### Implements
+- [REQ-5] Toolbelt is Jaros-native + Foundry-safe end to end

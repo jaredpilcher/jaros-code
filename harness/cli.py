@@ -139,6 +139,31 @@ def _buildsystem_escalation_config() -> "tuple[str, str, str] | None":
 # #EXT-036-REQ-13 End
 
 
+# #EXT-037-REQ-5 Start
+def _buildsystem_finalize_config() -> dict:
+    """REQ-5 finalize-step gate/flag for ``/buildsystem`` -- env-var driven, sensible
+    Claude-Code-like defaults: git-commit ON (versioning the shipped system is the
+    safe, expected default), venv ``"auto"`` (a venv is created only when the shipped
+    system actually declares a dependency), auto-run is ALWAYS off regardless of this
+    config (``finalize_system`` never executes the built code). Never raises -- a bad
+    env value falls back to the default rather than erroring.
+
+    Set ``JCODE_FINALIZE_SYSTEM=0`` (or ``false``/``off``/``no``) to disable the whole
+    finalize step; ``JCODE_FINALIZE_GIT=0`` to skip only the git half;
+    ``JCODE_FINALIZE_VENV=always|off`` to override the venv default.
+    """
+    def _off(name: str, default: str = "1") -> bool:
+        return os.environ.get(name, default).strip().lower() in ("0", "false", "off", "no")
+
+    enabled = not _off("JCODE_FINALIZE_SYSTEM")
+    git_on = not _off("JCODE_FINALIZE_GIT")
+    venv_mode = os.environ.get("JCODE_FINALIZE_VENV", "auto").strip().lower()
+    if venv_mode not in ("auto", "always", "off"):
+        venv_mode = "auto"
+    return {"enabled": enabled, "git": git_on, "venv": venv_mode}
+# #EXT-037-REQ-5 End
+
+
 class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
@@ -492,6 +517,21 @@ class JcodeCli:
             out.append("  unmet: " + ", ".join(unmet))
         if r.get("note"):
             out.append(f"  note: {r['note']}")
+        # #EXT-037-REQ-5 Start
+        # FINALIZE: wield the toolbelt to deliver a versioned, set-up project — not
+        # just source files — after a shipped build. Config/flag-gated (default ON
+        # for git, "auto" for venv, auto-run always off); never breaks the build
+        # result on a finalize failure (finalize_system never raises).
+        if r.get("shipped"):
+            fin_cfg = _buildsystem_finalize_config()
+            if fin_cfg["enabled"]:
+                from harness.system_finalize import finalize_system
+                fin = finalize_system(subdir, r.get("modules"), git=fin_cfg["git"], venv=fin_cfg["venv"])
+                step_names = ", ".join(s["step"] for s in fin.get("steps", []))
+                out.append(f"  finalize: {'ok' if fin.get('ok') else 'issues'} ({step_names})")
+            else:
+                out.append("  finalize: disabled (JCODE_FINALIZE_SYSTEM)")
+        # #EXT-037-REQ-5 End
         return "\n".join(out)
     # #EXT-036-REQ-4 End
 
