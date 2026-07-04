@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": "tests/test_ext038_research_guard.py",
+      "startLine": 25,
+      "endLine": 221
+    },
+    {
+      "file": "harness/research_guard.py",
+      "startLine": 46,
+      "endLine": 262
+    }
+  ]
+}
