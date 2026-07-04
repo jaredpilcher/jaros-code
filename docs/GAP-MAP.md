@@ -590,3 +590,12 @@ derive an independent check per requirement — like the coherence instrument), 
 best-of-k selects the attempt that satisfies the MOST real requirements, not the one that passes its own thin self-test.
 best-of-k is UNIT-proven (masks total failures); this live run is the honest caveat that selection quality = acceptance
 completeness. THE THROUGH-LINE OF THE NIGHT: independent verification beats self-report, everywhere.
+
+## ★★ SECURITY: generated-code execution is now SCANNED + SANDBOXED in build_system (2026-07-04, owner-directed)
+
+Owner asked: are we checking generated code for quality + gating it to be SECURE to run on this system? Answer was "no/partial" — build_system ran model-generated code as a plain subprocess (full host env incl. secrets, full perms, no scan, no egress control). NOW CLOSED for build_system's acceptance path (fae847c foundation + 39f62d3 wiring, adversarially validated — the architect caught + made us fix a real blanket-egress hole first, Tenet-3 working on the security layer itself):
+- **SCAN GATE** (harness/secure_exec.py::scan_code): build_system scans every generated module (DENY_ALL egress) AFTER assemble, BEFORE either acceptance path (CLI or uvicorn) — a build with un-permitted dangerous ops (subprocess/shell, eval/exec, destructive/fs-outside-root, un-allow-listed network egress) is REFUSED (done=False, security field, honest note); the dangerous code is written to disk for inspection but NEVER executed.
+- **SANDBOXED execution** (run_sandboxed): acceptance runs generated code with a SCRUBBED env (secrets NOT visible to it — proven by test), POSIX resource caps, timeout+tree-kill, DENY_ALL egress.
+- **PER-HOST GATED EGRESS** (EgressPolicy): default-deny + allow-list, FAIL-CLOSED, exact-host match (no substring bypass: evil-pypi.org.attacker.com blocked under allow('pypi.org')) — research/deps get controlled egress, nothing else.
+- governed/escalating/best_of_k/modify_system inherit the gate (all call build_system / _run_check).
+HONEST REMAINING (named, not dropped): (1) server_oracle uvicorn + system_suite._run_cli still run unsandboxed (scan-gate refusal DOES cover them; env-scrub/caps sandboxing of those 2 sites is the next task); (2) runtime network-egress enforcement (OS namespace/firewall on the Jetson) is static-gate-only. (3) CODE-QUALITY gate (ruff/radon) not yet built. Suite 1621 green.
