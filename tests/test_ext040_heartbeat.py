@@ -62,6 +62,25 @@ def test_status_detects_stall_from_old_beat():
     assert st["elapsed_s"] >= 600
 
 
+def test_completed_run_is_not_stalled_even_when_old():
+    # a TERMINAL beat ("done exit=0 ...") older than the threshold must NOT read stalled
+    d = hb._hb_dir()
+    old = time.time() - 600
+    (d / hb._CURRENT).write_text(json.dumps({
+        "ts": old, "activity": "suite", "detail": "done exit=0 (444.7s)",
+        "pid": 1, "run_id": "r", "started_at": old - 444,
+    }), encoding="utf-8")
+    st = hb.status(stall_after_s=300)
+    assert st["done"] is True
+    assert st["stalled"] is False
+    # but a NON-terminal beat that old IS stalled
+    (d / hb._CURRENT).write_text(json.dumps({
+        "ts": old, "activity": "suite", "detail": "running 120s",
+        "pid": 1, "run_id": "r", "started_at": old,
+    }), encoding="utf-8")
+    assert hb.status(stall_after_s=300)["stalled"] is True
+
+
 def test_heartbeat_context_beats_start_and_end():
     with hb.heartbeat("op", run_id="ctx1") as h:
         h.beat("PHASE_A")

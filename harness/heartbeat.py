@@ -79,16 +79,22 @@ def status(stall_after_s: float = DEFAULT_STALL_S) -> dict:
         last = float(rec.get("ts", now))
         started = float(rec.get("started_at", last))
         since = max(0.0, now - last)
+        detail = str(rec.get("detail", ""))
+        # A TERMINAL beat means the op finished -- it is not "stalled" no matter how long ago.
+        # (Without this, a completed run reads "STALLED" once its last beat ages past the
+        # threshold, which is misleading -- found via dogfooding, 2026-07-04.)
+        done = detail.startswith(("END", "done", "TIMED-OUT", "ERROR", "SPAWN-FAILED"))
         return {
             "activity": rec.get("activity"),
-            "detail": rec.get("detail", ""),
+            "detail": detail,
             "pid": rec.get("pid"),
             "run_id": rec.get("run_id", ""),
             "started_at": started,
             "last_beat": last,
             "elapsed_s": round(max(0.0, now - started), 1),
             "since_last_beat_s": round(since, 1),
-            "stalled": since > stall_after_s,
+            "stalled": (since > stall_after_s) and not done,
+            "done": done,
             "idle": False,
         }
     except Exception:
