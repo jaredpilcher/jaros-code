@@ -11,10 +11,23 @@ derived"). This proves the fix is ROBUST without ever letting a broken system pa
       one (Tenet 3 -- proves it is a real gate, not a manufactured pass);
   (d) an empty checklist never counts as ``done``.
 
+TASK-35 (2026-07-04) adds a THIRD derivation tier, tried between the strict retry and the
+smoke fallback: a SUBPROCESS-based check that actually spawns the system's own declared
+entrypoint (``python main.py ...``) rather than importing the built module in-process.
+MEASURED LIVE: the smoke fallback (import + ``hasattr`` only) reported `done=True` for a
+`notes-sqlite-cli` build whose `add` command genuinely crashed on a fresh run (it wrote to
+a store it never initialized) -- the smoke check never calls any exported function or
+drives the module's `__main__` CLI dispatch, so it structurally cannot see this bug class.
+(e) proves the new subprocess tier catches that CLASS of bug (a store-writing CLI command
+that skips its own required setup) and does not introduce a false negative for the SAME
+CLI once fixed; (f) proves the three PRE-EXISTING smoke-fallback tests below are
+UNCHANGED -- the canned llm's default (``checklist_subprocess=None`` -> ``"[]"``) makes
+the new tier a no-op continuation to the smoke fallback exactly as before this task.
+
 OFFLINE -- no live model. A stub `llm` (same `.complete(LlmRequest) -> .text` convention
 as `test_ext036_system_builder.py`'s `_CannedLlm`) returns CANNED responses keyed off
-distinctive prompt substrings, including the new stricter-retry prompt's "RUNNABLE PYTHON
-CODE" marker.
+distinctive prompt substrings, including the stricter-retry prompt's "RUNNABLE PYTHON
+CODE" marker and (TASK-35) the subprocess-tier prompt's "REAL SUBPROCESS" marker.
 """
 
 from __future__ import annotations
@@ -22,6 +35,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import sys
 
 os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
 
@@ -29,6 +44,7 @@ from harness.system_builder import (
     build_system,
     _derive_acceptance_checklist,
     _is_executable_check,
+    _is_subprocess_check,
     _smoke_checklist,
 )
 
@@ -75,15 +91,19 @@ class _CannedLlm:
     """Routes `.complete()` calls by prompt stage: plan / per-module build / the FIRST
     acceptance-checklist prompt / the stricter RETRY prompt (detected by its distinctive
     "RUNNABLE PYTHON CODE" marker, checked BEFORE the generic "ACCEPTANCE CHECKS"
-    substring since the strict prompt also contains that phrase) / system repair (always
-    unparseable here -- these tests are about DERIVATION, not repair)."""
+    substring since the strict prompt also contains that phrase) / (TASK-35) the THIRD
+    subprocess-checklist tier (detected by its distinctive "REAL SUBPROCESS" marker, which
+    -- unlike the strict prompt -- does NOT contain "ACCEPTANCE CHECKS", so it never
+    inflates the pre-existing tests' `"ACCEPTANCE CHECKS" in prompt` counts) / system
+    repair (always unparseable here -- these tests are about DERIVATION, not repair)."""
 
     def __init__(self, *, plan=PLAN_JSON, module_first=None,
-                 checklist_first=None, checklist_strict=None) -> None:
+                 checklist_first=None, checklist_strict=None, checklist_subprocess=None) -> None:
         self.plan = plan
         self.module_first = module_first or {"calc.py": "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n"}
         self.checklist_first = checklist_first
         self.checklist_strict = checklist_strict
+        self.checklist_subprocess = checklist_subprocess
         self.prompts: list[str] = []
 
     def complete(self, request):
@@ -93,6 +113,8 @@ class _CannedLlm:
             return _Resp(self.plan)
         if "RUNNABLE PYTHON CODE" in prompt:
             return _Resp(self.checklist_strict if self.checklist_strict is not None else "[]")
+        if "REAL SUBPROCESS" in prompt:
+            return _Resp(self.checklist_subprocess if self.checklist_subprocess is not None else "[]")
         if "ACCEPTANCE CHECKS" in prompt:
             return _Resp(self.checklist_first if self.checklist_first is not None else "[]")
         if "SYSTEM ACCEPTANCE REPAIR" in prompt:
@@ -222,3 +244,144 @@ def test_empty_checklist_never_counts_as_done(tmp_path, monkeypatch):
     assert result["shipped"] is True
     assert result["done"] is False
     assert result["unmet"] == ["no acceptance checklist derived"]
+
+
+# --- (e) TASK-35: a SUBPROCESS-based tier catches a CLI bug the smoke fallback structurally
+# cannot -- MEASURED LIVE (2026-07-04): notes-sqlite-cli's `add` command crashed on a fresh
+# run (it wrote to a store it never initialized), yet build_system's smoke fallback
+# (import + hasattr only, no function ever called, no `__main__` dispatch ever driven)
+# reported done=True. This fixture reproduces the SAME bug CLASS generically (a CLI whose
+# `add` command writes to a store it never initializes) -- not sqlite-specific. ------------
+
+CLI_SPEC = (
+    "A tiny command-line note-adder. Running it as `python main.py add <text...>` "
+    "appends <text> to a persistent store and prints `added`."
+)
+
+CLI_PLAN = json.dumps({
+    "modules": [
+        {"name": "main.py",
+         "responsibility": "CLI: `python main.py add <text>` appends to a store and prints added",
+         "exports": [{"name": "save_item", "signature": "def save_item(path, item):"}],
+         "imports": []}
+    ],
+    "entrypoint": "main.py",
+    "acceptance": "add appends and prints added",
+})
+
+# BROKEN: `save_item` reads the store before ever creating it -- crashes on a fresh run,
+# exactly the notes-sqlite-cli bug class (an `add` branch that skips its own required setup).
+ADD_WITHOUT_INIT_CLI = (
+    "import json\n"
+    "import sys\n\n"
+    "def load_store(path):\n"
+    "    with open(path) as f:\n"
+    "        return json.load(f)\n\n"
+    "def save_item(path, item):\n"
+    "    data = load_store(path)\n"
+    "    data.append(item)\n"
+    "    with open(path, 'w') as f:\n"
+    "        json.dump(data, f)\n\n"
+    "if __name__ == '__main__':\n"
+    "    STORE = 'store.json'\n"
+    "    if len(sys.argv) > 1 and sys.argv[1] == 'add':\n"
+    "        save_item(STORE, ' '.join(sys.argv[2:]))\n"
+    "        print('added')\n"
+)
+
+# FIXED: `load_store` tolerates a store that doesn't exist yet.
+ADD_WITH_INIT_CLI = (
+    "import json\n"
+    "import os\n"
+    "import sys\n\n"
+    "def load_store(path):\n"
+    "    if not os.path.exists(path):\n"
+    "        return []\n"
+    "    with open(path) as f:\n"
+    "        return json.load(f)\n\n"
+    "def save_item(path, item):\n"
+    "    data = load_store(path)\n"
+    "    data.append(item)\n"
+    "    with open(path, 'w') as f:\n"
+    "        json.dump(data, f)\n\n"
+    "if __name__ == '__main__':\n"
+    "    STORE = 'store.json'\n"
+    "    if len(sys.argv) > 1 and sys.argv[1] == 'add':\n"
+    "        save_item(STORE, ' '.join(sys.argv[2:]))\n"
+    "        print('added')\n"
+)
+
+SUBPROCESS_CHECK_CODE = (
+    "import subprocess\n"
+    "import sys\n"
+    "result = subprocess.run([sys.executable, 'main.py', 'add', 'hello'],\n"
+    "                        capture_output=True, text=True)\n"
+    "assert result.returncode == 0, result.stderr\n"
+    "assert 'added' in result.stdout\n"
+)
+
+SUBPROCESS_CHECKLIST_RESPONSE = json.dumps([{"name": "cli add works", "code": SUBPROCESS_CHECK_CODE}])
+
+
+# --- (unit) _is_subprocess_check ---------------------------------------------------------
+
+def test_is_subprocess_check_requires_a_real_subprocess_call():
+    assert _is_subprocess_check(SUBPROCESS_CHECK_CODE) is True
+    # an in-process import/call is NOT a subprocess check, even with a real assert --
+    # this is exactly the gap TASK-35 closes (an in-process call can bypass a broken
+    # `__main__` CLI dispatch a real subprocess invocation would hit)
+    assert _is_subprocess_check("from calc import add\nassert add(1, 2) == 3\n") is False
+    assert _is_subprocess_check("not python (:") is False                 # unparseable
+    assert _is_subprocess_check("import subprocess\nx = 1\n") is False    # no real assert
+    assert _is_subprocess_check("") is False
+    assert _is_subprocess_check(None) is False
+
+
+def test_subprocess_tier_invoked_only_after_first_two_tiers_yield_nothing():
+    mods = json.loads(CLI_PLAN)["modules"]
+    llm = _CannedLlm(
+        plan=CLI_PLAN,
+        checklist_first=VAGUE_CHECKLIST, checklist_strict=VAGUE_CHECKLIST,
+        checklist_subprocess=SUBPROCESS_CHECKLIST_RESPONSE,
+    )
+    checks = _derive_acceptance_checklist(CLI_SPEC, mods, llm)
+    assert [c["name"] for c in checks] == ["cli add works"]
+
+
+def test_subprocess_check_catches_the_add_without_init_bug_class(tmp_path):
+    """The MEASURED false-done class (2026-07-04): a CLI whose primary command crashes on
+    a fresh run because it writes to a store it never initializes. The smoke fallback
+    (import + hasattr only) cannot see this; a subprocess-based check that actually runs
+    `python main.py add ...` correctly catches it -- `done` flips to False (closing the
+    false-done, Tenet 3)."""
+    llm = _CannedLlm(
+        plan=CLI_PLAN, module_first={"main.py": ADD_WITHOUT_INIT_CLI},
+        checklist_first=VAGUE_CHECKLIST, checklist_strict=VAGUE_CHECKLIST,
+        checklist_subprocess=SUBPROCESS_CHECKLIST_RESPONSE,
+    )
+    root = tmp_path / "broken_cli"
+    result = build_system(CLI_SPEC, root, llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is False
+    assert result["unmet"]
+
+    # independent control: a genuinely fresh subprocess invocation really does crash --
+    # proves this isn't a sandbox artifact, the built system is honestly broken
+    proc = subprocess.run([sys.executable, "main.py", "add", "buy", "milk"],
+                           cwd=str(root), capture_output=True, text=True)
+    assert proc.returncode != 0
+
+
+def test_subprocess_check_passes_the_fixed_cli_no_new_false_negative(tmp_path):
+    """VALUE-PRESERVING: the SAME derivation path reports `done=True` once the CLI
+    correctly initializes its store -- the new tier does not introduce a false negative
+    for a genuinely-working stateful CLI."""
+    llm = _CannedLlm(
+        plan=CLI_PLAN, module_first={"main.py": ADD_WITH_INIT_CLI},
+        checklist_first=VAGUE_CHECKLIST, checklist_strict=VAGUE_CHECKLIST,
+        checklist_subprocess=SUBPROCESS_CHECKLIST_RESPONSE,
+    )
+    result = build_system(CLI_SPEC, tmp_path / "fixed_cli", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []

@@ -1362,3 +1362,84 @@ exempted.
 - [REQ-1] Planner: sentence -> structured, coherence-validated plan (fixes a coherence-
   validator FALSE POSITIVE that rejected otherwise-valid plans referencing a stdlib module
   by name, unblocking the datastore/DB-backed system class)
+
+### [TASK-35] Close a Tenet-3 false-done: acceptance never exercises the real CLI entrypoint (REQ-2)
+
+DIAGNOSED + REPRODUCED LIVE (2026-07-04, via a scratch probe, not committed): building
+`notes-sqlite-cli` (`harness/system_suite.py` DATASTORE_SLICE) through `build_system`
+returned `done=True` with note `"DONE (all acceptance checks pass)"` on the FIRST draw --
+yet a genuinely fresh `python main.py add buy milk` in a clean directory CRASHED with
+`sqlite3.OperationalError: no such table: notes` (the generated CLI's `add` branch calls
+`insert_note()` without ever calling `initialize_db()` first; `initialize_db()` is only
+called at the very end of the `__main__` block, after the crash already happened). The
+independent held-out oracle (`system_suite.py`'s own `CreationTask.checks`) correctly
+rejects this build (`accepted=False`) -- this is NOT a sandbox/security issue (a
+plain-subprocess control reproduces the crash identically), it is a genuine overclaim by
+`build_system`'s own self-derived acceptance.
+
+ROOT CAUSE (instrumented via `_derive_acceptance_checklist`/`_run_check_verbose`): the
+checklist actually used for this draw was the deterministic SMOKE fallback (a single check
+named `"smoke: modules import and expose their API"`, asserting only `import main` plus
+`hasattr(main, 'initialize_db')` / `'insert_note'` / etc for each exported name) --
+`_smoke_checklist` never calls any exported function and never invokes the module's
+`if __name__ == "__main__":` CLI dispatch at all, so it structurally cannot observe a bug
+that only surfaces when the real entrypoint is invoked the way a user actually runs it.
+This is NOT a shared-root state-contamination issue (only one check ran, in a clean root)
+and NOT a "non-zero exit isn't treated as a failure" issue (`_run_acceptance_cmd` already
+treats a non-zero exit honestly as not-passing) -- the acceptance path in this draw simply
+never RAN the primary command at all. The two prior model-proposed checklist tiers
+(`CHECKLIST_PROMPT` / `CHECKLIST_STRICT_PROMPT`) have the same structural gap whenever the
+model chooses to `import` the built module and call its functions directly rather than
+spawn the real CLI as a subprocess -- an in-process function call can silently bypass a
+broken `__main__` dispatch branch a real invocation would hit.
+
+#### Steps
+1. In `harness/system_builder.py`, add a new prompt `SUBPROCESS_CHECKLIST_PROMPT` (near
+   `CHECKLIST_STRICT_PROMPT`/`HTTP_CHECKLIST_PROMPT`) asking the model for 2-3 concrete
+   acceptance checks that invoke the built system's own declared entrypoint as a REAL
+   SUBPROCESS (`subprocess.run([sys.executable, "<entry file>", ...], capture_output=True,
+   text=True)`), matching the exact command-line usage the SPEC itself describes, instead
+   of importing the built modules in-process, and asserting on the real stdout/exit code.
+2. Add a deterministic filter `_is_subprocess_check(code) -> bool` (mirrors
+   `_is_http_check`'s pattern from REQ-22): survives only if it is already a real
+   executable check (`_is_executable_check` -- parses + contains a real `assert`) AND its
+   AST actually contains a call to `subprocess.run` / `subprocess.check_output` /
+   `subprocess.check_call` / `subprocess.Popen`. Never raises.
+3. Add `_propose_subprocess_checklist(spec, api, llm) -> list[dict]` (mirrors
+   `_derive_http_checklist`'s shape): one guarded model round-trip using
+   `SUBPROCESS_CHECKLIST_PROMPT`, filtered by `_is_subprocess_check`; returns `[]` on any
+   model/parse failure or when nothing survives (never a fabricated pass).
+4. Wire it into `_derive_acceptance_checklist` as a NEW THIRD tier, inserted between the
+   existing strict-retry tier and the `_smoke_checklist` fallback: `checks =
+   _propose_checklist(..., CHECKLIST_PROMPT)` -> if empty, `_propose_checklist(...,
+   CHECKLIST_STRICT_PROMPT)` -> if still empty, NEW `_propose_subprocess_checklist(spec,
+   api, llm)` -> if still empty, `_smoke_checklist(mods)`. Update the function's docstring
+   to describe the new tier. This never changes behavior for any build whose first two
+   tiers already produce a usable checklist (no regression to a currently-passing build).
+5. Wrap all new/changed lines with `# #EXT-036-REQ-2 Start` / `# #EXT-036-REQ-2 End`
+   (nested inside the existing REQ-2 region in this file) per the links skill.
+6. Tests, appended to `tests/test_ext036_acceptance.py` (OFFLINE, canned `llm`, no live
+   model): (a) unit tests for `_is_subprocess_check` (accepts a real subprocess-based
+   assert check, rejects an in-process import-based check, rejects unparseable/no-assert
+   code); (b) a fixture module reproducing the notes-sqlite-cli bug CLASS (a tiny CLI whose
+   `add` branch writes to a store without initializing it first) -- when the canned llm's
+   first two checklist tiers yield nothing usable but the THIRD tier yields a real
+   subprocess-based check (e.g. running `python main.py add x` and asserting `rc == 0`),
+   `build_system` now correctly reports `done=False` for the broken CLI (closing the false
+   positive) and `done=True` once the CLI is fixed (no new false negative); (c) confirm the
+   three EXISTING smoke-fallback tests
+   (`test_unparseable_first_and_strict_falls_back_to_deterministic_smoke`,
+   `test_all_vague_on_both_attempts_falls_back_to_deterministic_smoke`,
+   `test_smoke_fallback_passes_a_working_system`,
+   `test_smoke_fallback_fails_a_broken_system_no_false_pass`) still pass UNCHANGED (the
+   canned llm's catch-all `_Resp("")` response to the new prompt tier yields `[]`, so these
+   cases still fall through to `_smoke_checklist` exactly as before -- no regression).
+7. Run `python -m pytest tests/test_ext036_acceptance.py -q` then the FULL
+   `python -m pytest tests/ -q` synchronously in the foreground and confirm both stay
+   green.
+
+#### Implements
+- [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not
+  prose (closes the measured gap where the smoke fallback, and an in-process
+  import-based check, can both structurally miss a bug that only a real subprocess
+  invocation of the declared CLI entrypoint would surface)

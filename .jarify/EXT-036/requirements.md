@@ -58,7 +58,7 @@ guarantees structural coherence + repairs/rejects incoherent plans.
   for a fresh plan (the broader criterion) remains open.
 - [ ] Measured on a held-out set of sentences; coherence-pass rate reported honestly
 
-### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (PARTIAL — robust derivation DONE, TASK-6)
+### [REQ-2] Executable acceptance — the plan must emit a RUNNABLE system-level oracle, not prose  (PARTIAL — robust derivation DONE, TASK-6; false-done in the smoke fallback for stateful CLIs closed, TASK-35)
 
 The probe's acceptance was PROSE ("output containing the min, max, mean") — not deterministically checkable.
 For honest end-to-end validation the plan (or a follow-up step) must produce a concrete runnable acceptance
@@ -83,6 +83,27 @@ check (a script asserting real behavior on a real input) so the built system is 
   is honestly reported unmet, not swallowed); an empty checklist (only possible with zero modules, which
   `validate_plan` already forbids) still never counts as done. Proven OFFLINE (`tests/test_ext036_acceptance.py`,
   canned llm, no live model — filtering, the bounded retry, and the smoke fallback's honest pass/fail).
+- [x] Close a MEASURED false-done in the smoke fallback for STATEFUL CLIs — **DONE 2026-07-04** (`harness/system_builder.py`
+  `SUBPROCESS_CHECKLIST_PROMPT`/`_is_subprocess_check`/`_propose_subprocess_checklist`, TASK-35): the caveat above
+  ("the smoke check ... genuinely FAILS on a broken system") is TRUE for import-time errors but was measured
+  LIVE to be INCOMPLETE for a CLI whose primary command crashes only when actually invoked — building
+  `notes-sqlite-cli` fell through to `_smoke_checklist` (asserts only `import <module>` + `hasattr(module,
+  export)`, never calling an exported function or driving the module's `if __name__ == "__main__":` dispatch)
+  and reported `done=True` even though a genuinely fresh `python main.py add ...` crashed
+  (`sqlite3.OperationalError: no such table: notes` — `add` calls `insert_note()` without ever calling
+  `initialize_db()` first). A NEW third derivation tier is now tried between the strict-retry tier and the smoke
+  fallback: the model proposes checks that invoke the system's own declared entrypoint as a REAL SUBPROCESS
+  (`subprocess.run`/`check_output`/`check_call`/`Popen`, never an in-process `import`), deterministically filtered
+  (`_is_subprocess_check` — real executable check AND a genuine `subprocess.*` call in its AST) so it can never
+  fabricate a pass; returns `[]` on any model/parse failure and falls through to the SAME smoke fallback as
+  before (no regression to any build whose first two tiers already produce a usable checklist, or whose model
+  can't produce a subprocess check). Proven OFFLINE (`tests/test_ext036_acceptance.py`, canned llm, no live
+  model): the two-sided property — a fixture reproducing the bug CLASS generically (a CLI `add` branch that
+  writes to a store without initializing it, not sqlite-specific) now yields `done=False` (closing the
+  false-done, with an independent plain-subprocess control confirming the crash is real, not a sandbox
+  artifact), while the SAME derivation path yields `done=True` once the CLI is fixed (no new false negative);
+  the pre-existing smoke-fallback tests are unchanged (the canned llm's default `"[]"` response to the new tier
+  is a no-op continuation to smoke, exactly as before this task).
 
 ### [REQ-3] Per-module oracle generation — reuse the write-tests capability to gate each module build  (GAP)
 

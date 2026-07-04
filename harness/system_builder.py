@@ -549,19 +549,90 @@ def _propose_checklist(spec: str, api: str, llm, prompt: str) -> list[dict]:
     return [c for c in checks if isinstance(c, dict) and _is_executable_check(c.get("code"))]
 
 
+# TASK-35: a DETECTED-false-done Tenet-3 defect, MEASURED LIVE (2026-07-04) — building
+# `notes-sqlite-cli` fell all the way through to the deterministic SMOKE checklist (below),
+# which only asserts `import <module>` + `hasattr(<module>, <export>)` for each exported
+# name. That is a REAL executable check, but it never calls any exported function and never
+# drives the module's own `if __name__ == "__main__":` CLI dispatch — so a build whose CLI
+# genuinely crashes on its primary command (e.g. `add` inserts into a table that was never
+# created) still reports `done=True`. The SAME structural gap applies to the two prior
+# model-proposed tiers above whenever the model chooses to `import` the built module and
+# call its functions in-process rather than spawn the real CLI — an in-process call can
+# silently bypass a broken `__main__` branch a genuine invocation would hit. This new tier
+# closes the gap the SAME way REQ-22 closed it for detected web services (an honest,
+# narrowly-filtered, model-proposed check that actually DRIVES the real thing) — here, a
+# real subprocess invocation of the system's own declared entrypoint, matching the SPEC's
+# own stated command-line usage, instead of a guessed/hardcoded invocation.
+SUBPROCESS_CHECKLIST_PROMPT = (
+    "SPEC: {spec}\nThe system will expose this API: {api}\n\n"
+    "The checks you previously proposed were not usable. This system is a COMMAND-LINE "
+    "PROGRAM (see the SPEC for its exact usage). Write 2-3 concrete checks that RUN IT AS A "
+    "REAL SUBPROCESS using Python's `subprocess` module (e.g. "
+    '`subprocess.run([sys.executable, "<entry file>", ...], capture_output=True, '
+    "text=True)`), invoking it exactly as a user would from the command line per the SPEC's "
+    "own usage, and asserting on its real stdout/exit code. Do NOT `import` the built "
+    'modules. Output ONLY a JSON list: [{{"name": "<short label>", "code": "<standalone '
+    'runnable python that spawns a real subprocess and asserts on its output>"}}]. No prose.'
+)
+
+
+def _is_subprocess_check(code) -> bool:
+    """Deterministic filter (TASK-35) for a SUBPROCESS-based acceptance check: survives
+    only if it is already a real executable check (``_is_executable_check`` — parses +
+    contains a real ``assert``) AND its AST actually contains a call to
+    ``subprocess.run``/``check_output``/``check_call``/``Popen`` — i.e. it genuinely spawns
+    a fresh process rather than importing the built module in-process. Never raises."""
+    if not _is_executable_check(code):
+        return False
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in (
+            "run", "check_output", "check_call", "Popen",
+        ):
+            value = node.value
+            if isinstance(value, ast.Name) and value.id == "subprocess":
+                return True
+    return False
+
+
+def _propose_subprocess_checklist(spec: str, api: str, llm) -> list[dict]:
+    """One guarded model round-trip proposing SUBPROCESS-based acceptance checks (TASK-35),
+    deterministically filtered to ``_is_subprocess_check``. Returns [] on any model/parse
+    failure or when nothing survives (never a fabricated pass) — callers fall through to
+    ``_smoke_checklist``."""
+    try:
+        raw = _call(llm, SUBPROCESS_CHECKLIST_PROMPT.format(spec=spec, api=api),
+                     max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    checks = _extract_json(raw, "[", "]")
+    if not isinstance(checks, list):
+        return []
+    return [c for c in checks if isinstance(c, dict) and _is_subprocess_check(c.get("code"))]
+
+
 def _derive_acceptance_checklist(spec: str, mods: list[dict], llm) -> list[dict]:
-    """Executable acceptance CHECKLIST (REQ-2/REQ-7 probe logic, hardened by TASK-6),
-    derived contract-first from the SPEC + the module API (not the built code). ROBUST
-    derivation: (1) propose checks and keep only the ones that survive the deterministic
-    executable-check filter; (2) if nothing survives (unparseable output or every check
-    was vague/"conceptual"), RETRY ONCE with a stricter prompt demanding only runnable
-    Python; (3) if still nothing survives, fall back to a deterministic SMOKE checklist.
-    Only stage (3)'s [] (no modules at all) yields an empty checklist — callers must treat
-    an empty list as NOT done (Tenet 3), never as a vacuous pass."""
+    """Executable acceptance CHECKLIST (REQ-2/REQ-7 probe logic, hardened by TASK-6 and
+    TASK-35), derived contract-first from the SPEC + the module API (not the built code).
+    ROBUST derivation: (1) propose checks and keep only the ones that survive the
+    deterministic executable-check filter; (2) if nothing survives (unparseable output or
+    every check was vague/"conceptual"), RETRY ONCE with a stricter prompt demanding only
+    runnable Python; (3) if STILL nothing survives, try ONE more tier asking for
+    SUBPROCESS-based checks that actually drive the system's real CLI entrypoint (TASK-35 —
+    closes the measured gap where an in-process import/call can silently bypass a broken
+    ``__main__`` dispatch branch); (4) if that also yields nothing, fall back to a
+    deterministic SMOKE checklist. Only stage (4)'s [] (no modules at all) yields an empty
+    checklist — callers must treat an empty list as NOT done (Tenet 3), never as a vacuous
+    pass."""
     api = _module_api(mods)
     checks = _propose_checklist(spec, api, llm, CHECKLIST_PROMPT)
     if not checks:
         checks = _propose_checklist(spec, api, llm, CHECKLIST_STRICT_PROMPT)
+    if not checks:
+        checks = _propose_subprocess_checklist(spec, api, llm)
     if not checks:
         checks = _smoke_checklist(mods)
     return checks
