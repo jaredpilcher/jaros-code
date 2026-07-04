@@ -513,3 +513,19 @@ reviewer's "don't trust self-graded instruments." LEVER (capstone #91): a GOVERN
 prompt into an EXPLICIT enumerated requirement list, (2) builds, (3) verifies EACH requirement independently, (4) repairs
 any UNMET requirement (feed the full list + the unmet one, regenerate, re-verify ALL so none is re-dropped), done=ALL-met.
 Target: lift the kvdb-cli coherence 10/11 -> 11/11. Directed by a real, diagnosed failure — not speculative.
+
+## ★ NORTH-STAR CAPSTONE — honest NEGATIVE after 2 live attempts (2026-07-04): governed path REGRESSES, no lift yet
+
+Attempt 1: build_system_governed live-broke (0 reqs decomposed -> 0/11). Fixed parse (one-array-per-line) + black-box CLI
+verify + floor (498209a). Attempt 2 (live, kvdb-cli 11 reqs): parse now works (14 reqs decomposed) BUT the governed final
+system scores **8/11 on the independent check — a REGRESSION from single-pass 10/11** (done=False; failed incr/clear/usage).
+TWO real defects: (1) the REPAIR LOOP DAMAGES working behavior — chasing incr/keys it broke clear+usage that single-pass had
+right; its internal 14-requirement check set (incl. non-behavioral "program_structure"/"data_structure" reqs) is a NOISY
+proxy for real coherence, so repair optimizes a wrong target and degrades true behavior. (2) the NO-REGRESS FLOOR FAILED —
+8/11 < 10/11 was returned; the floor only handles empty-decompose, it does NOT compare final quality. HONEST VERDICT: the
+governed decompose->verify->repair capstone, as built, is NET-NEGATIVE on this task — NOT a lift. SAFETY-CRITICAL FIX: the
+floor must return the BETTER of {build_system output, governed-repaired output} on a consistent check set, so governed can
+NEVER be worse than single-pass. After that, if governed only ever EQUALS single-pass (no lift), bank it honestly as
+floor-safe-but-no-measured-lift (a bookmark, like the training-scoreboard-null finding) — do NOT force/claim a lift that
+isn't in the live number. Possible deeper truth: single-pass 10/11 may be near the model's ceiling for this task and the
+repair can't reliably improve it (damages ~ as much as it fixes) — an honest negative to accept if it holds.
