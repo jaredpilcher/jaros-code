@@ -300,3 +300,57 @@ other scoreboard code — that tags serve/solve events as `MEMORY_HIT` (a reused
 
 #### Implements
 - [REQ-14] Amortization-ratio telemetry instrument
+
+### [TASK-10] Shadow-mode parity replay harness (REQ-15)
+
+Build the shadow-mode parity REPLAY MECHANISM + transcript FORMAT (PRIME-001 scoreboard instrument
+#6): the harness that will replay the owner's REAL Claude Code task prompts against jcode and score
+whether jcode achieves a comparable result. This task builds the harness only — it does NOT contain
+real Claude Code transcript data (that is an explicit follow-up the owner seeds later); the module
+must be fully offline-testable with synthetic transcripts. Reuse the existing black-box oracle shapes
+from `harness/system_suite.py` rather than duplicating subprocess/tree-kill logic (Tenet 3).
+
+#### Steps
+1. Create `harness/shadow_replay.py` with a `ShadowTask` dataclass (`task_id: str`, `prompt: str`,
+   `kind: str`, `acceptance: dict`) and document the JSONL transcript FORMAT in the module docstring:
+   one shadow task per line, `{task_id, prompt, kind ("build"|"modify"|"answer"|...), acceptance}`.
+   For `kind in ("build","modify")`, `acceptance = {"entry": <optional relative path, default
+   "main.py">, "checks": [[argv, stdin, expect], ...]}` — a list of black-box CLI checks in the same
+   `(argv, stdin, expected_substring)` shape used by `harness.system_suite.CreationTask.checks`. For
+   `kind == "answer"`, `acceptance = {"expect_substring": "..."}` (or `{"expect_all": [...]}` for
+   multiple required substrings).
+2. Implement `load_transcripts(path) -> list[ShadowTask]`: read the file line by line, `json.loads`
+   each non-blank line, and construct a `ShadowTask`; wrap parsing of each line in its own
+   `try/except Exception` so a malformed line is skipped (never raises) and everything that does
+   parse is returned; a missing/unreadable file returns `[]` rather than raising.
+3. Implement `run_shadow_replay(tasks, solve_fn, python_exe=None) -> dict`: for each task, create an
+   isolated temp dir via `tempfile.mkdtemp()`, call `solve_fn(task.prompt, root)` inside a
+   `try/except Exception` (any exception scores that task `passed=False` and the loop continues —
+   never raises). For `build`/`modify` tasks, resolve the entrypoint (the acceptance's `entry`, else
+   `_resolve_entry` on a `solve_fn`-returned plan dict, else `root/main.py`) and run every
+   `(argv, stdin, expect)` check via `harness.system_suite._run_cli`, importing rather than
+   reimplementing that function and `_resolve_entry`; `passed` is True only if every check's process
+   exits 0 and contains its expected substring. For `answer` tasks (and any other kind, as a
+   substring-check fallback), score via the acceptance's `expect_substring`/`expect_all` against
+   `str(solve_fn(...))`. Best-effort tag each task's solve as a `MODEL_CALL` via
+   `harness.amortization.record_event` inside a `harness.amortization.ScopedCollector` window (wrapped
+   in `try/except Exception` so amortization telemetry can never break the replay), and include the
+   window's `amortization_ratio()` result in the returned dict when available. Clean up each task's
+   temp dir best-effort after scoring. Return `{total, passed, parity_rate, per_task: [{task_id, kind,
+   passed}, ...], per_kind: {<kind>: {total, passed, rate}, ...}, amortization?}` where `parity_rate`
+   is `passed/total` and is `0.0` (never a divide error) when `total == 0`.
+4. Tag the new module's code with `# #EXT-005-REQ-15 Start` / `# #EXT-005-REQ-15 End` traceability
+   comments.
+5. Create `tests/test_shadow_replay.py` (offline, synthetic transcripts only — no real Claude Code
+   data): (a) a JSONL fixture with 2-3 build tasks with CLI-check acceptance plus one malformed line,
+   asserting `load_transcripts` returns only the tasks that parse; (b) a stub `solve_fn` that writes a
+   correct `main.py` for one task and a wrong/empty one for another, asserting `run_shadow_replay`
+   scores the right per-task `passed` values and an exact aggregate `parity_rate` (e.g. `1/2 == 0.5`);
+   (c) a `solve_fn` that raises, asserting `run_shadow_replay` never raises and scores that task
+   `passed=False`; (d) `run_shadow_replay([], solve_fn)` returns a well-formed aggregate with
+   `parity_rate == 0.0` and no divide error; (e) an `answer`-kind task scored by substring match. Run
+   `python -m pytest tests/test_shadow_replay.py -q` then the full `python -m pytest tests/ -q` suite
+   and keep both green.
+
+#### Implements
+- [REQ-15] Shadow-mode parity replay harness

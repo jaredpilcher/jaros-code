@@ -249,3 +249,32 @@ to fabricate a non-zero number. Wiring real serve paths to emit events is a foll
       reporting
 - [x] The instrument never calls the model and never raises on garbage/unknown source
       values or malformed input
+
+### [REQ-15] Shadow-mode parity replay harness
+
+THE PURSUIT scoreboard instrument #6 (PRIME-001 intent): the shadow-mode parity log
+replays the owner's REAL Claude Code task prompts against jcode and scores whether
+jcode achieves a comparable result — the one parity instrument nobody can game,
+because the tasks are real, not self-authored. This requirement builds the REPLAY
+HARNESS and the transcript FORMAT only. HONESTY (Tenet 3): there is no real transcript
+data yet, so there is no parity number to report until the owner seeds real Claude
+Code transcripts in this format — the instrument's value is that, once seeded, it is
+un-gameable; building the mechanism now must not be mistaken for, or padded with, a
+fabricated parity figure. Seeding real transcripts is an explicit standing follow-up
+for the owner.
+
+#### Acceptance Criteria
+- [x] A documented JSONL transcript format: one shadow task per line, `{task_id, prompt,
+      kind ("build"|"modify"|"answer"|...), acceptance}`, where `acceptance` is either a
+      list of black-box CLI checks `(argv, stdin, expect)` (reusing the existing
+      `harness.system_suite` oracle shapes) for build/modify tasks, or an
+      expected-substring check for answer tasks
+- [x] `load_transcripts(path) -> list[ShadowTask]` parses the JSONL, never raises, and
+      skips malformed lines while returning everything that does parse
+- [x] `run_shadow_replay(tasks, solve_fn, python_exe=None) -> dict` runs each task through
+      a pluggable `solve_fn`, scores it via its own acceptance check, and never raises —
+      any solve/exec failure scores that task `passed=False` and the run continues
+- [x] The result aggregates an overall parity rate and a per-kind breakdown, and handles
+      an empty task list without a divide error
+- [x] No fabricated parity number is reported anywhere until the owner supplies real
+      Claude Code transcripts in this format (the standing ask stays open)
