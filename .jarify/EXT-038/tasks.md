@@ -58,3 +58,61 @@ is a separate, later task). This is the safety envelope the future fetch capabil
 
 #### Implements
 - [REQ-1] Research-plane honesty + safety guards
+
+### [TASK-2] Read-only web-research fetch capability (REQ-2)
+
+Build the standalone `harness/web_research.py` module — a deterministic (no model calls), read-only
+web-fetch capability that runs strictly inside the REQ-1 guards already committed in
+`harness/research_guard.py`. This is the actual fetch mechanism the guards were built to contain; it
+is not yet wired into the orchestrator/planner (a separate, later task).
+
+#### Steps
+1. Create `harness/web_research.py` with a `ResearchResult` dataclass (`ok`, `status`, `final_url`,
+   `content_type`, `text_wrapped`, `truncated`, `note`) and an `EgressRefused` exception (raised, never
+   swallowed, whenever a target or redirect host is not permitted by the caller's allow-list, or an
+   SSRF check fails, or the scheme/method is not `http(s)`/GET).
+2. Implement `fetch(url, *, allowed_hosts, timeout=15, max_bytes=2_000_000) -> ResearchResult`: FIRST
+   call `research_guard.assert_research_allowed()` and let `ResearchDisabledError` propagate
+   uncaught — the guard-first contract, before any transport code runs. Then build
+   `policy = research_guard.research_egress_policy(*allowed_hosts)` (fail-closed `DENY_ALL` when
+   `allowed_hosts` is empty). Validate the URL scheme is `http`/`https` and the method is `GET` only
+   (else raise `EgressRefused`), parse the URL's hostname and raise `EgressRefused` when
+   `not policy.is_host_allowed(host)`.
+3. Add SSRF hardening: resolve the validated host to its IP address(es) (`socket.getaddrinfo`) and
+   raise `EgressRefused` if any resolved address is private/loopback/link-local per
+   `ipaddress.ip_address(...).is_private`/`.is_loopback`/`.is_link_local` (covering
+   `127.0.0.0/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `::1`, `fc00::/7`).
+4. Build a custom `urllib.request.HTTPRedirectHandler` subclass (installed on a private
+   `urllib.request.OpenerDirector`) that intercepts every redirect hop, re-parses the `Location`
+   header's host, and re-runs the SAME allow-list + SSRF checks before following it — a redirect to a
+   non-allow-listed or private host raises `EgressRefused` and stops following immediately. Cap the
+   number of redirect hops.
+5. Perform the GET via the custom opener with the given `timeout`, reading at most `max_bytes + 1`
+   bytes from the response stream (never loading an unbounded body into memory) to detect and flag
+   `truncated=True` when the body exceeds `max_bytes`. Decode using the response's declared charset
+   when present, else `utf-8` with `errors="replace"`.
+6. Route the decoded text through `research_guard.wrap_untrusted(text, source=final_url)` before
+   constructing the returned `ResearchResult` — there must be no code path that returns raw,
+   unwrapped fetched text to a caller.
+7. Wrap the transport call in a `try`/`except` that catches ordinary network failures (DNS failure,
+   connection refused, timeout, an HTTP error status, a decode error) and returns
+   `ResearchResult(ok=False, ..., note=str(exc))` instead of raising — only the guard-first check and
+   the `EgressRefused`/host-not-allowed/SSRF checks above may raise (loud, not silent, misuse
+   signaling).
+8. Add `tests/test_ext038_web_research.py` (OFFLINE ONLY — monkeypatch the module's opener/transport
+   call site so no real socket is ever used) covering: calling `fetch()` while
+   `research_guard.eval_lock()` is active raises `ResearchDisabledError` before any transport code runs
+   (load-bearing guard-first proof); a host not in `allowed_hosts` is refused (`EgressRefused`), no
+   transport call made; a simulated redirect response pointing at a non-allow-listed host is refused,
+   not followed; a non-`http(s)` scheme (e.g. `file://`) and a non-`GET` method are both refused; a
+   private/loopback resolved IP (mocked `socket.getaddrinfo`) for an otherwise allow-listed hostname is
+   refused (SSRF); an oversized response is truncated (`truncated=True`) without an unbounded read; the
+   returned `text_wrapped` always carries the `research_guard` wrap header/footer with no unwrapped
+   path; and a simulated network failure (mocked transport raising `URLError`/`socket.timeout`) yields
+   an honest `ok=False` with a descriptive `note`, never a raised exception.
+9. Run `python -m pytest tests/test_ext038_web_research.py tests/test_ext038_research_guard.py -q`
+   first (synchronously, in the foreground), then the full `python -m pytest tests/ -q` (synchronously,
+   in the foreground) to confirm the whole suite is green with no regression to any existing test.
+
+#### Implements
+- [REQ-2] Read-only web-research fetch — the agent researches the live web, gated + guarded

@@ -1,14 +1,26 @@
 {
-  "REQ-1": [
+  "REQ-2": [
     {
-      "file": "tests/test_ext038_research_guard.py",
-      "startLine": 25,
-      "endLine": 221
+      "file": "harness/web_research.py",
+      "startLine": 50,
+      "endLine": 266
     },
+    {
+      "file": "tests/test_ext038_web_research.py",
+      "startLine": 25,
+      "endLine": 336
+    }
+  ],
+  "REQ-1": [
     {
       "file": "harness/research_guard.py",
       "startLine": 46,
       "endLine": 262
+    },
+    {
+      "file": "tests/test_ext038_research_guard.py",
+      "startLine": 25,
+      "endLine": 221
     }
   ]
 }
