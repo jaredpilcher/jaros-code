@@ -560,3 +560,18 @@ HIGH-VARIANCE at n=1 — it either mostly-nails it (10-11/11) or fails hard (0/1
 is NOT a stable coherence number. NEXT (real instrument improvement the data demands): add an n>1 (median-of-k) option to
 run_coherence_suite so the coherence number is STABLE, and separate "build failed entirely" from "dropped a requirement"
 in the report. Honest — do NOT headline a single noisy 0/11 or 11/11.
+
+## ★★ COHERENCE FAILURE MODE CORRECTED (2026-07-04, median-of-3) — it's BUILD-RELIABILITY, not dropped-requirements
+
+The n>1 median-of-k measurement (repeats=3) on HARD_SLICE clarifies the earlier noisy n=1 signal: kvdb-cli median=1.0
+runs=[11,11,0] build_failed=1 dropped_req=0; taskmgr-cli median=1.0 runs=[11,11,11]. **Median coherence = 1.0 on BOTH hard
+11-req tasks — when single-pass build_system SUCCEEDS it nails ALL 11 interdependent requirements.** The variance is NOT
+gemma dropping individual requirements (dropped_req=0 across this sample); it's an occasional TOTAL BUILD FAILURE
+(build_failure_rate ~17% = 1/6 builds produced nothing runnable -> a 0). **This CORRECTS the capstone premise:** the
+governed decompose->repair lever chases DROPPED requirements that mostly don't exist at this scale — which is exactly WHY
+it was net-negative (nothing to repair; the repair only damaged working builds). The RIGHT lever the data points to is
+BUILD-RELIABILITY: best-of-k builds (build k times, keep the one that passes acceptance) masks the ~17% total-failure rate,
+is deterministic (test-gated selection, no model-drift), and directly raises effective coherence — unlike the capstone.
+(Caveat: earlier runs DID show occasional partials e.g. 10/11, so both failure modes exist; best-of-k helps BOTH.) This is
+the honest convergence: the instrument + median-of-k didn't just measure — they RE-DIAGNOSED the problem and pointed to the
+correct, cheaper lever. Next: a best-of-k build wrapper (test-gated selection over k build_system draws).
