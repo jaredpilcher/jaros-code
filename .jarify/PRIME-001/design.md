@@ -19,6 +19,35 @@ at $0. The router, the two planes, the swarm, and the tool library below are the
 `/modifysystem` commands, and its parity is measured end-to-end by held-out creation + modification suites
 graded through the CLI by independent oracles.
 
+**REAL systems + the ratchet (owner clarification, 2026-07-03) — the capabilities this demands.** The
+target is REAL systems (Flask/FastAPI/Django servers, pandas/networkx/SQLAlchemy libraries, Qdrant/Cassandra/
+Postgres/Redis datastores), built + modified honestly and at ever-rising difficulty. Four design planes are
+added/extended to serve it, each on the two-plane discipline (model emits inert Decisions; deterministic tools
+act; every effect logged):
+1. **Honest real-system acceptance (replaces the stdout-only oracle for real systems).** A build/modify is
+   `done` only when the REAL system is verified working: a **server/HTTP acceptance oracle** (start the app on
+   a free port → HTTP-request the declared endpoints → assert status+JSON → tree-kill teardown; `harness/
+   server_oracle.py`), and analogously a **datastore/service acceptance** (bring the service up → run a real
+   query → assert real rows). No hollow import-smoke pass may report `done` for a real system.
+2. **Web research plane (read-only, sanctioned).** A deterministic research tool fetches CURRENT external
+   information — official framework/library docs, datastore setup guides, evolving protocol specs (A2A, etc.) —
+   which a small agent reads to implement against the *latest* reality, not stale training memory. The system
+   must also **decide when research is required** (an unfamiliar/fast-moving dependency → research first). All
+   REASONING stays on the local Jetson model ($0, Tenet 2 intact); this plane only retrieves facts. It is
+   network egress, so it is **gated + observed** (allow-listed research reads; an eval-leak guard forbids ever
+   fetching held-out answers — Tenet 3), and it **supersedes the old "harness makes no network calls" stance
+   for research + dependency setup only**.
+3. **External-dependency + service setup.** Extend the env toolbelt (EXT-037) to actually install pinned
+   packages and to **provision + configure the services/databases** a system needs (from the researched docs),
+   with localhost-only binding, resource caps, and teardown — so a built system that needs Qdrant/Cassandra can
+   be stood up and verified end-to-end.
+4. **Repository comprehension + complex planning (for large changes).** Before modifying an unfamiliar or large
+   repo, a comprehension pass (repo map + dependency/call structure + targeted retrieval; extends
+   `harness/repo_map.py`) builds an accurate model of it; a **planner** then forms a correct, ordered,
+   verifiable plan for the change — large or small, complex or trivial — which the execution plane carries out
+   and the acceptance oracle verifies. The difficulty ratchet (§"The difficulty ratchet") drives all of the
+   above from easy→hard continuously, so the system must keep improving to hold parity.
+
 ```text
    prompt ("build a job-queue CLI with priorities + retry" │ "add a delete command to the kv-store")
         │

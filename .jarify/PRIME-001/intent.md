@@ -23,6 +23,36 @@ build-and-modify CLI is **not one feature among many; it is the point** — and 
 that measure it (the held-out creation + modification suites, graded end-to-end through the CLI by
 independent oracles) are therefore the headline scoreboard for the whole pursuit.
 
+**REAL systems, increasingly complex — the ratchet (owner clarification, 2026-07-03).** "Complete
+software systems" means **REAL** ones, not toy stdin/stdout scripts: real web servers and API
+frameworks (Flask/FastAPI/Django), real data/graph/ML libraries (pandas, networkx, SQLAlchemy…),
+real external services and **databases** (Qdrant, Cassandra, Postgres, Redis…). The product both
+**builds** such systems from a prompt and **modifies** existing ones, and the bar **continuously
+ratchets** — from small easy changes to large complex ones, from one file to whole repositories —
+so the instruments get harder over time and the system must keep improving to stay at parity. A
+capability only counts when the real system is **honestly verified working** (a server answers real
+HTTP, a DB query returns real rows, a library computes the real result), never a hollow
+import-smoke pass. To do this, the product must be able to, autonomously from a prompt:
+(a) **research the web for current, correct information — and KNOW when it must** — read the latest
+official documentation, framework/library APIs, and evolving protocols (e.g. the A2A agent
+protocol, vector-DB and datastore docs) before implementing against them, rather than guessing from
+stale training memory;
+(b) **set up and depend on external components** — install packages, stand up and configure the
+databases/services a system needs (from the researched docs), and wire the system to them;
+(c) **research and comprehend large, complex repositories** it is changing — build an accurate
+mental model of an unfamiliar codebase before editing it;
+(d) **form complex, correct plans** for changes of any size — decompose a large multi-file, multi-
+component change (or a small surgical one) into a correct ordered plan, execute it, and verify.
+**Tenet reconciliation (this does NOT weaken Tenet 2):** web research and package/service setup are
+**read-only information retrieval and build-time actions**, not inference — *every reasoning call
+still runs on the local Jetson model at $0; no cloud/paid model is ever used for thinking.* Fetching
+public documentation is the system reading the manual, exactly as a developer does; it is explicitly
+sanctioned here and **supersedes the earlier "the harness makes no network calls" stance for the
+product's research + dependency-setup capability** (network egress stays gated/observed for safety —
+research reads are allowed; arbitrary egress from *built* code remains off by default). The honesty
+guard is unchanged and absolute: web access must **never** be used to leak or look up held-out eval
+answers (Tenet 3).
+
 **The bar is explicit and high — it is the very North Star: the system must become so
 good that it overcomes the model limitations of Gemma 4 2B (`e2b`) and is AS GOOD OR BETTER,
 in ALL ways, than the Claude Code CLI running on Claude Opus 4.8 at its max.** Matching
