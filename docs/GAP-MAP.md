@@ -575,3 +575,18 @@ is deterministic (test-gated selection, no model-drift), and directly raises eff
 (Caveat: earlier runs DID show occasional partials e.g. 10/11, so both failure modes exist; best-of-k helps BOTH.) This is
 the honest convergence: the instrument + median-of-k didn't just measure — they RE-DIAGNOSED the problem and pointed to the
 correct, cheaper lever. Next: a best-of-k build wrapper (test-gated selection over k build_system draws).
+
+## ★ BEST-OF-K live: masks TOTAL failures, but SELECTION inherits the sparse self-checklist (2026-07-04, honest nuance)
+
+Live verify build_system_best_of_k(kvdb-cli, k=2, gemma): done=True, attempts_run=1 (EARLY-EXIT), the build passed its OWN
+derived acceptance (4/4 checks) — but the INDEPENDENT 11-req check scored 10/11 (missed `usage`). HONEST FINDING: best-of-k
+correctly MASKS total build failures (retries a 0-check build), BUT it selects/early-exits on the BUILD'S SELF-DERIVED
+acceptance checklist (only 4 checks here), which does NOT cover all 11 independent requirements — so it early-exited on a
+build that independently drops `usage`. This is the SAME blind-spot that runs through the whole session: the model's
+SELF-derived acceptance is incomplete, so build.done AND best-of-k selection are both blind to requirements the model
+never wrote a check for (exactly what the hollow-FastAPI-done and the independent coherence oracle exposed). REFINEMENT
+(the honest next lever): score best-of-k attempts against a FULLER / INDEPENDENT requirement set (enumerate requirements +
+derive an independent check per requirement — like the coherence instrument), not the model's sparse self-checklist. Then
+best-of-k selects the attempt that satisfies the MOST real requirements, not the one that passes its own thin self-test.
+best-of-k is UNIT-proven (masks total failures); this live run is the honest caveat that selection quality = acceptance
+completeness. THE THROUGH-LINE OF THE NIGHT: independent verification beats self-report, everywhere.
