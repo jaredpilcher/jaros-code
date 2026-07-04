@@ -62,6 +62,24 @@ CHECKLIST_ONE_FAILING = """[
   {"name": "wrong expectation", "code": "from helper import add\\nassert add(1, 2) == 999\\n"}
 ]"""
 
+# #EXT-037-REQ-7 Start
+# --- EXT-037 / REQ-7 fixtures: secure_exec scan-gate + sandboxed acceptance execution ---
+
+# A syntactically valid `helper.py` (same `add` export the plan expects) that ALSO contains
+# a dangerous SUBPROCESS/SHELL operation -- the shape `harness.secure_exec.scan_code` must
+# classify as a violation and refuse to run.
+HELPER_DANGEROUS = (
+    "import os\n\n\n"
+    "def add(a, b):\n    os.system('echo pwned')\n    return a + b\n"
+)
+
+# A checklist whose check code asserts a host secret env var is ABSENT from the acceptance
+# subprocess -- passes only when harness.secure_exec's env-scrub is actually live.
+CHECKLIST_ENV_SCRUB = """[
+  {"name": "env scrubbed", "code": "import os\\nassert os.environ.get('JCODE_TEST_SECRET_TOKEN') is None\\n"}
+]"""
+# #EXT-037-REQ-7 End
+
 _MODULE_NAME_RE = re.compile(r"module `([^`]+)`")
 
 
@@ -966,3 +984,69 @@ def test_best_of_k_build_system_unaffected(tmp_path):
     assert result["done"] is True
     assert result["unmet"] == []
     assert set(result["modules"]) == {"helper.py", "cli.py"}
+
+
+# #EXT-037-REQ-7 Start
+# --- EXT-037 (TASK-10) / REQ-7: secure_exec wired into build_system's own acceptance path ---
+#
+# The live gap (owner-directed, 2026-07-04): `build_system`'s acceptance step ran
+# model-generated code as a plain subprocess with the FULL host environment and no static
+# scan. These tests prove (a) a SCAN GATE refuses to even RUN a dangerous build, (b) a clean
+# build still ships/passes exactly as before now that its acceptance execution is sandboxed,
+# and (c) the sandboxed acceptance run genuinely scrubs a host secret env var -- all OFFLINE,
+# via the same fake-llm convention as the rest of this file.
+
+def test_security_scan_refuses_dangerous_generated_code(tmp_path):
+    """SCAN GATE (REQ-7): a build whose generated module contains a dangerous op
+    (`os.system`) is REFUSED before its acceptance ever runs -- `done=False`, an honest
+    SECURITY note, a populated `security` report naming the violation category, and the
+    acceptance checklist is NEVER derived/executed (proving the dangerous code never ran)."""
+    root = tmp_path / "built"
+    llm = _CannedLlm(module_first={"helper.py": HELPER_DANGEROUS, "cli.py": CLI_OK})
+    result = build_system(SPEC, root, llm=llm)
+
+    assert result["shipped"] is True        # assembly (files on disk) is preserved
+    assert result["done"] is False
+    assert "SECURITY" in result["note"]
+    assert result["security"] is not None
+    assert result["security"]["ok"] is False
+    assert any(v.get("category") == "SUBPROCESS/SHELL" for v in result["security"]["violations"])
+    # the acceptance checklist was NEVER derived -- refused BEFORE any execution was attempted
+    assert not [p for p in llm.prompts if "ACCEPTANCE CHECKS" in p]
+    # the acceptance-check temp artifact was never even written
+    assert not (root / "_s2s_acceptance_check.py").exists()
+    # the dangerous module WAS still written to disk -- only EXECUTION was withheld
+    assert (root / "helper.py").is_file()
+
+
+def test_clean_build_still_ships_and_passes_via_sandboxed_acceptance(tmp_path):
+    """CLEAN BUILD STILL WORKS: a normal fake-llm build with no dangerous operations still
+    assembles, RUNS (now via `harness.secure_exec.run_sandboxed` instead of a plain
+    subprocess), and passes acceptance -- proving the scan gate + sandbox wiring doesn't
+    break a normal build."""
+    root = tmp_path / "built"
+    llm = _CannedLlm()
+    result = build_system(SPEC, root, llm=llm)
+
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert result["security"] is None       # no refusal -- the field stays unset on a clean pass
+
+
+def test_env_scrub_live_in_build_system_acceptance(tmp_path, monkeypatch):
+    """ENV-SCRUB IN THE REAL PATH (REQ-7): a host secret env var is INVISIBLE to the
+    sandboxed acceptance-check subprocess -- proving `harness.secure_exec`'s scrubbed
+    environment is genuinely LIVE in `build_system`'s own acceptance execution, not just
+    the standalone `secure_exec` test suite. Before this task, the acceptance subprocess
+    inherited the FULL host environment (a plain `harness.multi_file._run` call), so this
+    check would have FAILED (the secret would have been visible)."""
+    monkeypatch.setenv("JCODE_TEST_SECRET_TOKEN", "super-secret-value-12345")
+    root = tmp_path / "built"
+    llm = _CannedLlm(checklist=CHECKLIST_ENV_SCRUB)
+    result = build_system(SPEC, root, llm=llm)
+
+    assert result["shipped"] is True
+    assert result["done"] is True    # the check asserting the secret is ABSENT actually passed
+    assert result["unmet"] == []
+# #EXT-037-REQ-7 End

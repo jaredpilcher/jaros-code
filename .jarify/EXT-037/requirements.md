@@ -271,14 +271,38 @@ the hosts it actually needs (e.g. `pypi.org`, `docs.python.org`) — never a bla
 path that uses network APIs is refused ONLY when no `EgressPolicy` permits it; supplying an allow-list
 policy that covers the used host(s) is enough to pass the static gate.
 
-**HONEST STATUS (Tenet 3):** this task lands the standalone `harness/secure_exec.py` module (`EgressPolicy`,
-`scan_code`, `run_sandboxed`, `secure_run_generated`) and its offline test suite — the FOUNDATION. It is
-**deliberately NOT yet wired into `harness/system_builder.py`'s acceptance step** (the live gap named above
-still exists in production until that follow-up task lands); this task's scope is the sandbox module + its
-own tests only. **Honest platform limitation:** true runtime network blocking needs an OS-level mechanism
-(a Linux network namespace or firewall rule) that this task does not implement — egress is gated at the
-STATIC layer only (the AST scan + `EgressPolicy` refuse un-permitted egress code before it ever runs);
-runtime egress enforcement on the Jetson/Linux target is an explicit, named follow-up, not claimed here.
+**HONEST STATUS (Tenet 3, updated by TASK-10):** TASK-9 landed the standalone `harness/secure_exec.py`
+module (`EgressPolicy`, `scan_code`, `run_sandboxed`, `secure_run_generated`) and its offline test suite —
+the FOUNDATION. TASK-10 then closed the live gap this requirement named: `harness/system_builder.py`'s
+`build_system` now (a) runs a **SECURITY SCAN GATE** (`scan_code(built, egress_policy=EgressPolicy.DENY_ALL)`)
+right after assembly and BEFORE either acceptance path (the HTTP/web-service checks or the plain checklist)
+ever executes — any SUBPROCESS/SHELL, DYNAMIC-EXEC, DESTRUCTIVE/FS-OUTSIDE-ROOT, or un-permitted
+NETWORK/EGRESS operation in the generated modules REFUSES the build (`shipped=True` — the files are still
+assembled to disk for inspection — but `done=False`, an honest `"SECURITY: build refused — ..."` note, and
+a new `security` field carrying the full `SecurityReport`); and (b) routes the acceptance-check execution
+itself (`_run_check`/`_run_check_verbose`, reused by the REQ-5 repair loop and by `modify_system`) through a
+new `_run_acceptance_cmd` helper that calls `harness.secure_exec.run_sandboxed` instead of the prior plain
+`harness.multi_file._run` subprocess call — the check script (and anything it in turn spawns, e.g. its own
+`python main.py` subprocess) now runs with a SCRUBBED environment (no ambient host secrets), POSIX resource
+caps, and the same timeout + process-tree-kill discipline, egress DENY_ALL by default. `_result`'s return
+dict gained the additive, backward-compatible `security` field (`None` on every non-refused path). Proven
+by three new offline fake-llm tests in `tests/test_ext036_system_builder.py`: a build whose generated
+module contains `os.system(...)` is refused before its acceptance checklist is ever derived/run; a normal
+clean build still ships/passes exactly as before (now via the sandboxed path); and a host secret env var
+set in the test process is genuinely INVISIBLE to the sandboxed acceptance subprocess (this exact check
+would have FAILED before TASK-10, since the prior plain-subprocess path inherited the full host
+environment). **Honest platform limitation (unchanged from TASK-9):** true runtime network blocking needs
+an OS-level mechanism (a Linux network namespace or firewall rule) this module does not implement — egress
+is gated at the STATIC layer only.
+
+**HONEST SCOPE (TASK-10 wired `build_system`'s OWN acceptance path only):** `harness/server_oracle.py`
+(the `uvicorn`-based HTTP acceptance path `build_system` calls when a web service is detected) and
+`harness/system_suite.py`'s `_run_cli` (used by the coherence/suite tooling) also execute model-generated
+code as a plain, unsandboxed subprocess today — sandboxing those is an EXPLICIT, NAMED follow-up, not
+silently deferred (see the updated Acceptance Criteria below). The security SCAN GATE above does cover a
+detected web service too (it runs before the HTTP-vs-checklist branch), so a dangerous web-service build is
+still refused before `serve_and_check`/`uvicorn` ever starts it — only the SANDBOXING (scrubbed env/resource
+caps) of `server_oracle`'s own `uvicorn` subprocess and `system_suite._run_cli` remain outstanding.
 
 #### Acceptance Criteria
 - [x] `EgressPolicy` (default-deny, `DENY_ALL`, an `allow(*hosts)` allow-list constructor, and
@@ -303,8 +327,24 @@ runtime egress enforcement on the Jetson/Linux target is an explicit, named foll
   an `allow()` policy covering the used host), the env-scrub proof (a test-set secret is invisible to the
   child, a safe var like `PATH` still present), timeout+kill with no orphan, and `secure_run_generated`
   refusing a violating snippet while running a clean one
-- [ ] **Follow-up (not in this task's scope):** wire `secure_run_generated` into
-  `harness/system_builder.py`'s acceptance-run step so `build_system`'s actual `python main.py`/
-  `uvicorn main:app` execution goes through the sandbox instead of a plain `subprocess` call
+- [x] **TASK-10:** `harness/system_builder.py`'s `build_system` runs a SECURITY SCAN GATE
+  (`scan_code(built, egress_policy=EgressPolicy.DENY_ALL)`) immediately after assembly, before
+  EITHER acceptance path (HTTP or plain checklist) executes anything — a violation REFUSES the
+  build (`shipped=True`, `done=False`, an honest `"SECURITY: build refused — ..."` note, a
+  populated `security` field), and never runs the offending code
+- [x] **TASK-10:** `build_system`'s own acceptance-check execution (`_run_check`/
+  `_run_check_verbose`, shared by the REQ-5 repair loop and `modify_system`) now runs through
+  `harness.secure_exec.run_sandboxed` (via a new `_run_acceptance_cmd` helper) instead of a plain
+  `harness.multi_file._run` subprocess call — SCRUBBED environment (no ambient host secrets),
+  POSIX resource caps, DENY_ALL egress by default, same timeout + tree-kill discipline; a clean
+  build still ships/passes unchanged, proven by three new offline fake-llm tests (security
+  refusal, clean-build regression, and a live env-scrub proof) in
+  `tests/test_ext036_system_builder.py`
+- [ ] **Follow-up (not in this task's scope):** `harness/server_oracle.py`'s `uvicorn` subprocess
+  (the HTTP acceptance path for a detected web service) and `harness/system_suite.py`'s
+  `_run_cli` also run model-generated code as a plain, unsandboxed subprocess today — routing
+  those through `run_sandboxed` too (the scan gate above already covers refusing a *dangerous*
+  web-service build before either runs; only the env-scrub/resource-cap SANDBOXING of their own
+  execution is still outstanding)
 - [ ] **Follow-up (not in this task's scope):** real runtime egress ENFORCEMENT (a Linux network
   namespace or firewall rule on the Jetson/Linux deployment target) — today's gate is static-only

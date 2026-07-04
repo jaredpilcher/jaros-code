@@ -1,72 +1,5 @@
 {
-  "REQ-5": [
-    {
-      "file": "harness/system_finalize.py",
-      "startLine": 59,
-      "endLine": 227
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 147,
-      "endLine": 169
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 525,
-      "endLine": 539
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 667,
-      "endLine": 797
-    },
-    {
-      "file": "tests/test_ext037_finalize.py",
-      "startLine": 26,
-      "endLine": 296
-    },
-    {
-      "file": "tests/test_ext037_cli_git.py",
-      "startLine": 28,
-      "endLine": 157
-    }
-  ],
   "REQ-1": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 189,
-      "endLine": 222
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 761,
-      "endLine": 766
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 781,
-      "endLine": 783
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 883,
-      "endLine": 889
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1118,
-      "endLine": 1124
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1163,
-      "endLine": 1175
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 1190,
-      "endLine": 1192
-    },
     {
       "file": "harness/coding_loop.py",
       "startLine": 112,
@@ -88,18 +21,58 @@
       "endLine": 104
     },
     {
-      "file": "tests/test_ext037_root_enforcement.py",
-      "startLine": 29,
-      "endLine": 212
+      "file": "harness/system_builder.py",
+      "startLine": 196,
+      "endLine": 229
     },
     {
-      "file": "tests/test_ext037_pathjail.py",
-      "startLine": 26,
-      "endLine": 162
+      "file": "harness/system_builder.py",
+      "startLine": 787,
+      "endLine": 792
     },
     {
-      "file": ".jaros-data/tools/_pathjail.py",
-      "startLine": 22,
+      "file": "harness/system_builder.py",
+      "startLine": 807,
+      "endLine": 809
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 914,
+      "endLine": 920
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1176,
+      "endLine": 1182
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1221,
+      "endLine": 1233
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1248,
+      "endLine": 1250
+    },
+    {
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 23,
+      "endLine": 29
+    },
+    {
+      "file": ".jaros-data/tools/apply_patch_tool.py",
+      "startLine": 46,
+      "endLine": 52
+    },
+    {
+      "file": ".jaros-data/tools/search_replace_tool.py",
+      "startLine": 27,
+      "endLine": 33
+    },
+    {
+      "file": ".jaros-data/tools/search_replace_tool.py",
+      "startLine": 70,
       "endLine": 76
     },
     {
@@ -113,24 +86,51 @@
       "endLine": 53
     },
     {
-      "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 27,
-      "endLine": 33
-    },
-    {
-      "file": ".jaros-data/tools/search_replace_tool.py",
-      "startLine": 70,
+      "file": ".jaros-data/tools/_pathjail.py",
+      "startLine": 22,
       "endLine": 76
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 23,
-      "endLine": 29
+      "file": "tests/test_ext037_root_enforcement.py",
+      "startLine": 29,
+      "endLine": 212
     },
     {
-      "file": ".jaros-data/tools/apply_patch_tool.py",
-      "startLine": 46,
-      "endLine": 52
+      "file": "tests/test_ext037_pathjail.py",
+      "startLine": 26,
+      "endLine": 162
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 147,
+      "endLine": 169
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 525,
+      "endLine": 539
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 667,
+      "endLine": 797
+    },
+    {
+      "file": "harness/system_finalize.py",
+      "startLine": 59,
+      "endLine": 227
+    },
+    {
+      "file": "tests/test_ext037_finalize.py",
+      "startLine": 26,
+      "endLine": 296
+    },
+    {
+      "file": "tests/test_ext037_cli_git.py",
+      "startLine": 28,
+      "endLine": 157
     }
   ],
   "REQ-7": [
@@ -140,9 +140,49 @@
       "endLine": 687
     },
     {
+      "file": "harness/system_builder.py",
+      "startLine": 189,
+      "endLine": 194
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 629,
+      "endLine": 645
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 659,
+      "endLine": 661
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 699,
+      "endLine": 701
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 837,
+      "endLine": 844
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 922,
+      "endLine": 947
+    },
+    {
       "file": "tests/test_ext037_secure_exec.py",
       "startLine": 25,
       "endLine": 328
+    },
+    {
+      "file": "tests/test_ext036_system_builder.py",
+      "startLine": 65,
+      "endLine": 81
+    },
+    {
+      "file": "tests/test_ext036_system_builder.py",
+      "startLine": 989,
+      "endLine": 1052
     }
   ],
   "REQ-6": [
@@ -158,21 +198,6 @@
     }
   ],
   "REQ-4": [
-    {
-      "file": "tests/test_ext037_git_tools.py",
-      "startLine": 36,
-      "endLine": 373
-    },
-    {
-      "file": ".jaros-data/tools/_gittools.py",
-      "startLine": 23,
-      "endLine": 70
-    },
-    {
-      "file": ".jaros-data/tools/_gitsecrets.py",
-      "startLine": 18,
-      "endLine": 50
-    },
     {
       "file": ".jaros-data/tools/git_status_tool.py",
       "startLine": 23,
@@ -207,40 +232,28 @@
       "file": ".jaros-data/tools/git_branch_tool.py",
       "startLine": 27,
       "endLine": 91
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "tests/test_ext037_gated_exec.py",
-      "startLine": 34,
-      "endLine": 148
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 86,
-      "endLine": 101
+      "file": ".jaros-data/tools/_gitsecrets.py",
+      "startLine": 18,
+      "endLine": 50
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 106,
-      "endLine": 111
+      "file": ".jaros-data/tools/_gittools.py",
+      "startLine": 23,
+      "endLine": 70
     },
     {
-      "file": ".jaros-data/tools/shell_exec_tool.py",
-      "startLine": 120,
-      "endLine": 136
+      "file": "tests/test_ext037_git_tools.py",
+      "startLine": 36,
+      "endLine": 373
     }
   ],
   "REQ-3": [
     {
-      "file": "tests/test_ext037_env_tools.py",
-      "startLine": 31,
-      "endLine": 256
-    },
-    {
-      "file": ".jaros-data/tools/_envtools.py",
-      "startLine": 12,
-      "endLine": 49
+      "file": ".jaros-data/tools/python_detect_tool.py",
+      "startLine": 19,
+      "endLine": 70
     },
     {
       "file": ".jaros-data/tools/venv_pin_tool.py",
@@ -258,9 +271,36 @@
       "endLine": 84
     },
     {
-      "file": ".jaros-data/tools/python_detect_tool.py",
-      "startLine": 19,
-      "endLine": 70
+      "file": ".jaros-data/tools/_envtools.py",
+      "startLine": 12,
+      "endLine": 49
+    },
+    {
+      "file": "tests/test_ext037_env_tools.py",
+      "startLine": 31,
+      "endLine": 256
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 86,
+      "endLine": 101
+    },
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 106,
+      "endLine": 111
+    },
+    {
+      "file": ".jaros-data/tools/shell_exec_tool.py",
+      "startLine": 120,
+      "endLine": 136
+    },
+    {
+      "file": "tests/test_ext037_gated_exec.py",
+      "startLine": 34,
+      "endLine": 148
     }
   ]
 }

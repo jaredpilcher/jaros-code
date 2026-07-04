@@ -186,6 +186,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+# #EXT-037-REQ-7 Start
+# TASK-10: wire the standalone sandbox module (REQ-7's foundation) into build_system's own
+# acceptance execution -- the live gap named by the owner (2026-07-04): model-generated code
+# was run as a plain subprocess with the FULL host environment and no static scan.
+from harness.secure_exec import EgressPolicy, run_sandboxed, scan_code
+# #EXT-037-REQ-7 End
+
 # #EXT-037-REQ-1 Start
 # TASK-2: root-jail every module write this module performs directly (bypassing the
 # Decision/tool layer entirely -- `build_system`/`modify_system` write files straight to
@@ -619,20 +626,39 @@ def _http_check_label(check: dict) -> str:
 # #EXT-036-REQ-22 End
 # #EXT-036-REQ-4 Start
 
+# #EXT-037-REQ-7 Start
+# TASK-10: the SANDBOXED replacement for the prior plain ``harness.multi_file._run`` call --
+# defense in depth alongside the scan gate above. Every acceptance-check execution now goes
+# through ``harness.secure_exec.run_sandboxed``: a SCRUBBED environment (no ambient host
+# secrets -- API keys, LLAMACPP_*, tokens -- reach the model-generated check script or
+# anything it in turn spawns, e.g. the check script's own ``python main.py`` subprocess),
+# POSIX resource caps, and the same timeout + process-tree-kill discipline the prior plain
+# subprocess path already had. Egress is DENY_ALL by default (a generated CLI/service
+# acceptance run has no legitimate need for network access). Never raises.
+def _run_acceptance_cmd(cwd: str, cmd: str) -> tuple[bool, str]:
+    timeout = float(os.environ.get("JCODE_TEST_TIMEOUT_S", "120"))
+    result = run_sandboxed(cmd, cwd=cwd, egress_policy=EgressPolicy.DENY_ALL, timeout=timeout)
+    out = (result.get("stdout") or "") + (result.get("stderr") or "")
+    if result.get("timed_out") and not out:
+        out = f"acceptance check timed out after {timeout}s (treated as not-passing): {cmd}"
+    return bool(result.get("ok")), out
+# #EXT-037-REQ-7 End
+
 
 def _run_check(root: Path, check: dict) -> bool:
     """RUN one acceptance check against the assembled system (the real Tenet-3 gate — not
-    prose). Reuses ``harness.multi_file._run`` (timeout + tree-kill already handled there).
-    A temp check-script name is used so it never collides with a planned module."""
-    from harness.multi_file import _run as _run_cmd
-
+    prose). Runs via ``_run_acceptance_cmd`` (REQ-7: scrubbed env, resource caps, timeout +
+    tree-kill). A temp check-script name is used so it never collides with a planned
+    module."""
     code = check.get("code", "")
     if not code:
         return False
     chk_path = root / "_s2s_acceptance_check.py"
     try:
         chk_path.write_text(code, encoding="utf-8", newline="\n")
-        ok, _out = _run_cmd(str(root), "python _s2s_acceptance_check.py")
+        # #EXT-037-REQ-7 Start
+        ok, _out = _run_acceptance_cmd(str(root), "python _s2s_acceptance_check.py")
+        # #EXT-037-REQ-7 End
         return ok
     except Exception:
         return False
@@ -662,17 +688,17 @@ MAX_SYSTEM_REPAIR_ROUNDS = 2   # bounded system-level (acceptance-driven) repair
 
 def _run_check_verbose(root: Path, check: dict) -> tuple[bool, str]:
     """Like ``_run_check`` but also returns the run output (stdout+stderr) so a failing
-    check can be fed back to the model as repair feedback (REQ-5). Reuses the same
-    execution path (``harness.multi_file._run``); never raises."""
-    from harness.multi_file import _run as _run_cmd
-
+    check can be fed back to the model as repair feedback (REQ-5). Runs via the same
+    sandboxed execution path (``_run_acceptance_cmd``, REQ-7); never raises."""
     code = check.get("code", "")
     if not code:
         return False, "no check code"
     chk_path = root / "_s2s_acceptance_check.py"
     try:
         chk_path.write_text(code, encoding="utf-8", newline="\n")
-        ok, out = _run_cmd(str(root), "python _s2s_acceptance_check.py")
+        # #EXT-037-REQ-7 Start
+        ok, out = _run_acceptance_cmd(str(root), "python _s2s_acceptance_check.py")
+        # #EXT-037-REQ-7 End
         return ok, out
     except Exception as exc:
         return False, str(exc)
@@ -807,10 +833,15 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
 
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
-            repairs=None, plan_repair: str = "") -> dict:
+            repairs=None, plan_repair: str = "", security=None) -> dict:
+    # #EXT-037-REQ-7 Start
+    # TASK-10: `security` is an additive, backward-compatible field (default None) -- only
+    # populated when the REQ-7 scan gate actually refuses a build; every other call site is
+    # unchanged.
     return {"modules": modules or {}, "shipped": shipped, "done": done,
             "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or [],
-            "plan_repair": plan_repair}
+            "plan_repair": plan_repair, "security": security}
+    # #EXT-037-REQ-7 End
 
 
 def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
@@ -887,6 +918,33 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
             return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"assembly failed: module {name!r} refused: {escape}")
     # #EXT-037-REQ-1 End
+
+    # #EXT-037-REQ-7 Start
+    # 3b. SECURITY SCAN GATE (TASK-10/REQ-7) — refuse to EXECUTE any acceptance path (HTTP
+    # or plain checklist) when the assembled modules trip scan_code's dangerous-operation
+    # classifier: SUBPROCESS/SHELL, DYNAMIC-EXEC, DESTRUCTIVE/FS-OUTSIDE-ROOT, or an
+    # un-permitted NETWORK/EGRESS call. A generated CLI/service has no legitimate business
+    # doing any of these; refusing here means dangerous model-generated code NEVER RUNS on
+    # the host. Assembly (the files already written to `root`) is preserved (`shipped=True`
+    # so a caller can still inspect what was refused) -- only EXECUTION is withheld.
+    # DENY_ALL egress by default: a generated CLI/service acceptance run has no legitimate
+    # need for network access (the owner's egress-is-gated-not-blocked design applies to a
+    # future caller that explicitly supplies a looser EgressPolicy, not to this default).
+    security_report = scan_code(built, egress_policy=EgressPolicy.DENY_ALL)
+    if not security_report.ok:
+        categories = sorted({v.get("category", "?") for v in security_report.violations})
+        detail = "; ".join(
+            f"{v.get('category')}: {v.get('detail')} (line {v.get('lineno')}, {v.get('file')})"
+            for v in security_report.violations[:5]
+        )
+        return _result(
+            modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
+            unmet=["build refused on security scan: " + ", ".join(categories)],
+            note="SECURITY: build refused — " + detail,
+            security={"ok": False, "violations": security_report.violations,
+                      "egress_ops": security_report.egress_ops, "notes": security_report.notes},
+        )
+    # #EXT-037-REQ-7 End
 
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
     # #EXT-036-REQ-22 Start

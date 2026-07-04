@@ -539,3 +539,47 @@ step is an explicit, separate follow-up (named, not silently deferred).
 
 #### Implements
 - [REQ-7] Secure sandboxed execution of generated code + gated egress
+
+### [TASK-10] Wire `harness/secure_exec.py` into `build_system`'s acceptance execution — close the live gap (REQ-7)
+
+TASK-9 landed the standalone sandbox module (`EgressPolicy`, `scan_code`, `run_sandboxed`,
+`secure_run_generated`) but left it deliberately unwired — `build_system`'s acceptance step still ran
+model-generated code as a plain subprocess with the FULL host environment and no static scan. This task
+closes that live gap by wiring the module into `harness/system_builder.py` itself: a SECURITY SCAN GATE
+that refuses to execute a build whose generated modules trip a dangerous-operation classification, and
+a SANDBOXED execution path (scrubbed environment, resource caps, DENY_ALL egress by default) for the
+acceptance-check subprocess that used to be a plain `harness.multi_file._run` call.
+
+#### Steps
+1. Import `EgressPolicy`, `run_sandboxed`, `scan_code` from `harness.secure_exec` into
+   `harness/system_builder.py`.
+2. Add a SECURITY SCAN GATE in `build_system`, immediately after ASSEMBLE and before EITHER
+   acceptance path (the HTTP/web-service branch or the plain checklist branch) ever executes
+   anything: call `scan_code(built, egress_policy=EgressPolicy.DENY_ALL)`; on `not report.ok`,
+   return a result with `shipped=True` (assembly preserved for inspection), `done=False`, an
+   honest `"SECURITY: build refused — <violation categories/details>"` note, and a new additive
+   `security` field on the result dict carrying the full `SecurityReport`. Add the `security`
+   keyword (default `None`, backward compatible) to the shared `_result(...)` helper.
+3. Add a `_run_acceptance_cmd(cwd, cmd)` helper that calls `harness.secure_exec.run_sandboxed`
+   (egress `DENY_ALL`, timeout from `JCODE_TEST_TIMEOUT_S`/120s default) and returns the same
+   `(ok, combined_stdout_stderr)` shape the prior `harness.multi_file._run` call returned. Route
+   both `_run_check` and `_run_check_verbose` (shared by the REQ-5 acceptance-repair loop and by
+   `modify_system`'s own acceptance checks) through this helper instead of the plain subprocess
+   call, so the acceptance-check script — and anything it in turn spawns, e.g. its own
+   `python main.py` subprocess — runs with a SCRUBBED environment (no ambient host secrets),
+   POSIX resource caps, and the existing timeout + process-tree-kill discipline.
+4. Add three tests to `tests/test_ext036_system_builder.py` (offline, fake-llm, no live model):
+   a build whose generated module contains a dangerous op (`os.system(...)`) is refused before
+   its acceptance checklist is ever derived or executed (`done=False`, a `"SECURITY"` note, a
+   populated `security` field, no `ACCEPTANCE CHECKS` prompt issued, no acceptance-check temp
+   file ever written); a normal clean fake-llm build still assembles, runs, and passes acceptance
+   exactly as before (proving the sandbox wiring doesn't break a normal build); and a host secret
+   env var set in the test process is genuinely invisible to the sandboxed acceptance subprocess
+   (an acceptance check asserting the secret is absent actually passes — this check would have
+   FAILED before this task, since the prior plain-subprocess path inherited the full host
+   environment).
+5. Run `python -m pytest tests/ -q` synchronously in the foreground to confirm the whole suite is
+   green with no regression to any prior EXT-036/EXT-037 task's tests.
+
+#### Implements
+- [REQ-7] Secure sandboxed execution of generated code + gated egress
