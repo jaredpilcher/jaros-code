@@ -748,17 +748,25 @@ class JcodeCli:
             manager_url, fallback_model_id, primary_model_id = escalation
             from harness.system_builder import build_system_escalating
             from harness.collaborative_solve import _http_swap
+            # #EXT-037-REQ-11 Start
+            # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+            # `/init`/`/rename`/`/move`/`/fixrepo`/`/undo` already use -- so every module this
+            # real-host command writes is gated and hash-chain logged.
             r = build_system_escalating(
                 sentence, subdir,
                 primary_llm=self.llm, fallback_llm=self.llm,
                 swap_fn=_http_swap(manager_url),
                 fallback_model_id=fallback_model_id,
                 primary_model_id=primary_model_id,
+                runtime=self._write_runtime(),
             )
+            # #EXT-037-REQ-11 End
             model_label = fallback_model_id if r.get("model") == "fallback" else primary_model_id
         else:
             from harness.system_builder import build_system
-            r = build_system(sentence, subdir, llm=self.llm)
+            # #EXT-037-REQ-11 Start
+            r = build_system(sentence, subdir, llm=self.llm, runtime=self._write_runtime())
+            # #EXT-037-REQ-11 End
         # #EXT-036-REQ-13 End
         mods = ", ".join(r.get("modules", {})) or "(none)"
         status = "shipped" if r.get("shipped") else "NOT shipped"
@@ -823,7 +831,10 @@ class JcodeCli:
         if not modules:
             return f"no modules found in {target_dir}"
         from harness.system_builder import modify_system
-        r = modify_system(modules, sentence, target_dir, llm=self.llm)
+        # #EXT-037-REQ-11 Start
+        # `runtime=self._write_runtime()` (Tenet 1), mirroring `cmd_buildsystem` above.
+        r = modify_system(modules, sentence, target_dir, llm=self.llm, runtime=self._write_runtime())
+        # #EXT-037-REQ-11 End
         status = "applied" if r.get("applied") else "NOT applied (reverted)"
         out = [f"[modifysystem] {status} — {target_dir}"]
         regressed = r.get("regressed") or []

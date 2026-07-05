@@ -42,8 +42,12 @@ NOT_SHIPPED_1MOD = {"modules": {"a.py": "code"}, "shipped": False, "done": False
 
 
 def _fake_build_system(results: dict):
-    """Returns a `build_system`-shaped callable keyed by `id(llm)` -> canned result dict."""
-    def _fake(spec, root, *, llm=None):
+    """Returns a `build_system`-shaped callable keyed by `id(llm)` -> canned result dict.
+
+    Accepts (and ignores) an optional `runtime` kwarg -- EXT-037 REQ-11 threads `runtime`
+    straight through `build_system_escalating`'s own internal `build_system(...)` calls, so
+    this fake must accept it like the real function does."""
+    def _fake(spec, root, *, llm=None, runtime=None):
         return dict(results[id(llm)])
     return _fake
 
@@ -199,7 +203,7 @@ def test_swap_fn_raises_falls_back_to_primary_gracefully(tmp_path, monkeypatch):
 # --- (e) fallback build raises -> returns the primary result, never raises ----------------
 
 def test_fallback_build_raises_falls_back_to_primary_gracefully(tmp_path, monkeypatch):
-    def _fake(spec, root, *, llm=None):
+    def _fake(spec, root, *, llm=None, runtime=None):
         if llm is PRIMARY_LLM:
             return dict(NOT_SHIPPED_0MOD)
         raise RuntimeError("fallback model crashed mid-build")

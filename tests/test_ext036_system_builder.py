@@ -434,7 +434,7 @@ def test_cli_buildsystem_reports_shipped_done_unmet(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     seen: dict = {}
 
-    def fake_build_system(spec, root, *, llm=None):
+    def fake_build_system(spec, root, *, llm=None, runtime=None):
         seen["spec"] = spec
         seen["root"] = root
         return {"modules": {"helper.py": "code", "cli.py": "code"},

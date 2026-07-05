@@ -819,3 +819,89 @@ the gap for both `/fixrepo` and `/undo`.
 
 #### Implements
 - [REQ-10] Deterministic multi-file-fix writes (`/fixrepo`, and the SHARED `/undo` restore) are Jaros-native (Tenet 1)
+
+### [TASK-15] `system_builder.py`'s `/buildsystem`/`/modifysystem` writes are Jaros-native (REQ-11)
+
+Tenet-1 compliance sweep (tracker #112), `system_builder.py` slice (SLICE 3).
+`harness/system_builder.py`'s single write chokepoint, `_jailed_write(root, name, content)`,
+already applies the REQ-1 `path_jail` root-jail but performs the write via raw
+`Path.write_text`, bypassing the gate + hash-chain log. Mirror the PROVEN REQ-9/REQ-10 idiom
+exactly (`harness/refactor.py`'s and `harness/multi_file.py`'s `_jaros_write`): an optional
+`runtime` parameter that, when supplied, performs the write as a `code.write_file` Decision
+through `Runtime.apply`; `runtime=None` preserves the exact current raw-write behavior for
+every existing eval/test/suite caller. Because every model-controlled-name write in this
+module already funnels through `_jailed_write`, threading `runtime` through that one helper
+(plus `_repair_system`, the module-level helper `build_system` calls) closes the gap for all
+five public entry points in one move.
+
+#### Steps
+1. In `harness/system_builder.py`, add `import uuid` and give `_jailed_write(root, name,
+   content, runtime=None) -> str | None` an optional `runtime` parameter: the existing local
+   `path_jail(str(root), name)` pre-check (and its `PathEscapeError` handling) runs
+   UNCONDITIONALLY first, unchanged — this preserves the exact current rejection messages
+   regardless of `runtime`. On a successful jail resolution, `runtime is None` keeps the
+   existing raw `Path(resolved).parent.mkdir(...)` + `Path(resolved).write_text(content,
+   encoding="utf-8", newline="\n")` call; a supplied `runtime` instead builds
+   `jaros.core.create_decision(id=f"system-builder-write-{uuid.uuid4().hex}",
+   source="system_builder", type="code.write_file", payload={"path": resolved, "content":
+   content, "root": str(root)})` and applies it via `runtime.apply(decision)` inside a
+   `try`/`except Exception`, returning `None` on success or an honest `f"failed to write
+   {name}: {exc}"` string on any gate rejection/executor failure — never raises.
+2. Add an optional keyword-only `runtime: object | None = None` parameter to `_repair_system`
+   and thread it to its two `_jailed_write(root, name, code, runtime)` / `_jailed_write(root,
+   name, prev_code, runtime)` call sites (the applied-fix write and the regression-revert
+   write).
+3. Add an optional keyword-only `runtime: object | None = None` parameter to `build_system`;
+   thread it to every `_jailed_write` call in the ASSEMBLE step and to the
+   `_repair_system(spec, root, built, checks, unmet, llm, runtime=runtime)` call.
+4. Add an optional keyword-only `runtime: object | None = None` parameter to `modify_system`;
+   thread it to every `_jailed_write` call (the current-system assembly loop, the modified-
+   module assembly loop and its half-written revert, and the regression-gate revert loop).
+5. Add an optional keyword-only `runtime: object | None = None` parameter to
+   `build_system_escalating`; thread it straight through to both internal
+   `build_system(spec, root, llm=primary_llm, runtime=runtime)` /
+   `build_system(spec, root, llm=fallback_llm, runtime=runtime)` calls (same target `root`, so
+   no special-casing needed).
+6. Add an optional keyword-only `runtime: object | None = None` parameter to
+   `build_system_governed`; thread it to its internal `build_system(spec, root, llm=llm,
+   runtime=runtime)` call and to its own two repair-loop `_jailed_write` call sites (the
+   applied-fix write and the regression-revert write) plus the final no-regress-floor
+   `_jailed_write` revert loop.
+7. Add an optional keyword-only `runtime: object | None = None` parameter to
+   `build_system_best_of_k`; thread it ONLY to the final winner-assembly `_jailed_write` loop
+   that writes onto the caller's real `root` — its own per-attempt `build_system(spec,
+   attempt_root, llm=llm)` calls into isolated `tempfile.mkdtemp()` subdirectories are left
+   unchanged (`runtime=None`), since `attempt_root` is a throwaway directory `shutil.rmtree`'d
+   before the function returns, not a meaningful project root to gate.
+8. Leave the two `chk_path.write_text(code, ...)` sites in `_run_check`/`_run_check_verbose`
+   (`_s2s_acceptance_check.py`, ~lines 822/862) unrouted and unmodified — document inline (a
+   one-line comment) that this is deliberate: each is a transient acceptance-check script
+   written immediately before running it and unconditionally `unlink()`d in the same call's
+   `finally` block, never part of the shipped system.
+9. In `harness/cli.py`'s `cmd_buildsystem`, pass `runtime=self._write_runtime()` to both the
+   `build_system_escalating(...)` and `build_system(sentence, subdir, llm=self.llm)` call
+   sites. In `cmd_modifysystem`, pass `runtime=self._write_runtime()` to
+   `modify_system(modules, sentence, target_dir, llm=self.llm)`. No other CLI change.
+10. Confirm (do not modify) that every non-CLI caller of `build_system`/`modify_system`/
+    `build_system_escalating`/`build_system_governed`/`build_system_best_of_k` — every test in
+    `tests/test_ext036_*.py` and `tests/test_ext037_root_enforcement.py`/
+    `tests/test_ext037_code_quality.py`/`tests/test_ext040_heartbeat.py`, and every creation/
+    modification-suite or Foundry probe script under `.jaros-data/` — keeps calling with no
+    `runtime` argument, so they stay on the byte-identical raw-write fallback.
+11. Add `tests/test_ext037_buildsystem_jaros_write.py` covering: `_jailed_write` routes a write
+    through a `code.write_file` Decision with the expected `path`/`content`/`root` payload when
+    a fake recording runtime is supplied; the local `path_jail` rejection (an escaping `name`)
+    is honest and identical whether or not a runtime is supplied, and no Decision is built for
+    a rejected path; `runtime=None` (the default, omitted entirely) produces byte-identical
+    output to the pre-existing behavior for a full fake-llm `build_system` run; a real
+    `harness.coding_loop.Runtime(root=tmp_path)` end-to-end proves a real `build_system`/
+    `modify_system` call genuinely records a `code.write_file` Decision on the hash-chain
+    `DecisionLog` for a real host-rooted temp directory; and `build_system_best_of_k`'s
+    per-attempt temp-dir builds stay raw (no Decision recorded for attempt-root writes) while
+    its final winner-assembly write is routed through a supplied runtime.
+12. Run `python -m pytest tests/ -q` synchronously in the foreground (background it with
+    `run_with_heartbeat` per the observability convention) and confirm the exit code and full
+    pass count, with no regression to any prior EXT-036/EXT-037 task's tests.
+
+#### Implements
+- [REQ-11] `system_builder.py`'s `/buildsystem`/`/modifysystem` writes are Jaros-native (Tenet 1)

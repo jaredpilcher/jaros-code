@@ -317,7 +317,7 @@ def test_cli_modifysystem_uses_last_built_dir_and_reports_result(tmp_path, monke
 
     seen: dict = {}
 
-    def fake_modify_system(modules, sentence, root, *, llm=None):
+    def fake_modify_system(modules, sentence, root, *, llm=None, runtime=None):
         seen["modules"] = modules
         seen["sentence"] = sentence
         seen["root"] = root
@@ -346,7 +346,7 @@ def test_cli_modifysystem_explicit_dir_overrides_last_built(tmp_path, monkeypatc
 
     seen: dict = {}
 
-    def fake_modify_system(modules, sentence, root, *, llm=None):
+    def fake_modify_system(modules, sentence, root, *, llm=None, runtime=None):
         seen["root"] = root
         return {"modules": modules, "applied": False, "regressed": ["x"], "new_behavior_ok": False,
                 "note": "modification regressed existing behavior — reverted: x"}

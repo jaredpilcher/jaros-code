@@ -44,6 +44,8 @@ implementation:
   - tests/test_ext037_refactor_jaros_write.py
   - harness/multi_file.py
   - tests/test_ext037_fixrepo_jaros_write.py
+  - harness/system_builder.py
+  - tests/test_ext037_buildsystem_jaros_write.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -587,3 +589,104 @@ explicitly out of scope, per the owner's slice boundaries — separate follow-up
   hash-chain `DecisionLog` for a real host-rooted temp repo, and `/undo`'s escaping-snapshot gate
   rejection is honest and non-destructive (the snapshot is preserved so `/undo` can be retried);
   and the full suite has no regression
+
+### [REQ-11] `system_builder.py`'s `/buildsystem`/`/modifysystem` writes are Jaros-native (Tenet 1)  (covered)
+
+**Owner directive (2026-07-04) — Tenet-1 compliance sweep, tracker #112, `system_builder.py` slice
+(SLICE 3).** `harness/system_builder.py`'s `/buildsystem` and `/modifysystem` commands write
+model-generated module files to the user's target directory through a SINGLE choke point —
+`_jailed_write(root, name, content)` (already applies the REQ-1 `path_jail` root-jail) — but that
+helper performs the actual write via raw `Path.write_text`, bypassing the gate and the hash-chain
+log every other compliant host write goes through. This requirement closes that gap for
+`system_builder.py` specifically, mirroring the PROVEN REQ-9/REQ-10 idiom (`harness/refactor.py`'s
+`_jaros_write`, `harness/multi_file.py`'s `_jaros_write`): an optional `runtime` parameter that,
+when supplied, performs the write as a real `code.write_file` Decision applied through
+`Runtime.apply` (gate + hash-chain log — the local `path_jail` pre-check is KEPT regardless,
+preserving the exact current rejection messages/behavior); `runtime=None` (the default) preserves
+the exact prior direct-write behavior byte-for-byte, so every existing eval/test/suite caller
+against a throwaway sandbox directory is unaffected.
+
+**Single chokepoint, five public entry points.** Every model-controlled-name write in this module
+(the plan-derived ASSEMBLE step, the REQ-5 acceptance-repair apply/revert, `modify_system`'s
+assemble/regenerate/revert, `build_system_governed`'s RE-GROUND repair writes, and
+`build_system_best_of_k`'s final winner assembly) already funnels through `_jailed_write` —
+threading the optional `runtime` through that one helper, plus the module-level `_repair_system`
+helper it calls from within `build_system`, closes the gap for every public entry point
+(`build_system`, `modify_system`, `build_system_escalating`, `build_system_governed`,
+`build_system_best_of_k`) in one move.
+
+**Caller audit (host → runtime, eval/suite → raw):** `harness/cli.py`'s `cmd_buildsystem` (which
+calls `build_system`/`build_system_escalating` against a real subdirectory of the current working
+directory) and `cmd_modifysystem` (which calls `modify_system` against a real, caller-named target
+directory) are the only REAL-HOST callers found by an exhaustive grep of every
+`build_system`/`modify_system`/`build_system_escalating`/`build_system_governed`/
+`build_system_best_of_k` call site in the repo — both now pass `runtime=self._write_runtime()`.
+Every other caller targets a throwaway temp directory with no meaningful "project root" and stays
+on the byte-identical raw-write fallback: `tests/test_ext036_system_builder.py`,
+`tests/test_ext036_acceptance.py`, `tests/test_ext036_modify.py`, `tests/test_ext036_escalate.py`,
+`tests/test_ext036_buildsystem_escalate.py`, `tests/test_ext036_system_repair.py`,
+`tests/test_ext036_planrepair.py`, `tests/test_ext037_root_enforcement.py`,
+`tests/test_ext037_code_quality.py`, `tests/test_ext040_heartbeat.py`, and every creation/
+modification-suite and Foundry probe script under `.jaros-data/` (e.g. `run_creation_suite_*.py`,
+`run_modification_suite_*.py`, `coherence_*_measure.py`, `bestofk_verify.py`) — all build into
+temp/throwaway roots, never a real project directory. `build_system_governed` and
+`build_system_best_of_k` are not yet wired into any CLI command at all (an explicit, separate
+follow-up per their own TASK-27/TASK-33 scope notes) — this requirement still threads `runtime`
+through both so the seam exists the moment either is wired live, with no further code change
+needed at that point.
+
+**The two `chk_path.write_text` sites (`_run_check`/`_run_check_verbose`, ~lines 822/862) are
+INTERNAL BUILD-SCRATCH state, not product output** — each writes a temporary acceptance-check
+script (`_s2s_acceptance_check.py`) immediately before running it and unconditionally `unlink()`s
+it in a `finally` block a few lines later; it is never part of the shipped system, never seen by
+the user, and never reaches `root` as a delivered module. Left raw, same as `.jaros-data/` runtime
+state — routing it through a Decision would log-and-gate a file that exists for microseconds and
+is deleted before the caller ever returns.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py`'s `_jailed_write(root, name, content, runtime=None)` gains the
+  optional `runtime` parameter: the existing local `path_jail` pre-check runs unconditionally
+  first (unchanged rejection messages/behavior); on success, `runtime=None` performs the existing
+  raw `Path.write_text(..., encoding="utf-8", newline="\n")`, while a supplied `runtime` builds a
+  `jaros.core.create_decision(type="code.write_file", payload={"path", "content", "root"})` and
+  applies it via `runtime.apply(...)` inside a `try`/`except Exception`, returning `None` on
+  success or an honest `f"failed to write {name}: {exc}"` string on any gate rejection/executor
+  failure — never raises
+- [x] `build_system`, `modify_system`, `build_system_escalating`, `build_system_governed`, and
+  `build_system_best_of_k` each gain an optional keyword-only `runtime: object | None = None`
+  parameter and thread it to every `_jailed_write` call they (or, for `build_system`, the
+  `_repair_system` helper it calls) perform; `build_system_escalating`/`build_system_governed`
+  thread their own `runtime` straight through to their internal `build_system(..., runtime=runtime)`
+  calls (same target `root`); `build_system_best_of_k` threads `runtime` only to its FINAL
+  winner-assembly write onto the caller's real `root` — its own per-attempt `build_system(...)`
+  calls into isolated, throwaway `tempfile.mkdtemp()` subdirectories stay on `runtime=None`
+  (there is no meaningful project root to gate for a directory that is `shutil.rmtree`'d before
+  the function returns)
+- [x] `runtime=None` (the default) preserves the exact current raw-write behavior byte-for-byte —
+  no existing eval/test/suite caller (`tests/test_ext036_system_builder.py`,
+  `tests/test_ext036_acceptance.py`, `tests/test_ext036_modify.py`, `tests/test_ext036_escalate.py`,
+  `tests/test_ext036_buildsystem_escalate.py`, `tests/test_ext036_system_repair.py`,
+  `tests/test_ext036_planrepair.py`, `tests/test_ext037_root_enforcement.py`,
+  `tests/test_ext037_code_quality.py`, `tests/test_ext040_heartbeat.py`, any creation/modification-
+  suite or Foundry probe script) is affected
+- [x] `harness/cli.py`'s `cmd_buildsystem` passes `runtime=self._write_runtime()` to
+  `build_system`/`build_system_escalating`, and `cmd_modifysystem` passes
+  `runtime=self._write_runtime()` to `modify_system` — the same root-anchored `Runtime`
+  `/init`/`/rename`/`/move`/`/fixrepo`/`/undo` already use — so a real `/buildsystem` and
+  `/modifysystem` invocation is gated and hash-chain logged. No other CLI change.
+- [x] The two `chk_path.write_text` sites in `_run_check`/`_run_check_verbose` are left unrouted
+  (internal build-scratch state — a transient acceptance-check script written and unlinked within
+  the same call, never shipped) — documented here, not silently skipped
+- [x] A gate rejection (e.g. a path escaping root through the Decision path) degrades to an honest
+  error string surfaced in the existing `note`/`assembly failed`/`could not assemble` messages —
+  never an uncaught exception — and never ships a partially-written module outside the intended
+  behavior of the existing `_jailed_write` contract
+- [x] Proven by `tests/test_ext037_buildsystem_jaros_write.py`: `_jailed_write` routes through a
+  `code.write_file` Decision when a runtime is supplied (spied via a fake runtime/`DecisionLog`);
+  a root-jail rejection through the local `path_jail` pre-check is unchanged/honest regardless of
+  `runtime`; the `runtime=None` raw fallback is byte-identical to the pre-existing behavior for a
+  full `build_system` run (fake-llm, offline); `build_system`/`modify_system` genuinely record a
+  `code.write_file` Decision on the hash-chain `DecisionLog` for a real host-rooted temp directory
+  when a real `harness.coding_loop.Runtime` is supplied; `build_system_best_of_k`'s per-attempt
+  temp-dir builds stay raw while its final winner-assembly write is routed through a supplied
+  runtime; and the full suite has no regression

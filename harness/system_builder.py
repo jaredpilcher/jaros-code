@@ -184,6 +184,9 @@ import subprocess  # TASK-21: deterministic import smoke-gate (modify_system reg
 # #EXT-036-REQ-14 End
 import sys
 import tempfile
+# #EXT-037-REQ-11 Start
+import uuid  # TASK-15: Decision ids for the optional Jaros-native write path
+# #EXT-037-REQ-11 End
 from pathlib import Path
 
 # #EXT-037-REQ-7 Start
@@ -219,22 +222,50 @@ except Exception:  # pragma: no cover - fail safe if helper missing
         return os.path.join(root, target) if not os.path.isabs(target) else target
 
 
-def _jailed_write(root: Path, name: str, content: str) -> "str | None":
+def _jailed_write(root: Path, name: str, content: str,
+                   runtime: "object | None" = None) -> "str | None":
     """Write ``content`` to module ``name`` under ``root`` iff it stays contained.
 
     Returns ``None`` on a successful write, or a human rejection reason (NO write
     performed) when ``name`` resolves outside ``root`` -- e.g. a model-authored plan or
-    modification naming a module ``"../../evil.py"``. Never raises."""
+    modification naming a module ``"../../evil.py"``. Never raises.
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional -- any object exposing
+    ``.apply(decision)``, e.g. ``harness.coding_loop.Runtime``. The local ``path_jail``
+    pre-check above ALWAYS runs first, unconditionally -- this preserves the exact current
+    rejection messages/behavior whether or not a runtime is supplied. Once the target is
+    confirmed in-root, ``runtime=None`` (the default -- used by every existing eval/test/suite
+    caller against a throwaway sandbox directory) performs the write via the pre-existing raw
+    ``Path.write_text`` call, byte-for-byte unchanged. A supplied ``runtime`` instead performs
+    the write as a real ``code.write_file`` Decision applied through it, so it gets the SAME
+    gate + hash-chain log every other Jaros write Decision goes through; a gate rejection or
+    executor failure degrades to an honest error string here, never a crash."""
     try:
         resolved = path_jail(str(root), name)
     except PathEscapeError as exc:
         return str(exc)
+    # #EXT-037-REQ-11 Start
+    if runtime is None:
+        # #EXT-037-REQ-11 End
+        try:
+            Path(resolved).parent.mkdir(parents=True, exist_ok=True)
+            Path(resolved).write_text(content, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            return str(exc)
+        return None
+    # #EXT-037-REQ-11 Start
     try:
-        Path(resolved).parent.mkdir(parents=True, exist_ok=True)
-        Path(resolved).write_text(content, encoding="utf-8", newline="\n")
-    except OSError as exc:
-        return str(exc)
+        from jaros.core import create_decision
+        decision = create_decision(
+            id=f"system-builder-write-{uuid.uuid4().hex}", source="system_builder",
+            type="code.write_file",
+            payload={"path": resolved, "content": content, "root": str(root)},
+        )
+        runtime.apply(decision)
+    except Exception as exc:
+        return f"failed to write {name}: {exc}"
     return None
+    # #EXT-037-REQ-11 End
 # #EXT-037-REQ-1 End
 
 # #EXT-036-REQ-1 Start
@@ -820,6 +851,14 @@ def _run_check(root: Path, check: dict) -> bool:
     if not code:
         return False
     chk_path = root / "_s2s_acceptance_check.py"
+    # #EXT-037-REQ-11 Start
+    # TASK-15: deliberately left as a raw write -- this is INTERNAL BUILD-SCRATCH state, not
+    # product output. `chk_path` is written immediately before running it and unconditionally
+    # `unlink()`'d in the `finally` block a few lines below, within this SAME call -- it is
+    # never part of the shipped system and never seen by the user, so routing it through a
+    # Decision would gate/log a file that exists for microseconds and is deleted before this
+    # function ever returns.
+    # #EXT-037-REQ-11 End
     try:
         chk_path.write_text(code, encoding="utf-8", newline="\n")
         # #EXT-037-REQ-7 Start
@@ -860,6 +899,10 @@ def _run_check_verbose(root: Path, check: dict) -> tuple[bool, str]:
     if not code:
         return False, "no check code"
     chk_path = root / "_s2s_acceptance_check.py"
+    # #EXT-037-REQ-11 Start
+    # TASK-15: same deliberate raw-write choice as `_run_check` above -- internal build-scratch,
+    # written then unlinked within this same call, never shipped.
+    # #EXT-037-REQ-11 End
     try:
         chk_path.write_text(code, encoding="utf-8", newline="\n")
         # #EXT-037-REQ-7 Start
@@ -901,7 +944,8 @@ def _repair_module_for_check(spec: str, check: dict, error: str, built: dict[str
 
 
 def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[dict],
-                    unmet: list[str], llm, *, max_repair: int = MAX_SYSTEM_REPAIR_ROUNDS
+                    unmet: list[str], llm, *, max_repair: int = MAX_SYSTEM_REPAIR_ROUNDS,
+                    runtime: "object | None" = None
                     ) -> tuple[dict[str, str], list[str], list[dict]]:
     """Bounded system-level (acceptance-driven) repair loop, REQ-5 — the analog of the
     write-tests/syntax repair loops at the acceptance level. For each currently-unmet
@@ -920,7 +964,11 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
     accepted). Best-seen `(built, unmet)` — fewest unmet, never a state where a
     previously-passing check has regressed vs the pre-repair baseline — is tracked and
     returned. Also stops early when done, or when an accepted (non-regressing) round makes
-    no further progress. Bounded, never raises."""
+    no further progress. Bounded, never raises.
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional, threaded straight to every
+    ``_jailed_write`` call below -- same contract as ``build_system``'s own ``runtime``
+    parameter (``runtime=None`` is unchanged from before this parameter existed)."""
     repairs: list[dict] = []
     all_names = [c.get("name", "?") for c in checks]
     # Best-seen state: current (built, unmet) is only ever updated by an ACCEPTED
@@ -951,7 +999,9 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
                         syn_ok, syn_err = syntax_ok(code)
                     if syn_ok:
                         # #EXT-037-REQ-1 Start
-                        if _jailed_write(root, name, code) is None:
+                        # #EXT-037-REQ-11 Start
+                        if _jailed_write(root, name, code, runtime) is None:
+                        # #EXT-037-REQ-11 End
                             built[name] = code
                             record["applied"] = True
                             record["module"] = name
@@ -971,7 +1021,9 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
                     if prev_code is None:
                         continue
                     # #EXT-037-REQ-1 Start
-                    _jailed_write(root, name, prev_code)
+                    # #EXT-037-REQ-11 Start
+                    _jailed_write(root, name, prev_code, runtime)
+                    # #EXT-037-REQ-11 End
                     # #EXT-037-REQ-1 End
                     built[name] = prev_code
                 for r in round_repairs:
@@ -1016,7 +1068,8 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
     # #EXT-037-REQ-8 End
 
 
-def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
+def build_system(spec: str, root: "str | Path", *, llm=None,
+                  runtime: "object | None" = None) -> dict:
     """PLAN -> topological BUILD (syntax-gated + repair) -> ASSEMBLE -> ACCEPTANCE.
 
     Returns ``{modules: {name: code}, shipped: bool, done: bool, unmet: [names], plan: {...}}``
@@ -1027,7 +1080,14 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     Uses ``harness.coding_loop.build_llm()`` when `llm` is None (mirrors the convention in
     ``harness.daily_driver._generate_tests``); an injected `llm` (any object exposing
     ``.complete(LlmRequest) -> .text``) drives fully offline testing.
-    """
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional -- any object exposing ``.apply(decision)``,
+    e.g. ``harness.coding_loop.Runtime``. When given, every module write this function performs
+    (ASSEMBLE, and the REQ-5 acceptance-repair loop via ``_repair_system``) is routed through a
+    real ``code.write_file`` Decision (gated, hash-chain logged) instead of a raw
+    ``Path.write_text``. ``runtime=None`` (the default) is unchanged from before this parameter
+    existed -- every existing eval/test/suite caller against a throwaway sandbox directory is
+    unaffected."""
     root = Path(root)
     # #EXT-040-REQ-3 Start
     # TASK-4: observability phase beats -- /status shows the LIVE build phase (PLAN/ASSEMBLE/
@@ -1109,7 +1169,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
                         note=f"assembly failed: {exc}")
     # #EXT-037-REQ-1 Start
     for name, code in built.items():
-        escape = _jailed_write(root, name, code)
+        # #EXT-037-REQ-11 Start
+        escape = _jailed_write(root, name, code, runtime)
+        # #EXT-037-REQ-11 End
         if escape is not None:
             return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"assembly failed: module {name!r} refused: {escape}")
@@ -1211,7 +1273,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None) -> dict:
     repairs: list[dict] = []
     if unmet:
         _beat("REPAIR")  # #EXT-040-REQ-3
-        built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm)
+        # #EXT-037-REQ-11 Start
+        built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm, runtime=runtime)
+        # #EXT-037-REQ-11 End
     # #EXT-036-REQ-5 End
     # #EXT-036-REQ-4 Start
     done = not unmet
@@ -1348,7 +1412,8 @@ def _importable_modules(modules: dict, root: Path, python_exe: "str | None" = No
     return importable
 
 
-def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None) -> dict:
+def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None,
+                   runtime: "object | None" = None) -> dict:
     """Modify an EXISTING system (``modules``: ``{name: code}``) from a one-sentence change
     request, regression-gated (REQ-14). NEVER raises — any stage failure or a modification
     that regresses existing behavior returns ``applied=False`` with a diagnostic ``note``.
@@ -1376,6 +1441,11 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     Returns ``{modules, applied, regressed: [names], new_behavior_ok, note}``. Uses
     ``harness.coding_loop.build_llm()`` when ``llm`` is None (mirrors ``build_system``); an
     injected ``llm`` (``.complete(LlmRequest) -> .text``) drives fully offline testing.
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional, same contract as ``build_system``'s own
+    ``runtime`` -- threaded to every module write below (the current-system assembly, the
+    modified-module assembly and its half-written revert, and the regression-gate revert).
+    ``runtime=None`` (the default) is unchanged from before this parameter existed.
     """
     root = Path(root)
     modules = dict(modules or {})
@@ -1394,7 +1464,9 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         return _modify_result(modules=modules, applied=False, note=f"could not assemble current system: {exc}")
     # #EXT-037-REQ-1 Start
     for name, code in modules.items():
-        escape = _jailed_write(root, name, code)
+        # #EXT-037-REQ-11 Start
+        escape = _jailed_write(root, name, code, runtime)
+        # #EXT-037-REQ-11 End
         if escape is not None:
             return _modify_result(modules=modules, applied=False,
                                    note=f"could not assemble current system: module {name!r} refused: {escape}")
@@ -1440,14 +1512,18 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     # #EXT-037-REQ-1 Start
     _assembly_error: "str | None" = None
     for name in changed_names:
-        escape = _jailed_write(root, name, modules[name])
+        # #EXT-037-REQ-11 Start
+        escape = _jailed_write(root, name, modules[name], runtime)
+        # #EXT-037-REQ-11 End
         if escape is not None:
             _assembly_error = escape
             break
     if _assembly_error is not None:
         for name in changed_names:                # never leave a half-written system
             modules[name] = pre_mod[name]
-            _jailed_write(root, name, pre_mod[name])
+            # #EXT-037-REQ-11 Start
+            _jailed_write(root, name, pre_mod[name], runtime)
+            # #EXT-037-REQ-11 End
         return _modify_result(modules=modules, applied=False, note=f"assembly failed: {_assembly_error}")
     # #EXT-037-REQ-1 End
 
@@ -1465,7 +1541,9 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         for name in changed_names:
             modules[name] = pre_mod[name]
             # #EXT-037-REQ-1 Start
-            _jailed_write(root, name, pre_mod[name])
+            # #EXT-037-REQ-11 Start
+            _jailed_write(root, name, pre_mod[name], runtime)
+            # #EXT-037-REQ-11 End
             # #EXT-037-REQ-1 End
         all_regressed = regressed + [n for n in import_regressed if n not in regressed]
         note = "modification regressed existing behavior — reverted: " + ", ".join(regressed) if regressed else \
@@ -1511,7 +1589,8 @@ def _better_result(fallback: dict, primary: dict) -> dict:
 
 def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallback_llm=None,
                              swap_fn=None, fallback_model_id: "str | None" = None,
-                             primary_model_id: "str | None" = None) -> dict:
+                             primary_model_id: "str | None" = None,
+                             runtime: "object | None" = None) -> dict:
     """ESCALATE-ONLY-ON-FAILURE wrapper around ``build_system`` (REQ-13). Runs the default
     (``primary_llm``) build first; if it ships, returns it AS-IS — ``fallback_llm``/``swap_fn``
     are NEVER invoked, so the common case pays no extra latency. Only when the primary FAILS to
@@ -1529,8 +1608,12 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
     NEVER raises (mirrors ``build_system``): a ``swap_fn`` failure or an exception from the
     fallback ``build_system`` call is caught and the PRIMARY result is returned unchanged (with
     the metadata keys added) — escalation never leaves the caller worse off than primary-only.
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional, threaded straight through to BOTH internal
+    ``build_system`` calls below (same target ``root`` either way). ``runtime=None`` (the
+    default) is unchanged from before this parameter existed.
     """
-    primary_result = build_system(spec, root, llm=primary_llm)
+    primary_result = build_system(spec, root, llm=primary_llm, runtime=runtime)
     if primary_result.get("shipped"):
         return {**primary_result, "escalated": False, "model": "primary"}
 
@@ -1542,7 +1625,7 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
         if swap_fn is not None and fallback_model_id is not None:
             swap_fn(fallback_model_id)
             swapped_to_fallback = True
-        fallback_result = build_system(spec, root, llm=fallback_llm)
+        fallback_result = build_system(spec, root, llm=fallback_llm, runtime=runtime)
     except Exception:
         return {**primary_result, "escalated": False, "model": "primary"}
     finally:
@@ -1789,7 +1872,8 @@ def _governed_result(*, modules=None, shipped: bool, done: bool, requirements_to
 
 
 def build_system_governed(spec: str, root: "str | Path", *, llm=None,
-                           max_repair: int = MAX_GOVERNED_REPAIR_ROUNDS) -> dict:
+                           max_repair: int = MAX_GOVERNED_REPAIR_ROUNDS,
+                           runtime: "object | None" = None) -> dict:
     """The GOVERNED build path (REQ-23, TASK-27; hardened by TASK-28) -- realizes PRIME-001
     intent capability (g) by LIFTING long-horizon build coherence with an explicit,
     INDEPENDENTLY-verified requirement list, so no requirement is silently dropped from code OR
@@ -1828,6 +1912,11 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     rounds}`. NEVER raises: any stage failure returns `shipped`/`done` False with a diagnostic
     `note`. Uses `harness.coding_loop.build_llm()` when `llm` is None (mirrors `build_system`);
     an injected `llm` (`.complete(LlmRequest) -> .text`) drives fully offline testing.
+
+    `runtime` (EXT-037 REQ-11, Tenet 1): optional, threaded straight through to the internal
+    `build_system` call and to every `_jailed_write` this function performs itself (the RE-GROUND
+    repair loop's applied-fix/regression-revert writes, and the final no-regress-floor revert).
+    `runtime=None` (the default) is unchanged from before this parameter existed.
     """
     root = Path(root)
     if llm is None:
@@ -1847,7 +1936,7 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
     #    NO-REGRESS FLOOR): even a decompose failure below must degrade to `build_system`'s
     #    own shipped/done result, never a hollow 0-requirement/0-module regression.
     try:
-        build = build_system(spec, root, llm=llm)
+        build = build_system(spec, root, llm=llm, runtime=runtime)
     except Exception as exc:
         return _governed_result(shipped=False, done=False,
                                  requirements_total=len(requirements),
@@ -1930,7 +2019,9 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
                                                 max_tokens=BUILD_MAX_TOKENS))
                     syn_ok, syn_err = syntax_ok(code)
                 if syn_ok:
-                    if _jailed_write(root, name, code) is None:
+                    # #EXT-037-REQ-11 Start
+                    if _jailed_write(root, name, code, runtime) is None:
+                    # #EXT-037-REQ-11 End
                         built[name] = code
 
             new_unmet = _verify_all()
@@ -1942,7 +2033,9 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
                 # -- revert this round's writes entirely and reject it (non-degrading).
                 for name, code in pre_round_built.items():
                     if built.get(name) != code:
-                        _jailed_write(root, name, code)
+                        # #EXT-037-REQ-11 Start
+                        _jailed_write(root, name, code, runtime)
+                        # #EXT-037-REQ-11 End
                 built = pre_round_built
                 unmet_ids = sorted(pre_round_unmet)
                 break
@@ -1991,7 +2084,9 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
         final_unmet_ids, governed_met = None, -1
     if final_unmet_ids is None or governed_met < baseline_met:
         for name, code in baseline_built.items():
-            _jailed_write(root, name, code)
+            # #EXT-037-REQ-11 Start
+            _jailed_write(root, name, code, runtime)
+            # #EXT-037-REQ-11 End
         built = dict(baseline_built)
         unmet_ids = list(baseline_unmet_ids)
         done = not unmet_ids
@@ -2060,7 +2155,8 @@ def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tu
     return passed, len(checks)
 
 
-def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 3) -> dict:
+def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 3,
+                            runtime: "object | None" = None) -> dict:
     """Build ``spec`` up to `k` times (each into its OWN fresh, isolated temp subdir so attempts
     never contaminate each other or `root`), independently score every attempt with a freshly
     derived + actually-RUN acceptance checklist (`_score_build_attempt`), and ASSEMBLE only the
@@ -2078,7 +2174,15 @@ def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 
     honest note.
 
     Does not modify `build_system`'s own behavior/signature in any way -- this is a pure wrapper
-    around it. Wiring into `/buildsystem` is an explicit follow-up (REQ-25)."""
+    around it. Wiring into `/buildsystem` is an explicit follow-up (REQ-25).
+
+    ``runtime`` (EXT-037 REQ-11, Tenet 1): optional -- threaded ONLY to the FINAL winner-assembly
+    write onto the caller's real ``root`` below. Each per-attempt ``build_system`` call above
+    builds into an isolated, throwaway ``tempfile.mkdtemp()`` subdirectory that is
+    ``shutil.rmtree``'d before this function returns (see the ``finally`` block) -- not a
+    meaningful project root to gate -- so those internal calls intentionally stay on
+    ``runtime=None``. ``runtime=None`` for the final assembly too (the default) is unchanged
+    from before this parameter existed."""
     root = Path(root)
     k = max(1, int(k)) if k else 1
     attempts: list[dict] = []
@@ -2115,7 +2219,9 @@ def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 
             try:
                 root.mkdir(parents=True, exist_ok=True)
                 for name, code in modules.items():
-                    _jailed_write(root, name, code)
+                    # #EXT-037-REQ-11 Start
+                    _jailed_write(root, name, code, runtime)
+                    # #EXT-037-REQ-11 End
             except Exception:
                 pass
 

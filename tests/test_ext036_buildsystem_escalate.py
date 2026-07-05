@@ -67,10 +67,11 @@ def test_configured_calls_build_system_escalating_with_right_kwargs(tmp_path, mo
     calls: list[dict] = []
 
     def _fake_escalating(spec, root, *, primary_llm, fallback_llm=None, swap_fn=None,
-                          fallback_model_id=None, primary_model_id=None):
+                          fallback_model_id=None, primary_model_id=None, runtime=None):
         calls.append(dict(spec=spec, root=root, primary_llm=primary_llm,
                            fallback_llm=fallback_llm, swap_fn=swap_fn,
-                           fallback_model_id=fallback_model_id, primary_model_id=primary_model_id))
+                           fallback_model_id=fallback_model_id, primary_model_id=primary_model_id,
+                           runtime=runtime))
         return dict(SHIPPED_DONE, escalated=True, model="fallback")
 
     build_system_calls: list = []
@@ -97,6 +98,9 @@ def test_configured_calls_build_system_escalating_with_right_kwargs(tmp_path, mo
     assert call["fallback_model_id"] == FALLBACK_ID
     assert call["primary_model_id"] == PRIMARY_ID
     assert callable(call["swap_fn"])
+    # #EXT-037-REQ-11 Start
+    assert call["runtime"] is not None  # Tenet 1: a real /buildsystem invocation is gated
+    # #EXT-037-REQ-11 End
     assert swap_urls == [MANAGER_URL]
     assert build_system_calls == []   # plain build_system never invoked on this path
     assert "shipped" in out
@@ -114,7 +118,7 @@ def test_not_configured_falls_back_to_plain_build_system(tmp_path, monkeypatch):
 
     plain_calls: list[dict] = []
 
-    def _fake_build_system(spec, root, *, llm=None):
+    def _fake_build_system(spec, root, *, llm=None, runtime=None):
         plain_calls.append(dict(spec=spec, root=root, llm=llm))
         return dict(SHIPPED_DONE)
     monkeypatch.setattr(sb_mod, "build_system", _fake_build_system)
@@ -180,7 +184,8 @@ def test_raising_swap_never_crashes_cmd_buildsystem(tmp_path, monkeypatch):
     just asserts cmd_buildsystem still returns a result instead of propagating an exception."""
     monkeypatch.chdir(tmp_path)
     _configured(monkeypatch)
-    monkeypatch.setattr(sb_mod, "build_system", lambda spec, root, *, llm=None: dict(NOT_SHIPPED))
+    monkeypatch.setattr(sb_mod, "build_system",
+                         lambda spec, root, *, llm=None, runtime=None: dict(NOT_SHIPPED))
 
     def _raising_http_swap(manager_url):
         def _swap(model_id):
