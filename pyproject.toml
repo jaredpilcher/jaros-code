@@ -1,0 +1,30 @@
+# #EXT-053-REQ-3 Start
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaros-code"
+version = "0.1.0"
+description = "Claude-Code-like dev harness driven entirely by a small local model (Gemma 4 2B via llama.cpp on a Jetson Orin Nano) -- zero paid/cloud inference."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# Only what the harness actually imports at runtime (see requirements.txt's own comment: no
+# heavyweight ML deps -- inference happens remotely over the Jetson's llama.cpp HTTP API via
+# stdlib urllib).
+dependencies = [
+    "jaros>=0.4.0",
+]
+
+[project.scripts]
+# `pipx install .` / `pip install -e .` exposes a bare `jcode` command equivalent to
+# `python -m harness.cli` -- additive only; that invocation, scripts/serve.sh|.ps1, and
+# scripts/jcode.sh|.ps1 are all unchanged by this file (EXT-053).
+jcode = "harness.cli:main"
+
+[tool.setuptools]
+# harness/ is a flat package (no subpackages) -- every .py module in it ships as part of the
+# "harness" package.
+packages = ["harness"]
+# #EXT-053-REQ-3 End

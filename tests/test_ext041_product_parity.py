@@ -72,10 +72,18 @@ def test_no_row_is_inflated_to_works_today():
     `.jaros-data/bg_jobs/`; `jcode jobs`/`logs <id>`/`attach <id>`/`stop <id>` (plus `/jobs`/
     `/logs <id>`/`/stop <id>` in the REPL) list/read/stream/cancel a job, `stop` killing only the
     job's recorded pid/tree (mirrors `harness.secure_exec._kill_tree`, never by name); a REPL
-    `/attach` is honestly deferred) are the rows genuinely delivered end-to-end -- these pins were
-    updated deliberately alongside each landing, not silently."""
+    `/attach` is honestly deferred), and row #25 (Install + health story, EXT-053:
+    `harness/doctor.py`'s deterministic check battery -- Python version, git/docker presence via a
+    bounded `subprocess.run`, `.jaros-data/` writability via a read-only `os.access` query,
+    `JCODE_LLM_BACKEND` config sanity, and a bounded probe of the Jetson llama.cpp endpoint reusing
+    `harness.llamacpp_client.health` that degrades to an honest WARN (never a hang/raise/FAIL) when
+    unreachable -- wired as `/doctor` (REPL) and `jcode doctor`/`--doctor` (headless, deterministic
+    exit code); a minimal `pyproject.toml` adds a `jcode` console-script entry point without
+    touching `python -m harness.cli`/serve/jcode scripts; auto-update and a signed release artifact
+    honestly deferred) are the rows genuinely delivered end-to-end -- these pins were updated
+    deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 23, 24]
+    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 23, 24, 25]
 
 
 def test_score_aggregate_known_mix():
@@ -114,10 +122,10 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), and #24 (EXT-045)
-    # are genuine "works"
-    assert result["n_works"] == 11
-    assert result["n_partial"] + result["n_missing"] == 5
+    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), #24 (EXT-045), and
+    # #25 (EXT-053) are genuine "works"
+    assert result["n_works"] == 12
+    assert result["n_partial"] + result["n_missing"] == 4
     assert 0.0 <= result["pct"] < 100.0
 
 

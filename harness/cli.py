@@ -19,6 +19,9 @@ Commands (Claude-Code-style):
   /statusline [on|off]          toggle a persistent "model · class · $0 · latency" status line
                                  above every prompt (EXT-045); shows the CURRENT line either way
   /parity                       Product-Parity Checklist: CC-product-surface parity score (EXT-041)
+  /doctor                        deterministic health check: Jetson/LLM endpoint + model served,
+                                 git/docker/python presence, .jaros-data writability, config
+                                 sanity (also: jcode doctor / jcode --doctor, headless, EXT-053)
   /agents  /tools               the live fleet/catalog (/agents also lists any user-authored
                                  subagents discovered under .jcode/agents/<name>.md, EXT-050)
   /report                       latest convergence report
@@ -638,6 +641,19 @@ class JcodeCli:
         except Exception:
             return "Product-Parity Checklist: (unavailable -- see harness/product_parity.py)"
     # #EXT-041-REQ-1 End
+
+    # #EXT-053-REQ-2 Start
+    def cmd_doctor(self, _arg: str) -> str:
+        """`/doctor` (EXT-053): deterministic health check -- Jetson/LLM endpoint reachability +
+        model served, git/docker/python presence, .jaros-data writability, config sanity. Every
+        check is pure execution-plane bookkeeping (no model call); never raises (mirrors
+        /status's and /parity's observability discipline)."""
+        try:
+            from harness.doctor import render as _render_doctor, run_doctor as _run_doctor
+            return _render_doctor(_run_doctor())
+        except Exception as exc:
+            return f"/doctor: (unavailable -- {exc})"
+    # #EXT-053-REQ-2 End
 
     # #EXT-052-REQ-3 Start
     def cmd_jobs(self, _arg: str) -> str:
@@ -2438,6 +2454,24 @@ def _dispatch_bg_subcommand(args: "list[str]") -> "int | None":
 # #EXT-052-REQ-3 End
 
 
+# #EXT-053-REQ-2 Start
+def _dispatch_doctor_subcommand(args: "list[str]") -> "int | None":
+    """Recognize the EXT-053 headless health-check entry (`jcode doctor` / `jcode --doctor`) as
+    a LEADING token, exactly like EXT-052's `--bg`/`jobs` family already takes priority over
+    being read as plain request text. Returns `None` (no match) for every other invocation, so
+    the caller falls through to today's existing parsing byte-identically -- an ordinary
+    plain-language request (e.g. "fix the bug") is never misrouted."""
+    if not args:
+        return None
+    if args == ["doctor"] or args[0] == "--doctor":
+        from harness.doctor import render as _render_doctor, run_doctor as _run_doctor
+        report = _run_doctor()
+        print(_render_doctor(report))
+        return 0 if report.get("overall") != "fail" else 1
+    return None
+# #EXT-053-REQ-2 End
+
+
 def main() -> int:
     """Entry point: a one-shot request if given as args or piped via stdin, else the
     interactive REPL.
@@ -2454,6 +2488,9 @@ def main() -> int:
                                                       # live (Ctrl-C detaches, job keeps running)
       python -m harness.cli stop <id>                # EXT-052: cancel a running background job
                                                       # (kills its recorded pid/tree only)
+      python -m harness.cli doctor                    # EXT-053: deterministic health check
+      python -m harness.cli --doctor                  # (same; also installed as `jcode doctor` /
+                                                      # `jcode --doctor` via pyproject.toml)
       python -m harness.cli --resume <id>            # resume a prior session (REPL, or with a
                                                       # trailing one-shot request after the id)
       echo "fix foo.py" | python -m harness.cli       # headless: request piped via stdin (EXT-043)
@@ -2483,6 +2520,11 @@ def main() -> int:
     if bg_result is not None:
         return bg_result
     # #EXT-052-REQ-3 End
+    # #EXT-053-REQ-2 Start
+    doctor_result = _dispatch_doctor_subcommand(args)
+    if doctor_result is not None:
+        return doctor_result
+    # #EXT-053-REQ-2 End
     # #EXT-043-REQ-1 Start
     session_id, output_format, max_turns, rest0 = _parse_headless_args(args)
     # #EXT-044-REQ-2 Start

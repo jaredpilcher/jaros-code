@@ -15,13 +15,13 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, eleven rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, twelve rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
 skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #17 EXT-048's permission rules
 + modes UX, #19 EXT-050's user-authorable subagents, #20 EXT-049's fine-grained checkpoint/
 rewind, #22 EXT-051's `@path`/`@dir/` refs + `/compact`, #23 EXT-052's background runs surface,
-#24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most others remain
-``"missing"``
+#24 EXT-045's streaming tool events + statusline, #25 EXT-053's `/doctor` + install story) are
+genuinely ``"works"``; most others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -346,14 +346,30 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "theme/color configuration.",
     ),
     # #EXT-045-REQ-3 End
+    # #EXT-053-REQ-4 Start
     ProductParityRow(
         id=25, feature="Install + health story",
-        state="partial",
-        current_state="`serve.sh`/`.ps1` + `jcode.sh`/`.ps1` exist (repo-local); no packaging, "
-                       "no `/doctor`.",
-        next_lever="`pipx install jaros-code` packaging; `/doctor` = deterministic checks "
-                    "(Jetson reachable, model served, Docker, git).",
+        state="works",
+        current_state="EXT-053: `harness/doctor.py` runs a deterministic check battery -- Python "
+                       "version, git present + inside a work tree, docker present (WARN not FAIL "
+                       "when absent -- only needed for some eval paths), `.jaros-data/` "
+                       "writability (a read-only `os.access` permission query, never a write) + "
+                       "its `tools`/`agents` subdirs, `JCODE_LLM_BACKEND` config sanity, and a "
+                       "BOUNDED probe of the Jetson llama.cpp endpoint reusing the existing "
+                       "`harness.llamacpp_client.health` helper (unreachable degrades to an "
+                       "honest WARN, never a hang or a raise, so `/doctor` works fully offline) "
+                       "-- with an honest overall pass/warn/fail verdict; wired as `/doctor` "
+                       "(REPL) and `jcode doctor` / `jcode --doctor` (headless, deterministic "
+                       "exit code), `/help` updated. A minimal `pyproject.toml` adds a `jcode` "
+                       "console-script entry point (`pipx install .` / `pip install -e .`) "
+                       "alongside the unchanged `python -m harness.cli` / `serve.sh`/`.ps1` / "
+                       "`jcode.sh`/`.ps1` paths.",
+        next_lever="Auto-update; a signed/versioned release artifact; an actual PyPI publish "
+                    "step (only a local editable/pipx install from a checkout is proven here); "
+                    "richer on-device Jetson diagnostics (CUDA/JetPack/llama.cpp build "
+                    "specifics) are out of scope for a host-side `/doctor`.",
     ),
+    # #EXT-053-REQ-4 End
     ProductParityRow(
         id=26, feature="Multimodal input (images)",
         state="missing",
