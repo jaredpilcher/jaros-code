@@ -73,6 +73,10 @@ Commands (Claude-Code-style):
   /tasks                        list tasks (id + status)
   /task done <id>                mark a task done
   /task doing <id>               mark a task in progress
+  /skills                        list custom skills (drop a .jcode/skills/<name>.md file to add
+                                 a new /name command; args substitute into the template via
+                                 $ARGUMENTS/$1/$2..., which then routes through the orchestrator
+                                 like any plain request; a built-in command always wins, EXT-046)
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -266,6 +270,16 @@ class JcodeCli:
         self._last_latency_s: "float | None" = None
         self._show_statusline = False  # toggled by /statusline; REPL prints it when True
         # #EXT-045-REQ-2 End
+        # #EXT-046-REQ-1 Start
+        # Custom skills (EXT-046): discovered ONCE per CLI instance (mirrors the self.jcode_md/
+        # self.project_md caching precedent) -- a missing/unreadable .jcode/skills/ (either
+        # tier) or any discovery failure falls back to {} rather than blocking construction.
+        try:
+            from harness.skills import discover_skills
+            self.skills = discover_skills(".")
+        except Exception:
+            self.skills = {}
+        # #EXT-046-REQ-1 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -1174,6 +1188,23 @@ class JcodeCli:
         return "experiments:" + "".join("\n" + line for line in lines)
     # #EXT-036-REQ-19 End
 
+    # #EXT-046-REQ-3 Start
+    def cmd_skills(self, _arg: str) -> str:
+        """List discovered custom skills (EXT-046): a `.jcode/skills/<name>.md` (or
+        `~/.jcode/skills/<name>.md`) file registers `/name` as a real command whose body is
+        substituted with any given args and routed through the orchestrator like a plain
+        request. Reports an honest empty message when none are discovered."""
+        skills = getattr(self, "skills", {}) or {}
+        if not skills:
+            return "(no custom skills found — drop a .md file into .jcode/skills/ to add one)"
+        lines = []
+        for name in sorted(skills):
+            skill = skills[name]
+            desc = skill.description.strip() if skill.description else "(no description)"
+            lines.append(f"  /{name}  —  {desc}")
+        return "custom skills:" + "".join("\n" + line for line in lines)
+    # #EXT-046-REQ-3 End
+
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:
         """Interactive-only ambiguity check (REQ-8, Claude Code's AskUserQuestion analog):
@@ -1316,6 +1347,61 @@ class JcodeCli:
             return ("map", "")
         return None
 
+    # #EXT-046-REQ-2 Start
+    def _route_plain(self, line: str) -> "tuple[str, str]":
+        """The plain-language routing chain -- deterministic multistep detection, then the
+        deterministic intent fast-path, then the orchestrator agent -- extracted from
+        ``handle()``'s else-branch so a skill's SUBSTITUTED template text (``_run_skill``) can
+        be routed through the EXACT SAME chain a typed non-slash request uses, rather than a
+        second reasoning mechanism (EXT-046 REQ-2). Returns ``(response_text, action_label)``,
+        where ``action_label`` feeds the EXT-045 statusline bookkeeping."""
+        if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
+            # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
+            out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
+            return out, "agent"
+        intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
+        if intent:
+            action, arg = intent
+            out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
+            return out, action
+        # #EXT-036-REQ-12 Start
+        # #EXT-036-REQ-15 Start
+        # condense() is the raw recent() slice (byte-identical) for under-budget sessions, and
+        # a [summary] + recent-turns view once the transcript grows past the budget (REQ-15) —
+        # the router always gets ONE consistent shape.
+        from harness.session import condense
+        history = condense(self.session, llm=self.llm)
+        # #EXT-036-REQ-15 End
+        # #EXT-036-REQ-16 Start
+        memory = self._recall_memory(line)
+        # #EXT-036-REQ-16 End
+        orch = self._load_agent("orchestrator_agent.py", self.llm)
+        # #EXT-036-REQ-17 Start
+        # #EXT-042-REQ-2 Start
+        augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory,
+                                           getattr(self, "jcode_md", ""))
+        # #EXT-042-REQ-2 End
+        # #EXT-036-REQ-17 End
+        [d] = orch.decide({"request": augmented, "history": history})
+        action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
+        banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
+        if action == "fix":
+            out = banner + "\n" + self._nl_fix(line, arg, history=history, memory=memory)
+        else:
+            handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
+            out = banner + "\n" + handler(arg)
+        return out, action
+        # #EXT-036-REQ-12 End
+
+    def _run_skill(self, text: str) -> str:
+        """Route a skill's substituted template text through ``_route_plain`` -- the SAME
+        plain-language chain ``handle()`` runs for a typed non-slash request (EXT-046 REQ-2).
+        The template is never re-entered as a literal ``/slash`` line, even if its body happens
+        to start with ``/`` — it is always treated as ONE plain-language request."""
+        out, _action_label = self._route_plain(text)
+        return out
+    # #EXT-046-REQ-2 End
+
     def handle(self, line: str, *, interactive: bool = False) -> str:
         """Top-level: slash commands run directly; plain language is ROUTED — first a
         deterministic intent fast-path (refactor/nav phrasings), then the orchestrator agent.
@@ -1356,45 +1442,9 @@ class JcodeCli:
             if interactive:
                 line = self._maybe_ask(line)
             # #EXT-036-REQ-8 End
-            if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
-                # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
-                out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
-                _action_label = "agent"  # #EXT-045-REQ-2
-            else:
-                intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
-                if intent:
-                    action, arg = intent
-                    out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
-                    _action_label = action  # #EXT-045-REQ-2
-                else:
-                    # #EXT-036-REQ-12 Start
-                    # #EXT-036-REQ-15 Start
-                    # condense() is the raw recent() slice (byte-identical) for under-budget
-                    # sessions, and a [summary] + recent-turns view once the transcript grows
-                    # past the budget (REQ-15) — the router always gets ONE consistent shape.
-                    from harness.session import condense
-                    history = condense(self.session, llm=self.llm)
-                    # #EXT-036-REQ-15 End
-                    # #EXT-036-REQ-16 Start
-                    memory = self._recall_memory(line)
-                    # #EXT-036-REQ-16 End
-                    orch = self._load_agent("orchestrator_agent.py", self.llm)
-                    # #EXT-036-REQ-17 Start
-                    # #EXT-042-REQ-2 Start
-                    augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory,
-                                                       getattr(self, "jcode_md", ""))
-                    # #EXT-042-REQ-2 End
-                    # #EXT-036-REQ-17 End
-                    [d] = orch.decide({"request": augmented, "history": history})
-                    action, arg = d.payload.get("action", "help"), d.payload.get("arg", "")
-                    banner = f"\033[2m[orchestrator → {action} {arg}]\033[0m"
-                    if action == "fix":
-                        out = banner + "\n" + self._nl_fix(line, arg, history=history, memory=memory)
-                    else:
-                        handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
-                        out = banner + "\n" + handler(arg)
-                    _action_label = action  # #EXT-045-REQ-2
-                    # #EXT-036-REQ-12 End
+            # #EXT-046-REQ-2 Start
+            out, _action_label = self._route_plain(line)
+            # #EXT-046-REQ-2 End
         # #EXT-036-REQ-12 Start
         _record_turn(self, line, out)
         # #EXT-036-REQ-12 End
@@ -1422,9 +1472,18 @@ class JcodeCli:
         head, _, arg = line.partition(" ")
         head = self._ALIASES.get(head, head)
         handler = getattr(self, "cmd_" + head[1:], None)
-        if handler is None:
-            return f"unknown command {head!r}. Try /help."
-        return handler(arg)
+        if handler is not None:
+            return handler(arg)
+        # #EXT-046-REQ-2 Start
+        # A built-in command ALWAYS wins (checked above); only when NO built-in matches does a
+        # discovered custom skill (EXT-046) get a chance — a skill can never shadow a built-in.
+        skill = getattr(self, "skills", {}).get(head[1:])
+        if skill is not None:
+            from harness.skills import render_template
+            rendered = render_template(skill.body, arg)
+            return self._run_skill(rendered)
+        # #EXT-046-REQ-2 End
+        return f"unknown command {head!r}. Try /help."
 
 
 def repl(session_id: str | None = None) -> int:

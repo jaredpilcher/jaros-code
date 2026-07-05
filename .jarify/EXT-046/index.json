@@ -1,0 +1,50 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 273,
+      "endLine": 282
+    },
+    {
+      "file": "harness/skills.py",
+      "startLine": 19,
+      "endLine": 123
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1191,
+      "endLine": 1206
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1350,
+      "endLine": 1403
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1445,
+      "endLine": 1447
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1477,
+      "endLine": 1485
+    },
+    {
+      "file": "harness/skills.py",
+      "startLine": 126,
+      "endLine": 143
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 128,
+      "endLine": 151
+    }
+  ]
+}

@@ -15,9 +15,10 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, four rows (#12 EXT-044 sessions continue/resume/fork/name,
-#13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #24 EXT-045's
-streaming tool events + statusline) are genuinely ``"works"``; most others remain ``"missing"``
+lever named. As of ``LAST_SYNCED``, five rows (#12 EXT-044 sessions continue/resume/fork/name,
+#13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
+skills/commands, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``;
+most others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -124,14 +125,30 @@ PARITY_ROWS: "list[ProductParityRow]" = [
         next_lever="`@path` import expansion inside JCODE.md; optional gemma-assisted `/init` "
                     "overview section (deterministic repo-map scaffold ships today).",
     ),
+    # #EXT-046-REQ-4 Start
     ProductParityRow(
         id=15, feature="Custom commands / skills",
-        state="missing",
-        current_state="None -- all commands are built-in Python; no user-dropped markdown "
-                       "command files.",
-        next_lever="`.jcode/skills/<name>.md` registry read by the deterministic router; "
-                    "body = plan template the orchestrator executes.",
+        state="works",
+        current_state="EXT-046: `.jcode/skills/<name>.md` (project) and `~/.jcode/skills/"
+                       "<name>.md` (user, project wins on a name collision) register a real "
+                       "`/name` command -- `harness/skills.py` discovers + parses optional "
+                       "frontmatter (`description`/`argument-hint`) + the markdown body (the "
+                       "plan template), never raising on a missing dir or a malformed file. "
+                       "`JcodeCli.dispatch` only falls to a matching skill AFTER the existing "
+                       "built-in `cmd_*` lookup misses, so a skill can never shadow a built-in; "
+                       "the typed args are substituted into the template (`$ARGUMENTS`/`$1`/"
+                       "`$2`...) and the rendered text is routed through the SAME plain-language "
+                       "chain (`_route_plain`, extracted from `handle()`) a typed non-slash "
+                       "request already uses -- no second reasoning mechanism. `/skills` lists "
+                       "discovered skills (name + description); `/help` documents the "
+                       "convention. A repo with no `.jcode/skills/` anywhere behaves byte-"
+                       "identically to before this spec.",
+        next_lever="Argument-hint validation/tab-completion; a \"model-invocable when "
+                    "relevant\" auto-suggestion mode where the orchestrator itself reaches for "
+                    "a skill without the user typing `/name`; skill-authoring/scaffolding "
+                    "tooling.",
     ),
+    # #EXT-046-REQ-4 End
     ProductParityRow(
         id=16, feature="User-configurable hooks",
         state="missing",

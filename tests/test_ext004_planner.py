@@ -53,6 +53,10 @@ def test_multistep_routes_to_structured_agent():
 
     class Stub:
         _is_multistep = JcodeCli._is_multistep
+        # EXT-046 extracted handle()'s plain-routing else-branch into _route_plain (so a skill's
+        # substituted template routes through the SAME chain); borrow it so this test exercises the
+        # real multistep→structured-agent routing (the assertions below are unchanged).
+        _route_plain = JcodeCli._route_plain
 
         def cmd_agent(self, line):
             calls.append(("agent", line))

@@ -32,14 +32,18 @@ def test_no_row_is_inflated_to_works_today():
     end-to-end, resumed context proven via the existing condense()/recent() path, fresh runs
     byte-identical), row #14 (Project-instruction memory hierarchy), row #13 (Headless +
     piping + structured output, EXT-043: stdin pipe + `--output-format json` + `--max-turns` cap
-    + deterministic exit codes, all test-covered; `stream-json` honestly deferred), and row #24
+    + deterministic exit codes, all test-covered; `stream-json` honestly deferred), row #15
+    (Custom commands / skills, EXT-046: `.jcode/skills/<name>.md` project+user registry, a
+    built-in-always-wins dispatch fallback, `$ARGUMENTS`/`$1`/`$2` argument substitution routed
+    through the existing plain-language chain, `/skills` discovery command; argument-hint
+    validation/autocomplete and model-invocable auto-suggestion honestly deferred), and row #24
     (Terminal UX polish, EXT-045: streaming tool-event lines from the same Decision-logging
     seam, suppressed under `--output-format json`/non-TTY, `statusline()` + `/statusline`
     toggle, `/help` updated; a live in-flight spinner, `/export`, tab-completion, and themes
     honestly deferred) are the rows genuinely delivered end-to-end -- these pins were updated
     deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 24]
+    assert works == [12, 13, 14, 15, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -77,9 +81,10 @@ def test_score_all_missing_is_0_pct():
 def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
-    # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), and #24 (EXT-045) are genuine "works"
-    assert result["n_works"] == 4
-    assert result["n_partial"] + result["n_missing"] == 12
+    # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), and #24 (EXT-045) are
+    # genuine "works"
+    assert result["n_works"] == 5
+    assert result["n_partial"] + result["n_missing"] == 11
     assert 0.0 <= result["pct"] < 100.0
 
 
