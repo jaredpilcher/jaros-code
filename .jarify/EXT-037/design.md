@@ -48,3 +48,28 @@ jailed (broad read is safe + needed for repo understanding); only create/write/u
 Foundational tools exist (`.jaros-data/tools/`: `fs_read`, `fs_list`, `fs_find`, `fs_grep`, `write_file`,
 `apply_patch`, `search_replace`, `shell_exec`, `_codesafety.py`). EXT-037 HARDENS the writers/exec (REQ-1/REQ-2)
 and ADDS environments (REQ-3) + git (REQ-4), all under the same Jaros two-plane + Foundry-safety pattern (REQ-5).
+
+## Optional-runtime idiom for deterministic fast-paths (REQ-9)
+
+Some product surfaces (`system_builder.py`'s plan-assembly, `refactor.py`'s `/rename`/`/move`) are
+DETERMINISTIC edit paths that write directly to disk rather than being dispatched through a
+model-emitted Decision — and the SAME function is shared between real host use (a live CLI command,
+root = the repo) and throwaway eval-sandbox use (tests/eval harnesses against a temp dir with no
+meaningful "project root"). Forcing every caller through a `Runtime`/root-jail would break the
+sandbox callers. The idiom (first landed as EXT-042 REQ-5, reused here for REQ-9): the writer function
+takes an OPTIONAL `runtime=None` parameter.
+
+```text
+  caller supplies runtime? ──yes──▶ build code.write_file Decision {path, content, root}
+        │                              │
+        no                             ▼
+        │                    runtime.apply(decision)  — gate (REQ-1 root-jail) → execute → hash-chain log
+        ▼                              │
+  raw Path.write_text(...)        gate rejects? ──▶ honest error string, no crash, snapshot/restore
+  (byte-identical fallback,            │
+   used by eval/test callers)     accepted ──▶ file written, logged, replayable
+```
+
+The real-host CLI command handler (`harness/cli.py`) constructs a root-anchored `Runtime` (the same
+`_write_runtime()` helper `/init`/`/remember`/`/rewind` already use) and passes it in; every
+eval/test/sandbox caller passes nothing and keeps the exact pre-existing raw-write behavior.

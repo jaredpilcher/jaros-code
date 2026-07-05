@@ -39,6 +39,9 @@ implementation:
   - tests/test_ext036_server_oracle.py
   - harness/code_quality.py
   - tests/test_ext037_code_quality.py
+  - harness/refactor.py
+  - harness/cli.py
+  - tests/test_ext037_refactor_jaros_write.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -457,3 +460,43 @@ sees a byte-compatible result dict except for the new `"quality"` key.
   clean code scoring empty smells + `ok=True`, `build_system`'s result carrying a `quality`
   field, the smelly-but-working advisory-not-gating proof above, and `_result`'s omitted
   `quality` kwarg staying byte-compatible for every pre-existing caller
+
+### [REQ-9] Deterministic refactor writes (`/rename`, `/move`) are Jaros-native (Tenet 1)
+
+**Owner directive (2026-07-04) — Tenet-1 compliance sweep, tracker #112, refactor.py slice.**
+`harness/refactor.py`'s deterministic `/rename` and `/move` commands write directly to the
+user's repo via raw `Path.write_text`, with ZERO Jaros Decisions — bypassing the gate,
+the REQ-1 root-jail, and the hash-chain log every other compliant host write goes through.
+This requirement closes that gap for `refactor.py` specifically (the model-driven edit path
+is already Jaros-native; other deterministic fast-paths — `multi_file.py`, `system_builder.py`,
+`spec_loop.py` — are separate, explicitly out-of-scope follow-ups), mirroring the PROVEN idiom
+already landed for EXT-042 REQ-5 (`harness/jcode_md.py::init_jcode_md` + `harness/cli.py::
+_write_runtime`): an optional `runtime` parameter that, when supplied, performs the write as a
+real `code.write_file` Decision applied through `Runtime.apply` (gate + REQ-1 root-jail +
+hash-chain log); `runtime=None` (the default) preserves the exact prior direct-write behavior
+byte-for-byte, so every existing eval/test caller against a throwaway sandbox directory is
+unaffected — those callers' temp-dir paths are not under any repo root and must never be forced
+through a root-jail that would reject them.
+
+#### Acceptance Criteria
+- [x] `harness/refactor.py`'s `rename_symbol` and `move_symbol` gain an optional `runtime=None`
+  parameter; every file write in both functions routes through a shared helper that, when
+  `runtime` is given, builds a `code.write_file` Decision (`payload={"path", "content", "root"}`)
+  and applies it via `runtime.apply(...)` instead of a raw `Path.write_text`
+- [x] `runtime=None` (the default) preserves the exact current raw-write behavior byte-for-byte —
+  no existing eval/test caller (`harness/daily_driver.py`, `harness/refactor_eval.py`,
+  `tests/test_ext003_refactor.py`, `tests/test_ext003_scoped_rename.py`) is affected
+- [x] `harness/cli.py`'s `cmd_rename`/`cmd_move` (the real-host command handlers) pass
+  `runtime=self._write_runtime()` — the same root-anchored `Runtime` already used by `/init`,
+  `/remember`, `/rewind` — so a real `/rename`/`/move` invocation is gated, root-jailed, and
+  hash-chain logged
+- [x] A gate rejection (e.g. a path escaping root) degrades to an honest error string returned
+  from `rename_symbol`/`move_symbol` — never an uncaught exception — and any partial rename/move
+  already applied is reverted via the existing suite-green snapshot/restore mechanism
+- [x] `/rename`/`/move`'s existing behavior/output and the suite-green revert-on-red-suite
+  contract are unchanged for a caller that supplies a `runtime`
+- [x] Proven by `tests/test_ext037_refactor_jaros_write.py`: `/rename` and `/move` route through
+  a `code.write_file` Decision when a runtime is supplied (spied via a fake runtime/`DecisionLog`);
+  a root-jail rejection through the Decision path is honest (no crash, no partial effect); the
+  `runtime=None` raw fallback is byte-identical to the pre-existing behavior; and the full suite
+  has no regression

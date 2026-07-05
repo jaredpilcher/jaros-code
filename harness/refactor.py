@@ -17,9 +17,38 @@ from __future__ import annotations
 import ast
 import io
 import tokenize
+import uuid
 from pathlib import Path
 
 from harness.multi_file import _run, _snapshot, _restore  # reuse run/snapshot/restore
+
+
+# #EXT-037-REQ-9 Start
+def _jaros_write(path: "Path | str", content: str, root: str, runtime: "object | None" = None) -> "str | None":
+    """Write `content` to `path` (Tenet 1 / EXT-037 REQ-9). When `runtime` is given -- any object
+    exposing `.apply(decision)`, e.g. `harness.coding_loop.Runtime` -- the write is performed as a
+    real `code.write_file` Decision applied through it, so it gets the SAME gate
+    (`validate_decision`) + EXT-037 root-jail + hash-chain log every other Jaros write Decision goes
+    through, instead of a raw `Path.write_text`. `runtime=None` (the default -- used by every
+    existing eval/test caller against a throwaway sandbox directory) preserves the exact prior
+    direct-write behavior byte-for-byte. Returns `None` on success, else an honest error string --
+    a gate rejection (e.g. the path escapes root) degrades to a message here, never a crash."""
+    path = str(path)
+    if runtime is None:
+        Path(path).write_text(content, encoding="utf-8", newline="\n")
+        return None
+    try:
+        from jaros.core import create_decision
+        decision = create_decision(
+            id=f"refactor-write-{uuid.uuid4().hex}", source="refactor",
+            type="code.write_file",
+            payload={"path": path, "content": content, "root": str(root)},
+        )
+        runtime.apply(decision)
+    except Exception as exc:
+        return f"failed to write {path}: {exc}"
+    return None
+# #EXT-037-REQ-9 End
 
 
 # #EXT-003-REQ-6 Start
@@ -50,10 +79,16 @@ def _rename_identifier_tokens(src: str, old: str, new: str) -> tuple[str, int]:
 
 
 def rename_symbol(cwd: str, old: str, new: str,
-                  test_cmd: str = "python -m pytest -q") -> dict:
+                  test_cmd: str = "python -m pytest -q", *, runtime: "object | None" = None) -> dict:
     """Rename identifier `old` -> `new` across the repo's .py files (NAME tokens only — not
     inside strings/comments/docstrings), gated by the suite staying green. Pre-req: a refactor
-    preserves PASSING tests, so the suite must be green first."""
+    preserves PASSING tests, so the suite must be green first.
+
+    `runtime` (EXT-037 REQ-9, Tenet 1): optional -- any object exposing `.apply(decision)`, e.g.
+    `harness.coding_loop.Runtime`. When given, every file write is routed through a real
+    `code.write_file` Decision (gated, EXT-037 root-jailed, hash-chain logged) instead of a raw
+    `Path.write_text`. `runtime=None` (the default) is unchanged from before this parameter
+    existed -- every eval/test caller against a throwaway sandbox dir is unaffected."""
     if not (old.isidentifier() and new.isidentifier()):
         return {"renamed": False, "occurrences": 0, "note": "old/new must be identifiers"}
     ok0, _ = _run(cwd, test_cmd)
@@ -73,7 +108,12 @@ def rename_symbol(cwd: str, old: str, new: str,
         except (tokenize.TokenError, IndentationError, SyntaxError):
             continue   # unparseable file — skip safely, leave unchanged, never crash the rename
         if n:
-            p.write_text(new_src, encoding="utf-8", newline="\n")
+            # #EXT-037-REQ-9 Start
+            err = _jaros_write(p, new_src, cwd, runtime)
+            if err:
+                _restore(snap)  # never ship a partially-renamed, ungated repo
+                return {"renamed": False, "occurrences": occ, "files": files, "note": err}
+            # #EXT-037-REQ-9 End
             occ += n
             files += 1
     # #EXT-003-REQ-6 End
@@ -88,11 +128,16 @@ def rename_symbol(cwd: str, old: str, new: str,
 
 
 def move_symbol(cwd: str, symbol: str, from_file: str, to_file: str,
-                test_cmd: str = "python -m pytest -q") -> dict:
+                test_cmd: str = "python -m pytest -q", *, runtime: "object | None" = None) -> dict:
     """Move a top-level function/class from one module to another, test-gated. The source
     module RE-EXPORTS it (`from <to> import <symbol>`) so existing importers keep working;
     if the move turns the suite red (e.g. the symbol needed imports left behind), REVERT.
-    Deterministic: ast finds the symbol's exact line span (decorators included)."""
+    Deterministic: ast finds the symbol's exact line span (decorators included).
+
+    `runtime` (EXT-037 REQ-9, Tenet 1): optional, same contract as `rename_symbol` -- when given,
+    both file writes below are routed through a real `code.write_file` Decision instead of a raw
+    `Path.write_text`. `runtime=None` (the default) is unchanged from before this parameter
+    existed."""
     root = Path(cwd)
     src_p, dst_p = root / from_file, root / to_file
     if not src_p.is_file():
@@ -119,10 +164,20 @@ def move_symbol(cwd: str, symbol: str, from_file: str, to_file: str,
     snap = _snapshot(cwd)
     to_mod = Path(to_file).stem
     remaining = f"from {to_mod} import {symbol}\n" + "".join(lines[:start] + lines[end:])
-    src_p.write_text(remaining, encoding="utf-8", newline="\n")
+    # #EXT-037-REQ-9 Start
+    err = _jaros_write(src_p, remaining, cwd, runtime)
+    if err:
+        _restore(snap)  # never ship a half-moved, ungated repo
+        return {"moved": False, "note": err}
+    # #EXT-037-REQ-9 End
     dst_src = dst_p.read_text(encoding="utf-8") if dst_p.is_file() else ""
     sep = "\n\n\n" if dst_src.strip() else ""
-    dst_p.write_text(dst_src.rstrip() + sep + block, encoding="utf-8", newline="\n")
+    # #EXT-037-REQ-9 Start
+    err = _jaros_write(dst_p, dst_src.rstrip() + sep + block, cwd, runtime)
+    if err:
+        _restore(snap)  # never ship a half-moved, ungated repo
+        return {"moved": False, "note": err}
+    # #EXT-037-REQ-9 End
 
     ok1, _ = _run(cwd, test_cmd)
     if ok1:

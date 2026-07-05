@@ -652,7 +652,12 @@ class JcodeCli:
         if len(bits) < 2:
             return "usage: /rename <old> <new>"
         from harness.refactor import rename_symbol
-        return rename_symbol(".", bits[0], bits[1])["note"]
+        # #EXT-037-REQ-9 Start
+        # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+        # `/init`/`/remember`/`/rewind` already use -- so every file this real-host command
+        # writes is gated, EXT-037 root-jailed, and hash-chain logged.
+        return rename_symbol(".", bits[0], bits[1], runtime=self._write_runtime())["note"]
+        # #EXT-037-REQ-9 End
 
     def cmd_move(self, arg: str) -> str:
         """Test-gated move refactor (EXT-003): move a top-level symbol to another module; the
@@ -661,7 +666,10 @@ class JcodeCli:
         if len(bits) < 3:
             return "usage: /move <symbol> <from_file> <to_file>"
         from harness.refactor import move_symbol
-        return move_symbol(".", bits[0], bits[1], bits[2])["note"]
+        # #EXT-037-REQ-9 Start
+        # `runtime=self._write_runtime()` (Tenet 1), mirroring `cmd_rename` above.
+        return move_symbol(".", bits[0], bits[1], bits[2], runtime=self._write_runtime())["note"]
+        # #EXT-037-REQ-9 End
 
     def cmd_usages(self, arg: str) -> str:
         """AST find-usages (EXT-004): every reference/definition of a symbol across the repo,

@@ -697,3 +697,56 @@ NEVER gates the build — a working-but-smelly system stays exactly as shipped/d
 
 #### Implements
 - [REQ-8] Code-quality signal on generated systems — advisory
+
+### [TASK-13] `refactor.py`'s `/rename`/`/move` writes are Jaros-native (REQ-9)
+
+Tenet-1 compliance sweep (tracker #112), refactor.py slice only. `harness/refactor.py`'s
+`rename_symbol`/`move_symbol` write to the user's repo via raw `Path.write_text`, bypassing the
+gate + REQ-1 root-jail + hash-chain log. Mirror the PROVEN EXT-042 REQ-5 idiom
+(`harness/jcode_md.py::init_jcode_md`): an optional `runtime` parameter that, when supplied,
+performs the write as a `code.write_file` Decision through `Runtime.apply`; `runtime=None`
+preserves the exact current raw-write behavior for every existing eval/test caller.
+
+#### Steps
+1. In `harness/refactor.py`, add `import uuid` and a private `_jaros_write(path, content, root,
+   runtime=None) -> str | None` helper: when `runtime is None`, writes `content` to `path` via the
+   existing raw `Path.write_text(..., encoding="utf-8", newline="\n")` call (byte-identical
+   fallback); when `runtime` is given, builds a `jaros.core.create_decision(type="code.write_file",
+   payload={"path": str(path), "content": content, "root": str(root)})` and applies it via
+   `runtime.apply(decision)` inside a `try`/`except Exception`, returning `None` on success or an
+   honest `f"failed to write {path}: {exc}"` string on any gate rejection/executor failure (never
+   raises).
+2. Add an optional keyword-only `runtime: object | None = None` parameter to `rename_symbol` and
+   `move_symbol`. In `rename_symbol`'s per-file write loop, replace the raw
+   `p.write_text(new_src, ...)` call with `_jaros_write(p, new_src, cwd, runtime)`; if it returns a
+   non-`None` error string, call `_restore(snap)` (never ship a partially-renamed, ungated repo) and
+   return `{"renamed": False, "occurrences": occ, "files": files, "note": err}`. In `move_symbol`,
+   replace both `src_p.write_text(...)` and `dst_p.write_text(...)` calls the same way; on either
+   returning an error, `_restore(snap)` and return `{"moved": False, "note": err}`.
+3. In `harness/cli.py`'s `cmd_rename` and `cmd_move`, pass `runtime=self._write_runtime()` to
+   `rename_symbol(...)`/`move_symbol(...)` — the same root-anchored `Runtime` `/init`/`/remember`/
+   `/rewind` already use — so a real `/rename`/`/move` invocation is gated, root-jailed, and
+   hash-chain logged. No other CLI change.
+4. Confirm (do not modify) that every non-CLI caller of `rename_symbol`/`move_symbol` —
+   `harness/daily_driver.py` (eval, temp `workdir`), `harness/refactor_eval.py` (eval harness, temp
+   dir `d`), `tests/test_ext003_refactor.py`, `tests/test_ext003_scoped_rename.py` (both `tmp_path`)
+   — keeps calling with no `runtime` argument, so they stay on the byte-identical raw-write
+   fallback (their temp-dir paths are not under any repo root and must never be forced through the
+   root-jail).
+5. Add `tests/test_ext037_refactor_jaros_write.py` covering: `rename_symbol`/`move_symbol` with a
+   fake `runtime` object (recording `.apply(decision)` calls) route every write through a
+   `code.write_file` Decision with the expected `path`/`content`/`root` payload; a fake runtime
+   whose `.apply` raises (simulating a gate rejection / root-jail escape) produces an honest
+   `renamed: False`/`moved: False` result with the error in `note`, no crash, and the suite-green
+   snapshot/restore leaves the repo unchanged; `runtime=None` (the default, omitted entirely)
+   produces byte-identical output to the pre-existing behavior for both functions; and a real
+   `harness.coding_loop.Runtime(root=tmp_path)` end-to-end proves an in-root rename/move still
+   succeeds while a crafted out-of-root target is refused via the real REQ-1 gate.
+6. Run `python -m pytest tests/ -q` synchronously in the foreground (background it with
+   `run_with_heartbeat` per the observability convention) and confirm the exit code and full pass
+   count, with no regression to `tests/test_ext003_refactor.py`, `tests/test_ext003_scoped_rename.py`,
+   `tests/test_ext004_cli.py`, `harness/daily_driver.py`'s refactor-routing eval, or any prior
+   EXT-037 task's tests.
+
+#### Implements
+- [REQ-9] Deterministic refactor writes (`/rename`, `/move`) are Jaros-native (Tenet 1)
