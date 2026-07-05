@@ -55,9 +55,16 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
   med · strong Jaros-native fit: the hash-chain DECISION LOG already records every Decision, so rewind
   leverages the existing replay machinery rather than a bolt-on; via Jarify (new spec EXT-049). Flips row
   #20 partial→works.
+- **[★★ #112 TENET-1 broad host-write sweep — HIGH, after #20]** (honest correction: the #110 audit
+  UNDERCOUNTED). The deterministic host-mutating commands write raw (zero Decisions): `/rename` `/move`
+  (refactor.py), `/fixrepo` (multi_file.py), `/buildsystem` `/modifysystem` (system_builder.py ~15 sites),
+  `/agent` (spec_loop.py). Route each REAL host write through a code.write_file Decision (1154766 idiom);
+  complication — each write fn is SHARED with eval-sandbox use, so split so sandboxes stay raw while host
+  writes gate. Per-module, full-suite-gated, refactor.py first — high · directly serves owner's
+  everything-on-Jaros directive; via Jarify (new REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
-  ecosystem win) · low tractability (multi-part, likely a multi-builder spec); take after #20.
+  ecosystem win) · low tractability (multi-part, likely a multi-builder spec); take after the compliance sweep.
 - **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
   does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
