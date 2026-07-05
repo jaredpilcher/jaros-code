@@ -122,7 +122,10 @@ _ROOT_JAILED_DECISION_TYPES = frozenset(
 class Runtime:
     """Faithful Jaros execution path: gate -> executor -> decision log."""
 
-    def __init__(self, data_dir: Path = DATA_DIR, root: "str | None" = None) -> None:
+    # #EXT-045-REQ-1 Start
+    def __init__(self, data_dir: Path = DATA_DIR, root: "str | None" = None,
+                 on_event: "callable | None" = None) -> None:
+        # #EXT-045-REQ-1 End
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
         executor.register_handler("advance", make_advance_handler())
@@ -134,6 +137,25 @@ class Runtime:
         # #EXT-037-REQ-1 Start
         self._root = root  # project root to stamp onto write Decisions (opt-in; see above)
         # #EXT-037-REQ-1 End
+        # #EXT-045-REQ-1 Start
+        # Optional streaming hook (EXT-045): called with a small event dict at the SAME seam
+        # that already records each accepted Decision to the hash-chain (`record_decision`
+        # below) -- pure presentation, no new decision-making path. `None` (the default) is a
+        # complete no-op: every pre-EXT-045 caller of `Runtime(...)` behaves byte-identically.
+        self._on_event = on_event
+        # #EXT-045-REQ-1 End
+
+    # #EXT-045-REQ-1 Start
+    def _emit(self, event: dict) -> None:
+        """Best-effort event notification -- NEVER raises and NEVER affects `apply()`'s own
+        control flow, even if `on_event` itself is broken."""
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(event)
+        except Exception:
+            pass
+    # #EXT-045-REQ-1 End
 
     def apply(self, decision):
         """Validate at the gate, then execute, recording the accepted Decision."""
@@ -142,8 +164,15 @@ class Runtime:
                 and isinstance(decision.payload, dict) and "root" not in decision.payload):
             decision = _dataclass_replace(decision, payload={**decision.payload, "root": self._root})
         # #EXT-037-REQ-1 End
+        # #EXT-045-REQ-1 Start
+        self._emit({"phase": "call", "type": decision.type, "payload": decision.payload,
+                    "source": decision.source})
+        # #EXT-045-REQ-1 End
         gated = validate_decision(decision)
         if not gated.ok:
+            # #EXT-045-REQ-1 Start
+            self._emit({"phase": "error", "type": decision.type, "reason": gated.reason})
+            # #EXT-045-REQ-1 End
             raise RuntimeError(f"gate rejected {decision.type}: {gated.reason}")
         outcome = executor.apply(
             decision,
@@ -151,9 +180,15 @@ class Runtime:
             log=self._log,
         )
         if not outcome.applied:
+            # #EXT-045-REQ-1 Start
+            self._emit({"phase": "error", "type": decision.type, "reason": outcome.reason})
+            # #EXT-045-REQ-1 End
             raise RuntimeError(f"executor refused {decision.type}: {outcome.reason}")
         _TOOL_USAGE[decision.type] += 1  # telemetry: this tool fired
         _WIRING_USAGE[f"{decision.source} -> {decision.type}"] += 1  # which agent used it
+        # #EXT-045-REQ-1 Start
+        self._emit({"phase": "result", "type": decision.type, "output": outcome.output})
+        # #EXT-045-REQ-1 End
         return outcome.output
 # #EXT-003-REQ-1 End
 

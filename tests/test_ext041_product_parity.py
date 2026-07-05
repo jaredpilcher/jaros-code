@@ -30,13 +30,16 @@ def test_no_row_is_inflated_to_works_today():
     visible diff, not a silent inflation. Row #12 (Sessions continue/resume/fork/name, EXT-044:
     a durable name+timestamp+index session store, `-c`/`-r <id|name>`/`--fork` all test-covered
     end-to-end, resumed context proven via the existing condense()/recent() path, fresh runs
-    byte-identical), row #14 (Project-instruction memory hierarchy), and row #13 (Headless +
+    byte-identical), row #14 (Project-instruction memory hierarchy), row #13 (Headless +
     piping + structured output, EXT-043: stdin pipe + `--output-format json` + `--max-turns` cap
-    + deterministic exit codes, all test-covered; `stream-json` honestly deferred) are the rows
-    genuinely delivered end-to-end -- these pins were updated deliberately alongside each
-    landing, not silently."""
+    + deterministic exit codes, all test-covered; `stream-json` honestly deferred), and row #24
+    (Terminal UX polish, EXT-045: streaming tool-event lines from the same Decision-logging
+    seam, suppressed under `--output-format json`/non-TTY, `statusline()` + `/statusline`
+    toggle, `/help` updated; a live in-flight spinner, `/export`, tab-completion, and themes
+    honestly deferred) are the rows genuinely delivered end-to-end -- these pins were updated
+    deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14]
+    assert works == [12, 13, 14, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -74,9 +77,9 @@ def test_score_all_missing_is_0_pct():
 def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
-    # rows #12 (EXT-044), #13 (EXT-043), and #14 (EXT-042) are genuine "works"
-    assert result["n_works"] == 3
-    assert result["n_partial"] + result["n_missing"] == 13
+    # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), and #24 (EXT-045) are genuine "works"
+    assert result["n_works"] == 4
+    assert result["n_partial"] + result["n_missing"] == 12
     assert 0.0 <= result["pct"] < 100.0
 
 

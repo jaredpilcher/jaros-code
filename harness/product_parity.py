@@ -15,12 +15,12 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, three rows (#12 EXT-044 sessions continue/resume/fork/name,
-#13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy) are genuinely
-``"works"``; most others remain ``"missing"`` (GAP-MAP state ``unmeasured``) or ``"partial"``
-(GAP-MAP state ``probed`` / ``lever-named``, i.e. something exists but the CC-parity feature is
-not yet delivered). That honest baseline, not a flattering one, is the entire point of the
-instrument.
+lever named. As of ``LAST_SYNCED``, four rows (#12 EXT-044 sessions continue/resume/fork/name,
+#13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #24 EXT-045's
+streaming tool events + statusline) are genuinely ``"works"``; most others remain ``"missing"``
+(GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
+something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
+flattering one, is the entire point of the instrument.
 
 MONTHLY RE-SYNC (owner directive): Claude Code is a moving target. Re-audit the official docs
 (code.claude.com/docs: overview, cli-reference, commands/skills, hooks, memory, MCP, sub-agents,
@@ -192,13 +192,30 @@ PARITY_ROWS: "list[ProductParityRow]" = [
         next_lever="`jcode --bg` submits through the existing inbox; `jcode logs/attach/stop "
                     "<id>` read the Jaros log.",
     ),
+    # #EXT-045-REQ-3 Start
     ProductParityRow(
         id=24, feature="Terminal UX polish",
-        state="partial",
-        current_state="REPL prints results; no streaming/progress/statusline; `/help` exists.",
-        next_lever="Stream tool events as they log (the hash-chain already has them); "
-                    "statusline = model + class + $0 + latency.",
+        state="works",
+        current_state="EXT-045: tool calls now STREAM a concise `-> call` / `OK result` line to "
+                       "stdout as they happen, from the same seam that already logs each accepted "
+                       "Decision to the hash-chain (`harness.coding_loop.Runtime`'s new `on_event` "
+                       "hook) -- on by default on a live terminal, always suppressed under "
+                       "`--output-format json` (EXT-043) or a non-TTY stdout unless "
+                       "`JCODE_STREAM_EVENTS=1` forces it, and a plain run with none of that stays "
+                       "byte-identical. A `statusline()` function renders `model · class · $0 · "
+                       "latency` from CURRENT state (active model, last routed action, last "
+                       "handle() turn's measured latency); `/statusline [on|off]` toggles a "
+                       "persistent line the REPL prints above every prompt. `/help` now documents "
+                       "both. Progress display beyond the per-tool line (a live spinner/elapsed "
+                       "counter during a single long tool call), `/export`, tab-completion, and "
+                       "themes remain undelivered -- kept honestly `partial`, not inflated to "
+                       "`works`.",
+        next_lever="A live in-flight spinner/elapsed counter for a single long-running tool call "
+                    "(today's line only appears at call-start and at completion); `/export` "
+                    "(dump the session transcript to a file); tab-completion for slash commands; "
+                    "theme/color configuration.",
     ),
+    # #EXT-045-REQ-3 End
     ProductParityRow(
         id=25, feature="Install + health story",
         state="partial",

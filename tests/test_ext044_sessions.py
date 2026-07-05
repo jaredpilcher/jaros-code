@@ -354,7 +354,7 @@ class _StubCliCls:
     last_session_id = None
     constructed = False
 
-    def __init__(self, session_id=None):
+    def __init__(self, session_id=None, stream=False):  # stream: EXT-045-REQ-1
         _StubCliCls.constructed = True
         if _StubCliCls.raise_on_init:
             raise RuntimeError("stub init failure")

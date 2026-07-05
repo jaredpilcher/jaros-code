@@ -7,9 +7,17 @@ drives the navigator agent -> fs.grep, /run drives the commander agent -> shell.
 Decision through the same gate + executor as everything else — the CLI never bypasses
 the two planes.
 
+Terminal UX (EXT-045): on a live terminal, tool calls stream a concise "→ call" / "✓ result"
+line to stdout AS THEY HAPPEN (from the same seam that logs each Decision to the hash-chain) --
+disabled automatically when stdout isn't a TTY or under --output-format json, and always
+overridable via JCODE_STREAM_EVENTS=1|0. /statusline toggles a persistent one-line
+"model · class · $0 · latency" status above every prompt.
+
 Commands (Claude-Code-style):
   /help                         list commands
   /status                       model + latest pass rate + census
+  /statusline [on|off]          toggle a persistent "model · class · $0 · latency" status line
+                                 above every prompt (EXT-045); shows the CURRENT line either way
   /parity                       Product-Parity Checklist: CC-product-surface parity score (EXT-041)
   /agents  /tools               the live fleet/catalog
   /report                       latest convergence report
@@ -76,6 +84,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -187,7 +196,7 @@ def _buildsystem_finalize_config() -> dict:
 class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
-    def __init__(self, session_id: str | None = None) -> None:
+    def __init__(self, session_id: str | None = None, stream: bool = False) -> None:
         # #EXT-014-REQ-1 Start
         # Primary default is llama.cpp + Gemma 4 2B (e2b) via JCODE_LLM_BACKEND="llamacpp".
         # Legacy Ollama path (gemma2:2b) only activates when JCODE_LLM_BACKEND=ollama explicitly.
@@ -197,7 +206,18 @@ class JcodeCli:
         # #EXT-014-REQ-1 End
         from jaros.core import create_decision
         self._mk = create_decision
-        self.rt = Runtime()
+        # #EXT-045-REQ-1 Start
+        # Streaming tool events (EXT-045): OFF by default (byte-identical to before this spec) --
+        # a caller opts in (`stream=True`, wired from `repl()`/`_run_one_shot()` per
+        # `harness.tool_stream.should_stream`). When on, every Decision this Runtime applies
+        # narrates a concise call/result line to stdout as it happens.
+        self.stream = bool(stream)
+        _on_event = None
+        if self.stream:
+            from harness.tool_stream import make_printer
+            _on_event = make_printer()
+        self.rt = Runtime(on_event=_on_event)
+        # #EXT-045-REQ-1 End
         self.llm = build_llm()
         self._load_agent = _load_agent
         # #EXT-014-REQ-1 Start
@@ -238,6 +258,14 @@ class JcodeCli:
         # explicit dir is given. None until a /buildsystem call succeeds this session.
         self._last_built_dir: "Path | None" = None
         # #EXT-036-REQ-14 End
+        # #EXT-045-REQ-2 Start
+        # Statusline state (EXT-045): the last routed action ("problem class") and the wall-clock
+        # latency of the last handle() turn, both updated at the end of every handle() call.
+        # None until the first turn -- statusline() renders "-" for either field until then.
+        self._last_action: "str | None" = None
+        self._last_latency_s: "float | None" = None
+        self._show_statusline = False  # toggled by /statusline; REPL prints it when True
+        # #EXT-045-REQ-2 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -271,6 +299,27 @@ class JcodeCli:
                 f"latest: {rep.get('headline','(no eval yet)')}\n"
                 f"census: agents={c['agents']} tools={c['tools']} capabilities={c['capabilities']} "
                 f"evals={c['evals']}+{c['harnessEvals']} specs={c['specs']}")
+
+    # #EXT-045-REQ-2 Start
+    def statusline(self) -> str:
+        """One-line ``model · problem-class · $0 · latency`` status (EXT-045 REQ-2) computed
+        from CURRENT state -- the active model, the last routed action, and the last handle()
+        turn's measured latency. Never raises (delegates to harness.statusline.statusline)."""
+        from harness.statusline import statusline as _statusline
+        return _statusline(self.model, self._last_action, self._last_latency_s)
+
+    def cmd_statusline(self, arg: str) -> str:
+        """``/statusline [on|off]``: toggle the persistent one-line status the REPL prints
+        before every prompt, and show its CURRENT value immediately either way."""
+        a = arg.strip().lower()
+        if a in ("on", "show"):
+            self._show_statusline = True
+        elif a in ("off", "hide"):
+            self._show_statusline = False
+        else:
+            self._show_statusline = not self._show_statusline
+        return f"statusline: {'on' if self._show_statusline else 'off'}\n{self.statusline()}"
+    # #EXT-045-REQ-2 End
 
     # #EXT-041-REQ-1 Start
     def cmd_parity(self, _arg: str) -> str:
@@ -740,7 +789,13 @@ class JcodeCli:
         full_payload = {**payload, "root": root}
         try:
             from harness.coding_loop import Runtime
-            rt = Runtime(root=root)
+            # #EXT-045-REQ-1 Start
+            _on_event = None
+            if getattr(self, "stream", False):
+                from harness.tool_stream import make_printer
+                _on_event = make_printer()
+            rt = Runtime(root=root, on_event=_on_event)
+            # #EXT-045-REQ-1 End
             out = rt.apply(self._mk(id=f"cli-{dtype}-{uuid.uuid4().hex}", source="cli",
                                      type=dtype, payload=full_payload))
             return out, None
@@ -1276,11 +1331,21 @@ class JcodeCli:
         REPL (``repl()``) passes ``interactive=True``. Headless/one-shot callers (``main()``'s
         argument path, and the default here) never ask -- they proceed with the request
         as-is, so a headless run can never block waiting on input()."""
+        # #EXT-045-REQ-2 Start
+        # Statusline bookkeeping (EXT-045): time the whole turn and record the routed action
+        # ("problem class") -- both read back by statusline(). Best-effort; a failure here must
+        # never affect what handle() actually returns (see the try/finally-style update below).
+        _t0 = time.time()
+        _action_label = "chat"
+        # #EXT-045-REQ-2 End
         line = line.strip()
         if not line:
             return ""
         if line.startswith("/"):
             out = self.dispatch(line)
+            # #EXT-045-REQ-2 Start
+            _action_label = line.partition(" ")[0].lstrip("/") or "chat"
+            # #EXT-045-REQ-2 End
         else:
             # #EXT-036-REQ-8 Start
             # Interactive-only: check + resolve genuine ambiguity BEFORE any routing below,
@@ -1294,11 +1359,13 @@ class JcodeCli:
             if self._is_multistep(line):   # multi-action plain request -> the STRUCTURED agent (REQ-7)
                 # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
                 out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
+                _action_label = "agent"  # #EXT-045-REQ-2
             else:
                 intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
                 if intent:
                     action, arg = intent
                     out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
+                    _action_label = action  # #EXT-045-REQ-2
                 else:
                     # #EXT-036-REQ-12 Start
                     # #EXT-036-REQ-15 Start
@@ -1326,10 +1393,21 @@ class JcodeCli:
                     else:
                         handler = getattr(self, "cmd_" + ("ls" if action == "list" else action), self.cmd_help)
                         out = banner + "\n" + handler(arg)
+                    _action_label = action  # #EXT-045-REQ-2
                     # #EXT-036-REQ-12 End
         # #EXT-036-REQ-12 Start
         _record_turn(self, line, out)
         # #EXT-036-REQ-12 End
+        # #EXT-045-REQ-2 Start
+        # Statusline bookkeeping: record this turn's routed action + measured latency. Best-
+        # effort -- must never raise or change `out` (a broken clock/attr must never break the
+        # response the caller is about to receive).
+        try:
+            self._last_action = _action_label
+            self._last_latency_s = time.time() - _t0
+        except Exception:
+            pass
+        # #EXT-045-REQ-2 End
         return out
 
     # -- dispatch ----------------------------------------------------------
@@ -1353,8 +1431,17 @@ def repl(session_id: str | None = None) -> int:
     """Interactive Claude-Code-like prompt loop.
 
     ``session_id`` (EXT-036 REQ-12) resumes a prior conversation (from --resume);
-    when omitted a fresh session starts (also resumable later via /resume)."""
-    cli = JcodeCli(session_id=session_id)
+    when omitted a fresh session starts (also resumable later via /resume).
+
+    NOTE (EXT-045): this signature is DELIBERATELY unchanged (one keyword argument, mirroring
+    the EXT-044 backward-compat constraint some tests stub `repl` against) -- tool-event
+    streaming is decided INTERNALLY (stdout-is-a-tty, never under JSON since the REPL has no
+    JSON mode) rather than threaded in as a new parameter."""
+    # #EXT-045-REQ-1 Start
+    from harness.tool_stream import should_stream
+    _stream = should_stream("text", _stdout_is_tty())
+    cli = JcodeCli(session_id=session_id, stream=_stream)
+    # #EXT-045-REQ-1 End
     # #EXT-014-REQ-1 Start
     # Banner reflects the active model (Gemma 4 2B e2b via llamacpp by default; gemma2:2b only if JCODE_LLM_BACKEND=ollama).
     print(f"\n\033[1m jaros-code \033[0m  local coding harness on {cli.model}")
@@ -1365,6 +1452,10 @@ def repl(session_id: str | None = None) -> int:
     # #EXT-036-REQ-12 End
     print("  slash-command REPL — type /help, /quit to exit\n")
     while True:
+        # #EXT-045-REQ-2 Start
+        if getattr(cli, "_show_statusline", False):
+            print(f"\033[2m{cli.statusline()}\033[0m")
+        # #EXT-045-REQ-2 End
         try:
             line = input("\033[36mjcode›\033[0m ")
         except (EOFError, KeyboardInterrupt):
@@ -1442,6 +1533,19 @@ def _stdin_is_tty() -> bool:
         return True
 
 
+# #EXT-045-REQ-1 Start
+def _stdout_is_tty() -> bool:
+    """Best-effort stdout-is-a-terminal check (EXT-045) -- used to decide whether tool-event
+    streaming/the statusline default on. Any detection failure conservatively answers ``False``
+    (the quiet default), never assuming a live terminal it can't confirm."""
+    import sys
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+# #EXT-045-REQ-1 End
+
+
 def _read_stdin_request() -> str:
     """Read + strip the piped request from stdin. Never raises -- any read failure degrades to
     ``""`` (an empty request), letting the caller decide what an empty piped request means."""
@@ -1454,12 +1558,18 @@ def _read_stdin_request() -> str:
 
 def _run_one_shot(request: str, session_id: "str | None", output_format: str,
                    max_turns: "int | None",
-                   name_to_set: "str | None" = None) -> "tuple[str, int]":
+                   name_to_set: "str | None" = None,
+                   stream: bool = False) -> "tuple[str, int]":
     """Run exactly ONE headless turn and return ``(text_to_print, exit_code)``.
 
     ``name_to_set`` (EXT-044 REQ-1/3, optional, defaulted so pre-EXT-044 callers are
     unaffected): when given, applied to the session AFTER construction (so it names whichever
     session this run ends up using -- fresh, resumed, or forked) via ``set_session_name``.
+
+    ``stream`` (EXT-045 REQ-1, optional, defaulted ``False`` so pre-EXT-045 callers -- including
+    every existing 4-positional-argument test call -- are byte-identical): when the caller (see
+    ``main()``) has already decided streaming should be active (never under ``"json"``, see
+    ``harness.tool_stream.should_stream``), threaded straight into ``JcodeCli``.
 
     ``max_turns`` (REQ-4): the one-shot path already performs exactly one turn, so ``N >= 1`` (or
     ``None``, no cap) has no further effect beyond that existing ceiling -- documented honestly,
@@ -1484,7 +1594,7 @@ def _run_one_shot(request: str, session_id: "str | None", output_format: str,
         return f"\033[31merror:\033[0m {msg}", 1
 
     try:
-        cli = JcodeCli(session_id=session_id)
+        cli = JcodeCli(session_id=session_id, stream=stream)   # #EXT-045-REQ-1
         if name_to_set:                 # #EXT-044-REQ-3
             from harness.session import set_session_name
             set_session_name(cli.session, name_to_set)
@@ -1631,8 +1741,13 @@ def main() -> int:
       python -m harness.cli --fork [<id|name>]       # EXT-044: branch a session into a NEW id
                                                       # (copies its transcript; original untouched)
       python -m harness.cli --name <name> "req"      # EXT-044: name the session this run uses
+
+    EXT-045 (terminal UX): on a live terminal (never under --output-format json), tool calls
+    stream a concise progress line as they happen; JCODE_STREAM_EVENTS=1|0 forces it on/off.
+    The REPL's /statusline toggles a persistent "model · class · $0 · latency" status line.
     """
     import sys
+    from harness.tool_stream import should_stream  # #EXT-045-REQ-1
     args = sys.argv[1:]
     # #EXT-043-REQ-1 Start
     session_id, output_format, max_turns, rest0 = _parse_headless_args(args)
@@ -1673,7 +1788,10 @@ def main() -> int:
         return repl(session_id=session_id)
 
     # #EXT-043-REQ-3 Start
-    text, code = _run_one_shot(request, session_id, output_format, max_turns, name_to_set)
+    # #EXT-045-REQ-1 Start
+    do_stream = should_stream(output_format, _stdout_is_tty())
+    # #EXT-045-REQ-1 End
+    text, code = _run_one_shot(request, session_id, output_format, max_turns, name_to_set, do_stream)
     print(text)
     return code
     # #EXT-043-REQ-3 End

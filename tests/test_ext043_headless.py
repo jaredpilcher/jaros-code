@@ -31,11 +31,13 @@ class _StubCli:
     raise_on_init = False
     last_request = None
     last_session_id = None
+    last_stream = None  # #EXT-045-REQ-1
 
-    def __init__(self, session_id=None):
+    def __init__(self, session_id=None, stream=False):
         if _StubCli.raise_on_init:
             raise RuntimeError("stub init failure")
         _StubCli.last_session_id = session_id
+        _StubCli.last_stream = stream  # #EXT-045-REQ-1
 
     def handle(self, request):
         _StubCli.last_request = request
@@ -50,6 +52,7 @@ def _reset_stub():
     _StubCli.raise_on_init = False
     _StubCli.last_request = None
     _StubCli.last_session_id = None
+    _StubCli.last_stream = None  # #EXT-045-REQ-1
     yield
 
 
