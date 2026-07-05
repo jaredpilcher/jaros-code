@@ -55,9 +55,8 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
   CLI→gated, eval-sandbox→raw). Per-module, full-suite-gated. Progress:
   - ✅ **refactor.py (/rename //move)** — EXT-037 REQ-9, commit 2d58ae5, full suite 2018 green.
   - ✅ **multi_file.py (/fixrepo + shared /undo restore)** — EXT-037 REQ-10, commit 468e3ee, 2030 green.
-  - ▶ **system_builder.py (/buildsystem //modifysystem ~15 sites)** — NEXT slice (biggest), in flight.
-  - ⬚ spec_loop.py (/agent).
-  - ⬚ cleanup: cli.py /plan + _nl_fix also call multi_file_fix without a runtime (same gap, quick).
+  - ✅ **system_builder.py (/buildsystem //modifysystem, 1 chokepoint × 5 build variants)** — EXT-037 REQ-11, commit 81ec12b, 2043 green.
+  - ▶ **FINAL slice: spec_loop.py (/agent) + cli.py /plan + _nl_fix** — thread runtime into the remaining host-path multi_file_fix('.',...) calls; in flight. After this the host-write sweep is COMPLETE.
   high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
@@ -178,6 +177,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[Jaros-native: /buildsystem + /modifysystem]** the system-generator (build a whole system from a sentence) now writes every generated file through a real Jaros `code.write_file` Decision — slice 3 of the host-write sweep, a single write-chokepoint threaded through all 5 build variants; eval/suite builds keep the fast raw path — 81ec12b.
 - **[Jaros-native: /fixrepo + /undo]** the multi-file auto-fix + undo commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain) — slice 2 of the host-write sweep; the shared restore code means /undo got gated for free — 468e3ee.
 - **[Jaros-native: /rename + /move]** the deterministic rename/move-symbol commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain), not raw Python — slice 1 of the host-write sweep (owner directive); eval-sandbox callers keep the fast raw path — 2d58ae5.
 - **[#20 checkpoint / rewind]** jcode now keeps a ring of your last 10 edits — `/checkpoints` lists them, `/rewind <n>` steps the workspace back; built on the Jaros hash-chain (each edit captured at the gate seam) and every restore goes through a real `code.write_file` Decision, not a raw write — parity 59.4%→62.5% (8 of 16) — 3fc603c.
