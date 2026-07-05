@@ -126,8 +126,13 @@ class Runtime:
     def __init__(self, data_dir: Path = DATA_DIR, root: "str | None" = None,
                  on_event: "callable | None" = None,
                  # #EXT-047-REQ-2 Start
-                 hooks_config: "dict | None" = None) -> None:
+                 hooks_config: "dict | None" = None,
                  # #EXT-047-REQ-2 End
+                 # #EXT-048-REQ-4 Start
+                 mode: str = "default",
+                 permission_rules: "list | None" = None,
+                 ask_callback: "callable | None" = None) -> None:
+                 # #EXT-048-REQ-4 End
         # #EXT-045-REQ-1 End
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +159,24 @@ class Runtime:
         # (see `apply` below) -- see `harness.hooks` for the gated firing mechanism.
         self._hooks_config = hooks_config
         # #EXT-047-REQ-2 End
+        # #EXT-048-REQ-4 Start
+        # REPL mode + permission rules (EXT-048): `mode="default"` and `permission_rules=None`
+        # (both defaults) are a complete no-op -- every pre-EXT-048 caller of `Runtime(...)`
+        # behaves byte-identically. `ask_callback` is only ever consulted when a permission rule
+        # resolves `"ask"`; `None` (the default, and every headless/non-interactive caller) means
+        # an `"ask"` degrades to a safe-default deny rather than blocking on input (see `apply`).
+        self._mode = mode if mode in ("plan", "default", "acceptEdits") else "default"
+        self._permission_rules = permission_rules
+        self._ask_callback = ask_callback
+        # #EXT-048-REQ-4 End
+
+    # #EXT-048-REQ-4 Start
+    def set_mode(self, mode: str) -> None:
+        """Update this Runtime's live mode (EXT-048) -- called by `harness.cli.JcodeCli.cmd_mode`
+        so a `/mode` change takes effect immediately without reconstructing the CLI. An unknown
+        `mode` value degrades to `"default"` rather than raising."""
+        self._mode = mode if mode in ("plan", "default", "acceptEdits") else "default"
+    # #EXT-048-REQ-4 End
 
     # #EXT-045-REQ-1 Start
     def _emit(self, event: dict) -> None:
@@ -174,6 +197,22 @@ class Runtime:
                 and isinstance(decision.payload, dict) and "root" not in decision.payload):
             decision = _dataclass_replace(decision, payload={**decision.payload, "root": self._root})
         # #EXT-037-REQ-1 End
+        # #EXT-048-REQ-4 Start
+        # `plan` mode (EXT-048): a user-toggled REPL mode (`/mode plan`) makes every write/shell
+        # Decision propose-only -- described and returned WITHOUT any side effect: no PreToolUse
+        # hook fires, the hard gate never runs, the executor never runs. This is STRONGER than a
+        # permission rule (a true "propose only," not merely "ask and default to no"). Read-only
+        # types (fs.read/fs.grep/...) are unaffected, so information-gathering still works.
+        # `self._mode` defaults to "default" -- byte-identical to before this spec unless a caller
+        # explicitly opts into plan mode.
+        if self._mode == "plan":
+            from harness.permissions import PLAN_MODE_WITHHELD_TYPES
+            if decision.type in PLAN_MODE_WITHHELD_TYPES:
+                self._emit({"phase": "planned", "type": decision.type,
+                            "payload": decision.payload})
+                return {"planned": True, "type": decision.type, "payload": decision.payload,
+                        "note": "plan mode: no side effect performed -- description only"}
+        # #EXT-048-REQ-4 End
         # #EXT-047-REQ-2 Start
         # PreToolUse hooks (EXT-047): fire BEFORE the gate even sees this Decision. A hook that
         # exits non-zero BLOCKS the tool call -- the clerk refuses it, exactly like a gate
@@ -201,6 +240,43 @@ class Runtime:
             self._emit({"phase": "error", "type": decision.type, "reason": gated.reason})
             # #EXT-045-REQ-1 End
             raise RuntimeError(f"gate rejected {decision.type}: {gated.reason}")
+        # #EXT-048-REQ-2 Start
+        # User permission rules (EXT-048): consulted ONLY here, AFTER the hard gate above has
+        # already accepted the Decision -- THE SAFETY INVARIANT (see harness/permissions.py
+        # module docstring): a user `allow` rule can never un-block something the hard gate just
+        # refused, because this code is unreachable when `gated.ok` is False (the `raise` above
+        # already returned control to the caller). `self._permission_rules` defaults to `None` --
+        # byte-identical to before this spec for every caller that doesn't pass it.
+        if self._permission_rules:
+            from harness.permissions import ACCEPT_EDITS_AUTO_TYPES, decide, resolve_decision_arg
+            _arg = resolve_decision_arg(decision)
+            _action = decide(self._permission_rules, decision.type, _arg)
+            if _action == "deny":
+                _reason = (f"permission rule denied {decision.type}"
+                           + (f" ({_arg})" if _arg else ""))
+                self._emit({"phase": "error", "type": decision.type, "reason": _reason})
+                raise RuntimeError(_reason)
+            if _action == "ask":
+                if self._mode == "acceptEdits" and decision.type in ACCEPT_EDITS_AUTO_TYPES:
+                    pass  # acceptEdits auto-approves a write Decision that already passed the gate
+                elif self._ask_callback is not None:
+                    try:
+                        _approved = bool(self._ask_callback(decision.type, _arg))
+                    except Exception:
+                        _approved = False
+                    if not _approved:
+                        _reason = (f"permission ask declined for {decision.type}"
+                                   + (f" ({_arg})" if _arg else ""))
+                        self._emit({"phase": "error", "type": decision.type, "reason": _reason})
+                        raise RuntimeError(_reason)
+                else:
+                    # Headless/no interactive prompt wired -- never hang: safe-default deny.
+                    _reason = (f"permission ask for {decision.type} has no interactive prompt "
+                               "available -- denying by safe default")
+                    self._emit({"phase": "error", "type": decision.type, "reason": _reason})
+                    raise RuntimeError(_reason)
+            # _action == "allow" (or any unrecognized value) falls through to execute normally.
+        # #EXT-048-REQ-2 End
         outcome = executor.apply(
             decision,
             on_accept=lambda d: record_decision(self._dlog, d),

@@ -15,10 +15,11 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, six rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, seven rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
-skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #24 EXT-045's streaming tool
-events + statusline) are genuinely ``"works"``; most others remain ``"missing"``
+skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #17 EXT-048's permission rules
++ modes UX, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most
+others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -178,14 +179,35 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "(overlaps row #17).",
     ),
     # #EXT-047-REQ-5 End
+    # #EXT-048-REQ-5 Start
     ProductParityRow(
         id=17, feature="Permission rules + modes UX",
-        state="partial",
-        current_state="Hard gates exist (egress, destructive ops, secrets, path-jail) but are "
-                       "not user-configurable; `--plan` exists only for `/agent`.",
-        next_lever="Permission-rules file + ASK prompt flow in the REPL; mode cycle "
-                    "(plan -> default -> acceptEdits).",
+        state="works",
+        current_state="EXT-048: `.jcode/permissions.json` (project) and `~/.jcode/permissions.json` "
+                       "(user, project rules consulted first) hold `{tool, arg, action}` rules "
+                       "(`action` one of `allow`/`ask`/`deny`, first-match-wins glob on tool/arg); "
+                       "`harness.coding_loop.Runtime.apply` -- the same gate -> executor -> "
+                       "decision-log choke point EXT-047's hooks use -- consults a matching rule "
+                       "ONLY AFTER the hard gate (egress/destructive-ops denylist, secrets, "
+                       "path-jail) has already accepted the Decision, so a user `allow` rule can "
+                       "NEVER un-block something the hard gate refuses (proven by an explicit "
+                       "test: an `allow` rule for a denylisted `shell.exec` command is still "
+                       "refused, with the gate's own rejection reason). An `ask` result prompts "
+                       "interactively ONLY in the REPL (`interactive=True`, an `input()`-based "
+                       "y/n); a headless/one-shot run has no prompt wired and safely DENIES by "
+                       "default rather than hanging. A `plan`/`default`/`acceptEdits` mode cycle "
+                       "(`/mode`) is wired at the same seam: `plan` withholds every write/shell "
+                       "Decision before the gate or hooks ever see it (description only, no side "
+                       "effect, proven via the filesystem); `acceptEdits` narrowly auto-approves "
+                       "an `ask`-resolving WRITE Decision (never `shell.exec`) that already passed "
+                       "the gate. `/permissions` lists configured rules; no config anywhere and "
+                       "`mode=\"default\"` are byte-identical no-ops.",
+        next_lever="A `bypassPermissions`/\"YOLO\" mode (Claude Code has one; deliberately NOT "
+                    "built here -- it would let a rule/mode skip the hard gate, contradicting "
+                    "this spec's safety invariant); a richer settings-hierarchy precedence UI "
+                    "beyond `/permissions`'s flat listing.",
     ),
+    # #EXT-048-REQ-5 End
     ProductParityRow(
         id=18, feature="External-tool extensibility protocol (MCP client)",
         state="missing",

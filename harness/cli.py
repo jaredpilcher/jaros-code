@@ -82,6 +82,14 @@ Commands (Claude-Code-style):
                                  commands, run through the SAME gated shell.exec path every tool
                                  call uses; a PreToolUse hook exiting non-zero BLOCKS the tool
                                  call it gates, EXT-047)
+  /mode [plan|default|acceptEdits]  cycle or set the REPL mode (EXT-048): plan = propose only, no
+                                 side effects (writes/shell are withheld and described only);
+                                 default = today's behavior; acceptEdits = auto-approve an
+                                 ask-resolving WRITE Decision that already passed the hard gate
+  /permissions                  list configured permission rules (drop a .jcode/permissions.json
+                                 file with {tool, arg, action} entries, action = allow|ask|deny,
+                                 first match wins; the built-in hard safety gates ALWAYS run
+                                 first — a user allow rule can never widen what they refuse, EXT-048)
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -205,7 +213,10 @@ def _buildsystem_finalize_config() -> dict:
 class JcodeCli:
     """Slash-command dispatcher; each handler returns text to print."""
 
-    def __init__(self, session_id: str | None = None, stream: bool = False) -> None:
+    def __init__(self, session_id: str | None = None, stream: bool = False,
+                 # #EXT-048-REQ-3 Start
+                 interactive: bool = False) -> None:
+                 # #EXT-048-REQ-3 End
         # #EXT-014-REQ-1 Start
         # Primary default is llama.cpp + Gemma 4 2B (e2b) via JCODE_LLM_BACKEND="llamacpp".
         # Legacy Ollama path (gemma2:2b) only activates when JCODE_LLM_BACKEND=ollama explicitly.
@@ -236,7 +247,31 @@ class JcodeCli:
         except Exception:
             self.hooks_config = {}
         # #EXT-047-REQ-1 End
-        self.rt = Runtime(on_event=_on_event, hooks_config=self.hooks_config)
+        # #EXT-048-REQ-1 Start
+        # User-configurable permission rules (EXT-048): discovered ONCE per CLI instance, mirroring
+        # the hooks_config precedent immediately above -- a missing/unreadable
+        # .jcode/permissions.json (either tier) or any discovery failure falls back to `[]` rather
+        # than blocking construction, keeping the Runtime's permission enforcement a complete
+        # no-op. `self.mode` (EXT-048/REQ-4) is the REPL's `/mode` state, always starting at
+        # `DEFAULT_MODE` ("default") -- byte-identical to pre-EXT-048 behavior until `/mode` is
+        # used. `self._interactive` records whether THIS instance may prompt via input() (only
+        # `repl()` passes `interactive=True`) -- a headless/one-shot run never blocks on a prompt.
+        try:
+            from harness.permissions import load_permission_rules
+            self.permission_rules = load_permission_rules(".")
+        except Exception:
+            self.permission_rules = []
+        from harness.permissions import DEFAULT_MODE
+        self.mode = DEFAULT_MODE
+        self._interactive = bool(interactive)
+        # #EXT-048-REQ-1 End
+        self.rt = Runtime(
+            on_event=_on_event, hooks_config=self.hooks_config,
+            # #EXT-048-REQ-3 Start
+            mode=self.mode, permission_rules=self.permission_rules,
+            ask_callback=(self._ask_permission if self._interactive else None),
+            # #EXT-048-REQ-3 End
+        )
         # #EXT-045-REQ-1 End
         self.llm = build_llm()
         self._load_agent = _load_agent
@@ -328,6 +363,22 @@ class JcodeCli:
         except Exception:
             pass
     # #EXT-047-REQ-3 End
+
+    # #EXT-048-REQ-3 Start
+    def _ask_permission(self, tool_name: str, arg: "str | None") -> bool:
+        """Interactive y/n prompt for an `"ask"`-resolving permission rule (EXT-048) -- wired as
+        the `Runtime`'s `ask_callback` ONLY when this CLI was constructed with `interactive=True`
+        (`repl()`). Any doubt (EOF, a declined/empty answer, an unreadable prompt) -> `False`
+        (deny) -- never raises, and never approves by default."""
+        try:
+            suffix = f" ({arg})" if arg else ""
+            answer = input(
+                f"\033[33mpermission required for {tool_name}{suffix} -- allow? [y/N] \033[0m"
+            ).strip().lower()
+            return answer in ("y", "yes")
+        except Exception:
+            return False
+    # #EXT-048-REQ-3 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -857,8 +908,15 @@ class JcodeCli:
                 from harness.tool_stream import make_printer
                 _on_event = make_printer()
             # #EXT-047-REQ-2 Start
-            rt = Runtime(root=root, on_event=_on_event,
-                         hooks_config=getattr(self, "hooks_config", None))
+            rt = Runtime(
+                root=root, on_event=_on_event,
+                hooks_config=getattr(self, "hooks_config", None),
+                # #EXT-048-REQ-4 Start
+                mode=getattr(self, "mode", "default"),
+                permission_rules=getattr(self, "permission_rules", None),
+                ask_callback=(self._ask_permission if getattr(self, "_interactive", False) else None),
+                # #EXT-048-REQ-4 End
+            )
             # #EXT-047-REQ-2 End
             # #EXT-045-REQ-1 End
             out = rt.apply(self._mk(id=f"cli-{dtype}-{uuid.uuid4().hex}", source="cli",
@@ -1275,6 +1333,46 @@ class JcodeCli:
         return "\n".join(lines)
     # #EXT-047-REQ-4 End
 
+    # #EXT-048-REQ-4 Start
+    def cmd_mode(self, arg: str) -> str:
+        """Cycle or set the REPL mode (EXT-048): `plan` (propose only — every write/shell
+        Decision is withheld and described, never executed), `default` (today's behavior,
+        unchanged), `acceptEdits` (auto-approve an `ask`-resolving WRITE Decision that already
+        passed the hard gate — never `shell.exec`). `/mode` with no argument cycles
+        plan -> default -> acceptEdits -> plan; `/mode <name>` sets it directly. Wired at the SAME
+        `Runtime.apply` gate seam EXT-047's hooks use — the change takes effect immediately via
+        `Runtime.set_mode`, with no need to reconstruct the CLI."""
+        from harness.permissions import MODES
+        arg = (arg or "").strip()
+        if not arg:
+            idx = MODES.index(self.mode) if self.mode in MODES else 0
+            self.mode = MODES[(idx + 1) % len(MODES)]
+        elif arg in MODES:
+            self.mode = arg
+        else:
+            return f"unknown mode {arg!r} — choose one of {', '.join(MODES)}"
+        self.rt.set_mode(self.mode)
+        note = " (writes/shell withheld — propose only)" if self.mode == "plan" else ""
+        return f"mode: {self.mode}{note}"
+
+    def cmd_permissions(self, _arg: str) -> str:
+        """List configured permission rules (EXT-048): drop a `.jcode/permissions.json` (or
+        `~/.jcode/permissions.json`) file with `{tool, arg, action}` entries (`action` one of
+        `allow`/`ask`/`deny`, first match wins). Reports an honest empty message when none are
+        configured. The built-in hard safety gates (egress/destructive-ops denylist, secrets,
+        path-jail) always apply first, regardless of any rule here."""
+        rules = getattr(self, "permission_rules", []) or []
+        if not rules:
+            return ("(no permission rules configured — drop a .jcode/permissions.json file with "
+                     "{tool, arg, action} entries to add one; hard safety gates always apply)")
+        lines = ["configured permission rules (first match wins):"]
+        for i, r in enumerate(rules, start=1):
+            tool = r.tool or "*"
+            arg_part = f" arg={r.arg!r}" if r.arg else ""
+            lines.append(f"  {i}. tool={tool!r}{arg_part} -> {r.action}")
+        return "\n".join(lines)
+    # #EXT-048-REQ-4 End
+
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:
         """Interactive-only ambiguity check (REQ-8, Claude Code's AskUserQuestion analog):
@@ -1569,7 +1667,14 @@ def repl(session_id: str | None = None) -> int:
     # #EXT-045-REQ-1 Start
     from harness.tool_stream import should_stream
     _stream = should_stream("text", _stdout_is_tty())
-    cli = JcodeCli(session_id=session_id, stream=_stream)
+    # #EXT-048-REQ-3 Start
+    # The REPL is the ONE genuinely interactive surface (it already reads via input() for
+    # /quit-detection and _maybe_ask) -- so it's the only caller that opts into `interactive=True`,
+    # wiring an `input()`-based permission prompt as the Runtime's `ask_callback`. The headless
+    # one-shot path (`_run_one_shot`, below) never passes this -- an `ask` there safely degrades
+    # to deny rather than blocking on a prompt with no terminal attached.
+    cli = JcodeCli(session_id=session_id, stream=_stream, interactive=True)
+    # #EXT-048-REQ-3 End
     # #EXT-045-REQ-1 End
     # #EXT-014-REQ-1 Start
     # Banner reflects the active model (Gemma 4 2B e2b via llamacpp by default; gemma2:2b only if JCODE_LLM_BACKEND=ollama).
