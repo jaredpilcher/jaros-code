@@ -50,14 +50,14 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[★★ #112 TENET-1 broad host-write sweep — TOP NOW, owner-directive priority]** (honest correction:
-  the #110 audit UNDERCOUNTED). The deterministic host-mutating commands write raw (zero Decisions):
-  `/rename` `/move` (refactor.py), `/fixrepo` (multi_file.py), `/buildsystem` `/modifysystem`
-  (system_builder.py ~15 sites), `/agent` (spec_loop.py). Route each REAL host write through a
-  code.write_file Decision (1154766 idiom); complication — each write fn is SHARED with eval-sandbox use,
-  so split so sandboxes stay raw while host writes gate. Per-module, full-suite-gated, **refactor.py
-  (/rename //move) FIRST** (smallest) — high · directly serves owner's everything-on-Jaros directive; via
-  Jarify (new REQs under EXT-037).
+- **[★★ #112 TENET-1 broad host-write sweep — TOP NOW, owner-directive priority · MULTI-SLICE]** route
+  the deterministic host-mutating commands through code.write_file Decisions (optional-runtime idiom:
+  CLI→gated, eval-sandbox→raw). Per-module, full-suite-gated. Progress:
+  - ✅ **refactor.py (/rename //move)** — EXT-037 REQ-9, commit 2d58ae5, full suite 2018 green.
+  - ▶ **multi_file.py (/fixrepo)** — NEXT slice (in flight).
+  - ⬚ system_builder.py (/buildsystem //modifysystem ~15 sites) — biggest slice.
+  - ⬚ spec_loop.py (/agent).
+  high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
   ecosystem win) · low tractability (multi-part, likely a multi-builder spec); take after the compliance sweep.
@@ -177,6 +177,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[Jaros-native: /rename + /move]** the deterministic rename/move-symbol commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain), not raw Python — slice 1 of the host-write sweep (owner directive); eval-sandbox callers keep the fast raw path — 2d58ae5.
 - **[#20 checkpoint / rewind]** jcode now keeps a ring of your last 10 edits — `/checkpoints` lists them, `/rewind <n>` steps the workspace back; built on the Jaros hash-chain (each edit captured at the gate seam) and every restore goes through a real `code.write_file` Decision, not a raw write — parity 59.4%→62.5% (8 of 16) — 3fc603c.
 - **[★ #110 Tenet-1 compliance — host writes on Jaros]** (owner directive) `/init` + `/remember` now write to your repo through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain log), not raw Python — plus a governance rule that every new product-surface host-write must be a Decision. The audit confirmed the rest of the core already runs in the Jaros runtime — 1154766.
 - **[#17 permission rules + modes]** you can now configure what jcode may do — an allow/ask/deny rules file + plan/default/acceptEdits REPL modes; user rules can only NARROW the built-in safety gates, never widen them (proven: an "allow rm -rf" rule is still refused). Enforced INSIDE the Jaros runtime at the gate seam — parity 56.2%→59.4% — 7798132.
