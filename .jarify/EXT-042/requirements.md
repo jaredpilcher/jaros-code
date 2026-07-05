@@ -1,7 +1,7 @@
 ---
 id: EXT-042
 title: JCODE.md — project instruction memory hierarchy
-status: partial
+status: covered
 priority: high
 implementation:
   - file: harness/jcode_md.py
@@ -9,6 +9,10 @@ implementation:
       - - 1
         - 999
   - file: harness/cli.py
+    ranges:
+      - - 1
+        - 999
+  - file: harness/project_memory.py
     ranges:
       - - 1
         - 999
@@ -76,3 +80,24 @@ docstring's command list so `/help` lists it.
 - [x] `cmd_init` calls `harness.jcode_md.init_jcode_md(".")` and returns a human-readable result (path written, or "already exists" message).
 - [x] `/init` is listed in the `harness/cli.py` module docstring's command list (so `/help` shows it).
 - [x] `/init` dispatches through the existing dynamic command routing with no new registration table.
+
+### [REQ-5] Route `/init` and `/remember` host-project writes through a real Jaros Decision (Tenet 1)
+
+Owner-directed 2026-07-04 Tenet-1 compliance fix: `init_jcode_md`'s `JCODE.md` write (and
+`harness/project_memory.py`'s `.jcode/memory.md` write, wired from `/remember`) call raw
+`Path.write_text` against the user's HOST project — a host side effect that bypasses the Jaros
+two-plane path (Decision -> gate `validate_decision` -> executor -> hash-chain log). Both already
+call the EXT-037 `path_jail` helper directly, so they are "half-safe" but not a Decision. Route
+both through `jaros.core.create_decision(type="code.write_file", ...)` applied via a
+root-anchored `harness.coding_loop.Runtime` (mirroring the EXT-037 REQ-5 `_git_tool` root-anchored-
+Runtime pattern already used for `git.*` Decisions from the CLI), so the write gets the gate +
+EXT-037 root-jail + hash-chain log in the ONE real Jaros-native choke point every other write
+Decision passes through.
+
+#### Acceptance Criteria
+- [x] `init_jcode_md(root=".", runtime=None)` accepts an optional `runtime` (any object exposing `.apply(decision)`, e.g. a `harness.coding_loop.Runtime`); when given, the JCODE.md write is performed as a `code.write_file` Decision (`payload={"path": ..., "content": ..., "root": ...}`) applied through it, instead of a raw `Path.write_text`.
+- [x] `runtime=None` (the default) preserves the EXISTING direct-write behavior byte-for-byte, so every pre-existing caller/test of `init_jcode_md` that does not pass a `runtime` is unaffected.
+- [x] `harness/project_memory.py`'s `append_memory(cwd, note, runtime=None)` gets the same optional `runtime` parameter and the same Decision-routing behavior for its `.jcode/memory.md` write, with `runtime=None` preserving the existing direct-write behavior.
+- [x] `harness/cli.py`'s `cmd_init` and `cmd_remember` both construct a root-anchored `Runtime` (mirroring `_git_tool`'s construction: `root=os.path.abspath(".")`, plus this CLI instance's `hooks_config`/`mode`/`permission_rules`/`ask_callback`) and pass it as `runtime=` to `init_jcode_md`/`append_memory`, so real `/init` and `/remember` usage is fully routed through the Decision -> gate -> executor -> hash-chain-log path.
+- [x] A gate rejection (e.g. the EXT-037 root-jail refusing an escaping path) surfaces as an honest error string from `cmd_init`/`cmd_remember` — it is never allowed to raise/crash the REPL.
+- [x] Other identified HOST-project raw writers (`harness/multi_file.py` used by `/fixrepo`/`/undo`, `harness/refactor.py` used by `/rename`/`/move`, `harness/system_builder.py` used by `/buildsystem`/`/modifysystem`, `harness/spec_loop.py` used by `/agent`) are explicitly ACKNOWLEDGED as the same class of gap but OUT OF SCOPE for this requirement — each is deeply entangled with shared eval/sandbox code paths and is large enough (system_builder.py alone is 2000+ lines with ~15 write call sites) to need its own dedicated follow-up task rather than a forced, risky retrofit here. The internal `.jaros/*.jsonl` per-repo stores (`harness/repo_memory.py`, `harness/task_store.py`, `harness/experiment_store.py`) are ALSO acknowledged but left as-is — structurally they mirror the Decision/Transition log's plain-Python precedent (internal durable machine-authored logs, not user-editable content), not a rewritable "content" write like `code.write_file`.

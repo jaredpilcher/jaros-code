@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 
 MAX_CHARS = 2000
@@ -126,10 +127,17 @@ def _starter_content(root: "str | Path") -> str:
     return _STARTER_TEMPLATE.format(structure=structure)
 
 
-def init_jcode_md(root: "str | Path" = ".") -> str:
+def init_jcode_md(root: "str | Path" = ".", runtime: "object | None" = None) -> str:
     """`/init` generator (REQ-3): write a starter ``JCODE.md`` at `root` from deterministic repo
     comprehension. Never overwrites an existing file (write-only-if-absent) and never raises --
-    any failure degrades to a human-readable message, never an exception."""
+    any failure degrades to a human-readable message, never an exception.
+
+    EXT-042 REQ-5 (Tenet 1): when `runtime` is given -- any object exposing `.apply(decision)`,
+    e.g. a `harness.coding_loop.Runtime` -- the write is performed as a real `code.write_file`
+    Decision applied through it, so it gets the SAME gate (`validate_decision`) + EXT-037
+    root-jail + hash-chain log every other Jaros write Decision goes through, instead of a raw
+    `Path.write_text`. `runtime=None` (the default) preserves the prior direct-write behavior
+    byte-for-byte, so every pre-existing caller/test of this function is unaffected."""
     root_str = str(root)
     try:
         target = Path(root_str) / "JCODE.md"
@@ -144,6 +152,22 @@ def init_jcode_md(root: "str | Path" = ".") -> str:
         resolved = path_jail(root_str, "JCODE.md")
     except PathEscapeError as exc:
         return str(exc)
+
+    # #EXT-042-REQ-5 Start
+    if runtime is not None:
+        try:
+            from jaros.core import create_decision
+            decision = create_decision(
+                id=f"init-jcode-md-{uuid.uuid4().hex}", source="jcode_md.init",
+                type="code.write_file",
+                payload={"path": resolved, "content": content, "root": root_str},
+            )
+            runtime.apply(decision)
+        except Exception as exc:
+            return f"failed to write {resolved}: {exc}"
+        return f"wrote {resolved}"
+    # #EXT-042-REQ-5 End
+
     try:
         Path(resolved).parent.mkdir(parents=True, exist_ok=True)
         Path(resolved).write_text(content, encoding="utf-8", newline="\n")

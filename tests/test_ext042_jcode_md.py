@@ -317,3 +317,90 @@ def test_slash_init_listed_in_help(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cli, _ = _stub_cli()
     assert "/init" in cli.dispatch("/help")
+
+
+# --- (h) REQ-5: /init routes its write through a real code.write_file Decision (Tenet 1) -------
+
+class _FakeApplyRuntime:
+    """Records every Decision passed to `.apply()` — does NOT touch the filesystem itself, so a
+    test using it proves the CALLER built a `code.write_file` Decision without depending on the
+    real Jaros gate/executor plumbing."""
+
+    def __init__(self) -> None:
+        self.applied: list = []
+
+    def apply(self, decision):
+        self.applied.append(decision)
+        return {"tool": "code.write_file", "path": decision.payload["path"], "applied": True}
+
+
+def test_init_jcode_md_runtime_builds_write_file_decision(tmp_path):
+    rt = _FakeApplyRuntime()
+    result = init_jcode_md(tmp_path, runtime=rt)
+    assert len(rt.applied) == 1
+    d = rt.applied[0]
+    assert d.type == "code.write_file"
+    assert d.payload["path"].endswith("JCODE.md")
+    assert d.payload["root"] == str(tmp_path)
+    assert "## Structure" in d.payload["content"]
+    assert "wrote" in result
+    # the FAKE runtime never wrote anything -- proves the write really goes THROUGH `runtime`,
+    # not a raw Path.write_text alongside it.
+    assert not (tmp_path / "JCODE.md").is_file()
+
+
+def test_init_jcode_md_runtime_none_is_unchanged(tmp_path):
+    """No regression: every pre-existing caller/test that never passes `runtime` keeps the
+    direct-write behavior exactly as before."""
+    result = init_jcode_md(tmp_path)
+    assert (tmp_path / "JCODE.md").is_file()
+    assert "wrote" in result
+
+
+def test_init_jcode_md_runtime_gate_rejection_is_honest_not_a_crash(tmp_path):
+    """A gate rejection (e.g. EXT-037's root-jail refusing the resolved path) degrades to an
+    honest message string through the SAME call site `runtime.apply()` uses -- never raises."""
+
+    class _RejectingRuntime:
+        def apply(self, decision):
+            raise RuntimeError("gate rejected code.write_file: refused path outside root")
+
+    result = init_jcode_md(tmp_path, runtime=_RejectingRuntime())
+    assert isinstance(result, str)
+    assert "failed to write" in result
+    assert not (tmp_path / "JCODE.md").is_file()
+
+
+def test_init_jcode_md_real_runtime_writes_through_gate_and_pathjail(tmp_path):
+    """End-to-end through the REAL Jaros gate/executor (no CLI needed) -- proves the write
+    Decision actually reaches `WriteFileTool` and lands on disk, and that the EXT-037 root-jail
+    still blocks an escaping path when routed the SAME way (`../../etc/x`)."""
+    from harness.coding_loop import Runtime
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    rt = Runtime(data_dir=tmp_path / "state", root=str(proj))
+    result = init_jcode_md(proj, runtime=rt)
+    assert "wrote" in result
+    assert (proj / "JCODE.md").is_file()
+    assert "## Structure" in (proj / "JCODE.md").read_text(encoding="utf-8")
+
+    # path-jail still blocks an escape when fed through the SAME real Decision -> Runtime.apply
+    # path this function now uses (EXT-037 REQ-1's root-jail, re-checked at the gate).
+    from jaros.core import create_decision
+    escaping = create_decision(
+        id="escape-1", source="test", type="code.write_file",
+        payload={"path": str(tmp_path / "etc" / "x"), "content": "pwned\n", "root": str(proj)})
+    with pytest.raises(RuntimeError, match="root"):
+        rt.apply(escaping)
+    assert not (tmp_path / "etc" / "x").exists()
+
+
+def test_slash_init_routes_through_write_file_decision(tmp_path, monkeypatch):
+    """The `/init` CLI command itself threads a root-anchored Runtime (EXT-042 REQ-5) -- the
+    real end-to-end path a user actually exercises."""
+    monkeypatch.chdir(tmp_path)
+    cli, _ = _stub_cli()
+    out = cli.dispatch("/init")
+    assert "wrote" in out
+    assert (tmp_path / "JCODE.md").is_file()

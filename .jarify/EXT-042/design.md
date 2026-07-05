@@ -106,6 +106,66 @@ and tests untouched. `JCODE.md` is a new, additive tier alongside them; a repo u
 `JAROS.md` today continues to work exactly as before, and a repo with neither file sees no change
 in orchestrator context at all.
 
+## REQ-5: routing `/init` + `/remember` writes through a real Jaros Decision (Tenet 1)
+
+```
+ BEFORE (half-safe): raw write, manual EXT-037 path_jail, no gate/log
+ ┌───────────────────────────────────────────────────────────────┐
+ │ init_jcode_md(root)              append_memory(cwd, note)      │
+ │   path_jail(root, "JCODE.md")      (no jail at all)             │
+ │   Path(resolved).write_text(...)   Path(mem_path).write_text(...) │
+ └───────────────────────────────────────────────────────────────┘
+
+ AFTER: an optional `runtime` threads the SAME two-plane path every other
+ write Decision already uses (mirrors EXT-037 REQ-5's `_git_tool`)
+ ┌───────────────────────────────────────────────────────────────┐
+ │ cmd_init / cmd_remember (harness/cli.py)                        │
+ │   builds a root-anchored Runtime:                               │
+ │     Runtime(root=abspath("."), hooks_config=self.hooks_config,  │
+ │             mode=self.mode, permission_rules=self.permission_   │
+ │             rules, ask_callback=...)      <- mirrors _git_tool  │
+ │                        │                                        │
+ │                        ▼                                        │
+ │ init_jcode_md(root, runtime=rt) / append_memory(cwd, note, rt)   │
+ │   create_decision(type="code.write_file",                       │
+ │                    payload={path, content, root})                │
+ │   rt.apply(decision)                                             │
+ │        │                                                         │
+ │        ▼                                                         │
+ │ Runtime.apply: validate_decision (gate) -> WriteFileTool.execute │
+ │   (EXT-037 root-jail re-checked at the gate) -> hash-chain log   │
+ └───────────────────────────────────────────────────────────────┘
+   `runtime=None` (the default) keeps the OLD direct-write fallback --
+   byte-identical for every pre-existing caller/test that never passes one.
+```
+
+- `init_jcode_md`/`append_memory` gain an optional `runtime` parameter (any `.apply(decision)`-
+  shaped object). Passing one is strictly additive: the function's OWN "already exists" /
+  "never overwrite" / "never raises" checks run exactly as before; only the final write step
+  changes from a raw `Path.write_text` to a `code.write_file` Decision applied through `runtime`.
+  `runtime=None` is a complete no-op — the pre-existing direct-write path, so no existing test of
+  either function needs to change.
+- `harness/cli.py`'s `cmd_init`/`cmd_remember` build a root-anchored `Runtime` per call, mirroring
+  the EXT-037 REQ-5 `_git_tool` helper exactly (`root=os.path.abspath(".")`, plus this CLI
+  instance's `hooks_config`/`mode`/`permission_rules`/`ask_callback`) — so a real `/init` or
+  `/remember` run now gets PreToolUse/PostToolUse hooks, permission-rule enforcement, plan-mode
+  propose-only behavior, and the hash-chain log, exactly like `git.*` Decisions already do.
+- A gate rejection (`RuntimeError` from `Runtime.apply`) is caught at the `init_jcode_md`/
+  `append_memory` call site and degraded to an honest message string — the two-plane discipline
+  never turns into an uncaught crash in the REPL.
+- **Acknowledged, out of scope for this requirement** (same class, larger blast radius, needs its
+  own dedicated follow-up task): `harness/multi_file.py` (`/fixrepo`, `/undo`'s restore),
+  `harness/refactor.py` (`/rename`, `/move`), `harness/system_builder.py` (`/buildsystem`,
+  `/modifysystem` — 2000+ lines, ~15 write call sites), and `harness/spec_loop.py` (`/agent`).
+  Each of these functions is shared between real HOST-project use and throwaway eval-sandbox use
+  by the SAME call path, so splitting the two safely needs a dedicated task, not a forced edit
+  here. `harness/repo_memory.py`'s `.jaros/memory.jsonl`, `harness/task_store.py`'s
+  `.jaros/tasks.jsonl`, and `harness/experiment_store.py`'s `.jaros/experiments.jsonl` are also
+  acknowledged but intentionally left alone — each is structurally an internal durable per-repo
+  log/store (append-only-in-spirit, machine-authored JSONL under `.jaros/`, never hand-edited by
+  the user), the same precedent as the Decision/Transition log, not rewritable user content like
+  `JCODE.md`/`memory.md`.
+
 ## Out of scope (this task)
 
 `@path` import expansion inside `JCODE.md` (Claude Code's `@import` syntax) is a nice-to-have

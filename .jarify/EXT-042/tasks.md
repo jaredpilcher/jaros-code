@@ -46,3 +46,49 @@ command.
 - [REQ-2] Inject JCODE.md into the orchestrator/planner context
 - [REQ-3] `/init` starter-file generator
 - [REQ-4] `/init` CLI command
+
+### [TASK-2] Route `/init` and `/remember` writes through a real Jaros Decision (Tenet 1)
+
+Fix the Tenet-1 gap: `init_jcode_md` and `append_memory` write to the HOST project via raw
+`Path.write_text`, bypassing the Jaros two-plane path. Thread an optional `runtime` through both
+so a real CLI call routes the write through a `code.write_file` Decision (gate + EXT-037 root-jail
++ hash-chain log), mirroring the EXT-037 REQ-5 `_git_tool` root-anchored-Runtime pattern.
+
+#### Steps
+1. In `harness/jcode_md.py`, add `import uuid` and change `init_jcode_md(root=".")` to
+   `init_jcode_md(root=".", runtime=None)`. When `runtime` is not `None`, build a
+   `jaros.core.create_decision(id=f"init-jcode-md-{uuid.uuid4().hex}", source="jcode_md.init",
+   type="code.write_file", payload={"path": resolved, "content": content, "root": root_str})`
+   (reusing the already-computed `resolved = path_jail(root_str, "JCODE.md")` and `content`) and
+   call `runtime.apply(decision)` inside a `try/except Exception` that degrades to
+   `f"failed to write {resolved}: {exc}"` on any failure (gate rejection or otherwise) — never
+   raises. When `runtime is None`, keep the existing direct `Path(resolved).write_text(...)` path
+   unchanged.
+2. In `harness/project_memory.py`, add the same optional `runtime=None` parameter to
+   `append_memory(cwd, note, runtime=None)`. Compute the new full file content exactly as today,
+   then: if `runtime` is given, build and apply a `code.write_file` Decision
+   (`payload={"path": str(p), "content": new_content, "root": str(Path(cwd).resolve())}`) through
+   it inside a `try/except Exception` returning `""` on failure; otherwise keep the existing direct
+   `p.write_text(...)` path unchanged.
+3. In `harness/cli.py`, add a small private helper `JcodeCli._write_runtime(self)` that builds and
+   returns a root-anchored `harness.coding_loop.Runtime` — mirroring `_git_tool`'s construction
+   (`root=os.path.abspath(".")`, `hooks_config=self.hooks_config`, `mode=self.mode`,
+   `permission_rules=self.permission_rules`, `ask_callback=(self._ask_permission if
+   self._interactive else None)`, plus the existing streaming `on_event` wiring) — returning `None`
+   on any construction failure. Update `cmd_init` to call
+   `init_jcode_md(".", runtime=self._write_runtime())` and `cmd_remember` to call
+   `append_memory('.', arg, runtime=self._write_runtime())`, handling a falsy return from
+   `append_memory` with an honest `"remember refused: ..."`-style message instead of the old
+   unconditional `f"remembered -> {path}"`.
+4. Extend `tests/test_ext042_jcode_md.py` (or add a new test module) proving: `init_jcode_md`
+   called with a fake/real `runtime` builds and applies a `code.write_file` Decision (assert the
+   fake runtime's `.apply()` was called with the right decision type/payload, or that a real
+   `Runtime(data_dir=tmp_path, root=tmp_path)` actually wrote the file); a gate rejection (e.g. an
+   escaping `path` fed directly to a real root-anchored `Runtime.apply`) degrades to an honest
+   string, never raises; `runtime=None` still behaves exactly as before (existing tests
+   untouched); `/init`'s CLI dispatch still writes `JCODE.md` end to end. Add the analogous
+   coverage for `append_memory`/`cmd_remember` in `tests/test_ext009_specialists.py` or a
+   dedicated new test file, whichever the existing `/remember` tests live in.
+
+#### Implements
+- [REQ-5] Route `/init` and `/remember` host-project writes through a real Jaros Decision (Tenet 1)

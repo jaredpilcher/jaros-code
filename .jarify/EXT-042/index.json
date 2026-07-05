@@ -1,45 +1,67 @@
 {
-  "REQ-1": [
-    {
-      "file": "harness/jcode_md.py",
-      "startLine": 20,
-      "endLine": 78
-    }
-  ],
-  "REQ-3": [
-    {
-      "file": "harness/jcode_md.py",
-      "startLine": 81,
-      "endLine": 153
-    }
-  ],
   "REQ-2": [
     {
       "file": "harness/cli.py",
-      "startLine": 89,
-      "endLine": 93
+      "startLine": 122,
+      "endLine": 126
     },
     {
       "file": "harness/cli.py",
-      "startLine": 214,
-      "endLine": 221
+      "startLine": 296,
+      "endLine": 303
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1148,
-      "endLine": 1151
+      "startLine": 1476,
+      "endLine": 1479
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1277,
-      "endLine": 1280
+      "startLine": 1583,
+      "endLine": 1586
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 388,
+      "endLine": 410
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 843,
+      "endLine": 849
+    },
+    {
+      "file": "harness/jcode_md.py",
+      "startLine": 156,
+      "endLine": 169
+    },
+    {
+      "file": "harness/project_memory.py",
+      "startLine": 29,
+      "endLine": 64
     }
   ],
   "REQ-4": [
     {
       "file": "harness/cli.py",
-      "startLine": 672,
-      "endLine": 680
+      "startLine": 871,
+      "endLine": 884
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/jcode_md.py",
+      "startLine": 20,
+      "endLine": 79
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/jcode_md.py",
+      "startLine": 82,
+      "endLine": 177
     }
   ]
 }

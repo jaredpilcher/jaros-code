@@ -26,14 +26,39 @@ def read_memory(cwd: str) -> str:
         return ""
 
 
-def append_memory(cwd: str, note: str) -> str:
+# #EXT-042-REQ-5 Start
+def append_memory(cwd: str, note: str, runtime: "object | None" = None) -> str:
     """Append a dated note/convention to `.jcode/memory.md` (creating it with a header). Returns
-    the file path. Deterministic file I/O — the only writer of project memory."""
+    the file path on success, or "" for an empty note / a failed write.
+
+    EXT-042 REQ-5 (Tenet 1): when `runtime` is given -- any object exposing `.apply(decision)`,
+    e.g. a `harness.coding_loop.Runtime` -- the write is performed as a real `code.write_file`
+    Decision applied through it (gate + EXT-037 root-jail + hash-chain log), instead of a raw
+    `Path.write_text`. `runtime=None` (the default) preserves the prior direct-write behavior
+    byte-for-byte, so every pre-existing caller/test of this function is unaffected."""
     note = note.strip()
     if not note:
         return ""
     p = _mem_path(cwd)
-    p.parent.mkdir(parents=True, exist_ok=True)
     body = read_memory(cwd) or _HEADER
-    p.write_text(body.rstrip() + "\n" + f"- {date.today().isoformat()}: {note}\n", encoding="utf-8")
+    new_content = body.rstrip() + "\n" + f"- {date.today().isoformat()}: {note}\n"
+
+    if runtime is not None:
+        try:
+            import uuid
+
+            from jaros.core import create_decision
+            decision = create_decision(
+                id=f"remember-{uuid.uuid4().hex}", source="project_memory.append",
+                type="code.write_file",
+                payload={"path": str(p), "content": new_content, "root": str(Path(cwd).resolve())},
+            )
+            runtime.apply(decision)
+        except Exception:
+            return ""
+        return str(p)
+
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(new_content, encoding="utf-8")
     return str(p)
+# #EXT-042-REQ-5 End

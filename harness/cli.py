@@ -385,6 +385,30 @@ class JcodeCli:
         return self.rt.apply(self._mk(id=f"cli-{uuid.uuid4().hex}", source="cli",
                                       type=dtype, payload=payload))
 
+    # #EXT-042-REQ-5 Start
+    def _write_runtime(self):
+        """A root-anchored `Runtime` for host-project file-write Decisions (EXT-042 REQ-5) --
+        mirrors `_git_tool`'s root-anchored-Runtime construction (EXT-037 REQ-5) so every
+        product-surface write goes through the same gate + EXT-037 path-jail + hash-chain log,
+        plus this instance's hooks/permission/mode wiring. Returns `None` on any construction
+        failure -- callers degrade to their own safe (pre-Decision) fallback rather than crash."""
+        try:
+            from harness.coding_loop import Runtime
+            _on_event = None
+            if getattr(self, "stream", False):
+                from harness.tool_stream import make_printer
+                _on_event = make_printer()
+            return Runtime(
+                root=os.path.abspath("."), on_event=_on_event,
+                hooks_config=getattr(self, "hooks_config", None),
+                mode=getattr(self, "mode", "default"),
+                permission_rules=getattr(self, "permission_rules", None),
+                ask_callback=(self._ask_permission if getattr(self, "_interactive", False) else None),
+            )
+        except Exception:
+            return None
+    # #EXT-042-REQ-5 End
+
     # -- commands ----------------------------------------------------------
     def cmd_help(self, _arg: str) -> str:
         return __doc__.split("Commands (Claude-Code-style):", 1)[1].rstrip()
@@ -816,7 +840,13 @@ class JcodeCli:
         if not arg.strip():
             return "usage: /remember <note or convention>"
         from harness.project_memory import append_memory
-        path = append_memory('.', arg)
+        # #EXT-042-REQ-5 Start
+        # Route the .jcode/memory.md write through a real code.write_file Decision (Tenet 1) via
+        # a root-anchored Runtime (mirrors cmd_init below / EXT-037 REQ-5's _git_tool pattern).
+        path = append_memory('.', arg, runtime=self._write_runtime())
+        if not path:
+            return "remember refused: the write was rejected by the safety gate (see logs)"
+        # #EXT-042-REQ-5 End
         # #EXT-036-REQ-16 Start
         from harness.repo_memory import add_fact
         if add_fact(arg, root="."):
@@ -843,9 +873,14 @@ class JcodeCli:
         """`/init` (EXT-042 REQ-3/4): write a starter JCODE.md from deterministic repo
         comprehension (harness/repo_map.py) — Claude Code's `/init`, for jcode. Never overwrites
         an existing JCODE.md; the loaded content only takes effect on the NEXT CLI session (this
-        instance's self.jcode_md was cached at construction, per REQ-2)."""
+        instance's self.jcode_md was cached at construction, per REQ-2).
+
+        EXT-042 REQ-5 (Tenet 1): the write is routed through a real `code.write_file` Decision
+        via a root-anchored Runtime (`_write_runtime`), so it gets the gate + EXT-037 path-jail +
+        hash-chain log every other host-project write goes through, instead of a raw
+        `Path.write_text`. A gate rejection degrades to an honest message, never a crash."""
         from harness.jcode_md import init_jcode_md
-        return init_jcode_md(".")
+        return init_jcode_md(".", runtime=self._write_runtime())
     # #EXT-042-REQ-4 End
 
     def cmd_undo(self, _arg: str) -> str:

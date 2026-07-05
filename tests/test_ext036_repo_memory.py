@@ -284,6 +284,36 @@ def test_memory_with_no_facts_has_no_long_term_section(tmp_path, monkeypatch):
     assert "long-term facts" not in out.lower()
 
 
+# --- (e) EXT-042 REQ-5: /remember routes its .jcode/memory.md write through a real
+#     code.write_file Decision (Tenet 1) --------------------------------------------------
+
+def test_remember_writes_through_write_file_decision(tmp_path, monkeypatch):
+    """The write really lands on disk end-to-end through the real Runtime/gate (no mocking of
+    the write path itself) -- proves cmd_remember's Decision routing didn't silently no-op."""
+    monkeypatch.chdir(tmp_path)
+    cli, _ = _stub_cli()
+    out = cli.dispatch("/remember prefer explicit over implicit")
+    assert "remembered" in out.lower()
+    assert (tmp_path / ".jcode" / "memory.md").is_file()
+    assert "prefer explicit over implicit" in (tmp_path / ".jcode" / "memory.md").read_text(
+        encoding="utf-8")
+
+
+def test_remember_gate_rejection_is_honest_not_a_crash(tmp_path, monkeypatch):
+    """A gate rejection from the write Decision degrades to an honest string, never a crash."""
+    monkeypatch.chdir(tmp_path)
+    cli, _ = _stub_cli()
+
+    class _RejectingRuntime:
+        def apply(self, decision):
+            raise RuntimeError("gate rejected code.write_file: refused path outside root")
+
+    monkeypatch.setattr(cli, "_write_runtime", lambda: _RejectingRuntime())
+    out = cli.dispatch("/remember this should be refused")
+    assert "refused" in out.lower()
+    assert not (tmp_path / ".jcode" / "memory.md").is_file()
+
+
 # --- (e) slash commands unaffected -------------------------------------------------------
 
 def test_slash_dispatch_never_invokes_memory_selection(tmp_path, monkeypatch):
