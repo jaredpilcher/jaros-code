@@ -48,6 +48,29 @@ def _isolate_user_home(tmp_path, monkeypatch):
     yield fake_home
 
 
+@pytest.fixture(autouse=True)
+def _isolate_state_dir(tmp_path, monkeypatch):
+    """Isolate each test's Jaros DecisionLog/TransitionLog state dir to tmp (completes the
+    sessions/home isolation above). These tests build REAL Runtimes (JcodeCli()/cmd_patch), which
+    otherwise write the hash-chain to the SHARED repo ``.jaros-data/state/``. Under CONCURRENT
+    pytest processes (several builder full-suites overlapped while this repo was built), that
+    shared log races -- a rewind's ``code.write_file`` record intermittently fails to append, so
+    ``cmd_rewind`` reports failure instead of "restored" -> the flaky
+    ``test_rewind_by_checkpoint_id``. A per-test private state dir makes every test's log
+    deterministic regardless of what else is running. Runtime binds ``data_dir=DATA_DIR`` as a
+    default at def-time and JcodeCli builds its Runtime without passing it, so wrap ``__init__``
+    to inject the tmp dir when the caller didn't specify one (kwargs pass through unchanged)."""
+    import harness.coding_loop as cl
+    _isolated = tmp_path / "_data"
+    _orig_init = cl.Runtime.__init__
+
+    def _init(self, data_dir=_isolated, *args, **kwargs):
+        return _orig_init(self, data_dir, *args, **kwargs)
+
+    monkeypatch.setattr(cl.Runtime, "__init__", _init)
+    yield
+
+
 # =====================================================================================
 # CheckpointRing -- bounds / eviction / lookup
 # =====================================================================================
