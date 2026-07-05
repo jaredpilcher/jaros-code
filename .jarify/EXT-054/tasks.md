@@ -72,3 +72,67 @@ server's launch command, and a `/mcp` CLI command to list servers/tools and invo
 - [REQ-3] Gated Decision — `mcp.tool_call` narrows, never bypasses, the hard gates
 - [REQ-4] `/mcp` command — list configured servers + discovered tools, and invoke one
 - [REQ-5] Honest Product-Parity Checklist update
+
+### [TASK-2] MCP client slice 2 — persistent connections + model-invocable routing
+
+Make MCP genuinely usable: keep each configured server's subprocess alive across CLI turns
+(instead of slice 1's fresh-launch-per-call), and let the SAME small local model that already
+routes `fix`/`find`/`run`/... also pick a discovered MCP tool for a plain request, conservatively
+gated on an EXACT match against the real discovered-tool registry.
+
+#### Steps
+1. Add `MCPClient.is_alive()` to `harness/mcp_client.py`: `True` while the launched subprocess is
+   still running (`proc.poll() is None`), `False` once exited/closed/never started — never raises.
+2. Create `harness/mcp_session.py`: `class MCPSessionManager` holding `{server_name: MCPClient}`.
+   `_get_client(spec, timeout)` reuses an existing live client (`is_alive()`), evicts + closes a
+   dead one, and launches+initializes a fresh one on miss (returns `None` on failure, never
+   raises). `discover_tools(spec, timeout)`/`call_tool(spec, tool, arguments, timeout)` use the
+   reused client for the RPC; on failure, evict + ONE retry with a freshly-launched client; still
+   failing degrades to the SAME honest `{"ok": False, "error": ...}` shape `harness.mcp_client`
+   already returns. `close_all()` evicts + closes every live session. A process-wide singleton via
+   `get_session_manager()` + a `close_all_sessions()` convenience wrapper (and a
+   `reset_session_manager()` test seam) so every call site shares one connection pool.
+3. In `.jaros-data/tools/mcp_tool_call_tool.py`'s `execute()`, replace the stateless
+   `harness.mcp_client.call_tool(...)` call with
+   `harness.mcp_session.get_session_manager().call_tool(spec, tool, arguments, timeout=...)` —
+   `validate()` is UNCHANGED. In `harness/cli.py`, `cmd_mcp("")` and `_mcp_call`'s discovery path
+   likewise route through `get_session_manager().discover_tools(...)` instead of the module-level
+   stateless `discover_tools(...)`.
+4. Update `JcodeCli.on_stop()` in `harness/cli.py`: call `close_all_sessions()` UNCONDITIONALLY
+   (moved outside the `not self.hooks_config` early-return, guarded only by the existing
+   `_stop_fired` idempotency flag) so every live MCP session closes at REPL `/quit`/EOF/interrupt
+   or one-shot-run end, with or without any `.jcode/hooks.json` configured; the existing Stop-hook
+   firing (still gated on `hooks_config`) is unchanged below it.
+5. Add `JcodeCli._mcp_discover_all()` (collects every configured server's discovered tools via the
+   session manager, tolerating a per-server discovery failure) and
+   `JcodeCli._route_mcp_tool(line)` (builds a small prompt listing the discovered
+   `server::tool: description` catalog, calls `self.llm.complete(...)`, deterministically parses
+   `MCP_TOOL:`/`MCP_ARGS:` lines, and returns `None` unless the picked name is an EXACT key in
+   THIS call's catalog — building + applying a `mcp.tool_call` Decision through `self.rt` only on
+   a genuine match). Wire `_route_mcp_tool` into `_route_plain`, gated on `self.mcp_servers` being
+   non-empty, after the deterministic multistep/subagent/intent fast paths and before the
+   orchestrator load — a `None` result falls through to the orchestrator unaffected.
+6. Update `harness/product_parity.py` row `id=18`: flip `state` to `"works"`; `current_state`
+   names the full slice-1+2 delivery (config, stdio handshake, discovery, gated invocation,
+   PERSISTENT connections across calls, MODEL-INVOCABLE routing via the SAME gate); `next_lever`
+   names only the honestly-deferred residual (resources/prompts/notifications, the HTTP/SSE
+   transport). Mirror the same update into `docs/GAP-MAP.md` row #18 (state `closed(EXT-054)`).
+7. Update `tests/test_ext041_product_parity.py`: add `18` to the `works == [...]` pin (with an
+   updated docstring paragraph) and update
+   `test_score_default_rows_reflects_honest_current_baseline`'s `n_works`/`n_partial`/`n_missing`
+   assertions to match.
+8. Extend `tests/test_ext054_mcp.py` (hermetic — a fake in-process/subprocess MCP server or an
+   injected fake `popen`, no real network): `MCPSessionManager` reuses the SAME subprocess (proven
+   via pid) across 2+ `call_tool`/`discover_tools` invocations; `close_all()`/
+   `close_all_sessions()` leaves no orphaned subprocess (asserted); a server that exits mid-session
+   is transparently re-launched (or degrades to an honest error if the relaunch also fails) rather
+   than hanging or raising; `_route_mcp_tool` (mock `self.llm.complete` to return a fixed pick)
+   routes a matching plain request through a REAL `Runtime.apply`, proving the can't-escalate
+   invariant still holds (a denylisted server launch command is refused identically on this path);
+   and an ordinary request with no real MCP-tool match (mock the model naming a NON-existent tool,
+   or "none") falls through to normal routing completely unaffected.
+
+#### Implements
+- [REQ-6] Persistent MCP server connections across CLI turns
+- [REQ-7] Model-invocable MCP tools — the orchestrator can pick a discovered tool
+- [REQ-8] Honest Product-Parity Checklist update — slice 2

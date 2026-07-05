@@ -1,11 +1,11 @@
 ---
 id: EXT-054
-title: MCP client — external-tool extensibility protocol (first slice)
-status: partial
+title: MCP client — external-tool extensibility protocol
+status: covered
 priority: medium
 ---
 
-# EXT-054 — MCP client (first slice)
+# EXT-054 — MCP client (first slice + slice 2: usable)
 
 **Owner directive:** close `docs/GAP-MAP.md` Product-surface parity row #18 — a developer drops a
 `.jcode/mcp.json` config naming an external MCP (Model Context Protocol) stdio server, jcode
@@ -139,3 +139,93 @@ updated to match, mirroring how EXT-042/043/044/045/046/047/048/049/050 each did
       `n_partial`/`n_missing`/`pct`) are updated to reflect row #18's new `partial` state (the
       `works == [...]` pin is UNCHANGED — row #18 is not added to it, since this slice is honestly
       `partial`, not `works`).
+
+## Slice 2 — making MCP genuinely usable
+
+### [REQ-6] Persistent MCP server connections across CLI turns
+
+A connection manager (`harness/mcp_session.py`) keeps each configured server's subprocess ALIVE
+and reuses it across multiple `mcp.tool_call`/discovery invocations within one CLI process, rather
+than slice 1's fresh-subprocess-per-call lifecycle. A crashed/exited server is transparently
+re-launched on the next call (one bounded retry); if the relaunch also fails, the call degrades to
+an honest error — never a silent hang or a leaked handle to a dead process. Every live session is
+closed cleanly at CLI session end.
+
+#### Acceptance Criteria
+- [x] `harness.mcp_client.MCPClient` gains an `is_alive()` method: `True` while the launched
+      subprocess is still running, `False` once it has exited or `close()`/nothing has started it
+      yet — never raises.
+- [x] `harness.mcp_session.MCPSessionManager` launches + `initialize`s ONE subprocess per
+      configured server name on first use, and reuses that SAME subprocess for every subsequent
+      `call_tool`/`discover_tools` invocation for that server — proven by a test asserting the
+      underlying subprocess (e.g. its pid) is identical across 2+ calls.
+- [x] A stored session whose `is_alive()` has gone `False` (the server crashed/exited) is evicted
+      and transparently re-launched on the next call; if the fresh launch also fails, the call
+      returns the SAME honest `{"ok": False, "error": ...}` shape `harness.mcp_client.call_tool`/
+      `discover_tools` already return — never raises, never hangs.
+- [x] `MCPSessionManager.close_all()` (and the module-level `close_all_sessions()` convenience
+      function operating on a process-wide singleton via `get_session_manager()`) cleanly shuts
+      down EVERY live session it holds — proven by a test asserting no subprocess started during
+      the test remains running afterward (no orphan).
+- [x] `harness.cli.JcodeCli.on_stop()` calls `close_all_sessions()` UNCONDITIONALLY (not gated on
+      `hooks_config` being configured) exactly once per CLI instance, alongside its existing
+      idempotent Stop-hook firing — a REPL `/quit`/EOF/interrupt or the end of a one-shot run all
+      close every live MCP session, with or without any `.jcode/hooks.json` present.
+- [x] `.jaros-data/tools/mcp_tool_call_tool.py`'s `execute()` and `harness.cli.JcodeCli`'s
+      `cmd_mcp`/`_mcp_call`/the new model-invocable path (REQ-7) all route through the SAME
+      process-wide `MCPSessionManager` (via `get_session_manager()`) — one shared connection
+      pool, not a separate one per call site.
+
+### [REQ-7] Model-invocable MCP tools — the orchestrator can pick a discovered tool
+
+A plain-language request (routed through `harness.cli.JcodeCli._route_plain`, the same chain the
+deterministic intent fast-path and the `orchestrator` agent already share) can now route to a
+DISCOVERED MCP tool when one genuinely matches, without the user typing an explicit
+`/mcp call <server> :: <tool> :: <args>`. The model only ever emits an INERT pick (which
+`server::tool`, plus best-effort JSON arguments) — this pick is validated against the ACTUAL
+discovered-tool registry before any `mcp.tool_call` Decision is built, so a hallucinated or
+non-matching name is conservatively treated as "no MCP match" and the request falls through to
+normal routing unaffected. A repo with no MCP server configured pays zero extra cost (no model
+call, no subprocess) — a byte-identical no-op.
+
+#### Acceptance Criteria
+- [x] `harness.cli.JcodeCli._route_plain` consults a new MCP-routing step ONLY when
+      `self.mcp_servers` is non-empty; when empty, the step is skipped entirely (no model call,
+      no discovery, no behavior change vs. before this requirement).
+- [x] When `self.mcp_servers` is non-empty, the step discovers the currently-available MCP tools
+      (via the REQ-6 persistent `MCPSessionManager`, so repeated routing calls reuse the same live
+      connections rather than relaunching servers) and asks the model to pick ONE discovered
+      `server::tool` (or explicitly "none") plus a best-effort JSON arguments object.
+- [x] The model's picked `server::tool` is looked up against the discovered-tool registry
+      built in THIS call; only an EXACT match proceeds to build a `mcp.tool_call` Decision — "none",
+      an unparseable reply, or any name not present in the registry returns `None` from the routing
+      step, and the request falls through to the existing deterministic-intent/orchestrator chain
+      completely unaffected (proven by a test: an ordinary request with no real MCP match is never
+      hijacked).
+- [x] A genuine match builds a `mcp.tool_call` Decision (payload shaped exactly like `/mcp call`'s)
+      and applies it through `self.rt` — the SAME gated seam every other MCP invocation uses; a
+      gate refusal (e.g. a denylisted server launch command) surfaces the gate's own rejection
+      reason exactly like `/mcp call` does, proven by a test that the can't-escalate-past-the-
+      hard-gate invariant holds identically on this model-invocable path.
+- [x] This requirement adds NO new `harness.coding_loop.Runtime` parameter and does not modify
+      `.jaros-data/tools/mcp_tool_call_tool.py`'s `validate()` — the hard gate is entirely
+      unaffected by how a `mcp.tool_call` Decision was proposed.
+
+### [REQ-8] Honest Product-Parity Checklist update — slice 2
+
+`harness/product_parity.py` row `id=18` is re-evaluated once REQ-6/REQ-7 land and are test-covered:
+flipped to `"works"` when a user can genuinely configure a server, keep it connected across calls,
+and have jcode use its tools BOTH manually (`/mcp call`) and model-invoked (REQ-7), all through the
+gated Decision path — resources/prompts/notifications/the SSE transport remain honestly out of
+scope for "works" and stay named as the residual gap. `docs/GAP-MAP.md` row #18 and
+`tests/test_ext041_product_parity.py`'s honesty pins are updated to match.
+
+#### Acceptance Criteria
+- [x] `harness/product_parity.py` row `id=18` `state` reflects the genuine slice-2 delivery
+      (`"works"` if REQ-6+REQ-7 are both delivered and test-covered per their own acceptance
+      criteria; `current_state` names exactly what's delivered, `next_lever` names only the
+      residual (resources/prompts/notifications/SSE transport)).
+- [x] `docs/GAP-MAP.md` row #18's `State`/`Current honest state`/`Next lever` columns match.
+- [x] `tests/test_ext041_product_parity.py`'s `test_no_row_is_inflated_to_works_today` `works == [...]`
+      pin and `test_score_default_rows_reflects_honest_current_baseline`'s aggregate assertions are
+      updated to match row #18's new state — never inflated ahead of the genuine delivery.

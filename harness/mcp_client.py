@@ -201,6 +201,21 @@ class MCPClient:
     def __exit__(self, *exc_info) -> None:
         self.close()
 
+    # #EXT-054-REQ-6 Start
+    def is_alive(self) -> bool:
+        """`True` while the launched subprocess is still running, `False` once it has exited
+        (or `close()` ran, or `start()` was never called) -- never raises. Consulted by
+        `harness.mcp_session.MCPSessionManager` to decide whether a cached session can be
+        REUSED for another call, or must be evicted + relaunched (the server crashed)."""
+        proc = self._proc
+        if proc is None:
+            return False
+        try:
+            return proc.poll() is None
+        except Exception:
+            return False
+    # #EXT-054-REQ-6 End
+
     # -- JSON-RPC framing ---------------------------------------------------------------------
     def _send(self, obj: dict) -> None:
         proc = self._proc

@@ -42,3 +42,36 @@ invocation, and the narrows-never-bypasses safety invariant — genuinely enough
 not hidden, as deferred to a later slice. A dead/slow/malicious server can never hang or escalate
 the harness — every subprocess interaction is timeout-bounded and every launch passes the hard
 gate first.
+
+## Slice 2 — making MCP genuinely USABLE (REQ-6/7/8)
+
+The first slice honestly deferred two things that keep an MCP-configured jcode a toy rather than a
+genuinely usable extension surface: (1) a fresh subprocess per call is wasteful and, for a
+stateful server, can lose session-scoped context between calls; (2) an MCP tool was reachable
+ONLY via an explicit `/mcp call` — the orchestrator that already routes a plain request to `fix`/
+`find`/`run`/... had no notion an MCP tool exists, so a user had to already know the exact
+`/mcp call <server> :: <tool> :: <args>` incantation. Slice 2 closes both, still inside the SAME
+two-plane discipline slice 1 established:
+
+- **A persistent connection manager** (`harness/mcp_session.py`) keeps each configured server's
+  subprocess alive and reuses it across calls for the life of the CLI process, transparently
+  re-launching a crashed/exited server (or degrading to an honest error if the relaunch also
+  fails) rather than either leaking a dead process or silently going stateless-per-call again.
+  Every session is closed cleanly at session end (`JcodeCli.on_stop`, the SAME seam EXT-047's
+  Stop hooks already fire from) — no subprocess is ever leaked, proven by an explicit test.
+- **Model-invocable MCP tools.** The router (`harness.cli.JcodeCli._route_plain`) now lets the
+  SAME small local model that already picks `fix`/`find`/`run`/... also pick a DISCOVERED MCP
+  tool, when one genuinely matches a plain request — still emitting only an inert pick (never a
+  raw call). The two-plane invariant is enforced by construction: the model's pick is checked
+  against the ACTUAL discovered tool registry before a `mcp.tool_call` Decision is ever built, so
+  a hallucinated or mismatched name degrades to "no match" and the request falls through to
+  normal routing, unaffected — an MCP-tool-shaped request can never be silently swallowed, and an
+  ordinary request can never be silently hijacked. Every routed call still goes through the exact
+  gated `mcp.tool_call` Decision (`Runtime.apply` → `MCPToolCallTool.validate()`/`execute()`)
+  slice 1 built — narrows-never-bypasses holds identically on this new path.
+
+Per Tenet 3, once both land + are test-covered, the Product-Parity Checklist (EXT-041) row #18 is
+re-evaluated HONESTLY: it earns "works" only if a user can genuinely configure a server, keep it
+connected, and have jcode use its tools both manually and model-invoked, all gated — resources/
+prompts/notifications/the SSE transport remain out of scope for "works" (Claude Code's own docs
+treat tool-calling as the MCP core surface) and stay named, not hidden, as the residual gap.

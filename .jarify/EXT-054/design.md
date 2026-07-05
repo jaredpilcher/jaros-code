@@ -168,11 +168,88 @@ named, not hidden, as deferred.
 - `harness.coding_loop.Runtime` itself is UNCHANGED by this spec (no new constructor parameter) —
   every existing caller/test is byte-identical.
 
-## Out of scope (this slice)
+## Out of scope (first slice — REQ-6/7 below close two of these)
 
 MCP resources and prompts (only `tools/list`/`tools/call` are implemented); server-initiated
-notifications; the HTTP/SSE transport (stdio only); a persistent server connection kept alive
-across multiple CLI turns (today's stateless launch-per-call lifecycle); a "model-invocable when
-relevant" auto-suggestion mode where the orchestrator reaches for an MCP tool without an explicit
-`/mcp call`; MCP server authoring/scaffolding tooling; OAuth/remote-server authentication. These
-remain honestly named in `docs/GAP-MAP.md` row #18's "Next lever" as the residual gap, per Tenet 3.
+notifications; the HTTP/SSE transport (stdio only); ~~a persistent server connection kept alive
+across multiple CLI turns~~ (closed by REQ-6 below); ~~a "model-invocable when relevant"
+auto-suggestion mode where the orchestrator reaches for an MCP tool without an explicit
+`/mcp call`~~ (closed by REQ-7 below); MCP server authoring/scaffolding tooling; OAuth/remote-server
+authentication. These remain honestly named in `docs/GAP-MAP.md` row #18's "Next lever" as the
+residual gap, per Tenet 3.
+
+## Slice 2 — REQ-6 (persistent connections) + REQ-7 (model-invocable routing)
+
+```text
+  REQ-6: PERSISTENT CONNECTION MANAGER (harness/mcp_session.py -- NEW, pure execution-plane)
+  +---------------------------------------------------------------------------------------+
+  | class MCPSessionManager:                                                                |
+  |   _clients: dict[str, MCPClient]        -- one live session PER CONFIGURED SERVER NAME  |
+  |                                                                                           |
+  |   _get_client(spec, timeout):                                                           |
+  |     existing = self._clients.get(spec.name)                                             |
+  |     if existing and existing.is_alive(): return existing        <- REUSED, no relaunch   |
+  |     if existing: existing.close(); evict                        <- crashed -> evicted    |
+  |     client = MCPClient(spec, timeout); client.start(); client.initialize()               |
+  |     on success: self._clients[spec.name] = client; return client                         |
+  |     on failure: return None (never raises)                                               |
+  |                                                                                           |
+  |   discover_tools(spec, timeout) / call_tool(spec, tool, args, timeout):                  |
+  |     client = _get_client(...)                                                           |
+  |     try the RPC on the reused client;                                                    |
+  |     on any failure (server crashed mid-session) -> evict + ONE retry with a FRESH client; |
+  |     still failing -> honest {"ok": False, "error": ...} (same shape mcp_client returns)   |
+  |                                                                                           |
+  |   close_all(): evict + close() every live session -- called from JcodeCli.on_stop()      |
+  |                                                                                           |
+  | get_session_manager() / close_all_sessions() -- a process-wide singleton + convenience   |
+  | wrapper, so EVERY call site (cmd_mcp, _mcp_call, the REQ-7 model-invocable path, and       |
+  | MCPToolCallTool.execute()) shares ONE connection pool, not one each.                      |
+  +-----------------------------------------+-----------------------------------------------+
+                                              | replaces mcp_client.call_tool()'s stateless
+                                              | per-call launch inside MCPToolCallTool.execute()
+                                              v
+  MCPToolCallTool.execute() (unchanged validate(), unchanged Decision shape) now calls
+  `get_session_manager().call_tool(spec, tool, arguments, timeout)` instead of the module-level
+  stateless `harness.mcp_client.call_tool(...)` -- the gate/Decision/safety story is IDENTICAL,
+  only the lifecycle underneath changed (a REUSED subprocess instead of a fresh one per call).
+
+  JcodeCli.on_stop() (EXT-047's existing Stop-hook seam) additionally calls
+  `close_all_sessions()` UNCONDITIONALLY (not gated on hooks_config) so every live MCP session is
+  cleanly shut down at REPL /quit/EOF/interrupt or one-shot-run end, with or without any
+  .jcode/hooks.json configured.
+```
+
+```text
+  REQ-7: MODEL-INVOCABLE MCP TOOLS (harness/cli.py -- JcodeCli._route_plain, additive step)
+  +---------------------------------------------------------------------------------------+
+  | _route_plain(line):                                                                     |
+  |   [multistep / subagent-delegation / deterministic-intent fast paths -- UNCHANGED]      |
+  |                                                                                           |
+  |   if self.mcp_servers:              <- zero cost / zero behavior change when empty        |
+  |     tools = discover ALL configured servers' tools via the REQ-6 MCPSessionManager        |
+  |     if tools:                                                                            |
+  |       prompt the SAME small local model with the catalog (server::tool + description)     |
+  |         -> "MCP_TOOL: <server::tool or none>" + "MCP_ARGS: <best-effort JSON>"            |
+  |       picked = parse the reply (deterministic regex, mirrors orchestrator_agent's         |
+  |                parse_route style)                                                        |
+  |       if picked is an EXACT key in the discovered-tool catalog built THIS call:           |
+  |         build a mcp.tool_call Decision (SAME shape /mcp call builds) -> self.rt.apply(...) |
+  |         -- return its result, DONE (never reaches the orchestrator for this turn)         |
+  |       else (none / hallucinated / mismatched name):                                       |
+  |         fall through -- the request continues to the orchestrator UNAFFECTED              |
+  |                                                                                           |
+  |   [orchestrator agent -- UNCHANGED, unaware this step exists]                             |
+  +---------------------------------------------------------------------------------------+
+```
+
+- **No new `Runtime` parameter, no `validate()` change.** REQ-7's Decision is built and applied
+  exactly like `/mcp call`'s — `MCPToolCallTool.validate()` is the SAME hard gate either way, so a
+  denylisted server launch command is refused identically regardless of which path proposed the
+  Decision. The model only ever contributes an inert `(server::tool, arguments)` pick; the
+  deterministic membership check against the ACTUAL discovered registry is what makes this
+  "conservative" — a name the model invents (or a stale one from a server that's since gone away)
+  can never reach `self.rt.apply` as an assumed-valid Decision.
+- **Two-plane, not a second reasoning mechanism.** This is the SAME `_route_plain` chain every
+  plain request already goes through — REQ-7 adds one more candidate action alongside `fix`/
+  `find`/`run`/.../the orchestrator's own choices, not a parallel routing system.

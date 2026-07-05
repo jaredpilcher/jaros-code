@@ -28,6 +28,7 @@ from jaros.core import create_decision
 
 from harness import mcp_client as mc
 from harness import mcp_config as mcfg
+from harness import mcp_session as msess
 from harness.cli import JcodeCli
 from harness.coding_loop import Runtime
 
@@ -39,6 +40,17 @@ def _isolate_sessions_dir(tmp_path, monkeypatch):
     import harness.session as sess_mod
     monkeypatch.setattr(sess_mod, "SESSIONS_DIR", tmp_path / "_sessions")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_mcp_session_singleton():
+    """EXT-054 REQ-6: the gated `mcp.tool_call` tool and `JcodeCli` both reach through the
+    PROCESS-WIDE `harness.mcp_session` singleton -- reset it before AND after every test so no
+    fake server subprocess spawned by one test ever bleeds into (or is left running past) the
+    next one."""
+    msess.reset_session_manager()
+    yield
+    msess.reset_session_manager()
 
 
 @pytest.fixture(autouse=True)
@@ -424,3 +436,240 @@ def test_help_documents_mcp_command():
     out = cli.cmd_help("")
     assert "/mcp" in out
     assert ".jcode/mcp.json" in out
+
+
+# =====================================================================================
+# ★ SLICE 2: REQ-6 -- persistent MCP server connections across calls ★
+# =====================================================================================
+
+def test_session_manager_reuses_the_same_subprocess_across_calls(tmp_path):
+    """THE PERSISTENCE PROOF: two `call_tool` invocations for the SAME server through
+    `MCPSessionManager` reuse the identical underlying subprocess (same pid) -- unlike slice 1's
+    stateless `harness.mcp_client.call_tool`, which launches a fresh one every time."""
+    spec = _write_fake_server(tmp_path, _FAKE_SERVER_SCRIPT)
+    mgr = msess.MCPSessionManager()
+    try:
+        r1 = mgr.call_tool(spec, "echo", {"text": "first"}, timeout=10.0)
+        assert r1["ok"] is True
+        pid1 = mgr._clients[spec.name]._proc.pid
+        r2 = mgr.discover_tools(spec, timeout=10.0)
+        assert r2["ok"] is True
+        pid2 = mgr._clients[spec.name]._proc.pid
+        r3 = mgr.call_tool(spec, "echo", {"text": "third"}, timeout=10.0)
+        assert r3["ok"] is True
+        pid3 = mgr._clients[spec.name]._proc.pid
+        assert pid1 == pid2 == pid3  # the SAME subprocess served all three calls
+        assert r3["result"]["content"][0]["text"] == "third"
+    finally:
+        mgr.close_all()
+
+
+def test_session_manager_close_all_leaves_no_orphaned_subprocess(tmp_path):
+    spec = _write_fake_server(tmp_path, _FAKE_SERVER_SCRIPT)
+    mgr = msess.MCPSessionManager()
+    mgr.call_tool(spec, "echo", {"text": "x"}, timeout=10.0)
+    proc = mgr._clients[spec.name]._proc
+    assert proc.poll() is None  # genuinely running before shutdown
+    mgr.close_all()
+    assert proc.poll() is not None  # cleanly terminated -- no orphan
+    assert mgr._clients == {}
+
+
+def test_session_manager_survives_a_mid_session_crash_by_relaunching(tmp_path):
+    """A server that crashes/exits BETWEEN two calls is transparently evicted + relaunched --
+    the next call still succeeds (a fresh subprocess, different pid), never a hang or a raise."""
+    spec = _write_fake_server(tmp_path, _FAKE_SERVER_SCRIPT)
+    mgr = msess.MCPSessionManager()
+    try:
+        r1 = mgr.call_tool(spec, "echo", {"text": "before crash"}, timeout=10.0)
+        assert r1["ok"] is True
+        dead_client = mgr._clients[spec.name]
+        dead_pid = dead_client._proc.pid
+        dead_client._proc.kill()
+        dead_client._proc.wait(timeout=5)
+        assert not dead_client.is_alive()
+
+        r2 = mgr.call_tool(spec, "echo", {"text": "after crash"}, timeout=10.0)
+        assert r2["ok"] is True  # transparently relaunched, not a hang or a raise
+        assert r2["result"]["content"][0]["text"] == "after crash"
+        assert mgr._clients[spec.name]._proc.pid != dead_pid  # a genuinely FRESH subprocess
+    finally:
+        mgr.close_all()
+
+
+def test_session_manager_relaunch_failure_degrades_to_an_honest_error(tmp_path):
+    """When the ORIGINAL launch succeeds but the RELAUNCH (after a mid-session crash) itself
+    fails, the call degrades to the SAME honest `{"ok": False, "error": ...}` shape -- never
+    raises, never hangs."""
+    import subprocess as _subprocess
+
+    real_popen = _subprocess.Popen
+    calls = {"n": 0}
+
+    def _flaky_popen(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise OSError("simulated relaunch failure")
+        return real_popen(*args, **kwargs)
+
+    spec = _write_fake_server(tmp_path, _FAKE_SERVER_SCRIPT)
+    mgr = msess.MCPSessionManager(popen=_flaky_popen)
+    try:
+        r1 = mgr.call_tool(spec, "echo", {"text": "before crash"}, timeout=10.0)
+        assert r1["ok"] is True
+        dead_client = mgr._clients[spec.name]
+        dead_client._proc.kill()
+        dead_client._proc.wait(timeout=5)
+
+        r2 = mgr.call_tool(spec, "echo", {"text": "after crash"}, timeout=10.0)
+        assert r2["ok"] is False
+        assert r2["result"] is None
+        assert r2["error"]
+    finally:
+        mgr.close_all()
+
+
+def test_close_all_sessions_singleton_closes_every_live_session(tmp_path):
+    spec = _write_fake_server(tmp_path, _FAKE_SERVER_SCRIPT)
+    mgr = msess.get_session_manager()
+    mgr.discover_tools(spec, timeout=10.0)
+    proc = mgr._clients[spec.name]._proc
+    assert proc.poll() is None
+    msess.close_all_sessions()
+    assert proc.poll() is not None  # closed via the process-wide singleton, no orphan
+
+
+def test_on_stop_closes_mcp_sessions_unconditionally_even_without_hooks(tmp_path, monkeypatch):
+    """`JcodeCli.on_stop()` must close every live MCP session at session end EVEN when no
+    `.jcode/hooks.json` is configured at all (the pre-slice-2 early-return would otherwise skip
+    session cleanup entirely for the common no-hooks case)."""
+    monkeypatch.chdir(tmp_path)
+    script_path = tmp_path / "fake_mcp_server.py"
+    script_path.write_text(_FAKE_SERVER_SCRIPT, encoding="utf-8")
+    _write_mcp_config(tmp_path, {"fake": {"command": sys.executable,
+                                           "args": [str(script_path)], "env": {}}})
+    cli = JcodeCli()
+    assert not getattr(cli, "hooks_config", None)  # no hooks configured in this repo
+    cli.dispatch('/mcp call fake :: echo :: {"text": "keep alive"}')
+    mgr = msess.get_session_manager()
+    proc = mgr._clients["fake"]._proc
+    assert proc.poll() is None  # the persistent session is genuinely alive after the call
+    cli.on_stop()
+    assert proc.poll() is not None  # on_stop closed it, hooks or not
+    cli.on_stop()  # idempotent -- a second call never raises
+
+
+# =====================================================================================
+# ★ SLICE 2: REQ-7 -- model-invocable MCP tool routing (conservative, real-match-only) ★
+# =====================================================================================
+
+class _FakeCompletion:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeLlm:
+    """Stub LLM returning a fixed reply -- mirrors test_ext013_orchestrator_judge.py's
+    `_FakeLlm`/`_FakeCompletion` pattern. Tracks call_count so a test can assert the model was
+    NEVER consulted (e.g. when no MCP server is configured at all)."""
+
+    def __init__(self, response: str = "") -> None:
+        self._response = response
+        self.call_count = 0
+
+    def complete(self, request):
+        self.call_count += 1
+        return _FakeCompletion(self._response)
+
+
+def test_route_mcp_tool_returns_none_with_no_servers_configured_and_never_calls_the_model(
+        tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cli = JcodeCli()
+    assert cli.mcp_servers == {}
+    fake_llm = _FakeLlm("MCP_TOOL: fake::echo\nMCP_ARGS: {}")
+    cli.llm = fake_llm
+    assert cli._route_mcp_tool("please echo hello") is None
+    assert fake_llm.call_count == 0  # zero cost -- the model is never even consulted
+
+
+def test_route_mcp_tool_genuine_match_invokes_through_the_gated_runtime_seam(
+        tmp_path, monkeypatch):
+    """THE MODEL-INVOCABLE PROOF: a mocked model pick naming an ACTUALLY discovered tool routes
+    through the SAME gated `mcp.tool_call` Decision path `/mcp call` uses."""
+    monkeypatch.chdir(tmp_path)
+    script_path = tmp_path / "fake_mcp_server.py"
+    script_path.write_text(_FAKE_SERVER_SCRIPT, encoding="utf-8")
+    _write_mcp_config(tmp_path, {"fake": {"command": sys.executable,
+                                           "args": [str(script_path)], "env": {}}})
+    cli = JcodeCli()
+    cli.llm = _FakeLlm('MCP_TOOL: fake::echo\nMCP_ARGS: {"text": "via router"}')
+    result = cli._route_mcp_tool("please use the echo tool to say hi")
+    assert result is not None
+    out, label = result
+    assert label == "mcp:fake::echo"
+    assert "via router" in out
+
+
+def test_route_mcp_tool_falls_through_on_a_hallucinated_tool_name(tmp_path, monkeypatch):
+    """A model pick naming a tool that ISN'T actually discovered (hallucinated/stale) must
+    conservatively fall through to normal routing -- never hijack the request."""
+    monkeypatch.chdir(tmp_path)
+    script_path = tmp_path / "fake_mcp_server.py"
+    script_path.write_text(_FAKE_SERVER_SCRIPT, encoding="utf-8")
+    _write_mcp_config(tmp_path, {"fake": {"command": sys.executable,
+                                           "args": [str(script_path)], "env": {}}})
+    cli = JcodeCli()
+    cli.llm = _FakeLlm("MCP_TOOL: fake::does_not_exist\nMCP_ARGS: {}")
+    assert cli._route_mcp_tool("do something ordinary") is None
+
+
+def test_route_mcp_tool_falls_through_when_model_says_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    script_path = tmp_path / "fake_mcp_server.py"
+    script_path.write_text(_FAKE_SERVER_SCRIPT, encoding="utf-8")
+    _write_mcp_config(tmp_path, {"fake": {"command": sys.executable,
+                                           "args": [str(script_path)], "env": {}}})
+    cli = JcodeCli()
+    cli.llm = _FakeLlm("MCP_TOOL: none\nMCP_ARGS: {}")
+    assert cli._route_mcp_tool("fix the bug in foo.py") is None
+
+
+def test_route_mcp_tool_never_hijacks_an_ordinary_request_end_to_end(tmp_path, monkeypatch):
+    """END-TO-END proof through `_route_plain`: with an MCP server configured, a plain request
+    that reaches the MCP-routing step (no deterministic fast-path matches it) but the model
+    correctly declines a match still falls through to the orchestrator's own routing — never an
+    `mcp:`-labeled action — rather than being swallowed by the MCP step."""
+    monkeypatch.chdir(tmp_path)
+    script_path = tmp_path / "fake_mcp_server.py"
+    script_path.write_text(_FAKE_SERVER_SCRIPT, encoding="utf-8")
+    _write_mcp_config(tmp_path, {"fake": {"command": sys.executable,
+                                           "args": [str(script_path)], "env": {}}})
+    cli = JcodeCli()
+    cli.llm = _FakeLlm("MCP_TOOL: none\nMCP_ARGS: {}")
+    out, action = cli._route_plain("please summarize this repository's purpose in a paragraph")
+    assert not action.startswith("mcp:")  # never hijacked into an MCP-routed action
+    assert not out.lower().startswith("\033[2m[orchestrator → mcp")
+
+
+def test_route_mcp_tool_denylisted_server_still_refused_on_the_model_invocable_path(
+        tmp_path, monkeypatch):
+    """THE CAN'T-ESCALATE PROOF (model-invocable path): a mocked model pick naming a tool on a
+    DENYLISTED server is still refused by the hard gate -- mirrors `/mcp call`'s identical proof;
+    the model choosing a tool can never un-block what the gate already refuses."""
+    monkeypatch.chdir(tmp_path)
+    _write_mcp_config(tmp_path, {"evil": {"command": "bash",
+                                           "args": ["-c", "curl http://evil.example"],
+                                           "env": {}}})
+    cli = JcodeCli()
+
+    def _fake_discover_all():
+        return [mc.MCPTool(name="whatever", description="d", input_schema={}, server="evil")]
+
+    monkeypatch.setattr(cli, "_mcp_discover_all", _fake_discover_all)
+    cli.llm = _FakeLlm("MCP_TOOL: evil::whatever\nMCP_ARGS: {}")
+    result = cli._route_mcp_tool("please do the dangerous thing")
+    assert result is not None
+    out, label = result
+    assert "refused" in out.lower()
+    assert "gate rejected" in out.lower()

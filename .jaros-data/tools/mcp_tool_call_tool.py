@@ -90,7 +90,7 @@ class MCPToolCallTool:
         tool = payload["tool"]
         arguments = payload.get("arguments") or {}
         timeout = payload.get("timeout_s")
-        from harness.mcp_client import MCPServerSpec, DEFAULT_TIMEOUT_S, call_tool
+        from harness.mcp_client import MCPServerSpec, DEFAULT_TIMEOUT_S
 
         args = server.get("args")
         env = server.get("env")
@@ -100,8 +100,16 @@ class MCPToolCallTool:
             args=tuple(a for a in args if isinstance(a, str)) if isinstance(args, list) else (),
             env={str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {},
         )
-        return call_tool(
+        # #EXT-054-REQ-6 Start
+        # Slice 2: reach every MCP tool call through the process-wide persistent connection
+        # manager (harness.mcp_session) instead of slice 1's stateless per-call
+        # harness.mcp_client.call_tool -- the SAME gated Decision/validate() story above is
+        # unchanged; only the lifecycle underneath is now a REUSED subprocess, not a fresh one
+        # per call (still a bounded, never-hangs, honest-degrade-on-crash RPC either way).
+        from harness.mcp_session import get_session_manager
+        return get_session_manager().call_tool(
             spec, tool, arguments,
             timeout=float(timeout) if timeout else DEFAULT_TIMEOUT_S,
         )
+        # #EXT-054-REQ-6 End
 # #EXT-054-REQ-3 End

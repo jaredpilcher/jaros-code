@@ -119,6 +119,9 @@ Commands (Claude-Code-style):
   /mcp call <server> :: <tool> :: <json-args>   invoke a discovered MCP tool through the SAME
                                  gated Decision path every other tool call uses — a denylisted
                                  server launch command is refused by the hard gate, EXT-054
+                                 (configured servers stay connected across turns and a plain
+                                 request can route to a matching MCP tool without an explicit
+                                 /mcp call, still through the SAME gated path, EXT-054 slice 2)
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -425,11 +428,25 @@ class JcodeCli:
     def on_stop(self) -> None:
         """Fire configured ``Stop`` lifecycle hooks (EXT-047) once, at session end -- called from
         `repl()` (on `/quit`/EOF/interrupt) and `_run_one_shot()` (after its single turn
-        completes). A no-op when no hooks are configured, and idempotent (fires at most once per
-        `JcodeCli` instance). Never raises."""
-        if self._stop_fired or not getattr(self, "hooks_config", None):
+        completes). Idempotent (fires at most once per `JcodeCli` instance). Never raises.
+
+        EXT-054 REQ-6: ALSO closes every live persistent MCP server session (the process-wide
+        `harness.mcp_session` singleton) at this SAME seam, UNCONDITIONALLY -- unlike the Stop
+        hook firing below (still gated on `hooks_config` being non-empty), MCP session cleanup
+        must happen whether or not any `.jcode/hooks.json` is configured, since REQ-6's whole
+        point is a persistent server subprocess must never be leaked."""
+        if self._stop_fired:
             return
         self._stop_fired = True
+        # #EXT-054-REQ-6 Start
+        try:
+            from harness.mcp_session import close_all_sessions
+            close_all_sessions()
+        except Exception:
+            pass
+        # #EXT-054-REQ-6 End
+        if not getattr(self, "hooks_config", None):
+            return
         try:
             from harness import hooks as _hooks
             self._stop_outcomes = _hooks.fire_event(
@@ -1820,12 +1837,19 @@ class JcodeCli:
             return ("(no MCP servers configured — drop a .jcode/mcp.json file with a "
                      '{"servers": {"<name>": {"command":..., "args":[...], "env":{...}}}} map '
                      "to add one)")
-        from harness.mcp_client import MCPServerSpec, discover_tools
+        # #EXT-054-REQ-6 Start
+        # Slice 2: discover through the process-wide persistent connection manager (reused across
+        # /mcp, /mcp call, and the model-invocable routing path) instead of slice-1's stateless
+        # per-call discover_tools -- a repeat /mcp invocation now reuses an already-live server.
+        from harness.mcp_client import MCPServerSpec
+        from harness.mcp_session import get_session_manager
+        mgr = get_session_manager()
+        # #EXT-054-REQ-6 End
         lines = ["configured MCP servers:"]
         for name in sorted(servers):
             sd = servers[name]
             spec = MCPServerSpec(name=name, command=sd.command, args=sd.args, env=sd.env)
-            result = discover_tools(spec, timeout=10.0)
+            result = mgr.discover_tools(spec, timeout=10.0)
             if result.get("ok"):
                 tools = result.get("tools") or []
                 if tools:
@@ -1874,6 +1898,112 @@ class JcodeCli:
             return f"mcp call refused: {exc}"
         return str(result)
     # #EXT-054-REQ-4 End
+
+    # #EXT-054-REQ-7 Start
+    def _mcp_discover_all(self) -> "list":
+        """Collect every configured MCP server's discovered tools (via the REQ-6 persistent
+        `MCPSessionManager`, so repeated routing calls reuse an already-live connection rather
+        than relaunching servers) into one flat list. A per-server discovery failure contributes
+        nothing rather than blocking the others (mirrors `cmd_mcp`'s own tolerance); no configured
+        server at all returns `[]`. Never raises."""
+        servers = getattr(self, "mcp_servers", {}) or {}
+        if not servers:
+            return []
+        try:
+            from harness.mcp_client import MCPServerSpec
+            from harness.mcp_session import get_session_manager
+        except Exception:
+            return []
+        mgr = get_session_manager()
+        out: "list" = []
+        for name, sd in servers.items():
+            try:
+                spec = MCPServerSpec(name=name, command=sd.command, args=sd.args, env=sd.env)
+                result = mgr.discover_tools(spec, timeout=10.0)
+            except Exception:
+                continue
+            if isinstance(result, dict) and result.get("ok"):
+                out.extend(result.get("tools") or [])
+        return out
+
+    _MCP_TOOL_RE = re.compile(r"MCP_TOOL:\s*(\S+)", re.I)
+    _MCP_ARGS_RE = re.compile(r"MCP_ARGS:\s*(\{.*\})", re.I | re.S)
+
+    def _route_mcp_tool(self, line: str) -> "tuple[str, str] | None":
+        """Model-invocable MCP tool routing (EXT-054 REQ-7): when at least one MCP server is
+        configured, ask the SAME small local model that already routes `fix`/`find`/`run`/...
+        whether `line` clearly wants one of the currently-DISCOVERED MCP tools -- and if so,
+        which -- then build + apply the SAME gated `mcp.tool_call` Decision `/mcp call` already
+        uses. This is a companion step in `_route_plain`'s chain, NOT a second reasoning
+        mechanism: the model only ever emits an INERT pick (`server::tool` + best-effort JSON
+        arguments); this function looks that pick up against the ACTUAL discovered-tool registry
+        built THIS call and REFUSES to build a Decision for anything that isn't an exact match --
+        a hallucinated/stale/mismatched name (or an explicit "none") returns `None`, so the
+        caller falls through to its normal routing completely unaffected. Returns `None` (never
+        routes, zero extra cost) when no MCP server is configured at all or discovery yields no
+        tools -- an ordinary request in a repo with no MCP config never even reaches the model
+        for this step."""
+        servers = getattr(self, "mcp_servers", {}) or {}
+        if not servers:
+            return None
+        tools = self._mcp_discover_all()
+        if not tools:
+            return None
+        catalog = {f"{t.server}::{t.name}": t for t in tools}
+        listing = "\n".join(
+            f"- {key}: {(t.description or '').strip() or '(no description)'}"
+            for key, t in catalog.items())
+        prompt = (
+            "Some EXTERNAL tools (MCP) are available in addition to your normal actions. Decide "
+            "if the request below clearly wants ONE of them; if not, say none. Output EXACTLY "
+            "two lines and nothing else:\n"
+            "MCP_TOOL: <one of the server::tool names below, or none>\n"
+            "MCP_ARGS: <a JSON object of arguments for that tool, or {}>\n\n"
+            f"AVAILABLE MCP TOOLS:\n{listing}\n\nREQUEST: {line}\n"
+        )
+        try:
+            from jaros.llm import LlmRequest
+            reply = self.llm.complete(LlmRequest(prompt=prompt)).text
+        except Exception:
+            return None
+        m_tool = self._MCP_TOOL_RE.search(reply or "")
+        if not m_tool:
+            return None
+        picked = m_tool.group(1).strip().strip("`'\"")
+        if picked.lower() in ("none", "n/a", "-", ""):
+            return None
+        tool = catalog.get(picked)
+        if tool is None:
+            return None  # NOT an actual discovered tool -- conservative, never hijack a request
+        sd = servers.get(tool.server)
+        if sd is None:
+            return None
+        arguments: dict = {}
+        m_args = self._MCP_ARGS_RE.search(reply or "")
+        if m_args:
+            try:
+                import json as _json
+                parsed = _json.loads(m_args.group(1))
+                if isinstance(parsed, dict):
+                    arguments = parsed
+            except Exception:
+                arguments = {}
+        decision = self._mk(
+            id=f"mcp-route-{uuid.uuid4().hex}", source="mcp-router", type="mcp.tool_call",
+            payload={
+                "server": {"name": sd.name, "command": sd.command,
+                           "args": list(sd.args), "env": dict(sd.env)},
+                "tool": tool.name, "arguments": arguments,
+            },
+        )
+        label = f"mcp:{tool.server}::{tool.name}"
+        try:
+            result = self.rt.apply(decision)
+        except RuntimeError as exc:
+            return f"mcp tool call refused: {exc}", label
+        return (f"\033[2m[orchestrator → mcp {tool.server}::{tool.name}]\033[0m\n"
+                f"{result}", label)
+    # #EXT-054-REQ-7 End
 
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:
@@ -2050,6 +2180,17 @@ class JcodeCli:
             action, arg = intent
             out = f"\033[2m[intent → /{action} {arg}]\033[0m\n" + getattr(self, "cmd_" + action)(arg)
             return out, action
+        # #EXT-054-REQ-7 Start
+        # Model-invocable MCP tools (EXT-054 REQ-7): a companion routing step, gated on at least
+        # one MCP server being configured (a repo with none pays zero extra cost -- `_route_mcp_tool`
+        # returns `None` immediately, no model call). A genuine, EXACT-match pick against the live
+        # discovered-tool registry routes through the SAME gated `mcp.tool_call` Decision `/mcp
+        # call` uses; anything else (no MCP servers, no match, a hallucinated/stale name) falls
+        # through to the deterministic-intent/orchestrator chain below, completely unaffected.
+        mcp_routed = self._route_mcp_tool(line)
+        if mcp_routed is not None:
+            return mcp_routed
+        # #EXT-054-REQ-7 End
         # #EXT-036-REQ-12 Start
         # #EXT-036-REQ-15 Start
         # condense() is the raw recent() slice (byte-identical) for under-budget sessions, and

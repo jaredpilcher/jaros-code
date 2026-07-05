@@ -210,39 +210,47 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "beyond `/permissions`'s flat listing.",
     ),
     # #EXT-048-REQ-5 End
-    # #EXT-054-REQ-5 Start
+    # #EXT-054-REQ-8 Start
     ProductParityRow(
         id=18, feature="External-tool extensibility protocol (MCP client)",
-        state="partial",
-        current_state="EXT-054 (first slice): `.jcode/mcp.json` (project) and `~/.jcode/mcp.json` "
-                       "(user, project wins on a name collision) register MCP stdio servers "
-                       "(`{\"servers\": {\"<name>\": {\"command\", \"args\", \"env\"}}}`). "
-                       "`harness/mcp_client.py` speaks the MCP stdio JSON-RPC transport -- launch "
-                       "(scrubbed environment), `initialize` + `notifications/initialized`, "
-                       "`tools/list`, `tools/call` -- with EVERY subprocess read timeout-bounded "
-                       "via a background-thread + `queue.Queue` reader (portable to Windows, "
-                       "unlike `select()` on a pipe), so a dead/hung/slow server degrades to an "
-                       "honest error and never hangs; `close()` always cleanly shuts down the "
-                       "subprocess (stdin EOF, then a process-tree kill if needed). Every "
-                       "`tools/call` reaches the host ONLY as a new `mcp.tool_call` Decision "
-                       "applied through `harness.coding_loop.Runtime.apply` -- the same gate -> "
-                       "executor -> decision-log seam every tool call already passes through -- "
-                       "via a new gated tool (`mcp_tool_call_tool.py`) whose `validate()` applies "
-                       "the SAME network-egress/destructive-command/privilege-escalation denylist "
-                       "`shell.exec` already enforces to the MCP server's LAUNCH command, so a "
-                       "denylisted server config is refused before any subprocess is ever spawned "
-                       "(proven by an explicit test, mirroring EXT-050's identical safety proof). "
-                       "`/mcp` lists configured servers + their live-discovered tools (an "
-                       "unreachable server reports an honest inline error without blocking the "
-                       "others); `/mcp call <server> :: <tool> :: <json-args>` invokes one through "
-                       "the gated path. No `.jcode/mcp.json` anywhere is a byte-identical no-op.",
+        state="works",
+        current_state="EXT-054 (slice 1 + slice 2): `.jcode/mcp.json` (project) and "
+                       "`~/.jcode/mcp.json` (user, project wins on a name collision) register MCP "
+                       "stdio servers (`{\"servers\": {\"<name>\": {\"command\", \"args\", "
+                       "\"env\"}}}`). `harness/mcp_client.py` speaks the MCP stdio JSON-RPC "
+                       "transport -- launch (scrubbed environment), `initialize` + "
+                       "`notifications/initialized`, `tools/list`, `tools/call` -- with EVERY "
+                       "subprocess read timeout-bounded via a background-thread + `queue.Queue` "
+                       "reader (portable to Windows), so a dead/hung/slow server degrades to an "
+                       "honest error and never hangs. `harness/mcp_session.py`'s "
+                       "`MCPSessionManager` (slice 2) keeps each configured server's subprocess "
+                       "ALIVE and reuses it across every call for the life of the CLI process -- "
+                       "a crashed/exited session is evicted and transparently relaunched (one "
+                       "bounded retry, then an honest error); every live session closes cleanly "
+                       "at session end (`JcodeCli.on_stop`, unconditionally, no leaked process). "
+                       "Every `tools/call` still reaches the host ONLY as a `mcp.tool_call` "
+                       "Decision applied through `harness.coding_loop.Runtime.apply` via the "
+                       "gated `mcp_tool_call_tool.py`, whose `validate()` applies the SAME "
+                       "network-egress/destructive-command/privilege-escalation denylist "
+                       "`shell.exec` already enforces to the server's LAUNCH command (a "
+                       "denylisted server config is refused before any subprocess is ever "
+                       "spawned, proven by an explicit test). `/mcp` lists servers + live-"
+                       "discovered tools; `/mcp call <server> :: <tool> :: <json-args>` invokes "
+                       "one manually. SLICE 2: a plain request ALSO routes to a discovered MCP "
+                       "tool without an explicit `/mcp call` -- the SAME small local model that "
+                       "already picks `fix`/`find`/`run`/... can pick a `server::tool`, but only "
+                       "an EXACT match against the LIVE discovered-tool registry is ever built "
+                       "into a Decision (a hallucinated/stale name conservatively falls through "
+                       "to normal routing, never hijacking an ordinary request), and it still "
+                       "reaches the host through the SAME gated `mcp.tool_call` path -- proven by "
+                       "an explicit test that the can't-escalate-past-the-hard-gate invariant "
+                       "holds identically on this path. No `.jcode/mcp.json` anywhere is a "
+                       "byte-identical no-op (zero model calls, zero subprocesses).",
         next_lever="MCP resources and prompts (only tools/list+tools/call are implemented); "
-                    "server-initiated notifications; the HTTP/SSE transport (stdio only); a "
-                    "persistent server connection kept alive across turns (today's lifecycle "
-                    "launches a fresh subprocess per call); a model-invocable auto-suggestion mode "
-                    "beyond an explicit `/mcp call`.",
+                    "server-initiated notifications; the HTTP/SSE transport (stdio only, no "
+                    "remote server support).",
     ),
-    # #EXT-054-REQ-5 End
+    # #EXT-054-REQ-8 End
     # #EXT-050-REQ-5 Start
     ProductParityRow(
         id=19, feature="Subagent authoring surface",

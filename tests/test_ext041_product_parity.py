@@ -53,7 +53,20 @@ def test_no_row_is_inflated_to_works_today():
     safely denies by default headless; `/mode [plan|default|acceptEdits]` wired at the same seam
     -- `plan` withholds every write/shell Decision before the gate/hooks ever see it, `acceptEdits`
     narrowly auto-approves an `ask`-resolving WRITE Decision (never `shell.exec`); `/permissions`
-    lists configured rules; no config anywhere is byte-identical), and row #19 (Subagent
+    lists configured rules; no config anywhere is byte-identical), row #18 (External-tool
+    extensibility protocol / MCP client, EXT-054 slice 1 + slice 2: two-tier `.jcode/mcp.json`
+    config, a bounded stdio JSON-RPC client (`harness/mcp_client.py`) that never hangs on a dead/
+    hung/slow server, a `MCPSessionManager` (`harness/mcp_session.py`) that keeps each configured
+    server's subprocess ALIVE and reused across calls -- evicting + transparently relaunching a
+    crashed session, closing every live session unconditionally at `JcodeCli.on_stop` (no leaked
+    subprocess) -- every `tools/call` reaching the host ONLY as a gated `mcp.tool_call` Decision
+    whose `validate()` mirrors `shell.exec`'s own denylist on the server's launch command; `/mcp`/
+    `/mcp call` for manual invocation PLUS a model-invocable routing step in `_route_plain` that
+    lets the same small local router pick a discovered MCP tool for a plain request, gated
+    EXACTLY against the live discovered-tool registry so a hallucinated/stale pick can never
+    reach the gate (proven never to hijack an ordinary request, and proven the can't-escalate
+    invariant holds identically on this path); resources/prompts/notifications/the HTTP/SSE
+    transport remain honestly deferred), and row #19 (Subagent
     authoring surface, EXT-050: `.jcode/agents/<name>.md` project+user registry (frontmatter
     `description`/`tools`/`model`), delegation via `/subagent`/a deterministic "delegate to X
     subagent" phrasing routed through the SAME plain-language chain, a `tool_allowlist` at the
@@ -83,7 +96,7 @@ def test_no_row_is_inflated_to_works_today():
     honestly deferred) are the rows genuinely delivered end-to-end -- these pins were updated
     deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 23, 24, 25]
+    assert works == [12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25]
 
 
 def test_score_aggregate_known_mix():
@@ -122,13 +135,13 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), #24 (EXT-045), and
-    # #25 (EXT-053) are genuine "works"; #18 (EXT-054, MCP client first slice) is honestly
-    # "partial" -- config/handshake/discovery/gated invocation delivered, resources/prompts/
-    # notifications/SSE transport deferred
-    assert result["n_works"] == 12
-    assert result["n_partial"] == 1
-    assert result["n_partial"] + result["n_missing"] == 4
+    # (EXT-048), #18 (EXT-054, MCP client slice 1 + slice 2: persistent connections + a
+    # model-invocable routing path, both gated identically to the manual `/mcp call` path), #19
+    # (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), #24 (EXT-045), and #25 (EXT-053) are
+    # genuine "works"
+    assert result["n_works"] == 13
+    assert result["n_partial"] == 0
+    assert result["n_partial"] + result["n_missing"] == 3
     assert 0.0 <= result["pct"] < 100.0
 
 
