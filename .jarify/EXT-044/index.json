@@ -1,0 +1,102 @@
+{
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1012,
+      "endLine": 1022
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1510,
+      "endLine": 1610
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1640,
+      "endLine": 1659
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1024,
+      "endLine": 1037
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1511,
+      "endLine": 1609
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1641,
+      "endLine": 1658
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1509,
+      "endLine": 1611
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1639,
+      "endLine": 1660
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 70,
+      "endLine": 94
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/session.py",
+      "startLine": 25,
+      "endLine": 30
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 34,
+      "endLine": 37
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 41,
+      "endLine": 46
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 66,
+      "endLine": 68
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 75,
+      "endLine": 77
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 92,
+      "endLine": 100
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 115,
+      "endLine": 118
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 132,
+      "endLine": 134
+    },
+    {
+      "file": "harness/session.py",
+      "startLine": 144,
+      "endLine": 248
+    }
+  ]
+}

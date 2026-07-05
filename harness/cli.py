@@ -54,6 +54,13 @@ Commands (Claude-Code-style):
   /new                          start a fresh conversational session (EXT-036)
   /resume <id>                  resume a prior session by id (also: --resume <id> on the command line)
   /sessions                     list recent saved sessions
+  /name <name>                  give the current session a display name (EXT-044; also: --name <name>
+                                 on the one-shot command line)
+  /fork [<id|name>]             branch a session into a NEW id (copies its transcript, leaves the
+                                 original unchanged); no arg forks the current session (also:
+                                 --fork [<id|name>] on the command line, EXT-044)
+                                 (command line only, EXT-044): -c/--continue resumes the most recent
+                                 session; -r <id|name> resumes a specific one by id OR by its /name
   /task <text>                  add a TODO task for this repo (EXT-036)
   /tasks                        list tasks (id + status)
   /task done <id>                mark a task done
@@ -994,8 +1001,40 @@ class JcodeCli:
         rows = list_sessions(limit=10)
         if not rows:
             return "(no saved sessions yet)"
-        return "recent sessions:" + "".join(f"\n  {r['id']}  ({r['turns']} turn(s))" for r in rows)
+        return "recent sessions:" + "".join(
+            f"\n  {r['id']}"
+            + (f" ({r['name']!r})" if r.get("name") else "")  # #EXT-044-REQ-1
+            + f"  ({r['turns']} turn(s))"
+            for r in rows
+        )
     # #EXT-036-REQ-12 End
+
+    # #EXT-044-REQ-3 Start
+    def cmd_name(self, arg: str) -> str:
+        """Give the CURRENT session a display name (EXT-044) so it can later be resumed by
+        that name via ``-r <name>``/``--fork <name>`` on the command line, not just its id."""
+        name = arg.strip()
+        if not name:
+            return "usage: /name <name>   (names the CURRENT session, see /sessions for ids)"
+        from harness.session import set_session_name
+        set_session_name(self.session, name)
+        return f"session {self.session.id} named {name!r}"
+    # #EXT-044-REQ-3 End
+
+    # #EXT-044-REQ-4 Start
+    def cmd_fork(self, arg: str) -> str:
+        """Branch a session into a NEW id (EXT-044): the new session's transcript is a COPY of
+        the referenced session's transcript (an id or a /name; no argument forks the CURRENT
+        session) -- the source session's persisted transcript is left completely unchanged, and
+        the REPL switches to the new fork."""
+        from harness.session import fork_session
+        ref = arg.strip() or self.session.id
+        forked = fork_session(ref)
+        if forked is None:
+            return f"no saved session found for {ref!r} (id or name) -- nothing to fork"
+        self.session = forked
+        return f"forked {ref!r} -> new session {forked.id} ({len(forked.turns)} turn(s))"
+    # #EXT-044-REQ-4 End
 
     # #EXT-036-REQ-18 Start
     def cmd_task(self, arg: str) -> str:
@@ -1414,8 +1453,13 @@ def _read_stdin_request() -> str:
 
 
 def _run_one_shot(request: str, session_id: "str | None", output_format: str,
-                   max_turns: "int | None") -> "tuple[str, int]":
+                   max_turns: "int | None",
+                   name_to_set: "str | None" = None) -> "tuple[str, int]":
     """Run exactly ONE headless turn and return ``(text_to_print, exit_code)``.
+
+    ``name_to_set`` (EXT-044 REQ-1/3, optional, defaulted so pre-EXT-044 callers are
+    unaffected): when given, applied to the session AFTER construction (so it names whichever
+    session this run ends up using -- fresh, resumed, or forked) via ``set_session_name``.
 
     ``max_turns`` (REQ-4): the one-shot path already performs exactly one turn, so ``N >= 1`` (or
     ``None``, no cap) has no further effect beyond that existing ceiling -- documented honestly,
@@ -1441,6 +1485,9 @@ def _run_one_shot(request: str, session_id: "str | None", output_format: str,
 
     try:
         cli = JcodeCli(session_id=session_id)
+        if name_to_set:                 # #EXT-044-REQ-3
+            from harness.session import set_session_name
+            set_session_name(cli.session, name_to_set)
         response = cli.handle(request)
         model = cli.model
     except Exception as exc:            # a headless run must report cleanly, not dump a traceback
@@ -1459,6 +1506,111 @@ def _run_one_shot(request: str, session_id: "str | None", output_format: str,
 # #EXT-043-REQ-1 End
 
 
+# #EXT-044-REQ-2 Start
+# #EXT-044-REQ-3 Start
+# #EXT-044-REQ-4 Start
+def _parse_session_flags(rest: "list[str]") -> "tuple[bool, str | None, str | None, str | None, list[str]]":
+    """Parse the EXT-044 session-continuity flags out of ``rest`` (the tokens
+    ``_parse_headless_args`` -- EXT-043, unmodified -- left after stripping ``--resume``/
+    ``--output-format``/``--max-turns``): ``-c``/``--continue`` (resume the most-recently-active
+    session), ``-r <id|name>`` (an alias for ``--resume`` that also accepts a session NAME),
+    ``--fork [<id|name>]`` (branch a session into a brand-new id -- the value is OPTIONAL: the
+    following token is consumed only when it resolves to a real, existing session, otherwise
+    ``--fork`` takes no value and that token is left as ordinary request text), and ``--name
+    <name>`` (assign a display name to whichever session this run ends up using). Every other
+    token is left, in original order, in the returned ``rest``.
+
+    Returns ``(continue_flag, resume_ref, fork_ref, name_to_set, rest)``. ``fork_ref`` is
+    ``None`` when ``--fork`` was not given at all, and ``""`` when ``--fork`` was given with no
+    (or an unresolvable) following value -- both meaningfully different from "don't fork".
+
+    Never raises: probing whether the next token is a real session reference
+    (``resolve_session_ref``) is guarded -- any lookup failure is treated as "not a value"
+    (conservative -- the token stays in ``rest``) rather than crashing argument parsing.
+    """
+    from harness.session import resolve_session_ref
+
+    continue_flag = False
+    resume_ref: "str | None" = None
+    fork_ref: "str | None" = None
+    name_to_set: "str | None" = None
+    out: "list[str]" = []
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a in ("-c", "--continue"):
+            continue_flag = True
+            i += 1
+            continue
+        if a == "-r" and i + 1 < len(rest):
+            resume_ref = rest[i + 1]
+            i += 2
+            continue
+        if a == "--name" and i + 1 < len(rest):
+            name_to_set = rest[i + 1]
+            i += 2
+            continue
+        if a == "--fork":
+            nxt = rest[i + 1] if i + 1 < len(rest) else None
+            try:
+                resolvable = bool(nxt) and not nxt.startswith("-") and resolve_session_ref(nxt) is not None
+            except Exception:
+                resolvable = False
+            if resolvable:
+                fork_ref = nxt
+                i += 2
+            else:
+                fork_ref = ""
+                i += 1
+            continue
+        out.append(a)
+        i += 1
+    return continue_flag, resume_ref, fork_ref, name_to_set, out
+
+
+def _resolve_session_target(continue_flag: bool, resume_ref: "str | None", fork_ref: "str | None",
+                             legacy_resume_id: "str | None") -> "tuple[str | None, str | None]":
+    """Turn the parsed session-continuity flags into ONE concrete session id to hand to
+    ``JcodeCli``/``repl()``, or an honest error message. Priority order: ``--fork`` > ``-c`` >
+    ``-r`` > the OLD ``--resume <id>`` flag (passed through UNCHANGED -- no existence check, so
+    an unknown id still creates a fresh session under that literal id exactly as before this
+    spec) > a fresh session (``None``, the pre-EXT-044 default).
+
+    Returns ``(session_id, error)``; at most one is non-``None``. Never raises -- any lookup
+    failure is surfaced as an error string, never a crash.
+    """
+    from harness.session import resolve_session_ref, most_recent_session_id, fork_session
+
+    try:
+        if fork_ref is not None:
+            source = fork_ref or resume_ref or legacy_resume_id or most_recent_session_id()
+            if not source:
+                return None, "no saved sessions exist to --fork"
+            forked = fork_session(source)
+            if forked is None:
+                return None, f"--fork: no saved session found for {source!r} (id or name)"
+            return forked.id, None
+
+        if continue_flag:
+            rid = most_recent_session_id()
+            if not rid:
+                return None, "no saved sessions to continue (-c / --continue) -- start one first"
+            return rid, None
+
+        if resume_ref:
+            rid = resolve_session_ref(resume_ref)
+            if rid is None:
+                return None, f"no saved session found for {resume_ref!r} (id or name)"
+            return rid, None
+    except Exception as exc:
+        return None, f"session lookup failed: {exc}"
+
+    return legacy_resume_id, None
+# #EXT-044-REQ-4 End
+# #EXT-044-REQ-3 End
+# #EXT-044-REQ-2 End
+
+
 def main() -> int:
     """Entry point: a one-shot request if given as args or piped via stdin, else the
     interactive REPL.
@@ -1472,11 +1624,40 @@ def main() -> int:
       python -m harness.cli -                        # headless: read stdin unconditionally
       python -m harness.cli --output-format json "req"   # machine-parseable JSON on stdout
       python -m harness.cli --max-turns 0 "req"       # refuse to run (0 turns) -- exit non-zero
+      python -m harness.cli -c                       # EXT-044: resume the most-recently-active
+                                                      # session ("--continue")
+      python -m harness.cli -r <id|name>             # EXT-044: resume a specific session by id
+                                                      # OR by its assigned /name
+      python -m harness.cli --fork [<id|name>]       # EXT-044: branch a session into a NEW id
+                                                      # (copies its transcript; original untouched)
+      python -m harness.cli --name <name> "req"      # EXT-044: name the session this run uses
     """
     import sys
     args = sys.argv[1:]
     # #EXT-043-REQ-1 Start
-    session_id, output_format, max_turns, rest = _parse_headless_args(args)
+    session_id, output_format, max_turns, rest0 = _parse_headless_args(args)
+    # #EXT-044-REQ-2 Start
+    # #EXT-044-REQ-3 Start
+    # #EXT-044-REQ-4 Start
+    continue_flag, resume_ref, fork_ref, name_to_set, rest = _parse_session_flags(rest0)
+
+    resolved_session_id, session_err = _resolve_session_target(
+        continue_flag, resume_ref, fork_ref, session_id
+    )
+    if session_err:
+        # An unresolvable -c/-r/--fork reference is an honest, reported failure -- JcodeCli is
+        # NEVER constructed with a bogus id, in either output format (REQ-2/3/4 acceptance).
+        import json as _json
+        if output_format == "json":
+            print(_json.dumps({"request": None, "response": None, "ok": False,
+                                "model": None, "error": session_err}))
+        else:
+            print(f"\033[31merror:\033[0m {session_err}")
+        return 1
+    session_id = resolved_session_id
+    # #EXT-044-REQ-4 End
+    # #EXT-044-REQ-3 End
+    # #EXT-044-REQ-2 End
 
     request: "str | None" = None
     if rest == ["-"]:
@@ -1492,7 +1673,7 @@ def main() -> int:
         return repl(session_id=session_id)
 
     # #EXT-043-REQ-3 Start
-    text, code = _run_one_shot(request, session_id, output_format, max_turns)
+    text, code = _run_one_shot(request, session_id, output_format, max_turns, name_to_set)
     print(text)
     return code
     # #EXT-043-REQ-3 End

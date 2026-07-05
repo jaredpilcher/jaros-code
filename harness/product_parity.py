@@ -15,11 +15,12 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, one row (#14, EXT-042's JCODE.md instruction hierarchy)
-is genuinely ``"works"``; most others remain ``"missing"`` (GAP-MAP state ``unmeasured``) or
-``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e. something exists but the
-CC-parity feature is not yet delivered). That honest baseline, not a flattering one, is the
-entire point of the instrument.
+lever named. As of ``LAST_SYNCED``, three rows (#12 EXT-044 sessions continue/resume/fork/name,
+#13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy) are genuinely
+``"works"``; most others remain ``"missing"`` (GAP-MAP state ``unmeasured``) or ``"partial"``
+(GAP-MAP state ``probed`` / ``lever-named``, i.e. something exists but the CC-parity feature is
+not yet delivered). That honest baseline, not a flattering one, is the entire point of the
+instrument.
 
 MONTHLY RE-SYNC (owner directive): Claude Code is a moving target. Re-audit the official docs
 (code.claude.com/docs: overview, cli-reference, commands/skills, hooks, memory, MCP, sub-agents,
@@ -59,18 +60,38 @@ class ProductParityRow:
 
 
 # Transcribed HONESTLY from docs/GAP-MAP.md, "## Product-surface parity" section, rows #12-27
-# (added 2026-07-04). GAP-MAP's own row `State` column (unmeasured / probed / lever-named) maps
-# here as: unmeasured -> missing (nothing built yet), probed / lever-named -> partial (something
-# exists but the CC-parity feature is not yet delivered end-to-end). No row in GAP-MAP is
-# recorded `closed` for this section, so no row here is `works` -- do not inflate.
+# (added 2026-07-04). GAP-MAP's own row `State` column (unmeasured / probed / lever-named /
+# closed(spec)) maps here as: unmeasured -> missing (nothing built yet), probed / lever-named ->
+# partial (something exists but the CC-parity feature is not yet delivered end-to-end),
+# closed(spec) -> works (delivered AND test-covered). Rows #12 (EXT-044), #13 (EXT-043), and #14
+# (EXT-042) are recorded `closed` in GAP-MAP as of this sync -- every other row stays honestly
+# `missing`/`partial`, do not inflate.
 PARITY_ROWS: "list[ProductParityRow]" = [
+    # #EXT-044-REQ-5 Start
     ProductParityRow(
         id=12, feature="Sessions: continue / resume / fork / name",
-        state="partial",
-        current_state="EXT-036 persists build-run state; no conversation-session "
-                       "continue/resume UX matching CC's `-c`/`-r <id|name>`/`--fork-session`.",
-        next_lever="Durable session store + `jcode -c` / `-r` (the Jaros log is already the transcript).",
+        state="works",
+        current_state="EXT-044: the EXT-036 REQ-12 session store now carries an optional "
+                       "`name` + `created`/`last_active` timestamps and a `.jaros-data/"
+                       "sessions/index.json` (name lookup + most-recent, never raises on a "
+                       "missing/corrupt index). `jcode -c`/`--continue` resumes the "
+                       "most-recently-active session; `-r <id|name>` resumes a specific one by "
+                       "id OR its assigned name (honest non-zero-exit error, `JcodeCli` never "
+                       "constructed, on an unknown reference); `--fork [<id|name>]` copies a "
+                       "session's transcript into a brand-new id, leaving the source file "
+                       "byte-unchanged; `/name` and `/fork` mirror both in the REPL. The "
+                       "resumed session's prior turns reach the orchestrator/planner context "
+                       "via the existing EXT-036 REQ-12/15 `condense()`/`recent()` path (no "
+                       "second context mechanism) -- proven end-to-end, not just asserted. A "
+                       "fresh invocation with none of these flags is byte-identical to before "
+                       "this spec, and the legacy `--resume <id>` flag keeps its exact prior "
+                       "(no-error-on-miss) semantics.",
+        next_lever="A `--fork-session` alias spelled 1:1 like Claude Code's flag name (cosmetic "
+                    "-- `--fork` already delivers the behavior); enforce globally-unique "
+                    "session names (today a name collision resolves to the most-recently-"
+                    "active match, recorded honestly rather than silently assumed).",
     ),
+    # #EXT-044-REQ-5 End
     # #EXT-043-REQ-2 Start
     ProductParityRow(
         id=13, feature="Headless + piping + structured output",

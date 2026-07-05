@@ -20,14 +20,34 @@ SESSIONS_DIR = ROOT / ".jaros-data" / "sessions"
 
 
 class Session:
-    """An ordered transcript of conversation turns + a session id."""
+    """An ordered transcript of conversation turns + a session id.
 
-    def __init__(self, id: str | None = None, turns: list[dict] | None = None) -> None:
+    # #EXT-044-REQ-1 Start
+    EXT-044 adds an optional display `name` (so `-r`/`--fork` can address a session by NAME, not
+    just its id) and `created`/`last_active` timestamps (so `-c`/`--continue` can find "the
+    most-recently-active session" without scanning file mtimes). All three default sanely, so a
+    pre-EXT-044 persisted session (no name/timestamps in its JSON) still loads cleanly.
+    # #EXT-044-REQ-1 End
+    """
+
+    def __init__(self, id: str | None = None, turns: list[dict] | None = None,
+                 # #EXT-044-REQ-1 Start
+                 name: "str | None" = None, created: "float | None" = None,
+                 last_active: "float | None" = None,
+                 # #EXT-044-REQ-1 End
+                 ) -> None:
         self.id = id or uuid.uuid4().hex[:12]
         self.turns: list[dict] = list(turns) if turns else []
+        # #EXT-044-REQ-1 Start
+        self.name: "str | None" = name
+        _now = time.time()
+        self.created: float = created if created is not None else _now
+        self.last_active: float = last_active if last_active is not None else _now
+        # #EXT-044-REQ-1 End
 
     def append(self, role: str, text: str) -> None:
         self.turns.append({"role": role, "text": text, "ts": time.time()})
+        self.last_active = time.time()  # #EXT-044-REQ-1
 
     def recent(self, cap: int = 6, max_chars: int = 300) -> list[dict]:
         """Bounded recent transcript for conversation-aware routing: the last `cap`
@@ -41,11 +61,21 @@ class Session:
         return out
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "turns": self.turns}
+        return {
+            "id": self.id, "turns": self.turns,
+            # #EXT-044-REQ-1 Start
+            "name": self.name, "created": self.created, "last_active": self.last_active,
+            # #EXT-044-REQ-1 End
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
-        return cls(id=data.get("id"), turns=list(data.get("turns") or []))
+        return cls(
+            id=data.get("id"), turns=list(data.get("turns") or []),
+            # #EXT-044-REQ-1 Start
+            name=data.get("name"), created=data.get("created"), last_active=data.get("last_active"),
+            # #EXT-044-REQ-1 End
+        )
 
 
 def _path(session_id: str) -> Path:
@@ -59,6 +89,15 @@ def save_session(session: Session) -> None:
         _path(session.id).write_text(json.dumps(session.to_dict(), indent=2), encoding="utf-8")
     except Exception:
         pass
+    # #EXT-044-REQ-1 Start
+    try:
+        idx = _load_index()
+        idx[session.id] = {"name": session.name, "created": session.created,
+                            "last_active": session.last_active}
+        _save_index(idx)
+    except Exception:
+        pass
+    # #EXT-044-REQ-1 End
 
 
 def load_session(session_id: str) -> "Session | None":
@@ -71,20 +110,142 @@ def load_session(session_id: str) -> "Session | None":
 
 
 def list_sessions(limit: int = 10) -> list[dict]:
-    """Recent persisted sessions (id, turn count), newest-modified first."""
+    """Recent persisted sessions (id, turn count), newest-modified first.
+
+    # #EXT-044-REQ-1 Start
+    Also surfaces `name`/`last_active` per row (EXT-044), and skips `index.json` itself (it
+    lives alongside the per-session transcript files but is not a session).
+    # #EXT-044-REQ-1 End
+    """
     try:
         files = sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     except Exception:
         return []
     out: list[dict] = []
-    for p in files[:limit]:
+    for p in files:
+        if p.name == INDEX_FILENAME:  # #EXT-044-REQ-1 -- not a session file, skip it
+            continue
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-            out.append({"id": data.get("id", p.stem), "turns": len(data.get("turns") or [])})
+            out.append({
+                "id": data.get("id", p.stem), "turns": len(data.get("turns") or []),
+                # #EXT-044-REQ-1 Start
+                "name": data.get("name"), "last_active": data.get("last_active"),
+                # #EXT-044-REQ-1 End
+            })
         except Exception:
             continue
+        if len(out) >= limit:
+            break
     return out
 # #EXT-036-REQ-12 End
+
+
+# #EXT-044-REQ-1 Start
+# EXT-044: durable session identity (name + timestamps) and a small index
+# (.jaros-data/sessions/index.json) so a session can be looked up by NAME as well as by id, and
+# so "the most-recently-active session" (`-c`/`--continue`) is a cheap lookup rather than a
+# directory scan. Pure deterministic state (Tenet 1) — never raises; a missing/corrupt index
+# degrades to an honest empty result rather than crashing the CLI.
+
+INDEX_FILENAME = "index.json"
+
+
+def _index_path() -> Path:
+    return SESSIONS_DIR / INDEX_FILENAME
+
+
+def _load_index() -> dict:
+    """The persisted {id: {name, created, last_active}} index. Never raises — a missing or
+    corrupt index degrades to an empty dict (every id/name lookup then honestly misses, rather
+    than crashing)."""
+    try:
+        data = json.loads(_index_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_index(idx: dict) -> None:
+    """Best-effort persist — an index write failure must never crash the caller."""
+    try:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        _index_path().write_text(json.dumps(idx, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def resolve_session_ref(ref: "str | None") -> "str | None":
+    """Resolve a CLI-supplied session reference to a canonical session id: try `ref` as an exact
+    id first (a session file exists under that name), then fall back to a NAME lookup in the
+    index (the most-recently-active match wins when more than one session shares a name).
+    Returns `None` — an honest "not found" — when neither resolves. Never raises."""
+    if not ref:
+        return None
+    try:
+        if _path(ref).is_file():
+            return ref
+    except Exception:
+        pass
+    try:
+        idx = _load_index()
+        matches = [sid for sid, meta in idx.items()
+                   if isinstance(meta, dict) and meta.get("name") == ref]
+        if matches:
+            return max(matches, key=lambda sid: idx.get(sid, {}).get("last_active", 0) or 0)
+    except Exception:
+        pass
+    return None
+
+
+def most_recent_session_id() -> "str | None":
+    """The id of the most-recently-active persisted session (for `-c`/`--continue`), or `None`
+    when no session has ever been saved. Prefers the index's `last_active`; falls back to file
+    mtime (via `list_sessions`, the pre-EXT-044 heuristic) so a sessions dir saved before this
+    spec still resolves. Never raises."""
+    try:
+        idx = _load_index()
+        if idx:
+            return max(idx, key=lambda sid: idx.get(sid, {}).get("last_active", 0) or 0)
+    except Exception:
+        pass
+    try:
+        rows = list_sessions(limit=1)
+        return rows[0]["id"] if rows else None
+    except Exception:
+        return None
+
+
+def set_session_name(session: "Session", name: str) -> None:
+    """Assign a display name to a session and persist it immediately (used by `/name` and the
+    one-shot `--name` flag). Best-effort — never raises."""
+    try:
+        session.name = name
+        save_session(session)
+    except Exception:
+        pass
+
+
+def fork_session(ref: str) -> "Session | None":
+    """Branch the session referenced by `ref` (an id or a name) into a brand-new session with
+    its own id and a COPY of the source transcript — the source session file is only ever read
+    (`load_session`), never opened for writing, so it is left completely unchanged. Returns the
+    new (already-persisted) `Session`, or `None` when `ref` doesn't resolve to any known session.
+    Never raises."""
+    try:
+        sid = resolve_session_ref(ref)
+        if sid is None:
+            return None
+        src = load_session(sid)
+        if src is None:
+            return None
+        forked_name = f"{src.name}-fork" if src.name else None
+        forked = Session(turns=[dict(t) for t in src.turns], name=forked_name)
+        save_session(forked)
+        return forked
+    except Exception:
+        return None
+# #EXT-044-REQ-1 End
 
 
 # #EXT-036-REQ-15 Start

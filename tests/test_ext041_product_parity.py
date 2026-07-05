@@ -27,13 +27,16 @@ def test_all_rows_have_nonempty_fields():
 
 def test_no_row_is_inflated_to_works_today():
     """Honesty guard (Tenet 3): pins the current honest baseline so a future "works" flip is a
-    visible diff, not a silent inflation. Row #14 (Project-instruction memory hierarchy) and row
-    #13 (Headless + piping + structured output, EXT-043: stdin pipe + `--output-format json` +
-    `--max-turns` cap + deterministic exit codes, all test-covered; `stream-json` honestly
-    deferred) are the rows genuinely delivered end-to-end -- these pins were updated deliberately
-    alongside each landing, not silently."""
+    visible diff, not a silent inflation. Row #12 (Sessions continue/resume/fork/name, EXT-044:
+    a durable name+timestamp+index session store, `-c`/`-r <id|name>`/`--fork` all test-covered
+    end-to-end, resumed context proven via the existing condense()/recent() path, fresh runs
+    byte-identical), row #14 (Project-instruction memory hierarchy), and row #13 (Headless +
+    piping + structured output, EXT-043: stdin pipe + `--output-format json` + `--max-turns` cap
+    + deterministic exit codes, all test-covered; `stream-json` honestly deferred) are the rows
+    genuinely delivered end-to-end -- these pins were updated deliberately alongside each
+    landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [13, 14]
+    assert works == [12, 13, 14]
 
 
 def test_score_aggregate_known_mix():
@@ -71,8 +74,9 @@ def test_score_all_missing_is_0_pct():
 def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
-    assert result["n_works"] == 2   # rows #13 (EXT-043) and #14 (EXT-042) are genuine "works"
-    assert result["n_partial"] + result["n_missing"] == 14
+    # rows #12 (EXT-044), #13 (EXT-043), and #14 (EXT-042) are genuine "works"
+    assert result["n_works"] == 3
+    assert result["n_partial"] + result["n_missing"] == 13
     assert 0.0 <= result["pct"] < 100.0
 
 
