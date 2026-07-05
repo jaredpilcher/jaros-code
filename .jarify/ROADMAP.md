@@ -57,8 +57,14 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
   (REQ-11, 81ec12b) · /agent //plan //_nl_fix (REQ-12, c52f9e6) · /build (REQ-13, c276a4c, 2067 green).
   Left raw BY DESIGN: eval/solve sandbox + oracle scratch (throwaway temp dirs), internal .jaros state
   logs. Note: /patch //fix already Jaros-native (Decision path), intentionally rootless. → moved to LANDED.
-- **[next product-surface build]** pick by impact×tractability: #18 MCP client (biggest ecosystem win,
-  heavy) · #22 context-mgmt/@-refs · #19 subagent authoring · #23 background surface. Via Jarify.
+- **[#22 context management for long sessions — next product-surface build]** `@path` file references in
+  the REPL (inline a file's content into the request) + `/compact` (deterministic compactor — summarize
+  decided/verified state, leveraging the existing EXT-036 condense()/recent() path; jarify IS the
+  compaction target) — med · foundational for long-horizon runs (#91 capstone), different axis from the
+  registry features; via Jarify (new spec EXT-051). Flips row #22 partial→works.
+- **[#18 MCP client — queued, biggest remaining, needs a focused/scoped build]** external-tool protocol
+  (stdio/JSON-RPC, discovery, each MCP tool wrapped as a GATED Jaros tool) — high impact · low tractability;
+  scope a minimal first slice when actively watching (heavier + wedge-prone for unattended overnight).
   high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
@@ -179,6 +185,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#19 subagent authoring]** you can now define your own agent by dropping a markdown file (a scoped instruction + a tool allowlist) — jcode can delegate a task to it, and the allowlist can only TIGHTEN what it's allowed to do, never loosen the safety gates (proven: a denylisted tool is still refused) — parity 62.5%→65.6% (9 of 16) — 6664db4.
 - **[★★ Jaros-native host-write sweep COMPLETE]** every product command that writes to your repo (/rename, /move, /fixrepo, /undo, /buildsystem, /modifysystem, /agent, /plan, natural-language fix, /build) now goes through the Jaros runtime — gated, path-jailed, tamper-evident-logged — not raw Python. Owner's "everything on Jaros" directive fulfilled; 5 slices, commits 2d58ae5/468e3ee/81ec12b/c52f9e6/c276a4c. Only throwaway eval scratch + internal state logs stay raw by design.
 - **[Jaros-native: /agent + /plan + _nl_fix]** the plan/agent/natural-language fix commands now write through a real Jaros `code.write_file` Decision — slice 4 of the host-write sweep; the builder honestly corrected the site count (2 not 3) and flagged the last residual (/build) rather than claiming done — c52f9e6.
 - **[Jaros-native: /buildsystem + /modifysystem]** the system-generator (build a whole system from a sentence) now writes every generated file through a real Jaros `code.write_file` Decision — slice 3 of the host-write sweep, a single write-chokepoint threaded through all 5 build variants; eval/suite builds keep the fast raw path — 81ec12b.
