@@ -50,32 +50,21 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[✅✅ #112 TENET-1 host-write sweep — COMPLETE (owner-directive fulfilled)]** every product command that
-  performs a real-host write now routes through a Jaros code.write_file Decision (gate + path-jail +
-  hash-chain), via the optional-runtime idiom (CLI→gated, eval-sandbox→raw). 5 slices, all full-suite-green:
-  /rename //move (REQ-9, 2d58ae5) · /fixrepo //undo (REQ-10, 468e3ee) · /buildsystem //modifysystem
-  (REQ-11, 81ec12b) · /agent //plan //_nl_fix (REQ-12, c52f9e6) · /build (REQ-13, c276a4c, 2067 green).
-  Left raw BY DESIGN: eval/solve sandbox + oracle scratch (throwaway temp dirs), internal .jaros state
-  logs. Note: /patch //fix already Jaros-native (Decision path), intentionally rootless. → moved to LANDED.
-- **[★ PRODUCT-SURFACE at 75% (12/16) — overnight-safe wins EXHAUSTED, reserve the rest for DAYTIME watched]**
-  The clean partial→works rows are all landed. The remaining rows are heavier/riskier and want active
-  watching, NOT unattended overnight: **#18 MCP client** (biggest ecosystem win; heavy multi-part
-  protocol build) · **#21 interrupt+steer** (missing; a control-flow change to the core multi-step run
-  loop — HIGH regression risk unattended) · **#26 multimodal** (missing; model-backed vision probe). #27
-  is intentionally out-of-scope (IDE/desktop/web) → achievable ≈ 12/15. **Steer: pause the product-surface
-  push overnight; the parallel capability-experiment chain (best-of-k / acceptance-completeness) carries
-  the unattended hours; pick up MCP/#21 in a daytime watched slot.**
-- **[measurement — #86 datastore end-to-end verify]** does the repaired datastore now BUILD + PASS
-  acceptance via /buildsystem? — MEASURE myself (model-backed), daytime watched slot.
-- **[#18 MCP client — queued, biggest remaining, needs a focused/scoped build]** external-tool protocol
-  (stdio/JSON-RPC, discovery, each MCP tool wrapped as a GATED Jaros tool) — high impact · low tractability;
-  scope a minimal first slice when actively watching (heavier + wedge-prone for unattended overnight).
-  high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
-- **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
-  discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
-  ecosystem win) · low tractability (multi-part, likely a multi-builder spec); take after the compliance sweep.
-- **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
-  does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
+- **[★ PRODUCT-SURFACE at 78.1% (12 works + 1 partial / 16) — daytime watched builds]** the host-write
+  sweep + all clean partial→works rows LANDED (see trail). MCP client FIRST SLICE landed (0659213, row #18
+  missing→partial). Remaining, by impact×tractability:
+  - **[#18 MCP slice 2 — make it usable → partial→works]** persistent server connection kept alive across
+    turns + MODEL-INVOCABLE MCP tools (orchestrator can choose to call a configured MCP tool while solving,
+    not just explicit `/mcp call`) — high · isolated new code (mcp_*.py), no system_builder.py collision;
+    via Jarify (EXT-054 REQ-N). Then resources/prompts/SSE are later slices.
+  - **[#21 interrupt+steer]** cooperative cancel points between plan steps — med · control-flow change to
+    the run loop, WATCH it (higher regression risk); via Jarify.
+  - **[#26 multimodal]** image → e4b vision → structured description → build pipeline — med · model-backed.
+  - #27 intentionally out-of-scope (IDE/desktop/web) → achievable ≈ 12/15 + MCP.
+- **[★ #118 acceptance-completeness — PARALLEL AGENT's thread (system_builder.py); I steer CLEAR]** make
+  build_system's acceptance derivation deterministic+complete so `done` is trustworthy + best-of-k selects
+  on a real bar (measured 2026-07-05: best-of-k done=true on a SPARSE 1-check self-acceptance = not a real
+  win). The supervisor/parallel agent owns system_builder.py — do NOT dispatch my builders there (collision).
 
 ## RE-MEASURED — #86 datastore (2026-07-04)
 
@@ -190,6 +179,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#18 MCP client — first slice]** jcode can now connect to external MCP tool servers — configure one in .jcode/mcp.json, `/mcp` discovers its tools, `/mcp call` runs them through the gated Jaros runtime (a denylisted server command is refused; a hung server times out fast, never hangs). Honest first slice → row #18 missing→PARTIAL, parity 75.0%→78.1% (12 works + 1 partial). Deferred: resources/prompts/notifications/SSE, persistent connection, model-invocable — 0659213.
 - **[#25 install + /doctor]** jcode now has a `/doctor` health check (is the Jetson reachable? model served? git/docker present? data dir writable? — each with a fix hint, bounded so it never hangs) + a minimal pip-installable `jcode` command — parity 71.9%→75.0% (12 of 16) — 4a66653.
 - **[test-hygiene: flaky #113 fixed]** the intermittently-failing checkpoint test was racing on the shared Jaros state log under concurrent test processes; isolated each test's state dir so it's deterministic — an order-dependent/flaky test can mask real regressions, so this protects the safety net — 02be56d.
 - **[#23 background runs surface]** you can now run a task in the background — `jcode --bg "<request>"` returns a job id and runs detached; `jcode jobs`/`logs <id>`/`stop <id>` check on it or cancel it (stop kills only that job's own process tree, never by name) — parity 68.8%→71.9% (11 of 16) — 8f51e6d.
