@@ -50,18 +50,14 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[#20 checkpoint / rewind — next product-surface build]** per-edit checkpoint ring + `/rewind <n>`
-  (rewind to a prior state), extending the whole-run checkpoint + `/undo` that already exist (EXT-009) —
-  med · strong Jaros-native fit: the hash-chain DECISION LOG already records every Decision, so rewind
-  leverages the existing replay machinery rather than a bolt-on; via Jarify (new spec EXT-049). Flips row
-  #20 partial→works.
-- **[★★ #112 TENET-1 broad host-write sweep — HIGH, after #20]** (honest correction: the #110 audit
-  UNDERCOUNTED). The deterministic host-mutating commands write raw (zero Decisions): `/rename` `/move`
-  (refactor.py), `/fixrepo` (multi_file.py), `/buildsystem` `/modifysystem` (system_builder.py ~15 sites),
-  `/agent` (spec_loop.py). Route each REAL host write through a code.write_file Decision (1154766 idiom);
-  complication — each write fn is SHARED with eval-sandbox use, so split so sandboxes stay raw while host
-  writes gate. Per-module, full-suite-gated, refactor.py first — high · directly serves owner's
-  everything-on-Jaros directive; via Jarify (new REQs under EXT-037).
+- **[★★ #112 TENET-1 broad host-write sweep — TOP NOW, owner-directive priority]** (honest correction:
+  the #110 audit UNDERCOUNTED). The deterministic host-mutating commands write raw (zero Decisions):
+  `/rename` `/move` (refactor.py), `/fixrepo` (multi_file.py), `/buildsystem` `/modifysystem`
+  (system_builder.py ~15 sites), `/agent` (spec_loop.py). Route each REAL host write through a
+  code.write_file Decision (1154766 idiom); complication — each write fn is SHARED with eval-sandbox use,
+  so split so sandboxes stay raw while host writes gate. Per-module, full-suite-gated, **refactor.py
+  (/rename //move) FIRST** (smallest) — high · directly serves owner's everything-on-Jaros directive; via
+  Jarify (new REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
   ecosystem win) · low tractability (multi-part, likely a multi-builder spec); take after the compliance sweep.
@@ -181,6 +177,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#20 checkpoint / rewind]** jcode now keeps a ring of your last 10 edits — `/checkpoints` lists them, `/rewind <n>` steps the workspace back; built on the Jaros hash-chain (each edit captured at the gate seam) and every restore goes through a real `code.write_file` Decision, not a raw write — parity 59.4%→62.5% (8 of 16) — 3fc603c.
 - **[★ #110 Tenet-1 compliance — host writes on Jaros]** (owner directive) `/init` + `/remember` now write to your repo through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain log), not raw Python — plus a governance rule that every new product-surface host-write must be a Decision. The audit confirmed the rest of the core already runs in the Jaros runtime — 1154766.
 - **[#17 permission rules + modes]** you can now configure what jcode may do — an allow/ask/deny rules file + plan/default/acceptEdits REPL modes; user rules can only NARROW the built-in safety gates, never widen them (proven: an "allow rm -rf" rule is still refused). Enforced INSIDE the Jaros runtime at the gate seam — parity 56.2%→59.4% — 7798132.
 - **[#16 user hooks]** run your own command automatically on lifecycle events (before/after any tool runs, session start/stop) via a `.jcode/hooks.json` file; a pre-tool hook that fails blocks the action — every hook runs through the same security gates, never around them — parity 50.0%→56.2% — 6cb4517.
