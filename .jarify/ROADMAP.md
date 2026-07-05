@@ -53,9 +53,9 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 - **[★ REALIGN on the whole-PRODUCT bar]** the parity bar just expanded (supervisor 5e0b553): match the
   WHOLE Claude Code CLI product, not just solving (GAP-MAP #12–27 + Product-Parity Checklist). See the new
   **PRODUCT-SURFACE PARITY** axis below — this is the major new forward direction — high.
-- **[#13 headless / Unix — next product-surface build]** print mode + stdin pipe + `--output-format
-  json/stream-json` + exit codes — high · CI/scriptability; a thin deterministic layer over the existing
-  one-shot path; via Jarify (new spec EXT-043). Flips checklist row #13 partial→works.
+- **[#12 sessions — next product-surface build]** durable conversation sessions: continue / resume / fork /
+  named (`jcode -c` / `-r <id|name>` / `--fork`) — high · the Jaros hash-chain log already IS the transcript,
+  so mostly a durable session store + REPL UX; via Jarify (new spec EXT-044). Flips checklist row #12 partial→works.
 - **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
   does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
@@ -119,6 +119,7 @@ log). New meta-item: **build the Product-Parity Checklist instrument** (feature-
 the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 **Product-surface — NEXT-tractable (thin deterministic layers, high parity value):**
+- **[#13 headless]** jcode is now runnable from a script/pipe with machine-readable JSON output + exit codes (CI-friendly) — parity 34.4%→37.5% — 64df843.
 - **[#14 JCODE.md]** auto-loaded per-repo instruction file + user level + `/init` generator (the
   CLAUDE.md-equivalent) — high · foundational (feeds every session) + directly serves long-horizon alignment.
 - **[#13 headless/Unix]** print mode + stdin pipe + `--output-format json/stream-json` + exit codes +
@@ -166,6 +167,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 ## LANDED (recent trail — newest first)
 
 - **[EXT-041 Product-Parity Checklist]** the product-surface scoreboard — `/parity`, 16 rows #12–27, honest baseline **31.2%** (0 works / 10 partial / 6 missing) — b9c2822.
+- **[#13 headless]** jcode is now runnable from a script/pipe with machine-readable JSON output + exit codes (CI-friendly) — parity 34.4%→37.5% — 64df843.
 - **[#14 JCODE.md]** the auto-loaded per-repo + user project-instructions file (CLAUDE.md-equivalent) + /init generator, injected into the planner context every session — parity 31.2%→34.4% — dbb0811.
 - **[realign: whole-PRODUCT bar]** merged supervisor 5e0b553 (PRIME-001 intent + GAP-MAP product-surface rows #12–27 + Product-Parity Checklist) into local work; roadmap realigned with the new PRODUCT-SURFACE axis — d130eff.
 - **[EXT-036 TASK-36]** deterministic plan-repair for dangling-local-import (adds the missing module) — 0ac92bd.
