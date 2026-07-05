@@ -633,7 +633,13 @@ class JcodeCli:
         instr, testcmd = bits[0], bits[1]
         test_file = bits[2] if len(bits) > 2 else next(
             (f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
-        r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True)
+        # #EXT-037-REQ-10 Start
+        # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+        # `/init`/`/rename`/`/move` already use -- so every revert this real-host command
+        # performs is gated, EXT-037 root-jailed, and hash-chain logged.
+        r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True,
+                            runtime=self._write_runtime())
+        # #EXT-037-REQ-10 End
         where = f" (fixed {r['file']})" if r.get("file") else ""
         return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
 
@@ -906,12 +912,23 @@ class JcodeCli:
 
     def cmd_undo(self, _arg: str) -> str:
         """Revert the last /agent run (EXT-009 REQ-7): restore the repo snapshot taken before it —
-        Claude Code's checkpoints. Session-scoped (the most recent /agent run)."""
+        Claude Code's checkpoints. Session-scoped (the most recent /agent run).
+
+        EXT-037 REQ-10 (Tenet 1): the restore is routed through a real `code.write_file` Decision
+        via a root-anchored Runtime (`_write_runtime`, the same helper `/rename`/`/move`/`/init`
+        already use), so it gets the gate + EXT-037 path-jail + hash-chain log every other
+        host-project write goes through, instead of a raw `Path.write_text`. A gate rejection
+        degrades to an honest message, never a crash (and never clears the snapshot, so /undo
+        can be retried)."""
         snap = getattr(self, "_agent_snapshot", None)
         if not snap:
             return "nothing to undo (no /agent run this session)"
         from harness.multi_file import _restore
-        _restore(snap)
+        # #EXT-037-REQ-10 Start
+        err = _restore(snap, runtime=self._write_runtime(), root=os.path.abspath("."))
+        if err:
+            return f"undo failed: {err}"
+        # #EXT-037-REQ-10 End
         self._agent_snapshot = None
         return f"reverted the last agent run ({len(snap)} files restored)"
 

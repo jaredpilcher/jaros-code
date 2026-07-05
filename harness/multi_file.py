@@ -11,11 +11,43 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 _IMPORT_RE = re.compile(r"^\s*(?:from\s+([.\w]+)\s+import|import\s+([.\w]+))", re.M)
 _TRACE_FILE_RE = re.compile(r'File "([^"]+\.py)"|^([\w./\\-]+\.py):\d+', re.M)
 _TRACE_FRAME_RE = re.compile(r'File "([^"]+\.py)", line (\d+), in (\S+)')
+
+
+# #EXT-037-REQ-10 Start
+def _jaros_write(path: "Path | str", content: str, root: "str | None",
+                 runtime: "object | None" = None) -> "str | None":
+    """Write `content` to `path` (Tenet 1 / EXT-037 REQ-10). Mirrors `harness/refactor.py`'s
+    `_jaros_write` (EXT-037 REQ-9) idiom exactly: when `runtime` is given -- any object exposing
+    `.apply(decision)`, e.g. `harness.coding_loop.Runtime` -- the write is performed as a real
+    `code.write_file` Decision applied through it, so it gets the SAME gate (`validate_decision`)
+    + EXT-037 root-jail + hash-chain log every other Jaros write Decision goes through, instead of
+    a raw `Path.write_text`. `runtime=None` (the default -- used by every existing eval/test/
+    sandbox caller against a throwaway temp dir with no meaningful project root) preserves the
+    exact prior direct-write behavior byte-for-byte. Returns `None` on success, else an honest
+    error string -- a gate rejection (e.g. the path escapes root) degrades to a message here,
+    never a crash."""
+    path = str(path)
+    if runtime is None:
+        Path(path).write_text(content, encoding="utf-8", newline="\n")
+        return None
+    try:
+        from jaros.core import create_decision
+        decision = create_decision(
+            id=f"multifile-write-{uuid.uuid4().hex}", source="multi_file",
+            type="code.write_file",
+            payload={"path": path, "content": content, "root": str(root)},
+        )
+        runtime.apply(decision)
+    except Exception as exc:
+        return f"failed to write {path}: {exc}"
+    return None
+# #EXT-037-REQ-10 End
 
 
 def localize_fault(test_output: str) -> list[dict]:
@@ -138,9 +170,26 @@ def _snapshot(cwd: str) -> dict[str, str]:
     return {str(p): p.read_text(encoding="utf-8") for p in Path(cwd).rglob("*.py")}
 
 
-def _restore(snap: dict[str, str]) -> None:
+def _restore(snap: dict[str, str], *, runtime: "object | None" = None,
+             root: "str | None" = None) -> "str | None":
+    """Restore every `{path: content}` pair in `snap`.
+
+    `runtime`/`root` (EXT-037 REQ-10, Tenet 1): optional -- `_restore` is SHARED by more than
+    `/fixrepo` (`multi_file_fix`'s own internal revert-on-no-progress path below) -- it is also
+    imported directly by `harness/cli.py`'s `cmd_undo` (EXT-009 `/undo`) and by
+    `harness/refactor.py`'s rename/move revert paths. When `runtime` is given, each file write is
+    routed through `_jaros_write` as a real `code.write_file` Decision (gated, EXT-037
+    root-jailed via `root`, hash-chain logged) instead of a raw `Path.write_text`. `runtime=None`
+    (the default) is byte-identical to the pre-existing behavior -- every caller that omits it
+    (every eval/test caller, and `harness/refactor.py`, unchanged by this task) is unaffected.
+    Returns `None` on full success, or the first honest error string encountered (a gate
+    rejection never crashes and never stops the remaining files from being attempted)."""
+    err: "str | None" = None
     for path, text in snap.items():
-        Path(path).write_text(text, encoding="utf-8", newline="\n")
+        e = _jaros_write(path, text, root, runtime)
+        if e and err is None:
+            err = e
+    return err
 
 
 def _fail_count(out: str) -> int:
@@ -150,7 +199,8 @@ def _fail_count(out: str) -> int:
 
 # #EXT-010-REQ-6 Start
 def _minimize_edits(cwd: str, test_cmd: str, orig: dict[str, str],
-                     kept_paths: list[str]) -> tuple[list[str], list[str]]:
+                     kept_paths: list[str], *,
+                     runtime: "object | None" = None) -> tuple[list[str], list[str]]:
     """Delta-debugging minimization pass (GAP-MAP #3, diff cleanliness): once the cumulative
     loop in multi_file_fix has reached all-green, some of the KEPT edits may have become
     redundant — a partial-progress "symptom patch" that was necessary before the root-cause fix
@@ -164,26 +214,41 @@ def _minimize_edits(cwd: str, test_cmd: str, orig: dict[str, str],
     before and after every single probe in this loop (a redundant drop is confirmed green by the
     very run that drops it; a non-green probe is always undone before the next probe), so the
     final state is guaranteed all-green with the minimal necessary edit set — this can never
-    leave the repo failing, and can never drop an edit that the suite actually needs."""
+    leave the repo failing, and can never drop an edit that the suite actually needs.
+
+    `runtime` (EXT-037 REQ-10, Tenet 1): optional, same contract as `_restore`/`_jaros_write` --
+    when given, both probe writes below are routed through a real `code.write_file` Decision
+    instead of a raw `Path.write_text`. `runtime=None` (the default, used by every existing
+    eval/test caller against a throwaway temp dir) is unchanged from before this parameter
+    existed. If a probe write is refused by the gate (should not happen for an in-root candidate
+    file, but never trusted to raise), that edit is conservatively left KEPT/untouched rather
+    than risk shipping a half-reverted file -- never a crash."""
     kept_min = list(kept_paths)
     dropped: list[str] = []
     for path in reversed(kept_paths):
         if path not in orig:
             continue  # not part of the pre-edit snapshot (e.g. a new file) — keep it, don't touch
         fixed_content = Path(path).read_text(encoding="utf-8")
-        Path(path).write_text(orig[path], encoding="utf-8", newline="\n")
+        # #EXT-037-REQ-10 Start
+        err = _jaros_write(path, orig[path], cwd, runtime)
+        if err:
+            continue  # couldn't even probe this edit -- leave it kept, exactly as it was
+        # #EXT-037-REQ-10 End
         ok, _ = _run(cwd, test_cmd)
         if ok:
             dropped.append(Path(path).name)
             kept_min.remove(path)
         else:
-            Path(path).write_text(fixed_content, encoding="utf-8", newline="\n")
+            # #EXT-037-REQ-10 Start
+            _jaros_write(path, fixed_content, cwd, runtime)  # restore the necessary fix
+            # #EXT-037-REQ-10 End
     return kept_min, dropped
 # #EXT-010-REQ-6 End
 
 
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
-                   *, max_iters: int = 3, verbose: bool = False) -> dict:
+                   *, max_iters: int = 3, verbose: bool = False,
+                   runtime: "object | None" = None) -> dict:
     """Fix a failing multi-file test. Locate candidate files, then fix them CUMULATIVELY: try
     each candidate with fix_loop(keep_partial=True) so its best partial edit survives; KEEP the
     edit only if it strictly REDUCES the failing-test count (and build the next fix on top),
@@ -195,7 +260,16 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
     No candidate-count cap: the candidates are only files in the IMPORT CLOSURE reachable from
     the failing test (naturally small for realistic tests), and a count cap can silently
     EXCLUDE the culprit — for a logic bug the traceback doesn't name it, so its rank is just
-    import order. If pathological cost ever bites, bound it with a time budget, not a count."""
+    import order. If pathological cost ever bites, bound it with a time budget, not a count.
+
+    `runtime` (EXT-037 REQ-10, Tenet 1): optional -- any object exposing `.apply(decision)`, e.g.
+    `harness.coding_loop.Runtime`. When given, every REVERT this function performs (the
+    no-progress `_restore` below, and `_minimize_edits`'s probe writes) is routed through a real
+    `code.write_file` Decision (gated, EXT-037 root-jailed, hash-chain logged) instead of a raw
+    `Path.write_text`. `runtime=None` (the default) is unchanged from before this parameter
+    existed -- every eval/test/sandbox caller (`harness/daily_driver.py`, `harness/multifile_eval.py`,
+    `harness/spec_loop.py`, `harness/agent_loop.py`, `tests/test_ext003_multifile.py`) against a
+    throwaway temp dir keeps the exact prior raw-write behavior."""
     from harness.coding_loop import fix_loop  # local import: avoid cycle at module load
 
     ok, out = _run(cwd, test_cmd)
@@ -219,7 +293,8 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
             kept.append(Path(cand).name)
             kept_paths.append(cand)
             # #EXT-010-REQ-6 Start
-            kept_paths, dropped = _minimize_edits(cwd, test_cmd, orig, kept_paths)
+            kept_paths, dropped = _minimize_edits(cwd, test_cmd, orig, kept_paths,
+                                                   runtime=runtime)
             kept = [Path(p).name for p in kept_paths]
             file = kept[-1] if kept else Path(cand).name
             return {"solved": True, "file": file, "tried": tried, "fixed": kept,
@@ -231,6 +306,8 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
             kept.append(Path(cand).name)
             kept_paths.append(cand)
         else:                         # no progress (distractor / harmless rewrite) — revert
-            _restore(snap)
+            # #EXT-037-REQ-10 Start
+            _restore(snap, runtime=runtime, root=cwd)
+            # #EXT-037-REQ-10 End
     return {"solved": False, "file": None, "tried": tried, "fixed": kept, "dropped": [],
             "note": "no candidate fixed it"}

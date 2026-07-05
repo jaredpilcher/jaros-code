@@ -750,3 +750,72 @@ preserves the exact current raw-write behavior for every existing eval/test call
 
 #### Implements
 - [REQ-9] Deterministic refactor writes (`/rename`, `/move`) are Jaros-native (Tenet 1)
+
+### [TASK-14] `multi_file.py`'s `/fixrepo` (and the shared `_restore` used by `/undo`) writes are Jaros-native (REQ-10)
+
+Tenet-1 compliance sweep (tracker #112), `multi_file.py` slice (SLICE 2). `harness/multi_file.py`'s
+`_restore` and `_minimize_edits` write to the user's repo via raw `Path.write_text`, bypassing the
+gate + REQ-1 root-jail + hash-chain log. Mirror the PROVEN REQ-9 idiom exactly
+(`harness/refactor.py`'s `_jaros_write`): an optional `runtime` parameter that, when supplied,
+performs the write as a `code.write_file` Decision through `Runtime.apply`; `runtime=None`
+preserves the exact current raw-write behavior for every existing eval/test/sandbox caller.
+`_restore` is SHARED with `harness/cli.py`'s `cmd_undo` (EXT-009 `/undo`) — wiring it once closes
+the gap for both `/fixrepo` and `/undo`.
+
+#### Steps
+1. In `harness/multi_file.py`, add `import uuid` and a private `_jaros_write(path, content, root,
+   runtime=None) -> str | None` helper, identical in contract to `harness/refactor.py`'s REQ-9
+   helper: `runtime=None` performs the existing raw `Path.write_text(..., encoding="utf-8",
+   newline="\n")`; a supplied `runtime` builds a `jaros.core.create_decision(type=
+   "code.write_file", payload={"path": str(path), "content": content, "root": str(root)})` and
+   applies it via `runtime.apply(decision)` inside a `try`/`except Exception`, returning `None` on
+   success or an honest `f"failed to write {path}: {exc}"` string on any gate rejection/executor
+   failure (never raises).
+2. Add optional keyword-only `runtime: object | None = None` and `root: str | None = None`
+   parameters to `_restore(snap, ...)`; replace its per-file `Path(path).write_text(...)` call
+   with `_jaros_write(path, text, root, runtime)`, accumulating and returning the first honest
+   error string encountered (or `None` on full success) instead of the current bare `-> None`.
+   Every existing caller that ignores the return value (every pre-existing caller) is unaffected.
+3. Add an optional keyword-only `runtime: object | None = None` parameter to `_minimize_edits(cwd,
+   test_cmd, orig, kept_paths, ...)`; replace both raw `Path(path).write_text(...)` calls (the
+   temporary revert-to-original probe write, and the restore-of-the-necessary-fix write) with
+   `_jaros_write(path, ..., cwd, runtime)` calls. If the FIRST (probe) write is refused, `continue`
+   to the next kept path without running the suite probe (conservatively leave that edit KEPT,
+   exactly as it was) rather than risk a half-reverted file; never raise.
+4. Add an optional keyword-only `runtime: object | None = None` parameter to `multi_file_fix(cwd,
+   test_cmd, instruction, test_file, ...)`; thread it to the internal `_restore(snap,
+   runtime=runtime, root=cwd)` call (the no-progress revert) and to `_minimize_edits(cwd, test_cmd,
+   orig, kept_paths, runtime=runtime)`.
+5. In `harness/cli.py`'s `cmd_fixrepo`, pass `runtime=self._write_runtime()` to `multi_file_fix`.
+   In `cmd_undo`, pass `runtime=self._write_runtime()` and `root=os.path.abspath(".")` to
+   `_restore`; on a non-`None` error return, report it honestly (`f"undo failed: {err}"`) without
+   clearing `self._agent_snapshot`, so `/undo` can be retried. No other CLI change.
+6. Confirm (do not modify) that every non-CLI caller of `multi_file_fix`/`_restore`/
+   `_minimize_edits` -- `harness/daily_driver.py`, `harness/multifile_eval.py`,
+   `harness/agent_loop.py`'s `execute_step` "fix" action (eval-only, never live-wired to any CLI
+   command), `harness/refactor.py`'s rename/move revert paths (REQ-9), `tests/test_ext003_multifile.py`,
+   `tests/test_ext010_minimal_diff.py` -- keeps calling with no `runtime` argument, so they stay on
+   the byte-identical raw-write fallback. `harness/system_builder.py` (`/buildsystem`) and
+   `harness/spec_loop.py` (`/agent`'s structured flow) are explicitly out of scope for this task.
+   FLAG (do not silently wire) `harness/cli.py`'s `cmd_plan` (`/plan`) and `_nl_fix` (the plain
+   natural-language routing fallback) as additional real-host callers of `multi_file_fix` left
+   unwired by this task's explicit scope -- a follow-up candidate, not an oversight.
+7. Add `tests/test_ext037_fixrepo_jaros_write.py` covering: `_restore`/`_minimize_edits` route
+   writes through a `code.write_file` Decision with a fake recording runtime (path/content/root
+   payload); a rejecting fake runtime produces an honest error string, no crash, and the escaping
+   path is never created; `runtime=None` is byte-identical to the pre-existing behavior for
+   `_restore`/`_minimize_edits`/`multi_file_fix`; a real `harness.coding_loop.Runtime` proves an
+   in-root write/restore actually lands through the gate while an out-of-root target is refused
+   via the real REQ-1 path-jail; `multi_file_fix`'s own internal revert-on-no-progress lands
+   through a REAL Decision end to end (spied via `DecisionLog.append_decision`); `/fixrepo` and
+   `/undo` (via `JcodeCli.dispatch`/`cmd_undo`) each genuinely record a `code.write_file` Decision
+   for a real host-rooted temp repo; and `/undo`'s escaping-snapshot gate rejection is honest and
+   leaves the snapshot retryable.
+8. Run `python -m pytest tests/ -q` synchronously in the foreground (background it with
+   `run_with_heartbeat` per the observability convention) and confirm the exit code and full pass
+   count, with no regression to `tests/test_ext003_multifile.py`, `tests/test_ext010_minimal_diff.py`,
+   `tests/test_agent_loop.py`, `tests/test_ext049_checkpoint.py`, `tests/test_ext037_refactor_jaros_write.py`,
+   or any prior EXT-037 task's tests.
+
+#### Implements
+- [REQ-10] Deterministic multi-file-fix writes (`/fixrepo`, and the SHARED `/undo` restore) are Jaros-native (Tenet 1)

@@ -42,6 +42,8 @@ implementation:
   - harness/refactor.py
   - harness/cli.py
   - tests/test_ext037_refactor_jaros_write.py
+  - harness/multi_file.py
+  - tests/test_ext037_fixrepo_jaros_write.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -500,3 +502,88 @@ through a root-jail that would reject them.
   a root-jail rejection through the Decision path is honest (no crash, no partial effect); the
   `runtime=None` raw fallback is byte-identical to the pre-existing behavior; and the full suite
   has no regression
+
+### [REQ-10] Deterministic multi-file-fix writes (`/fixrepo`, and the SHARED `/undo` restore) are Jaros-native (Tenet 1)
+
+**Owner directive (2026-07-04) — Tenet-1 compliance sweep, tracker #112, `multi_file.py` slice
+(SLICE 2).** `harness/multi_file.py`'s `/fixrepo` command writes to the user's repo via raw
+`Path.write_text` at three sites — inside the shared `_restore` helper, and inside the
+delta-debugging `_minimize_edits` pass — with ZERO Jaros Decisions, bypassing the gate, the REQ-1
+root-jail, and the hash-chain log every other compliant host write goes through. This requirement
+closes that gap for `multi_file.py` specifically, mirroring the PROVEN REQ-9 idiom
+(`harness/refactor.py`'s `_jaros_write` + `harness/cli.py`'s `_write_runtime`): an optional
+`runtime` parameter that, when supplied, performs each write as a real `code.write_file` Decision
+applied through `Runtime.apply` (gate + REQ-1 root-jail + hash-chain log); `runtime=None` (the
+default) preserves the exact prior direct-write behavior byte-for-byte, so every existing
+eval/test/sandbox caller against a throwaway temp dir is unaffected.
+
+**`_restore` is SHARED beyond `/fixrepo`** — it is imported directly by `harness/cli.py`'s
+`cmd_undo` (EXT-009 `/undo`) and by `harness/refactor.py`'s rename/move revert paths (REQ-9,
+unchanged by this task, since it never passes `runtime` and stays on the byte-identical
+fallback). Threading `runtime`/`root` through `_restore`'s signature therefore closes the gap for
+BOTH `/fixrepo`'s internal revert-on-no-progress path and `/undo`'s whole-run restore in one move
+— `harness/cli.py`'s `cmd_undo` now also passes `runtime=self._write_runtime()` and a
+`root=os.path.abspath(".")`, so a real `/undo` invocation is gated, root-jailed, and hash-chain
+logged, exactly like `/fixrepo`.
+
+**Caller audit (host → runtime, sandbox → raw):** `harness/cli.py`'s `cmd_fixrepo` and `cmd_undo`
+(both real-host, `cwd`/root is `os.path.abspath(".")`) now pass a root-anchored `runtime`.
+Every other caller of `multi_file_fix`/`_restore`/`_minimize_edits` is an eval/sandbox/test
+caller against a throwaway temp directory with no meaningful "project root" — `runtime` is
+omitted, so they stay on the byte-identical raw-write fallback:
+`harness/daily_driver.py`, `harness/multifile_eval.py`, `tests/test_ext003_multifile.py`,
+`tests/test_ext010_minimal_diff.py`, `.jaros-data/mf_probe*.py` (scratch probes), and
+`harness/agent_loop.py`'s `execute_step` "fix" action (used only by `tests/test_agent_loop.py`
+and the `agentic_eval.py` eval harness — never wired into any live CLI command today, unlike its
+sibling "edit" action which already routes through `Runtime(root=cwd)` per REQ-1 TASK-2).
+**Flagged, explicitly out of this task's scope (not silently deferred):** `harness/cli.py`'s
+`cmd_plan` (`/plan`) and `_nl_fix` (the natural-language-routing fallback when no file is named
+in a plain request) ALSO call `multi_file_fix(".", ...)` as real-host operations without a
+`runtime` today — the same production gap this requirement closes for `/fixrepo`/`/undo`. They
+are left unwired here since the task named only `cmd_fixrepo`/`cmd_undo` explicitly; wiring them
+is a natural, low-risk follow-up (the exact same `runtime=self._write_runtime()` one-line
+addition) for a future slice. `harness/system_builder.py` (`/buildsystem`) and
+`harness/spec_loop.py` (`/agent`'s structured flow, which also calls `multi_file_fix`) remain
+explicitly out of scope, per the owner's slice boundaries — separate follow-up slices.
+
+#### Acceptance Criteria
+- [x] `harness/multi_file.py` gains a private `_jaros_write(path, content, root, runtime=None)`
+  helper (mirroring `harness/refactor.py`'s REQ-9 helper): `runtime=None` performs the existing
+  raw `Path.write_text(..., encoding="utf-8", newline="\n")`; a supplied `runtime` builds a
+  `jaros.core.create_decision(type="code.write_file", payload={"path", "content", "root"})` and
+  applies it via `runtime.apply(...)` inside a `try`/`except`, returning `None` on success or an
+  honest `f"failed to write {path}: {exc}"` string on any gate rejection/executor failure — never
+  raises
+- [x] `_restore(snap, *, runtime=None, root=None)` gains the optional keyword-only parameters;
+  every file write in its loop routes through `_jaros_write`; returns `None` on full success or
+  the first honest error string encountered (never crashes, never stops attempting the remaining
+  files)
+- [x] `_minimize_edits(cwd, test_cmd, orig, kept_paths, *, runtime=None)` gains the optional
+  keyword-only parameter; both probe writes (the temporary revert-to-original, and the
+  restore-of-the-necessary-fix) route through `_jaros_write`; a probe write that is refused by the
+  gate conservatively leaves that edit KEPT/untouched rather than risk a half-reverted file
+- [x] `multi_file_fix(..., *, runtime=None)` gains the optional keyword-only parameter and threads
+  it to its own internal `_restore(snap, runtime=runtime, root=cwd)` call (the no-progress revert)
+  and to `_minimize_edits(..., runtime=runtime)`
+- [x] `harness/cli.py`'s `cmd_fixrepo` passes `runtime=self._write_runtime()` to `multi_file_fix`,
+  and `cmd_undo` passes `runtime=self._write_runtime()` plus `root=os.path.abspath(".")` to
+  `_restore` — the same root-anchored `Runtime` `/init`/`/rename`/`/move` already use — so both a
+  real `/fixrepo` and a real `/undo` invocation are gated, root-jailed, and hash-chain logged
+- [x] `runtime=None` (the default) preserves the exact current raw-write behavior byte-for-byte —
+  no existing eval/test/sandbox caller (`harness/daily_driver.py`, `harness/multifile_eval.py`,
+  `harness/agent_loop.py`, `tests/test_ext003_multifile.py`, `tests/test_ext010_minimal_diff.py`)
+  is affected, and `harness/refactor.py`'s own `_restore` calls (REQ-9) are unaffected since they
+  never pass `runtime`
+- [x] A gate rejection (e.g. a path escaping root) degrades to an honest error string — never an
+  uncaught exception — from `_restore`/`cmd_undo`, and never crashes `_minimize_edits`
+- [x] Proven by `tests/test_ext037_fixrepo_jaros_write.py`: `_restore` and `_minimize_edits` route
+  writes through a `code.write_file` Decision when a runtime is supplied (a fake recording
+  runtime, and a real `harness.coding_loop.Runtime` proving the gate + REQ-1 root-jail actually
+  fire); a root-jail rejection through the Decision path is honest (no crash, no partial effect,
+  the escaping path is never created); the `runtime=None` raw fallback is byte-identical to the
+  pre-existing behavior for `_restore`/`_minimize_edits`/`multi_file_fix`; `multi_file_fix`'s own
+  internal revert lands through a REAL Decision end to end (spied via `DecisionLog`); `/fixrepo`
+  and `/undo` (via `JcodeCli.dispatch`) each genuinely record a `code.write_file` Decision on the
+  hash-chain `DecisionLog` for a real host-rooted temp repo, and `/undo`'s escaping-snapshot gate
+  rejection is honest and non-destructive (the snapshot is preserved so `/undo` can be retried);
+  and the full suite has no regression

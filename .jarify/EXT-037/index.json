@@ -119,13 +119,13 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 777,
-      "endLine": 791
+      "startLine": 783,
+      "endLine": 797
     },
     {
       "file": "harness/cli.py",
-      "startLine": 999,
-      "endLine": 1145
+      "startLine": 1016,
+      "endLine": 1162
     },
     {
       "file": "tests/test_ext037_finalize.py",
@@ -222,6 +222,11 @@
       "endLine": 1469
     },
     {
+      "file": "harness/agent_loop.py",
+      "startLine": 96,
+      "endLine": 104
+    },
+    {
       "file": "harness/coding_loop.py",
       "startLine": 112,
       "endLine": 121
@@ -235,11 +240,6 @@
       "file": "harness/coding_loop.py",
       "startLine": 206,
       "endLine": 210
-    },
-    {
-      "file": "harness/agent_loop.py",
-      "startLine": 96,
-      "endLine": 104
     },
     {
       "file": ".jaros-data/tools/_pathjail.py",
@@ -322,13 +322,45 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 655,
-      "endLine": 660
+      "startLine": 661,
+      "endLine": 666
     },
     {
       "file": "harness/cli.py",
-      "startLine": 669,
-      "endLine": 672
+      "startLine": 675,
+      "endLine": 678
+    }
+  ],
+  "REQ-10": [
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 22,
+      "endLine": 50
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 232,
+      "endLine": 236
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 242,
+      "endLine": 244
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 309,
+      "endLine": 311
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 636,
+      "endLine": 642
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 927,
+      "endLine": 931
     }
   ],
   "REQ-4": [
