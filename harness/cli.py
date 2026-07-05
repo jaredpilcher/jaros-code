@@ -863,7 +863,13 @@ class JcodeCli:
         # on the agentic eval (the 2B is unreliable at choosing steps; a fixed flow isn't).
         from harness.multi_file import _snapshot
         self._agent_snapshot = _snapshot(".")        # whole-run checkpoint (EXT-009 REQ-7)
-        r = spec_driven_loop(arg, ".")
+        # #EXT-037-REQ-12 Start
+        # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+        # `/fixrepo`/`/undo`/`/buildsystem` already use -- so every write a real `/agent`
+        # invocation performs (FIX flow's multi_file_fix, and BUILD flow's module writes) is
+        # gated, EXT-037 root-jailed, and hash-chain logged.
+        r = spec_driven_loop(arg, ".", runtime=self._write_runtime())
+        # #EXT-037-REQ-12 End
         status = "SOLVED" if r["solved"] else "unsolved"
         note = f" — {r['note']}" if r.get("note") else ""
         return f"agent [{r['flow']} flow]: {status}{note}\n  (/undo to revert this run)"
@@ -1278,7 +1284,13 @@ class JcodeCli:
             act, a = s["action"], s.get("arg", "")
             if act == "fix":
                 from harness.multi_file import multi_file_fix
-                r = multi_file_fix(".", "python -m pytest -q", a or arg, test_file, verbose=False)
+                # #EXT-037-REQ-12 Start
+                # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+                # `/fixrepo`/`/undo` already use -- so a real `/plan`'s `fix` step is gated,
+                # EXT-037 root-jailed, and hash-chain logged.
+                r = multi_file_fix(".", "python -m pytest -q", a or arg, test_file, verbose=False,
+                                    runtime=self._write_runtime())
+                # #EXT-037-REQ-12 End
                 out.append(f"  {i}. fix  -> " + (f"solved {r.get('fixed')}" if r["solved"] else "not solved"))
             elif act == "run":
                 from harness.multi_file import _run
@@ -1592,7 +1604,11 @@ class JcodeCli:
             import os
             from harness.multi_file import multi_file_fix
             test_file = next((f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
-            r = multi_file_fix(".", "python -m pytest -q", instruction, test_file, max_iters=3, verbose=True)
+            # #EXT-037-REQ-12 Start
+            # `runtime=self._write_runtime()` (Tenet 1), mirroring `cmd_fixrepo`/`cmd_plan` above.
+            r = multi_file_fix(".", "python -m pytest -q", instruction, test_file, max_iters=3,
+                                verbose=True, runtime=self._write_runtime())
+            # #EXT-037-REQ-12 End
             where = f" (fixed {', '.join(r['fixed'])})" if r.get("fixed") else ""
             return f"{'solved' if r['solved'] else 'not solved'}{where} — multi-file"
         from harness.coding_loop import fix_loop

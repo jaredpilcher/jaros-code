@@ -905,3 +905,69 @@ five public entry points in one move.
 
 #### Implements
 - [REQ-11] `system_builder.py`'s `/buildsystem`/`/modifysystem` writes are Jaros-native (Tenet 1)
+
+### [TASK-16] `spec_loop.py`'s `/agent`/`/plan`/`_nl_fix` writes are Jaros-native (REQ-12)
+
+Tenet-1 compliance sweep (tracker #112), FINAL SLICE (4). `multi_file_fix` is already
+runtime-capable (TASK-14/REQ-10) — it just needs the `runtime` PASSED at the remaining real-host
+call sites REQ-10 explicitly flagged and left out of scope: `harness/cli.py`'s `cmd_plan`
+(`/plan`'s `fix` step) and `_nl_fix` (the no-file-named fallback), and `harness/spec_loop.py`'s
+`spec_driven_loop` (reached by `cmd_agent`/`/agent`). `spec_driven_loop`'s BUILD flow
+(`_decompose_build` → `_build_class`/`_build_per_function`/`_build_whole_file`) ALSO writes
+directly onto the real host `cwd` when reached via `/agent` with no failing test present — a
+genuine real-host write path, not eval scaffolding — so this task routes those raw
+`Path.write_text` sites through `harness/multi_file.py`'s existing `_jaros_write` helper too,
+reusing it rather than duplicating it.
+
+#### Steps
+1. In `harness/cli.py`'s `cmd_plan`, add `runtime=self._write_runtime()` to the `fix`-step's
+   `multi_file_fix(".", "python -m pytest -q", a or arg, test_file, verbose=False)` call.
+2. In `harness/cli.py`'s `_nl_fix`, add `runtime=self._write_runtime()` to the no-file-named
+   fallback's `multi_file_fix(".", "python -m pytest -q", instruction, test_file, max_iters=3,
+   verbose=True)` call.
+3. In `harness/cli.py`'s `cmd_agent`, add `runtime=self._write_runtime()` to
+   `spec_driven_loop(arg, ".")`.
+4. In `harness/spec_loop.py`, extend the existing `from harness.multi_file import _run,
+   multi_file_fix` line to also import `_jaros_write`. Add an optional keyword-only
+   `runtime: object | None = None` parameter to `spec_driven_loop(intent, cwd, ...)`; thread it to
+   the FIX-flow's `multi_file_fix(cwd, _TEST_CMD, instr, test_file, max_iters=max_iters,
+   verbose=verbose, runtime=runtime)` call and to the BUILD-flow's
+   `_decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose, runtime=runtime)` call.
+5. Add an optional keyword-only `runtime: object | None = None` parameter to
+   `_decompose_build(intent, cwd, ...)`; thread it to its `_build_class(..., runtime=runtime)`,
+   `_build_per_function(..., runtime=runtime)`, and the FALLBACK `_build_whole_file(intent, cwd,
+   [n for n, _ in reqs], max_iters=max_iters, verbose=verbose, runtime=runtime)` calls (all three
+   pass the caller's real `cwd`, unchanged).
+6. Add an optional keyword-only `runtime: object | None = None` parameter to `_build_class(intent,
+   cwd, class_name, methods, ...)`; route its stub write (`(Path(cwd) / "solution.py").write_text
+   (stub, ...)`) and its final `_sanitize_source` write (`sp.write_text(_sanitize_source(...))`)
+   through `_jaros_write(path, content, cwd, runtime)` in place of the raw `Path.write_text` calls.
+7. Add an optional keyword-only `runtime: object | None = None` parameter to `_build_whole_file(
+   intent, cwd, names, ...)`; route its stub write (`(Path(cwd) / f"{module}.py").write_text(...)`)
+   and its final `_sanitize_source` write through `_jaros_write(path, content, cwd, runtime)`.
+8. Add an optional keyword-only `runtime: object | None = None` parameter to
+   `_build_per_function(intent, cwd, sigs, ...)`; route its per-function stub write (`fp.write_text
+   (_stub(...), ...)`), its combined `solution.py` assembly write, its hybrid winner swap-in write
+   (`(Path(cwd) / "solution.py").write_text(wf_sol, ...)`), and its final `_sanitize_source` write
+   through `_jaros_write(path, content, cwd, runtime)`. Its internal hybrid-probe call
+   `_build_whole_file(intent, alt, [f for f, _ in sigs], max_iters=max_iters, verbose=verbose)`
+   (building into a throwaway `tempfile.mkdtemp()` subdirectory `alt`, `shutil`-cleaned before this
+   function returns) stays UNCHANGED at `runtime=None` — `alt` is never the caller's real root.
+9. Add `tests/test_ext037_agent_plan_jaros_write.py` covering: `cmd_plan`'s `fix` step, `cmd_agent`
+   (both its FIX flow and its BUILD flow — a request naming no existing test file and ≥2 concrete
+   function signatures, e.g. per-function and whole-file paths), and `_nl_fix`'s no-file-named
+   fallback each route their host writes through a `code.write_file` Decision when a runtime is
+   supplied (a fake recording runtime, and a real `harness.coding_loop.Runtime` proving the gate +
+   REQ-1 root-jail actually fire on an escaping target); `runtime=None` is byte-identical to the
+   pre-existing behavior for `spec_driven_loop` (FIX and BUILD flows) and each of
+   `_decompose_build`'s three build strategies (`_build_class`, `_build_per_function`,
+   `_build_whole_file`); and `_build_per_function`'s hybrid-probe temp-dir build records no
+   Decision (stays raw) even when its own outer call is given a runtime.
+10. Run `python -m pytest tests/ -q` synchronously in the foreground (background it with
+    `run_with_heartbeat` per the observability convention) and confirm the exit code and full pass
+    count, with no regression to `tests/test_spec_loop.py`, `harness/build_eval.py`,
+    `harness/agentic_eval.py`'s tests, `tests/test_ext004_planner.py`, or any prior EXT-037 task's
+    tests.
+
+#### Implements
+- [REQ-12] `spec_loop.py`'s `/agent`/`/plan`/`_nl_fix` writes are Jaros-native (Tenet 1)

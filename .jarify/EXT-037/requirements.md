@@ -46,6 +46,8 @@ implementation:
   - tests/test_ext037_fixrepo_jaros_write.py
   - harness/system_builder.py
   - tests/test_ext037_buildsystem_jaros_write.py
+  - harness/spec_loop.py
+  - tests/test_ext037_agent_plan_jaros_write.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -690,3 +692,75 @@ is deleted before the caller ever returns.
   when a real `harness.coding_loop.Runtime` is supplied; `build_system_best_of_k`'s per-attempt
   temp-dir builds stay raw while its final winner-assembly write is routed through a supplied
   runtime; and the full suite has no regression
+
+### [REQ-12] `spec_loop.py`'s `/agent`/`/plan`/`_nl_fix` writes are Jaros-native (Tenet 1)  (covered)
+
+**Owner directive (2026-07-04) — Tenet-1 compliance sweep, tracker #112, FINAL SLICE (4).**
+`harness/multi_file.py`'s `multi_file_fix` is already runtime-capable (REQ-10) — it just needs a
+`runtime` PASSED at the remaining REAL-HOST call sites REQ-10 explicitly flagged and left out of
+scope: `harness/cli.py`'s `cmd_plan` (`/plan`'s `fix` step) and `_nl_fix` (the natural-language
+no-file-named fallback) both call `multi_file_fix(".", ...)` against the real host `cwd` without a
+`runtime`; and `harness/spec_loop.py`'s `spec_driven_loop` (reached by `cmd_agent`/`/agent`) calls
+`multi_file_fix(cwd, ...)` the same way. This requirement closes the gap at all three, mirroring
+the PROVEN REQ-9/REQ-10/REQ-11 idiom exactly: an optional `runtime` parameter that, when supplied,
+performs the write as a `code.write_file` Decision through `Runtime.apply`; `runtime=None` (the
+default) preserves every existing eval/test/suite caller's raw-write behavior byte-for-byte.
+
+**`spec_loop.py`'s BUILD flow is ALSO a real-host write path, not eval scaffolding — checked, not
+assumed.** `cmd_agent` calls `spec_driven_loop(arg, ".")` against the real host working directory.
+When no failing test exists there, `spec_driven_loop` falls through to the BUILD flow
+(`_decompose_build` → `_build_class` / `_build_per_function` / `_build_whole_file`), which writes
+`solution.py`/per-function modules/the sanitized final module directly onto that same real `cwd`
+via raw `Path.write_text` (the `~lines 142, 152, 189, 201, 254, 285, 301, 305` sites). Every other
+caller of `spec_driven_loop`/`_decompose_build` (`harness/build_eval.py`, `harness/agentic_eval.py`,
+`tests/test_spec_loop.py`) passes a `tempfile.TemporaryDirectory()`/`tmp_path` — a throwaway
+benchmark workdir with no meaningful project root. So the VERDICT, checked per site rather than
+assumed: these are (b) real-host product writes reachable via `/agent`, not (a) eval/benchmark
+scaffolding — they get the same treatment as the FIX flow, routed through `harness/multi_file.py`'s
+existing `_jaros_write(path, content, root, runtime)` helper (reused, not duplicated) when a
+`runtime` is supplied. The ONE exception: `_build_per_function`'s hybrid-probe call
+`_build_whole_file(intent, alt, ...)` builds into an isolated `tempfile.mkdtemp()` subdirectory
+(`alt`) that is discarded before the function returns — not the caller's real root — so that
+specific internal call stays on `runtime=None`, mirroring `system_builder.py`'s REQ-11
+`build_system_best_of_k` per-attempt-tempdir precedent exactly.
+
+**Flagged, explicitly out of this requirement's scope (not silently deferred):**
+`_decompose_build`'s single-function fallback (`len(reqs) <= 1`) calls `harness/intent_loop.py`'s
+`build_in_dir`, a DIFFERENT module with its own write path, not one of `spec_loop.py`'s raw
+`Path.write_text` sites this requirement routes. `build_in_dir` is reached by `/agent` the same
+way (a plain single-function request with no existing test file), so it is a real-host write path
+too — a natural, low-risk follow-up (the same `runtime`-threading idiom) for a future slice, left
+unwired here since this requirement's scope is `spec_loop.py` itself.
+
+#### Acceptance Criteria
+- [x] `harness/cli.py`'s `cmd_plan` passes `runtime=self._write_runtime()` to its `fix`-step
+  `multi_file_fix` call, and `_nl_fix` passes `runtime=self._write_runtime()` to its no-file-named
+  fallback `multi_file_fix` call — the same root-anchored `Runtime` `/fixrepo`/`/undo` already use
+- [x] `harness/cli.py`'s `cmd_agent` passes `runtime=self._write_runtime()` to
+  `spec_driven_loop(arg, ".")`
+- [x] `harness/spec_loop.py`'s `spec_driven_loop(intent, cwd, *, ..., runtime=None)` gains the
+  optional keyword-only parameter and threads it to its FIX-flow `multi_file_fix(...,
+  runtime=runtime)` call and to its BUILD-flow `_decompose_build(..., runtime=runtime)` call
+- [x] `_decompose_build`, `_build_class`, `_build_whole_file`, and `_build_per_function` each gain
+  an optional keyword-only `runtime: object | None = None` parameter; every raw `Path.write_text`
+  call in each that targets the caller's real `cwd` (the stub write, the final
+  `_sanitize_source` write, the per-function stub write, the combined `solution.py` assembly
+  write, and the hybrid winner swap-in write) is routed through `harness/multi_file.py`'s
+  `_jaros_write(path, content, root=cwd, runtime)` instead of a raw `Path.write_text`
+- [x] `_build_per_function`'s internal hybrid-probe `_build_whole_file(intent, alt, ...)` call
+  (building into a throwaway `tempfile.mkdtemp()` subdirectory `alt`, discarded before return)
+  stays on `runtime=None` — there is no meaningful project root to gate for a directory that is
+  never the caller's real `cwd`
+- [x] `runtime=None` (the default) preserves the exact current raw-write behavior byte-for-byte —
+  no existing eval/test/suite caller (`harness/build_eval.py`, `harness/agentic_eval.py`,
+  `tests/test_spec_loop.py`, `tests/test_ext004_planner.py`) is affected
+- [x] A gate rejection (e.g. a path escaping root through the Decision path) degrades to an honest
+  error string surfaced in the existing `note`/`solved` result — never an uncaught exception
+- [x] Proven by `tests/test_ext037_agent_plan_jaros_write.py`: `/plan`'s `fix` step, `/agent`'s FIX
+  and BUILD flows, and `_nl_fix`'s no-file-named fallback each route their host writes through a
+  `code.write_file` Decision when a runtime is supplied (spied via a fake runtime/`DecisionLog`,
+  and a real `harness.coding_loop.Runtime` proving the gate + REQ-1 root-jail actually fire); the
+  `runtime=None` raw fallback is byte-identical to the pre-existing behavior for `spec_driven_loop`
+  (FIX and BUILD flows) and `_decompose_build`'s three build strategies; the hybrid-probe temp-dir
+  build in `_build_per_function` stays raw (no Decision recorded for `alt`-root writes); and the
+  full suite has no regression

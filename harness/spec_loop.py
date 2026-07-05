@@ -18,7 +18,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from harness.multi_file import _run, multi_file_fix
+# #EXT-037-REQ-12 Start
+from harness.multi_file import _run, multi_file_fix, _jaros_write
+# #EXT-037-REQ-12 End
 
 _TEST_CMD = "python -m pytest -q"
 
@@ -30,9 +32,18 @@ def _find_test(cwd: str) -> str:
     return ""
 
 
-def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False) -> dict:
+def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False,
+                     runtime: "object | None" = None) -> dict:
     """Structured (jarify-flow) loop. The FLOW is deterministic; the 2B never chooses the steps —
-    it only fills the constrained sub-task (the fix / the code). Returns {solved, flow, note}."""
+    it only fills the constrained sub-task (the fix / the code). Returns {solved, flow, note}.
+
+    `runtime` (EXT-037 REQ-12, Tenet 1): optional -- any object exposing `.apply(decision)`, e.g.
+    `harness.coding_loop.Runtime`. Reached by `harness/cli.py`'s `cmd_agent` (`/agent`) with
+    `cwd="."` -- the real host working directory. When given, every write this function (or the
+    FIX/BUILD flow it dispatches to) performs onto `cwd` is routed through a real
+    `code.write_file` Decision instead of a raw `Path.write_text`. `runtime=None` (the default --
+    used by every existing eval/test caller against a throwaway temp dir) preserves the exact
+    prior direct-write behavior byte-for-byte."""
     green, _ = _run(cwd, _TEST_CMD)
     if green:
         return {"solved": True, "flow": "already-green", "note": "requirement already met"}
@@ -44,13 +55,14 @@ def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         from harness.project_memory import read_memory
         mem = read_memory(cwd).strip()
         instr = f"Project conventions:\n{mem}\n\n{intent}" if mem else intent
-        res = multi_file_fix(cwd, _TEST_CMD, instr, test_file, max_iters=max_iters, verbose=verbose)
+        res = multi_file_fix(cwd, _TEST_CMD, instr, test_file, max_iters=max_iters, verbose=verbose,
+                              runtime=runtime)
         green, _ = _run(cwd, _TEST_CMD)
         return {"solved": green, "flow": "fix", "note": res.get("note", "")}
 
     # BUILD flow — no test yet: DECOMPOSE the intent into requirements, a test per requirement,
     # then implement against all (the richer jarify-flow). Single-function falls back to build_in_dir.
-    return _decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose)
+    return _decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose, runtime=runtime)
 
 
 def plan_preview(intent: str, cwd: str) -> str:
@@ -129,17 +141,28 @@ def _detect_class(intent: str) -> str | None:
     return m.group(1) if m else None
 
 
+# #EXT-037-REQ-12 Start
 def _build_class(intent: str, cwd: str, class_name: str, methods: list, *, max_iters: int = 3,
-                 verbose: bool = False) -> dict:
+                 verbose: bool = False, runtime: "object | None" = None) -> dict:
     """Build a CLASS (the OOP capability). Stub the class with `*args` methods so fix_loop routes to
     the WHOLE-FILE rewriter (which writes a coherent class — the per-function body-completer can't,
     it drops the `self`/class frame). The test-writer writes a behavioral test from the intent;
-    _sanitize_source strips the '>>>FILE'/fence artifacts the rewriter sometimes appends."""
+    _sanitize_source strips the '>>>FILE'/fence artifacts the rewriter sometimes appends.
+
+    `runtime` (EXT-037 REQ-12, Tenet 1): optional, same contract as `harness/multi_file.py`'s
+    `_jaros_write` -- when given, both raw writes onto `cwd` below (the initial stub, and the
+    final sanitized module) are routed through it as a real `code.write_file` Decision instead of
+    a raw `Path.write_text`. `runtime=None` (the default, used by every existing eval/test
+    caller against a throwaway temp dir) is unchanged from before this parameter existed. A gate
+    rejection of the initial stub write degrades to an honest failed result (never a crash from
+    the downstream `fix_loop`/read calls that would otherwise assume the file exists)."""
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     stub = f"class {class_name}:\n" + "".join(
         f"    def {m}(self, *args, **kwargs):\n        raise NotImplementedError\n" for m, _ in methods
     ) if methods else f"class {class_name}:\n    pass\n"
-    (Path(cwd) / "solution.py").write_text(stub, encoding="utf-8", newline="\n")
+    err = _jaros_write(str(Path(cwd) / "solution.py"), stub, cwd, runtime)
+    if err:
+        return {"solved": False, "flow": "build-class", "requirements": len(methods), "note": err}
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
     [tw] = writer.decide({"intent": intent, "module": "solution", "func": class_name,
                           "signature": f"class {class_name}",
@@ -149,20 +172,27 @@ def _build_class(intent: str, cwd: str, class_name: str, methods: list, *, max_i
     fix_loop(str(Path(cwd) / "solution.py"), intent, _TEST_CMD, max_iters=max_iters,
              cwd=cwd, verbose=verbose)
     sp = Path(cwd) / "solution.py"
-    sp.write_text(_sanitize_source(sp.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+    _jaros_write(str(sp), _sanitize_source(sp.read_text(encoding="utf-8")), cwd, runtime)
     green, _ = _run(cwd, _TEST_CMD)
     return {"solved": green, "flow": "build-class", "requirements": len(methods),
             "note": f"class {class_name} ({len(methods)} methods)"}
+# #EXT-037-REQ-12 End
 
 
-def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False) -> dict:
+# #EXT-037-REQ-12 Start
+def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False,
+                     runtime: "object | None" = None) -> dict:
+    """`runtime` (EXT-037 REQ-12, Tenet 1): optional -- threaded straight through to whichever
+    build strategy below actually writes onto `cwd` (all three target the caller's real `cwd`,
+    unchanged); see `spec_driven_loop`'s docstring for the full contract."""
     cls = _detect_class(intent)                         # class intents route to the whole-class build
     if cls:
         return _build_class(intent, cwd, cls, _extract_signatures(intent),
-                            max_iters=max_iters, verbose=verbose)
+                            max_iters=max_iters, verbose=verbose, runtime=runtime)
     sigs = _extract_signatures(intent)                  # deterministic signatures beat 2B params
     if len(sigs) >= 2:                                   # TASK-9: per-function concrete-sig build
-        return _build_per_function(intent, cwd, sigs, max_iters=max_iters, verbose=verbose)
+        return _build_per_function(intent, cwd, sigs, max_iters=max_iters, verbose=verbose,
+                                   runtime=runtime)
     reqs = [(n, "") for n, _ in _decompose(intent)]
     from harness.intent_loop import build_in_dir
     if len(reqs) <= 1:                                   # single-function: the existing spine
@@ -172,23 +202,37 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
     # FALLBACK (no explicit signatures): *args stubs -> whole-file rewriter implements all.
-    _build_whole_file(intent, cwd, [n for n, _ in reqs], max_iters=max_iters, verbose=verbose)
+    _build_whole_file(intent, cwd, [n for n, _ in reqs], max_iters=max_iters, verbose=verbose,
+                      runtime=runtime)
     green, _ = _run(cwd, _TEST_CMD)
     return {"solved": green, "flow": "build-decomposed", "requirements": len(reqs),
             "note": f"{len(reqs)} requirements"}
+# #EXT-037-REQ-12 End
 
 
+# #EXT-037-REQ-12 Start
 def _build_whole_file(intent: str, cwd: str, names: list, *, max_iters: int = 3,
-                      verbose: bool = False) -> None:
+                      verbose: bool = False, runtime: "object | None" = None) -> None:
     """*args whole-file build: stub every function with `*args` so fix_loop routes to the WHOLE-FILE
     rewriter (which implements ALL of them in one solution.py), write one test per function (from the
     real intent), then implement against all. This path builds simple predicates like is_odd reliably
-    where the per-function body-completer botches them — it is TASK-10's fallback."""
+    where the per-function body-completer botches them — it is TASK-10's fallback.
+
+    `runtime` (EXT-037 REQ-12, Tenet 1): optional, same contract as `_build_class` -- routes the
+    stub write and the final sanitized write onto `cwd` through `_jaros_write` instead of a raw
+    `Path.write_text`. `runtime=None` (the default) is unchanged from before this parameter
+    existed -- including `_build_per_function`'s own internal hybrid-probe call below, which
+    always builds into a throwaway temp dir and never passes `runtime`. A gate rejection of the
+    initial stub write returns early (the module was never created, so no downstream write/read
+    is attempted) instead of letting `fix_loop` crash on a missing file."""
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     module = "solution"
-    (Path(cwd) / f"{module}.py").write_text(
-        "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n" for n in names),
-        encoding="utf-8", newline="\n")
+    err = _jaros_write(str(Path(cwd) / f"{module}.py"),
+                       "".join(f"def {n}(*args, **kwargs):\n    raise NotImplementedError\n\n"
+                               for n in names),
+                       cwd, runtime)
+    if err:
+        return
     rt, writer = Runtime(), _load_agent("test_writer_agent.py", build_llm())
     for func in names:
         [tw] = writer.decide({"intent": intent, "module": module, "func": func, "signature": "",
@@ -198,7 +242,8 @@ def _build_whole_file(intent: str, cwd: str, names: list, *, max_iters: int = 3,
     fix_loop(str(Path(cwd) / f"{module}.py"), intent, _TEST_CMD, max_iters=max_iters,
              cwd=cwd, verbose=verbose)
     sp = Path(cwd) / f"{module}.py"
-    sp.write_text(_sanitize_source(sp.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+    _jaros_write(str(sp), _sanitize_source(sp.read_text(encoding="utf-8")), cwd, runtime)
+# #EXT-037-REQ-12 End
 
 
 def _sanitize_source(text: str) -> str:
@@ -229,8 +274,9 @@ def _sanitize_source(text: str) -> str:
     return cleaned if _ok(cleaned) else text            # repaired, or leave it to fail honestly
 
 
+# #EXT-037-REQ-12 Start
 def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,
-                        verbose: bool = False) -> dict:
+                        verbose: bool = False, runtime: "object | None" = None) -> dict:
     """TASK-9: build each function in ITS OWN module with a CONCRETE single-function stub, so
     fix_loop routes to the body-completer (which keeps the real signature and implements correctly,
     incl. list-aggregation — the whole-file rewriter kept *args and did max(args)). Then EXTRACT
@@ -241,7 +287,15 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     hybrid (below) gives a 2nd independent chance — the *args whole-file build in a clean temp dir,
     swapped in when it has fewer stubs — so the build eval reaches 7/7: per-function fixes
     list-aggregation, the hybrid recovers boolchecks. No-regression by construction (the fallback
-    only fires when a per-function build leaves a stub; passing scenarios are untouched)."""
+    only fires when a per-function build leaves a stub; passing scenarios are untouched).
+
+    `runtime` (EXT-037 REQ-12, Tenet 1): optional -- routes every raw write onto `cwd` below (each
+    per-function stub, the combined `solution.py` assembly, the hybrid winner swap-in, and the
+    final sanitized write) through `_jaros_write` instead of a raw `Path.write_text`. The internal
+    hybrid-probe `_build_whole_file(intent, alt, ...)` call further below always builds into a
+    throwaway `tempfile.mkdtemp()` subdirectory `alt` (removed before this function returns) --
+    never the caller's real root -- so it intentionally stays on `runtime=None`, unaffected by
+    this parameter. `runtime=None` (the default) is unchanged from before this parameter existed."""
     import ast
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     from harness.intent_loop import _stub
@@ -251,7 +305,12 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     failed: list[str] = []                              # functions whose per-function build didn't land
     for func, params in sigs:
         fp = Path(cwd) / f"{func}.py"
-        fp.write_text(_stub(f"def {func}({params})", func), encoding="utf-8", newline="\n")
+        if _jaros_write(str(fp), _stub(f"def {func}({params})", func), cwd, runtime):
+            # gate rejected the per-function stub -- degrade the same as a malformed build below
+            # (stub it, keep the rest importable) rather than crash on a file that was never made.
+            defs.append(f"def {func}({params}):\n    raise NotImplementedError\n")
+            failed.append(func)
+            continue
         [tw] = writer.decide({"intent": intent, "module": func, "func": func,
                               "signature": f"def {func}({params})",
                               "test_path": str(Path(cwd) / f"test_{func}.py"), "seed": 1})
@@ -282,7 +341,9 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
             defs.append(func_def or f"def {func}({params}):\n    raise NotImplementedError\n")
             failed.append(func)
     body = ("\n".join(imports) + "\n\n" if imports else "") + "\n\n".join(defs) + "\n"
-    (Path(cwd) / "solution.py").write_text(body, encoding="utf-8", newline="\n")
+    err = _jaros_write(str(Path(cwd) / "solution.py"), body, cwd, runtime)
+    if err:
+        return {"solved": False, "flow": "build-per-function", "requirements": len(sigs), "note": err}
 
     # TASK-10 hybrid: if any per-function build failed (e.g. body-completer botches is_odd), try the
     # *args whole-file build in a CLEAN temp dir and keep whichever solution.py has fewer stubs (more
@@ -293,18 +354,21 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
         pf_sol = (Path(cwd) / "solution.py").read_text(encoding="utf-8")
         pf_stubs = pf_sol.count("raise NotImplementedError")
         with tempfile.TemporaryDirectory(prefix="jcode-wf-") as alt:
+            # `alt` is a throwaway temp dir, shutil-cleaned on `with` exit -- never the caller's
+            # real root -- so this hybrid-probe build intentionally stays on runtime=None.
             _build_whole_file(intent, alt, [f for f, _ in sigs], max_iters=max_iters, verbose=verbose)
             wf_path = Path(alt) / "solution.py"
             wf_sol = wf_path.read_text(encoding="utf-8") if wf_path.exists() else ""
         wf_stubs = wf_sol.count("raise NotImplementedError") if wf_sol else 10 ** 9
-        if wf_sol and wf_stubs < pf_stubs:
-            (Path(cwd) / "solution.py").write_text(wf_sol, encoding="utf-8", newline="\n")
+        if wf_sol and wf_stubs < pf_stubs and not _jaros_write(
+                str(Path(cwd) / "solution.py"), wf_sol, cwd, runtime):
             flow = "build-hybrid"
 
     final_path = Path(cwd) / "solution.py"
-    final_path.write_text(_sanitize_source(final_path.read_text(encoding="utf-8")),
-                          encoding="utf-8", newline="\n")
+    _jaros_write(str(final_path), _sanitize_source(final_path.read_text(encoding="utf-8")),
+                cwd, runtime)
     final = final_path.read_text(encoding="utf-8")
     solved = "raise NotImplementedError" not in final     # all functions at least implemented
     return {"solved": solved, "flow": flow, "requirements": len(sigs),
             "note": f"{len(sigs)} functions ({flow.split('-', 1)[1]})"}
+# #EXT-037-REQ-12 End
