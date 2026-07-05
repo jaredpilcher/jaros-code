@@ -57,13 +57,16 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
   (REQ-11, 81ec12b) · /agent //plan //_nl_fix (REQ-12, c52f9e6) · /build (REQ-13, c276a4c, 2067 green).
   Left raw BY DESIGN: eval/solve sandbox + oracle scratch (throwaway temp dirs), internal .jaros state
   logs. Note: /patch //fix already Jaros-native (Decision path), intentionally rootless. → moved to LANDED.
-- **[#25 install + health story — next product-surface build]** packaging (`pipx install jaros-code`) +
-  `/doctor` = deterministic health checks (Jetson reachable, model served, git/docker present, .jaros-data
-  writable) — med · tractable, overnight-safe, a diagnostics flavor (not just another user feature); via
-  Jarify (new spec EXT-053). Flips row #25 partial→works.
+- **[★ PRODUCT-SURFACE at 75% (12/16) — overnight-safe wins EXHAUSTED, reserve the rest for DAYTIME watched]**
+  The clean partial→works rows are all landed. The remaining rows are heavier/riskier and want active
+  watching, NOT unattended overnight: **#18 MCP client** (biggest ecosystem win; heavy multi-part
+  protocol build) · **#21 interrupt+steer** (missing; a control-flow change to the core multi-step run
+  loop — HIGH regression risk unattended) · **#26 multimodal** (missing; model-backed vision probe). #27
+  is intentionally out-of-scope (IDE/desktop/web) → achievable ≈ 12/15. **Steer: pause the product-surface
+  push overnight; the parallel capability-experiment chain (best-of-k / acceptance-completeness) carries
+  the unattended hours; pick up MCP/#21 in a daytime watched slot.**
 - **[measurement — #86 datastore end-to-end verify]** does the repaired datastore now BUILD + PASS
-  acceptance via /buildsystem? — MEASURE it myself (model-backed), reserve for a daytime watched slot.
-- **[#18 MCP client]** biggest remaining ecosystem gap — reserve for an actively-watched build.
+  acceptance via /buildsystem? — MEASURE myself (model-backed), daytime watched slot.
 - **[#18 MCP client — queued, biggest remaining, needs a focused/scoped build]** external-tool protocol
   (stdio/JSON-RPC, discovery, each MCP tool wrapped as a GATED Jaros tool) — high impact · low tractability;
   scope a minimal first slice when actively watching (heavier + wedge-prone for unattended overnight).
@@ -187,6 +190,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#25 install + /doctor]** jcode now has a `/doctor` health check (is the Jetson reachable? model served? git/docker present? data dir writable? — each with a fix hint, bounded so it never hangs) + a minimal pip-installable `jcode` command — parity 71.9%→75.0% (12 of 16) — 4a66653.
 - **[test-hygiene: flaky #113 fixed]** the intermittently-failing checkpoint test was racing on the shared Jaros state log under concurrent test processes; isolated each test's state dir so it's deterministic — an order-dependent/flaky test can mask real regressions, so this protects the safety net — 02be56d.
 - **[#23 background runs surface]** you can now run a task in the background — `jcode --bg "<request>"` returns a job id and runs detached; `jcode jobs`/`logs <id>`/`stop <id>` check on it or cancel it (stop kills only that job's own process tree, never by name) — parity 68.8%→71.9% (11 of 16) — 8f51e6d.
 - **[#22 context management]** long sessions are now manageable — type `@path/to/file` in a request to pull that file's content into context, and `/compact` folds a long conversation into a summary so it keeps fitting (reusing the existing session-condense machinery, not a new mechanism) — parity 65.6%→68.8% (10 of 16) — 4d94c75.
