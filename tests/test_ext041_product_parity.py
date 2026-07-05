@@ -56,7 +56,7 @@ def test_no_row_is_inflated_to_works_today():
     lists configured rules; no config anywhere is byte-identical) are the rows genuinely delivered
     end-to-end -- these pins were updated deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 24]
+    assert works == [12, 13, 14, 15, 16, 17, 20, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -95,9 +95,9 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), and #24 (EXT-045) are genuine "works"
-    assert result["n_works"] == 7
-    assert result["n_partial"] + result["n_missing"] == 9
+    # (EXT-048), #20 (EXT-049), and #24 (EXT-045) are genuine "works"
+    assert result["n_works"] == 8
+    assert result["n_partial"] + result["n_missing"] == 8
     assert 0.0 <= result["pct"] < 100.0
 
 

@@ -1,0 +1,55 @@
+{
+  "REQ-2": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 136,
+      "endLine": 138
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 175,
+      "endLine": 182
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 291,
+      "endLine": 310
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 323,
+      "endLine": 330
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 271,
+      "endLine": 277
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 284,
+      "endLine": 286
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 932,
+      "endLine": 989
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/checkpoint_ring.py",
+      "startLine": 25,
+      "endLine": 115
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 225,
+      "endLine": 242
+    }
+  ]
+}

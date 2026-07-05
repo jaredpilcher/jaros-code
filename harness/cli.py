@@ -46,6 +46,9 @@ Commands (Claude-Code-style):
   /agent <request>              agentic loop: plan -> act -> observe -> replan over the tools (EXT-009)
   /diff                         show what the last /agent run changed vs its checkpoint
   /undo                         revert the last /agent run (restore the pre-run checkpoint)
+  /checkpoints                  list the fine-grained per-edit checkpoint ring (EXT-049)
+  /rewind <n|id>                restore the workspace N steps back (or to a checkpoint id);
+                                 no arg lists the ring — finer-grained superset of /undo
   /gitstatus                    git.status tool: working-tree status (EXT-037 host toolbelt)
   /gitlog [n]                   git.log tool: recent commit history (default ~10)
   /gitdiff [file]               git.diff tool: working diff, optionally scoped to one file
@@ -265,12 +268,22 @@ class JcodeCli:
         self.mode = DEFAULT_MODE
         self._interactive = bool(interactive)
         # #EXT-048-REQ-1 End
+        # #EXT-049-REQ-3 Start
+        # Fine-grained checkpoint ring (EXT-049): wired ONLY into this primary Runtime, so direct
+        # edit commands routed through it (e.g. /patch) populate the ring; /rewind and
+        # /checkpoints read it back (see cmd_rewind/cmd_checkpoints below).
+        from harness.checkpoint_ring import CheckpointRing
+        self._checkpoint_ring = CheckpointRing()
+        # #EXT-049-REQ-3 End
         self.rt = Runtime(
             on_event=_on_event, hooks_config=self.hooks_config,
             # #EXT-048-REQ-3 Start
             mode=self.mode, permission_rules=self.permission_rules,
             ask_callback=(self._ask_permission if self._interactive else None),
             # #EXT-048-REQ-3 End
+            # #EXT-049-REQ-3 Start
+            checkpoint_ring=self._checkpoint_ring,
+            # #EXT-049-REQ-3 End
         )
         # #EXT-045-REQ-1 End
         self.llm = build_llm()
@@ -915,6 +928,65 @@ class JcodeCli:
         if not out:
             return "no changes since the last /agent checkpoint"
         return "\n".join(out[:200]) + ("\n... (diff truncated)" if len(out) > 200 else "")
+
+    # #EXT-049-REQ-3 Start
+    def cmd_checkpoints(self, _arg: str) -> str:
+        """List the fine-grained per-edit checkpoint ring (EXT-049), newest first — one entry per
+        accepted write/edit Decision (e.g. /patch) made via this session's primary Runtime. Extends
+        /undo's whole-run checkpoint (EXT-009) with per-edit granularity; pairs with /rewind."""
+        ring = getattr(self, "_checkpoint_ring", None)
+        if not ring or len(ring) == 0:
+            return ("no checkpoints yet (the ring records edits made via /patch and other "
+                    "tracked write Decisions as the session runs)")
+        lines = [f"checkpoint ring ({len(ring)}/{ring.maxlen}, 1 = most recent):"]
+        for i, entry in enumerate(ring.entries_newest_first(), start=1):
+            lines.append(f"  [{i}] {entry.summary()}  (id {entry.id})")
+        return "\n".join(lines)
+
+    def cmd_rewind(self, arg: str) -> str:
+        """Restore the workspace N steps back (or to a specific checkpoint id) — the finer-grained
+        superset of /undo (EXT-009 REQ-7 keeps working unchanged). Each restore is applied through
+        a REAL `code.write_file` Decision (Tenet 1: never a raw file write) via
+        `self._write_runtime()`, so it is gated, EXT-037 root-jailed, and hash-chain-logged exactly
+        like any other product-surface write. A creation (no prior content — the toolbelt has no
+        delete-file Decision type) is reported honestly rather than faked as undone."""
+        ring = getattr(self, "_checkpoint_ring", None)
+        a = arg.strip()
+        if not a:
+            return self.cmd_checkpoints(a)
+        if not ring or len(ring) == 0:
+            return "nothing to rewind (no checkpoints yet this session)"
+        if a.lstrip("-").isdigit():
+            n = int(a)
+        else:
+            n = ring.position_from_newest(a)
+            if n is None:
+                return f"no checkpoint matching id {a!r} (see /checkpoints)"
+        if n < 1 or n > len(ring):
+            return f"checkpoint ring only has {len(ring)} entr{'y' if len(ring) == 1 else 'ies'} — can't rewind {n} step(s)"
+        entries = ring.last_n(n)
+        rt = self._write_runtime()
+        lines = [f"rewinding {n} step(s):"]
+        for entry in entries:
+            if not entry.existed:
+                lines.append(f"  {entry.path}: created by this checkpoint — cannot fully "
+                              "un-create (no delete tool); left as-is")
+                continue
+            if rt is None:
+                lines.append(f"  {entry.path}: FAILED — no runtime available to apply the restore")
+                continue
+            decision = self._mk(
+                id=f"rewind-{entry.id}-{uuid.uuid4().hex[:6]}", source="cli",
+                type="code.write_file",
+                payload={"path": entry.path, "content": entry.before_content or ""})
+            try:
+                rt.apply(decision)
+                lines.append(f"  {entry.path}: restored")
+            except Exception as exc:
+                lines.append(f"  {entry.path}: FAILED — {exc}")
+        ring.drop_last_n(n)
+        return "\n".join(lines)
+    # #EXT-049-REQ-3 End
 
     # #EXT-037-REQ-5 Start
     def _git_tool(self, dtype: str, payload: dict):

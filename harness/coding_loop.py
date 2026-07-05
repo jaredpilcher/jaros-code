@@ -131,8 +131,11 @@ class Runtime:
                  # #EXT-048-REQ-4 Start
                  mode: str = "default",
                  permission_rules: "list | None" = None,
-                 ask_callback: "callable | None" = None) -> None:
+                 ask_callback: "callable | None" = None,
                  # #EXT-048-REQ-4 End
+                 # #EXT-049-REQ-2 Start
+                 checkpoint_ring: "object | None" = None) -> None:
+                 # #EXT-049-REQ-2 End
         # #EXT-045-REQ-1 End
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -169,6 +172,14 @@ class Runtime:
         self._permission_rules = permission_rules
         self._ask_callback = ask_callback
         # #EXT-048-REQ-4 End
+        # #EXT-049-REQ-2 Start
+        # Fine-grained checkpoint ring (EXT-049): `None` (the default) is a complete no-op --
+        # every pre-EXT-049 caller of `Runtime(...)` behaves byte-identically. When supplied (a
+        # `harness.checkpoint_ring.CheckpointRing`), `apply()` below captures the pre-edit content
+        # of the file a write/edit Decision is about to change, at the SAME seam that already logs
+        # every accepted Decision to the hash-chain -- no parallel history store.
+        self._checkpoint_ring = checkpoint_ring
+        # #EXT-049-REQ-2 End
 
     # #EXT-048-REQ-4 Start
     def set_mode(self, mode: str) -> None:
@@ -277,6 +288,26 @@ class Runtime:
                     raise RuntimeError(_reason)
             # _action == "allow" (or any unrecognized value) falls through to execute normally.
         # #EXT-048-REQ-2 End
+        # #EXT-049-REQ-2 Start
+        # Fine-grained checkpoint ring (EXT-049): capture the PRE-EDIT content of the file this
+        # write/edit Decision is about to change, at this seam -- a plain READ (not a gated side
+        # effect; Tenet 1's Decision-routing rule is about host WRITES, and the restore write is
+        # routed through a real `code.write_file` Decision elsewhere -- see `harness.cli`). A
+        # complete no-op when `self._checkpoint_ring` is `None` (the default).
+        _ckpt_path = None
+        _ckpt_existed = False
+        _ckpt_before = None
+        if (self._checkpoint_ring is not None and decision.type in _ROOT_JAILED_DECISION_TYPES
+                and isinstance(decision.payload, dict)):
+            _p = decision.payload.get("path")
+            if isinstance(_p, str) and _p:
+                _ckpt_path = _p
+                try:
+                    _ckpt_existed = os.path.isfile(_p)
+                    _ckpt_before = Path(_p).read_text(encoding="utf-8") if _ckpt_existed else None
+                except Exception:
+                    _ckpt_existed, _ckpt_before = False, None
+        # #EXT-049-REQ-2 End
         outcome = executor.apply(
             decision,
             on_accept=lambda d: record_decision(self._dlog, d),
@@ -289,6 +320,14 @@ class Runtime:
             raise RuntimeError(f"executor refused {decision.type}: {outcome.reason}")
         _TOOL_USAGE[decision.type] += 1  # telemetry: this tool fired
         _WIRING_USAGE[f"{decision.source} -> {decision.type}"] += 1  # which agent used it
+        # #EXT-049-REQ-2 Start
+        # Only an ACCEPTED Decision (we're past the `outcome.applied` check above) is checkpointed
+        # -- a gate/executor rejection never produces a checkpoint entry.
+        if _ckpt_path is not None:
+            self._checkpoint_ring.record(
+                decision_type=decision.type, path=_ckpt_path, existed=_ckpt_existed,
+                before_content=_ckpt_before, source=decision.source)
+        # #EXT-049-REQ-2 End
         # #EXT-045-REQ-1 Start
         self._emit({"phase": "result", "type": decision.type, "output": outcome.output})
         # #EXT-045-REQ-1 End

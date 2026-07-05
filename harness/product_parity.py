@@ -222,13 +222,24 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                        "user-friendly); no user-authoring format.",
         next_lever="Markdown agent spec -> loader compiles to a Jaros agent; router can delegate.",
     ),
+    # #EXT-049-REQ-4 Start
     ProductParityRow(
         id=20, feature="Fine-grained checkpoint / rewind",
-        state="partial",
-        current_state="Whole-run checkpoint + `/undo` exist (EXT-009); no per-edit checkpoint "
-                       "ring or `/rewind <n>`.",
-        next_lever="Per-edit checkpoint ring on the existing snapshot tool; `/rewind <n>`.",
+        state="works",
+        current_state="A bounded per-edit checkpoint ring (`harness/checkpoint_ring.py`) is "
+                       "captured at the existing `Runtime.apply` hash-chain seam (EXT-047/EXT-048's "
+                       "seam) for every accepted write/edit Decision; `/checkpoints` lists it and "
+                       "`/rewind <n|id>` restores prior content THROUGH a real `code.write_file` "
+                       "Decision (gated, root-jailed, hash-chain-logged) -- never a raw file write. "
+                       "`/undo` (EXT-009) is unchanged. Deferred: the ring is wired only into the "
+                       "CLI's primary Runtime, not every internal `Runtime()` construction site, so "
+                       "/agent's own edits aren't yet ring-tracked; no delete-file Decision type, so "
+                       "a file's CREATION can't be fully undone; conversation-level rewind is out "
+                       "of scope (code checkpoints only, matching /undo).",
+        next_lever="Wire the ring into /agent's internal Runtime construction sites for full-run "
+                    "per-edit granularity; a delete-file Decision type for true un-create.",
     ),
+    # #EXT-049-REQ-4 End
     ProductParityRow(
         id=21, feature="Interrupt + steer mid-run",
         state="missing",
