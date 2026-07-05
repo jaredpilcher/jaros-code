@@ -54,9 +54,10 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
   the deterministic host-mutating commands through code.write_file Decisions (optional-runtime idiom:
   CLI→gated, eval-sandbox→raw). Per-module, full-suite-gated. Progress:
   - ✅ **refactor.py (/rename //move)** — EXT-037 REQ-9, commit 2d58ae5, full suite 2018 green.
-  - ▶ **multi_file.py (/fixrepo)** — NEXT slice (in flight).
-  - ⬚ system_builder.py (/buildsystem //modifysystem ~15 sites) — biggest slice.
+  - ✅ **multi_file.py (/fixrepo + shared /undo restore)** — EXT-037 REQ-10, commit 468e3ee, 2030 green.
+  - ▶ **system_builder.py (/buildsystem //modifysystem ~15 sites)** — NEXT slice (biggest), in flight.
   - ⬚ spec_loop.py (/agent).
+  - ⬚ cleanup: cli.py /plan + _nl_fix also call multi_file_fix without a runtime (same gap, quick).
   high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
@@ -177,6 +178,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[Jaros-native: /fixrepo + /undo]** the multi-file auto-fix + undo commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain) — slice 2 of the host-write sweep; the shared restore code means /undo got gated for free — 468e3ee.
 - **[Jaros-native: /rename + /move]** the deterministic rename/move-symbol commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain), not raw Python — slice 1 of the host-write sweep (owner directive); eval-sandbox callers keep the fast raw path — 2d58ae5.
 - **[#20 checkpoint / rewind]** jcode now keeps a ring of your last 10 edits — `/checkpoints` lists them, `/rewind <n>` steps the workspace back; built on the Jaros hash-chain (each edit captured at the gate seam) and every restore goes through a real `code.write_file` Decision, not a raw write — parity 59.4%→62.5% (8 of 16) — 3fc603c.
 - **[★ #110 Tenet-1 compliance — host writes on Jaros]** (owner directive) `/init` + `/remember` now write to your repo through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain log), not raw Python — plus a governance rule that every new product-surface host-write must be a Decision. The audit confirmed the rest of the core already runs in the Jaros runtime — 1154766.
