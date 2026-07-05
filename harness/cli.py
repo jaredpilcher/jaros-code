@@ -112,8 +112,20 @@ Commands (Claude-Code-style):
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
+  /jobs                          list background jobs (id/request/status/started/ended, EXT-052)
+  /logs <id>                     print a background job's recorded output (EXT-052)
+  /stop <id>                     cancel a running background job (kills its recorded pid/tree
+                                 only, never by name, EXT-052)
   (interactive mode) genuinely ambiguous plain requests get ONE clarifying question first (REQ-8)
   /clear  /quit
+
+  Command-line only (EXT-052): background runs surface --
+    jcode --bg "<request>"       submit to run DETACHED; returns a job id immediately
+    jcode jobs  (alias: jcode bg list)   list background jobs
+    jcode logs <id>              print that job's output
+    jcode attach <id>            stream a running job's output live (Ctrl-C detaches; the job
+                                 keeps running -- it does NOT stop it)
+    jcode stop <id>              cancel a running background job
 """
 
 from __future__ import annotations
@@ -626,6 +638,42 @@ class JcodeCli:
         except Exception:
             return "Product-Parity Checklist: (unavailable -- see harness/product_parity.py)"
     # #EXT-041-REQ-1 End
+
+    # #EXT-052-REQ-3 Start
+    def cmd_jobs(self, _arg: str) -> str:
+        """``/jobs`` (EXT-052): list background jobs (id, request, status, started/ended) --
+        deterministic, no model call, never raises."""
+        try:
+            from harness.bg_jobs import format_jobs
+            return format_jobs()
+        except Exception:
+            return "(background jobs list unavailable)"
+
+    def cmd_logs(self, arg: str) -> str:
+        """``/logs <id>`` (EXT-052): print that job's recorded output."""
+        job_id = arg.strip()
+        if not job_id:
+            return "usage: /logs <id>  (see /jobs for known ids)"
+        try:
+            from harness.bg_jobs import read_log
+            return read_log(job_id)
+        except Exception as exc:
+            return f"(could not read logs: {exc})"
+    # #EXT-052-REQ-3 End
+
+    # #EXT-052-REQ-5 Start
+    def cmd_stop(self, arg: str) -> str:
+        """``/stop <id>`` (EXT-052): cancel a running background job by its recorded pid/tree
+        only (never by name); an unknown id or an already-finished job is refused honestly."""
+        job_id = arg.strip()
+        if not job_id:
+            return "usage: /stop <id>  (see /jobs for known ids)"
+        try:
+            from harness.bg_jobs import stop_job
+            return stop_job(job_id)["message"]
+        except Exception as exc:
+            return f"(could not stop job {job_id}: {exc})"
+    # #EXT-052-REQ-5 End
 
     def cmd_agents(self, _arg: str) -> str:
         d = ROOT / ".jaros-data" / "agents"
@@ -2338,6 +2386,58 @@ def _resolve_session_target(continue_flag: bool, resume_ref: "str | None", fork_
 # #EXT-044-REQ-2 End
 
 
+# #EXT-052-REQ-3 Start
+def _dispatch_bg_subcommand(args: "list[str]") -> "int | None":
+    """Recognize the EXT-052 background-jobs subcommands (``--bg``/``jobs``/``bg list``/
+    ``logs <id>``/``attach <id>``/``stop <id>``) as LEADING tokens, exactly like ``-c``/
+    ``--resume`` already take priority over being read as plain request text. Returns ``None``
+    (no match) for every other invocation -- the caller then falls through to today's exact
+    existing parsing, byte-identically (see design.md's "reserved bare-subcommand words" note for
+    the deliberate, narrow collision trade-off this implies).
+    """
+    if not args:
+        return None
+    head = args[0]
+
+    if head == "--bg":
+        from harness.bg_jobs import submit_job
+        request = " ".join(args[1:]).strip()
+        if not request:
+            print("\033[31merror:\033[0m --bg requires a request, e.g. "
+                  'jcode --bg "run the suite"')
+            return 1
+        rec = submit_job(request)
+        print(f"job {rec.id} submitted (pid {rec.pid}, status={rec.status}) "
+              f"-- request: {request[:60]!r}")
+        print(f"  jcode logs {rec.id}     # view output so far")
+        print(f"  jcode attach {rec.id}   # stream live (Ctrl-C detaches, job keeps running)")
+        print(f"  jcode stop {rec.id}     # cancel")
+        return 0
+
+    if args == ["jobs"] or (len(args) >= 2 and args[0] == "bg" and args[1] in ("list", "jobs")):
+        from harness.bg_jobs import format_jobs
+        print(format_jobs())
+        return 0
+
+    if head == "logs" and len(args) == 2:
+        from harness.bg_jobs import read_log
+        print(read_log(args[1]))
+        return 0
+
+    if head == "attach" and len(args) == 2:
+        from harness.bg_jobs import attach_job
+        return attach_job(args[1])
+
+    if head == "stop" and len(args) == 2:
+        from harness.bg_jobs import stop_job
+        result = stop_job(args[1])
+        print(result["message"])
+        return 0 if result["ok"] else 1
+
+    return None
+# #EXT-052-REQ-3 End
+
+
 def main() -> int:
     """Entry point: a one-shot request if given as args or piped via stdin, else the
     interactive REPL.
@@ -2345,6 +2445,15 @@ def main() -> int:
       python -m harness.cli                          # interactive REPL (Claude-Code-like)
       python -m harness.cli /status                  # run one command and exit
       python -m harness.cli "fix the bug in foo.py"   # one plain-language request
+      python -m harness.cli --bg "fix the bug"       # EXT-052: submit to run DETACHED, returns
+                                                      # a job id immediately (never blocks)
+      python -m harness.cli jobs                     # EXT-052: list background jobs (alias:
+                                                      # "jcode bg list")
+      python -m harness.cli logs <id>                # EXT-052: print a background job's output
+      python -m harness.cli attach <id>              # EXT-052: stream a running job's output
+                                                      # live (Ctrl-C detaches, job keeps running)
+      python -m harness.cli stop <id>                # EXT-052: cancel a running background job
+                                                      # (kills its recorded pid/tree only)
       python -m harness.cli --resume <id>            # resume a prior session (REPL, or with a
                                                       # trailing one-shot request after the id)
       echo "fix foo.py" | python -m harness.cli       # headless: request piped via stdin (EXT-043)
@@ -2366,6 +2475,14 @@ def main() -> int:
     import sys
     from harness.tool_stream import should_stream  # #EXT-045-REQ-1
     args = sys.argv[1:]
+    # #EXT-052-REQ-3 Start
+    # Background-jobs subcommands (EXT-052) are recognized FIRST, before any other flag parsing --
+    # exactly like -c/--resume already take priority over being read as plain request text. A
+    # non-match (None) falls through to the existing parsing below, byte-identically.
+    bg_result = _dispatch_bg_subcommand(args)
+    if bg_result is not None:
+        return bg_result
+    # #EXT-052-REQ-3 End
     # #EXT-043-REQ-1 Start
     session_id, output_format, max_turns, rest0 = _parse_headless_args(args)
     # #EXT-044-REQ-2 Start

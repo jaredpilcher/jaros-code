@@ -65,10 +65,17 @@ def test_no_row_is_inflated_to_works_today():
     `fs.read`/`fs.list` tools and wired into the SAME `_route_plain` chain a typed request and a
     skill template already share; `/compact` durably folds + persists a session's older turns by
     REUSING the existing `_summarize_turns()`/`condense()` mechanism, not a second summarizer; an
-    already-short session is an honest no-op) are the rows genuinely delivered end-to-end -- these
-    pins were updated deliberately alongside each landing, not silently."""
+    already-short session is an honest no-op), and row #23 (Background runs surface, EXT-052:
+    `jcode --bg` submits a request to run DETACHED via a real `subprocess.Popen` worker
+    (`harness/bg_worker.py`) whose unit of work is the UNCHANGED EXT-043 `_run_one_shot` path (any
+    host write still passes through the real gated Decision); a durable `JobRecord` persists under
+    `.jaros-data/bg_jobs/`; `jcode jobs`/`logs <id>`/`attach <id>`/`stop <id>` (plus `/jobs`/
+    `/logs <id>`/`/stop <id>` in the REPL) list/read/stream/cancel a job, `stop` killing only the
+    job's recorded pid/tree (mirrors `harness.secure_exec._kill_tree`, never by name); a REPL
+    `/attach` is honestly deferred) are the rows genuinely delivered end-to-end -- these pins were
+    updated deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 24]
+    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 23, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -107,9 +114,10 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), and #24 (EXT-045) are genuine "works"
-    assert result["n_works"] == 10
-    assert result["n_partial"] + result["n_missing"] == 6
+    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), and #24 (EXT-045)
+    # are genuine "works"
+    assert result["n_works"] == 11
+    assert result["n_partial"] + result["n_missing"] == 5
     assert 0.0 <= result["pct"] < 100.0
 
 

@@ -1,0 +1,47 @@
+{
+  "REQ-6": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 300,
+      "endLine": 324
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 642,
+      "endLine": 662
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2389,
+      "endLine": 2438
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2478,
+      "endLine": 2485
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 664,
+      "endLine": 676
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/bg_worker.py",
+      "startLine": 19,
+      "endLine": 49
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/bg_jobs.py",
+      "startLine": 39,
+      "endLine": 347
+    }
+  ]
+}

@@ -15,12 +15,13 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, ten rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, eleven rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
 skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #17 EXT-048's permission rules
 + modes UX, #19 EXT-050's user-authorable subagents, #20 EXT-049's fine-grained checkpoint/
-rewind, #22 EXT-051's `@path`/`@dir/` refs + `/compact`, #24 EXT-045's streaming tool events +
-statusline) are genuinely ``"works"``; most others remain ``"missing"``
+rewind, #22 EXT-051's `@path`/`@dir/` refs + `/compact`, #23 EXT-052's background runs surface,
+#24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most others remain
+``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -296,14 +297,31 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "deferred on row #14, EXT-042).",
     ),
     # #EXT-051-REQ-3 End
+    # #EXT-052-REQ-6 Start
     ProductParityRow(
         id=23, feature="Background runs surface",
-        state="partial",
-        current_state="Runner/daemon infra exists internally (run_forever, experiment chain); "
-                       "not exposed as a product surface (`--bg`/attach/logs/stop).",
-        next_lever="`jcode --bg` submits through the existing inbox; `jcode logs/attach/stop "
-                    "<id>` read the Jaros log.",
+        state="works",
+        current_state="EXT-052: `jcode --bg \"<request>\"` submits a request to run DETACHED "
+                       "(a real `subprocess.Popen` worker process, `harness/bg_worker.py`) and "
+                       "returns a short job id immediately -- the worker's unit of work is the "
+                       "UNCHANGED EXT-043 `_run_one_shot` path, so any host-project write the job "
+                       "performs still goes through the real gated `code.write_file` Decision "
+                       "exactly like a foreground run. A durable `JobRecord` (id/request/status/"
+                       "pid/started/ended/log/exit-code) persists under `.jaros-data/bg_jobs/` "
+                       "(internal runtime state, not a host write); `jcode jobs` (alias `jcode bg "
+                       "list`) lists jobs, `jcode logs <id>` prints recorded output, `jcode attach "
+                       "<id>` streams new output until the job ends or Ctrl-C detaches (never "
+                       "stopping it), `jcode stop <id>` kills only the job's RECORDED pid/tree "
+                       "(mirrors `harness.secure_exec._kill_tree`, never a name-based kill) and "
+                       "marks it stopped; a stale `running` record whose pid died unreported is "
+                       "honestly reconciled to `failed`. `/jobs`/`/logs <id>`/`/stop <id>` mirror "
+                       "the CLI surface in the REPL; the worker's `_run_one_shot` call is wrapped "
+                       "in the EXISTING `harness.heartbeat` mechanism so it shows up in `/status`.",
+        next_lever="A REPL `/attach` (deliberately deferred -- CLI-only in this pass); job "
+                    "resource limits/quotas; a fully-namespaced `jcode bg <verb>` family beyond "
+                    "the `bg list` alias.",
     ),
+    # #EXT-052-REQ-6 End
     # #EXT-045-REQ-3 Start
     ProductParityRow(
         id=24, feature="Terminal UX polish",
