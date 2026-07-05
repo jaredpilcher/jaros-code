@@ -1576,3 +1576,58 @@ ADD TO, never shrink below.
   explicit follow-up — a LIVE gemma re-measurement of accept-rates before/after this fix,
   and wiring `build_system_best_of_k` into the `/buildsystem` CLI command — remains open,
   per REQ-25's own pre-existing follow-up, and does not block this task)
+
+### [TASK-38] Behavioral acceptance honesty: error-in-output detection + add/list round-trip (REQ-27, task #121)
+
+MEASURED PROBLEM (2026-07-05), behavioral verification of a `done=True` build: REQ-26's
+deterministic minimum per-command checks (`_no_crash_subprocess_check`) assert ONLY
+`'Traceback (most recent call last)' not in result.stderr` — a datastore CLI that gracefully
+CATCHES its own error and PRINTS it at exit-code 0 (`"An error occurred while listing notes:
+... missing 1 required positional argument: 'db_path'"`) PASSES the no-crash check while
+being behaviorally broken (LIVE-measured: `add` doesn't persist, `list` never shows an added
+note) — `done=True` was HOLLOW, a new false-done class directly beneath REQ-26's own floor.
+
+#### Steps
+1. Added `harness/system_builder.py::_has_error_marker(text)` — a host-side (and thus
+   directly unit-testable) marker check plus `_ERROR_MARKER_HELPER_SRC`, a generated-code
+   mirror built from the SAME compiled regex pattern strings (single source of truth, no
+   drift): a line starting with `Traceback`/`Exception`/`Error`, or a substring match
+   (case-insensitive) for `an error occurred` / `missing ... required ... argument` / `not
+   found`. Anchored conservatively (line-start for the class-name forms) so an argparse-
+   style `"prog: error: ..."` usage line (prefixed by the program name, not bare at
+   line-start) and normal output that legitimately contains the word "error" as data are
+   never false-flagged. DONE.
+2. Strengthened `_no_crash_subprocess_check` (REQ-26): every generated invocation now also
+   embeds `_ERROR_MARKER_HELPER_SRC` and asserts `not _has_error_marker(result.stdout +
+   result.stderr)` in addition to the pre-existing no-traceback assertion, for every
+   minimum invocation including the usage/--help check. DONE.
+3. Added `_derive_roundtrip_pair(spec)` (conservative whole-word match against a small
+   fixed ADD-like set `add/create/save/insert/new` and LIST-like set
+   `list/show/print/get/all`; returns `None` — no check emitted — unless the sentence
+   clearly names one of each) and `_roundtrip_acceptance_check(entry, add_cmd, list_cmd)`
+   (generates a deterministic check: run `<entry> <add_cmd> <sentinel>` — trying 1 then 2
+   positional sentinel args — then `<entry> <list_cmd>`, asserting the fixed literal
+   sentinel token appears in the list output for at least one arg-count that didn't itself
+   error). Composed into `_minimum_acceptance` (only when an entry filename resolves and a
+   pair is derived) so it flows through the existing `_compose_acceptance_checklist`
+   union/de-dup unchanged. NO ORACLE LEAK: the sentinel is a fixed literal never derived
+   from or leaked into the solving prompt; the check only asserts the system's OWN stated
+   add/list contract. DONE.
+4. Wrapped all new/changed lines with `# #EXT-036-REQ-27 Start` / `# #EXT-036-REQ-27 End`
+   per the links skill (placed immediately after the existing `# #EXT-036-REQ-26 End`
+   region so REQ-26's own tag boundaries are untouched). DONE.
+5. Tests: extended `tests/test_ext036_acceptance_completeness.py` — unit tests for
+   `_has_error_marker` (catches the measured graceful-error phrasing and a bare
+   `Error:`-prefixed line; does NOT flag an argparse-style `"prog: error: ..."` usage line
+   or a legitimate `"...error rate..."` data line) and `_derive_roundtrip_pair`
+   (finds an add+list pair; conservative `None` when the sentence names only one side, or
+   neither; never raises on bad input); an end-to-end `build_system` run against a fake CLI
+   that gracefully prints an error at `rc=0` on its primary command now reports
+   `done=False`; an end-to-end run against a fake CLI whose add+list genuinely round-trips
+   (writes then reads back a real file) reports `done=True` (no new false negative). DONE.
+6. Ran `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirmed
+   green and recorded the exact pass/skip count + exit code. DONE.
+
+#### Implements
+- [REQ-27] Behavioral acceptance honesty — error-in-output detection + add/list round-trip
+  (this task introduces AND fully implements REQ-27 for its stated scope)

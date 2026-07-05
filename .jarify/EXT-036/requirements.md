@@ -1039,3 +1039,67 @@ the bar for a given sentence can never be SPARSER than the minimum.
   re-measurement of accept-rates before/after this fix (the honest expectation is a LOWER
   measured accept-rate, not a regression), and wiring `build_system_best_of_k` into the
   `/buildsystem` CLI command — open
+
+### [REQ-27] Behavioral acceptance honesty — error-in-output detection + add/list round-trip  (DONE — EXT-036 TASK-38, 2026-07-05)
+
+**MEASURED PROBLEM (2026-07-05), behavioral verification of a `done=True` build:** REQ-26's
+deterministic minimum per-command checks (`_no_crash_subprocess_check`) assert ONLY
+`'Traceback (most recent call last)' not in result.stderr` — a NO-CRASH bar, not a
+BEHAVIORAL one. A built datastore CLI that gracefully CATCHES its own exception and PRINTS
+it (e.g. `"An error occurred while listing notes: DatabaseManager.__init__() missing 1
+required positional argument: 'db_path'"`) at exit-code 0 PASSES the no-crash check while
+being genuinely broken — LIVE-measured: `done=True` was reported, yet running the built CLI
+by hand, `list` printed that error and `add` never actually persisted (a note added then
+listed did NOT appear). `done=True` was HOLLOW — a NEW false-done class sitting directly
+beneath REQ-26's own floor: "runs without crashing" is not the same claim as "works".
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_has_error_marker(text)` (+ its generated-code mirror
+  `_ERROR_MARKER_HELPER_SRC`, single source of truth via the same compiled regex pattern
+  strings) — a check now FAILS if a command's combined stdout+stderr contains a standalone
+  error marker EVEN AT `rc=0`: a line starting with `Traceback`/`Exception`/`Error`, or a
+  substring match for `an error occurred` / `missing ... required ... argument` / `not
+  found` (case-insensitive). Conservatively ANCHORED (line-start for the class-name forms,
+  specific fixed phrases for the substring forms) so a legitimate usage/help message (e.g.
+  argparse's own `"prog: error: the following arguments are required: ..."`, which is
+  prefixed by the program name, never bare at line-start) and normal output that merely
+  contains the word "error" as DATA (e.g. `"Server error rate: 0.02"`) are never
+  false-flagged. `_no_crash_subprocess_check` (REQ-26) now asserts BOTH the pre-existing
+  no-traceback rule AND this marker check for every minimum invocation, including the
+  usage/--help check (which is unaffected in practice by the anchoring above). — **DONE
+  2026-07-05**
+- [x] `harness/system_builder.py::_derive_roundtrip_pair(spec)` + `_roundtrip_acceptance_check(entry,
+  add_cmd, list_cmd)`, composed into `_minimum_acceptance`: when the SPEC sentence clearly
+  names (as a whole word, quoted or bare) BOTH an ADD-like command (`add`/`create`/`save`/
+  `insert`/`new`) AND a LIST-like command (`list`/`show`/`print`/`get`/`all`), a
+  DETERMINISTIC behavioral round-trip check is added — from a clean invocation, run
+  `<entry> <add-cmd> <sentinel...>` then `<entry> <list-cmd>`, and assert a fixed literal
+  sentinel token APPEARS in the list output (real persistence, not just no-crash). Tries the
+  add command with 1 then 2 positional sentinel args (covers both `add <text>` and `add
+  <title> <content>` conventions) — the round-trip PASSES if ANY arg-count both adds without
+  an error marker AND the sentinel shows up in the subsequent list output. Conservative:
+  emitted ONLY when the sentence names a clear add+list pair (skipped otherwise, e.g. a
+  plain "add(a, b)" calculator sentence with no list-like word derives nothing new). — **DONE
+  2026-07-05**
+- [x] NO ORACLE LEAK (Tenet 3): the round-trip asserts only that a user-supplied SENTINEL
+  literal (never derived from or leaked into the solving prompt) added via the system's own
+  ADD command appears via its own LIST command — the system's own stated contract, never a
+  hidden expected value. — **DONE 2026-07-05**
+- [x] Composed into `_minimum_acceptance`/`_compose_acceptance_checklist` (REQ-26) exactly
+  like every other minimum check — UNIONED with the model's own proposals, never
+  replacing them; `done=True` iff every composed check (now including the strengthened
+  error-marker + round-trip checks) passes from a clean state. Honest Tenet-3 consequence:
+  MORE builds correctly become `done=False` under this stricter floor — a trustworthy
+  `done` on fewer builds is the intended outcome, not a regression. A REAL working
+  add+list system still gets `done=True` (no new false negative). — **DONE 2026-07-05**
+- [x] Proven OFFLINE (`tests/test_ext036_acceptance_completeness.py`, extended, no live
+  model): `_has_error_marker` unit behavior (catches the measured graceful-error phrasing
+  and a bare `Error:`-prefixed line; does NOT flag an argparse-style `"prog: error: ..."`
+  usage line or a legitimate `"...error rate..."` data line); `_derive_roundtrip_pair` unit
+  behavior (finds an add+list pair, is conservative/returns `None` on a sentence naming
+  only one side or neither, never raises on bad input); an end-to-end `build_system` run
+  against a fake CLI that gracefully prints `"Error: ..."` at `rc=0` on its primary command
+  now reports `done=False` (caught by the strengthened minimum, not just a trivial
+  self-derived check); an end-to-end run against a fake CLI whose add+list genuinely
+  round-trips (writes then reads back a real file/store) reports `done=True`; full
+  `tests/` suite stays green. — **DONE 2026-07-05**

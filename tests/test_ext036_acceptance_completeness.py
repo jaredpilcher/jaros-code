@@ -29,7 +29,9 @@ from harness.system_builder import (
     build_system,
     build_system_best_of_k,
     _compose_acceptance_checklist,
+    _derive_roundtrip_pair,
     _extract_command_tokens,
+    _has_error_marker,
     _minimum_acceptance,
     _minimum_entry_filename,
 )
@@ -341,3 +343,167 @@ def test_best_of_k_selects_on_the_full_bar_not_the_sparse_self_checklist(tmp_pat
     assert result["attempts_run"] == 2   # did NOT early-exit on attempt 1's sparse pass
     assert result["done"] is True
     assert (root / "main.py").read_text(encoding="utf-8").strip() == FIXED_CLI.strip()
+
+
+# ===========================================================================================
+# TASK-38 (REQ-27): behavioral acceptance honesty -- error-in-output detection + add/list
+# round-trip (task #121). MEASURED PROBLEM: a datastore CLI that gracefully CATCHES its own
+# exception and PRINTS it at rc=0 (no traceback at all) PASSED the pre-existing no-crash
+# check while genuinely broken (add never persisted). This section proves the fix.
+# ===========================================================================================
+
+# --- (unit) _has_error_marker --------------------------------------------------------------
+
+def test_has_error_marker_catches_the_measured_graceful_error_phrasing():
+    text = ("An error occurred while listing notes: DatabaseManager.__init__() "
+            "missing 1 required positional argument: 'db_path'")
+    assert _has_error_marker(text) is True
+
+
+def test_has_error_marker_catches_a_bare_error_prefixed_line():
+    assert _has_error_marker("Error: could not open the store\n") is True
+    assert _has_error_marker("Exception: boom\n") is True
+    assert _has_error_marker("Traceback (most recent call last):\n  ...\n") is True
+
+
+def test_has_error_marker_catches_not_found_phrase():
+    assert _has_error_marker("note not found\n") is True
+
+
+def test_has_error_marker_does_not_flag_argparse_style_usage_error_line():
+    # argparse's own error line is PREFIXED by the program name -- never bare at line-start --
+    # so it must NOT be treated as the graceful-error-print pattern this check targets.
+    usage_output = (
+        "usage: main.py [-h] {add,list} ...\n"
+        "main.py: error: the following arguments are required: command\n"
+    )
+    assert _has_error_marker(usage_output) is False
+
+
+def test_has_error_marker_does_not_flag_error_as_legitimate_data():
+    # the word "error" appearing as ordinary DATA (not a standalone marker phrase / line-start
+    # exception name) must never false-fail a genuinely-working command.
+    assert _has_error_marker("Server error rate: 0.02\n") is False
+    assert _has_error_marker("log: connection errors this week: 3\n") is False
+
+
+def test_has_error_marker_never_raises_on_bad_input():
+    assert _has_error_marker(None) is False
+    assert _has_error_marker("") is False
+    assert _has_error_marker(123) is False
+
+
+# --- (unit) _derive_roundtrip_pair -----------------------------------------------------------
+
+def test_derive_roundtrip_pair_finds_add_and_list():
+    assert _derive_roundtrip_pair(DATASTORE_SPEC) == ("add", "list")
+
+
+def test_derive_roundtrip_pair_conservative_when_only_one_side_present():
+    assert _derive_roundtrip_pair("A calculator CLI with an add(a, b) function.") is None
+    assert _derive_roundtrip_pair("Show all the widgets in a table.") is None
+
+
+def test_derive_roundtrip_pair_none_when_neither_present():
+    assert _derive_roundtrip_pair("A tiny CLI that converts Celsius to Fahrenheit.") is None
+
+
+def test_derive_roundtrip_pair_never_raises_on_bad_input():
+    assert _derive_roundtrip_pair(None) is None
+    assert _derive_roundtrip_pair("") is None
+    assert _derive_roundtrip_pair(123) is None
+
+
+# --- (end to end) a CLI that gracefully catches+prints an error at rc=0 is no longer a
+# hollow pass -- the strengthened minimum's error-marker check catches it ------------------
+
+ROUNDTRIP_SPEC = (
+    "A tiny command-line notes datastore in main.py: `python main.py add <text...>` adds a "
+    "note and prints `added`; `python main.py list` lists every note, one per line."
+)
+
+ROUNDTRIP_PLAN = json.dumps({
+    "modules": [
+        {"name": "main.py",
+         "responsibility": "notes datastore CLI: add persists, list shows",
+         "exports": [{"name": "add_note", "signature": "def add_note(text):"},
+                     {"name": "list_notes", "signature": "def list_notes():"}],
+         "imports": []}
+    ],
+    "entrypoint": "main.py",
+    "acceptance": "add persists a note, list shows it",
+})
+
+# BROKEN (the measured bug CLASS): `add_note` is a silent no-op (never persists) and
+# `list_notes` gracefully catches its own internal error and PRINTS it -- rc=0, no traceback
+# at all -- exactly the false-done pattern MEASURED live on notes-sqlite-cli.
+GRACEFUL_ERROR_CLI = (
+    "import sys\n\n"
+    "def add_note(text):\n"
+    "    pass  # BUG: never actually persists\n\n"
+    "def list_notes():\n"
+    "    try:\n"
+    "        raise TypeError(\"__init__() missing 1 required positional argument: 'db_path'\")\n"
+    "    except Exception as e:\n"
+    "        print('An error occurred while listing notes: ' + str(e))\n\n"
+    "if __name__ == '__main__':\n"
+    "    if len(sys.argv) > 1 and sys.argv[1] == 'add':\n"
+    "        add_note(' '.join(sys.argv[2:]))\n"
+    "        print('added')\n"
+    "    elif len(sys.argv) > 1 and sys.argv[1] == 'list':\n"
+    "        list_notes()\n"
+)
+
+
+def test_graceful_error_at_rc0_is_caught_and_done_is_false(tmp_path):
+    """THE CORE FIX (REQ-27, task #121): a CLI that gracefully catches+prints its own error at
+    exit-code 0 (no traceback, so the PRE-EXISTING no-crash check alone would have passed it)
+    is now correctly caught by the strengthened error-marker check -- `done` is honestly
+    False, not a hollow pass."""
+    llm = _CannedLlm(plan=ROUNDTRIP_PLAN, module_first={"main.py": GRACEFUL_ERROR_CLI},
+                      checklist_first=ONE_TRIVIAL_MODEL_CHECK)
+    result = build_system(ROUNDTRIP_SPEC, tmp_path / "graceful_error_cli", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is False
+    assert result["unmet"]
+
+
+# WORKING: add_note genuinely persists to a real file, list_notes genuinely reads it back.
+WORKING_ROUNDTRIP_CLI = (
+    "import json\n"
+    "import os\n"
+    "import sys\n\n"
+    "STORE = 'notes.json'\n\n"
+    "def add_note(text):\n"
+    "    data = []\n"
+    "    if os.path.exists(STORE):\n"
+    "        with open(STORE) as f:\n"
+    "            data = json.load(f)\n"
+    "    data.append(text)\n"
+    "    with open(STORE, 'w') as f:\n"
+    "        json.dump(data, f)\n\n"
+    "def list_notes():\n"
+    "    if not os.path.exists(STORE):\n"
+    "        return []\n"
+    "    with open(STORE) as f:\n"
+    "        return json.load(f)\n\n"
+    "if __name__ == '__main__':\n"
+    "    if len(sys.argv) > 1 and sys.argv[1] == 'add':\n"
+    "        add_note(' '.join(sys.argv[2:]))\n"
+    "        print('added')\n"
+    "    elif len(sys.argv) > 1 and sys.argv[1] == 'list':\n"
+    "        for n in list_notes():\n"
+    "            print(n)\n"
+)
+
+
+def test_working_add_list_roundtrip_yields_done_true(tmp_path):
+    """VALUE-PRESERVING: a REAL working add+list datastore (add persists, list genuinely
+    reads it back, including the round-trip check's own sentinel) still gets `done=True` --
+    the strengthened floor introduces no new false negative for genuinely-working behavior."""
+    llm = _CannedLlm(plan=ROUNDTRIP_PLAN, module_first={"main.py": WORKING_ROUNDTRIP_CLI},
+                      checklist_first=ONE_TRIVIAL_MODEL_CHECK)
+    result = build_system(ROUNDTRIP_SPEC, tmp_path / "working_roundtrip_cli", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []

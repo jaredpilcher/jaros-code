@@ -817,14 +817,25 @@ def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[st
     Deliberately does NOT assert on stdout CONTENT or an exact exit code -- asserting a
     specific expected VALUE would require knowing the answer up front (an oracle leak); this
     floor only asserts the command doesn't genuinely crash -- the systematically-missed bug
-    class TASK-35 measured (a CLI branch that skips required setup and raises)."""
+    class TASK-35 measured (a CLI branch that skips required setup and raises).
+    STRENGTHENED (REQ-27, task #121): also asserts the run's combined stdout+stderr contains
+    no standalone ERROR MARKER (`_has_error_marker`) -- closes the measured false-done class
+    where a CLI gracefully CATCHES its own exception and PRINTS it at `rc=0` (no traceback at
+    all), which the pre-existing no-traceback check alone could not see."""
     code = (
+        # #EXT-036-REQ-27 Start
+        _ERROR_MARKER_HELPER_SRC +
+        # #EXT-036-REQ-27 End
         "import subprocess, sys\n"
         f"entry = {entry!r}\n"
         f"for argv in {invocations!r}:\n"
         "    result = subprocess.run([sys.executable, entry] + argv, capture_output=True,\n"
         "                            text=True, timeout=20, input='')\n"
         "    assert 'Traceback (most recent call last)' not in result.stderr, result.stderr\n"
+        # #EXT-036-REQ-27 Start
+        "    _combined = (result.stdout or '') + (result.stderr or '')\n"
+        "    assert not _has_error_marker(_combined), _combined\n"
+        # #EXT-036-REQ-27 End
     )
     return {"name": name, "code": code}
 
@@ -840,7 +851,11 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
         (`_extract_command_tokens`), each invoking the system's real CLI entrypoint
     Composed by `_compose_acceptance_checklist` with the model's own proposals via UNION
     (never REPLACING them) -- see `build_system`/`_score_build_attempt`. Never raises; `[]`
-    only when there are no modules to check at all (nothing built yet)."""
+    only when there are no modules to check at all (nothing built yet).
+    STRENGTHENED (REQ-27, task #121): every check above additionally rejects a graceful
+    error-marker in the run output (see `_no_crash_subprocess_check`), and -- when the spec
+    clearly names an add+list command pair -- a BEHAVIORAL round-trip check is added too
+    (`_roundtrip_acceptance_check`): real persistence, not just no-crash."""
     if not mods:
         return []
     checks = list(_smoke_checklist(mods))
@@ -851,6 +866,12 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
         for cmd in _extract_command_tokens(spec):
             checks.append(_no_crash_subprocess_check(
                 f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]]))
+        # #EXT-036-REQ-27 Start
+        pair = _derive_roundtrip_pair(spec)
+        if pair:
+            add_cmd, list_cmd = pair
+            checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
+        # #EXT-036-REQ-27 End
     return checks
 
 
@@ -880,6 +901,140 @@ def _compose_acceptance_checklist(spec: str, mods: list[dict], llm,
             combined.append(c)
     return combined
 # #EXT-036-REQ-26 End
+# #EXT-036-REQ-27 Start
+# TASK-38 (REQ-27): BEHAVIORAL acceptance honesty -- closes a MEASURED false-done class
+# sitting directly beneath REQ-26's own floor (task #121). LIVE-measured: a built datastore
+# CLI whose `list` command gracefully CATCHES its own exception and PRINTS it (e.g. "An
+# error occurred while listing notes: DatabaseManager.__init__() missing 1 required
+# positional argument: 'db_path'") at exit-code 0 PASSES `_no_crash_subprocess_check`'s
+# no-traceback assertion while being genuinely broken -- `done=True` was reported even
+# though `add` never actually persisted a note. "Runs without crashing" != "works". The fix
+# has two independent, DETERMINISTIC parts: (1) a check now FAILS on a standalone ERROR
+# MARKER in the run's combined stdout+stderr even at rc=0 (not just an unhandled traceback);
+# (2) when the spec names a clear add+list command pair, a BEHAVIORAL round-trip check
+# actually asserts real persistence (add a sentinel, then see it in list) -- not just
+# no-crash. NO ORACLE LEAK: the sentinel is a fixed literal never derived from/leaked into
+# the solving prompt; the round-trip only asserts the system's OWN stated add/list contract.
+
+_ERR_LINE_PATTERN = r"(?im)^\s*(Traceback|Exception|Error)\b"
+_ERR_SUBSTR_PATTERNS = (
+    r"(?i)an error occurred",
+    r"(?i)missing\b.{0,80}\brequired\b.{0,40}\bargument",
+    r"(?i)\bnot found\b",
+)
+_ERR_LINE_RE = re.compile(_ERR_LINE_PATTERN)
+_ERR_SUBSTR_RES = tuple(re.compile(p) for p in _ERR_SUBSTR_PATTERNS)
+
+
+def _has_error_marker(text) -> bool:
+    """Deterministic, CONSERVATIVELY-ANCHORED error-marker detector (REQ-27): True if `text`
+    (a run's combined stdout+stderr) contains a standalone error marker -- a line starting
+    with `Traceback`/`Exception`/`Error` (catches a graceful `print(f"Error: {e}")` that
+    never raises a real exception, as well as the traceback's own header line), or a
+    substring match (case-insensitive) for `an error occurred` / `missing ... required ...
+    argument` / `not found`. Anchoring the class-name forms to LINE-START (rather than any
+    substring) is what keeps this conservative: an argparse-style usage line like
+    `"prog.py: error: the following arguments are required: cmd"` is prefixed by the program
+    name so it never matches the line-start pattern, and ordinary output that legitimately
+    contains the word "error" as DATA (e.g. `"Server error rate: 0.02"`) matches none of the
+    fixed phrases above. Never raises on non-string/empty input."""
+    if not isinstance(text, str) or not text:
+        return False
+    if _ERR_LINE_RE.search(text):
+        return True
+    return any(p.search(text) for p in _ERR_SUBSTR_RES)
+
+
+# Generated-code MIRROR of `_has_error_marker` above, built from the SAME pattern strings
+# (single source of truth -- no drift) so a subprocess-run acceptance check can call it
+# without importing this harness module.
+_ERROR_MARKER_HELPER_SRC = (
+    "import re\n"
+    f"_err_line_re = re.compile({_ERR_LINE_PATTERN!r})\n"
+    f"_err_substr_res = [re.compile(p) for p in {list(_ERR_SUBSTR_PATTERNS)!r}]\n"
+    "def _has_error_marker(text):\n"
+    "    if not text:\n"
+    "        return False\n"
+    "    if _err_line_re.search(text):\n"
+    "        return True\n"
+    "    return any(p.search(text) for p in _err_substr_res)\n"
+)
+
+_ADD_LIKE_WORDS = ("add", "create", "save", "insert", "new")
+_LIST_LIKE_WORDS = ("list", "show", "print", "get", "all")
+_ROUNDTRIP_SENTINEL = "jarosrtsentinel471"
+
+
+def _first_word_match(spec: str, words: "tuple[str, ...]") -> "str | None":
+    """Conservative, DETERMINISTIC whole-word (case-insensitive) match of the first `words`
+    entry literally present in `spec` -- e.g. matches `'add'`/quoted `'add'` but NOT `adding`
+    or `adder` (word-boundary anchored). Never raises."""
+    if not isinstance(spec, str) or not spec.strip():
+        return None
+    for w in words:
+        try:
+            if re.search(r"\b" + re.escape(w) + r"\b", spec, re.I):
+                return w
+        except re.error:
+            continue
+    return None
+
+
+def _derive_roundtrip_pair(spec: str) -> "tuple[str, str] | None":
+    """Conservative derivation (REQ-27): when the SPEC sentence clearly names BOTH an
+    ADD-like command (`add`/`create`/`save`/`insert`/`new`) AND a LIST-like command
+    (`list`/`show`/`print`/`get`/`all`) as whole words, returns `(add_cmd, list_cmd)`; else
+    `None` (no round-trip check emitted -- under-assert rather than false-fail/hallucinate a
+    command pair the sentence doesn't clearly name). Never raises."""
+    try:
+        add_cmd = _first_word_match(spec, _ADD_LIKE_WORDS)
+        list_cmd = _first_word_match(spec, _LIST_LIKE_WORDS)
+    except Exception:
+        return None
+    if add_cmd and list_cmd and add_cmd != list_cmd:
+        return add_cmd, list_cmd
+    return None
+
+
+def _roundtrip_acceptance_check(entry: str, add_cmd: str, list_cmd: str) -> dict:
+    """One BEHAVIORAL minimum acceptance check (REQ-27): from a fresh invocation, runs
+    `<entry> <add_cmd> <sentinel...>` (trying 1 then 2 positional sentinel args -- covers
+    both an `add <text>` and an `add <title> <content>` convention) followed by
+    `<entry> <list_cmd>`, and asserts the FIXED LITERAL sentinel token actually appears in
+    the list output for at least one arg-count whose add invocation itself produced no error
+    marker. This is genuine PERSISTENCE verification, not just no-crash -- catches the
+    measured bug class where `add` silently fails to persist. NO ORACLE LEAK: `sentinel` is
+    a fixed literal never derived from/leaked into the solving prompt; the assertion is only
+    that the system's OWN add/list contract holds."""
+    code = (
+        _ERROR_MARKER_HELPER_SRC +
+        "import subprocess, sys\n"
+        f"entry = {entry!r}\n"
+        f"add_cmd = {add_cmd!r}\n"
+        f"list_cmd = {list_cmd!r}\n"
+        f"sentinel = {_ROUNDTRIP_SENTINEL!r}\n"
+        "ok = False\n"
+        "last_add = ''\n"
+        "last_list = ''\n"
+        "for nargs in (1, 2):\n"
+        "    args = [sentinel] * nargs\n"
+        "    add_result = subprocess.run([sys.executable, entry, add_cmd] + args,\n"
+        "                                 capture_output=True, text=True, timeout=20, input='')\n"
+        "    add_out = (add_result.stdout or '') + (add_result.stderr or '')\n"
+        "    last_add = add_out\n"
+        "    if _has_error_marker(add_out):\n"
+        "        continue\n"
+        "    list_result = subprocess.run([sys.executable, entry, list_cmd],\n"
+        "                                  capture_output=True, text=True, timeout=20, input='')\n"
+        "    list_out = (list_result.stdout or '') + (list_result.stderr or '')\n"
+        "    last_list = list_out\n"
+        "    if sentinel in list_out:\n"
+        "        ok = True\n"
+        "        break\n"
+        "assert ok, 'round-trip failed: add=' + repr(last_add) + ' list=' + repr(last_list)\n"
+    )
+    return {"name": f"minimum: '{add_cmd}'+'{list_cmd}' round-trip persists", "code": code}
+# #EXT-036-REQ-27 End
 # #EXT-036-REQ-22 Start
 # TASK-25: wiring `harness/server_oracle.py` into `build_system`'s acceptance so a DETECTED
 # web service is HONESTLY HTTP-verified instead of falling back to the import-only
