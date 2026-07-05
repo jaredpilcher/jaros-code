@@ -15,12 +15,12 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, nine rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, ten rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
 skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #17 EXT-048's permission rules
 + modes UX, #19 EXT-050's user-authorable subagents, #20 EXT-049's fine-grained checkpoint/
-rewind, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most
-others remain ``"missing"``
+rewind, #22 EXT-051's `@path`/`@dir/` refs + `/compact`, #24 EXT-045's streaming tool events +
+statusline) are genuinely ``"works"``; most others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -40,7 +40,7 @@ from typing import Iterable
 # The date this module's PARITY_ROWS were last checked against docs/GAP-MAP.md's
 # "## Product-surface parity" section (itself sourced from the official Claude Code docs). Bump
 # this whenever the rows below are re-synced (target cadence: monthly).
-LAST_SYNCED = "2026-07-04"
+LAST_SYNCED = "2026-07-05"
 
 # Source of truth for these rows.
 GAP_MAP_SOURCE = "docs/GAP-MAP.md#product-surface-parity"
@@ -272,14 +272,30 @@ PARITY_ROWS: "list[ProductParityRow]" = [
         next_lever="Cooperative cancel points between plan steps (clerk checks an interrupt "
                     "flag; partial state preserved via checkpoints).",
     ),
+    # #EXT-051-REQ-3 Start
     ProductParityRow(
         id=22, feature="Context management for long sessions",
-        state="partial",
-        current_state="Compaction was deferred earlier (bounded flows didn't need it); "
-                       "long-horizon runs now do; no `@file` references or `/compact`.",
-        next_lever="Deterministic compactor (summarize decided/verified state into the spec -- "
-                    "jarify IS the compaction target); `@path` expansion in the REPL.",
+        state="works",
+        current_state="EXT-051: `@path`/`@dir/` references in ANY plain request (typed, or a "
+                       "skill-substituted template) deterministically inline a file's content "
+                       "(bounded, truncation noted) or a bounded directory listing -- "
+                       "`harness/atrefs.py` is pure string composition, reading through the "
+                       "EXISTING gated `fs.read`/`fs.list` tools (the same seam `/read`/`/ls` "
+                       "already use, never a raw `open()`), wired into the SAME `_route_plain` "
+                       "chain a typed request and a skill template already share; a missing/"
+                       "unreadable ref degrades to an honest `(not found)` annotation, never a "
+                       "crash. `/compact` durably shrinks the CURRENT session's transcript by "
+                       "reusing the EXISTING `_summarize_turns()` narrow-model-call mechanism "
+                       "EXT-036 REQ-15's `condense()` already built (not a second summarizer) -- "
+                       "unlike `condense()`'s transient per-turn VIEW, it mutates + persists "
+                       "`session.turns`, reporting before/after turn+char counts; an "
+                       "already-short session is an honest no-op (never wastes a summarize call).",
+        next_lever="A context-usage meter/percentage display; an auto-compact-on-threshold "
+                    "trigger (today's auto-condensation stays a transient view, `/compact` is "
+                    "manual-only); `@path` expansion inside `JCODE.md` itself (already named "
+                    "deferred on row #14, EXT-042).",
     ),
+    # #EXT-051-REQ-3 End
     ProductParityRow(
         id=23, feature="Background runs surface",
         state="partial",

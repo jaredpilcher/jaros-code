@@ -315,3 +315,55 @@ def condense(session: "Session", llm=None, keep: int = CONDENSE_KEEP, max_chars:
     summary_text = _summarize_turns(oldest, llm)
     return [{"role": "summary", "text": summary_text}] + recent_turns
 # #EXT-036-REQ-15 End
+
+
+# #EXT-051-REQ-2 Start
+def compact_session(session: "Session", llm=None, keep: int = CONDENSE_KEEP) -> dict:
+    """Deterministic MANUAL compaction (EXT-051 REQ-2, ``/compact``): permanently folds this
+    session's OLDER turns (everything before the most-recent ``keep``) into a single running
+    summary and PERSISTS the result -- reusing the SAME ``_summarize_turns()`` narrow-model-call
+    mechanism ``condense()`` (REQ-15, above) already built, not a second summarization mechanism.
+
+    Unlike ``condense()`` (a transient, read-only VIEW handed to the router that never touches
+    ``session.turns``), this durably mutates + persists the session -- ``/compact`` is the user's
+    explicit "shrink this session now" action, so every subsequent turn starts from the compacted
+    state.
+
+    A session with ``keep`` turns or fewer has nothing older to fold -- an honest no-op
+    (``compacted=False``) is returned WITHOUT invoking ``_summarize_turns``/the model at all, so a
+    short session never wastes a summarization call. Never raises -- any internal failure degrades
+    to a safe ``compacted=False`` result rather than crashing the caller."""
+    try:
+        before_turns = len(session.turns)
+        before_chars = sum(len(t.get("text", "")) for t in session.turns)
+    except Exception:
+        return {"compacted": False, "before_turns": 0, "after_turns": 0,
+                "before_chars": 0, "after_chars": 0,
+                "message": "compact failed -- session left unchanged"}
+
+    if before_turns <= keep:
+        return {
+            "compacted": False, "before_turns": before_turns, "after_turns": before_turns,
+            "before_chars": before_chars, "after_chars": before_chars,
+            "message": f"session already short ({before_turns} turn(s)) -- nothing to compact",
+        }
+
+    try:
+        recent_turns = [dict(t) for t in session.turns[-keep:]]
+        oldest = session.turns[: before_turns - keep]
+        summary_text = _summarize_turns(oldest, llm)
+        session.turns = [{"role": "summary", "text": summary_text, "ts": time.time()}] + recent_turns
+        save_session(session)
+        after_turns = len(session.turns)
+        after_chars = sum(len(t.get("text", "")) for t in session.turns)
+        return {
+            "compacted": True, "before_turns": before_turns, "after_turns": after_turns,
+            "before_chars": before_chars, "after_chars": after_chars,
+            "message": f"compacted {before_turns} turns ({before_chars} chars) -> "
+                       f"{after_turns} turns ({after_chars} chars)",
+        }
+    except Exception:
+        return {"compacted": False, "before_turns": before_turns, "after_turns": before_turns,
+                "before_chars": before_chars, "after_chars": before_chars,
+                "message": "compact failed -- session left unchanged"}
+# #EXT-051-REQ-2 End

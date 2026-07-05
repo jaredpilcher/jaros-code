@@ -59,11 +59,16 @@ def test_no_row_is_inflated_to_works_today():
     subagent" phrasing routed through the SAME plain-language chain, a `tool_allowlist` at the
     same `Runtime.apply` gate seam consulted ONLY AFTER the hard gate accepts the Decision so it
     can only narrow never widen (explicit test), `/agents` additively lists discovered subagents;
-    narrowing `/agent`'s own Runtimes and a model-invocable auto-suggestion honestly deferred) are
-    the rows genuinely delivered end-to-end -- these pins were updated deliberately alongside each
-    landing, not silently."""
+    narrowing `/agent`'s own Runtimes and a model-invocable auto-suggestion honestly deferred), and
+    row #22 (Context management for long sessions, EXT-051: `@path`/`@dir/` refs deterministically
+    inlined into ANY plain request via `harness/atrefs.py`, reading through the EXISTING gated
+    `fs.read`/`fs.list` tools and wired into the SAME `_route_plain` chain a typed request and a
+    skill template already share; `/compact` durably folds + persists a session's older turns by
+    REUSING the existing `_summarize_turns()`/`condense()` mechanism, not a second summarizer; an
+    already-short session is an honest no-op) are the rows genuinely delivered end-to-end -- these
+    pins were updated deliberately alongside each landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 24]
+    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 22, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -102,9 +107,9 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), #19 (EXT-050), #20 (EXT-049), and #24 (EXT-045) are genuine "works"
-    assert result["n_works"] == 9
-    assert result["n_partial"] + result["n_missing"] == 7
+    # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), and #24 (EXT-045) are genuine "works"
+    assert result["n_works"] == 10
+    assert result["n_partial"] + result["n_missing"] == 6
     assert 0.0 <= result["pct"] < 100.0
 
 

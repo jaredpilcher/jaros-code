@@ -73,6 +73,15 @@ Commands (Claude-Code-style):
                                  --fork [<id|name>] on the command line, EXT-044)
                                  (command line only, EXT-044): -c/--continue resumes the most recent
                                  session; -r <id|name> resumes a specific one by id OR by its /name
+  /compact                      shrink the CURRENT session's transcript: folds older turns into a
+                                 running summary via the SAME condense()/_summarize_turns()
+                                 mechanism REQ-12/15 already built, but durably persists the result
+                                 (an already-short session is an honest no-op, EXT-051)
+  @path  @dir/                  in ANY plain request (typed or a skill template), inlines that
+                                 file's content (bounded, truncation noted) or a bounded directory
+                                 listing, read through the existing gated fs.read/fs.list tools; a
+                                 missing/unreadable ref degrades to an honest "(not found)" note,
+                                 never a crash (EXT-051)
   /task <text>                  add a TODO task for this repo (EXT-036)
   /tasks                        list tasks (id + status)
   /task done <id>                mark a task done
@@ -415,6 +424,38 @@ class JcodeCli:
     def _tool(self, dtype: str, payload: dict):
         return self.rt.apply(self._mk(id=f"cli-{uuid.uuid4().hex}", source="cli",
                                       type=dtype, payload=payload))
+
+    # #EXT-051-REQ-1 Start
+    def _at_ref_read(self, path: str) -> "tuple[str | None, bool]":
+        """Adapter for ``@path`` expansion (EXT-051): reads a file through the EXISTING gated
+        ``fs.read`` tool -- the SAME seam ``cmd_read``/``/read`` already uses -- rather than a raw
+        ``open()``. Returns ``(content, truncated)``; ``(None, False)`` when the path isn't a
+        readable file or the gated call raises for any reason (never propagates)."""
+        try:
+            out = self._tool("fs.read", {"path": path})
+        except Exception:
+            return None, False
+        if not isinstance(out, dict) or out.get("error"):
+            return None, False
+        return out.get("content", ""), bool(out.get("truncated"))
+
+    def _at_ref_list(self, path: str) -> "tuple[list[str] | None, bool]":
+        """Adapter for ``@dir/`` expansion (EXT-051): lists a directory through the EXISTING gated
+        ``fs.list`` tool -- the SAME seam ``cmd_ls``/``/ls`` already uses -- rather than a raw
+        ``os.listdir()``. Returns ``(entry_lines, truncated)``; ``(None, False)`` when the path
+        isn't a readable directory or the gated call raises for any reason (never propagates).
+        Bounding the entry COUNT is `harness.atrefs.expand_at_refs`'s job (``max_dir_entries``),
+        so this adapter always reports ``truncated=False`` and the full entry list."""
+        try:
+            out = self._tool("fs.list", {"path": path.rstrip("/\\") or "."})
+        except Exception:
+            return None, False
+        if not isinstance(out, dict) or out.get("error"):
+            return None, False
+        entries = out.get("entries", [])
+        lines = [f"{e.get('type', 'file'):<4} {e.get('name', '')}" for e in entries]
+        return lines, False
+    # #EXT-051-REQ-1 End
 
     # #EXT-042-REQ-5 Start
     def _write_runtime(self):
@@ -1496,6 +1537,18 @@ class JcodeCli:
         return f"forked {ref!r} -> new session {forked.id} ({len(forked.turns)} turn(s))"
     # #EXT-044-REQ-4 End
 
+    # #EXT-051-REQ-2 Start
+    def cmd_compact(self, _arg: str) -> str:
+        """``/compact`` (EXT-051): deterministically shrink the CURRENT session's transcript by
+        folding its older turns into a running summary -- reuses the SAME `_summarize_turns()`
+        mechanism `condense()` (EXT-036 REQ-15) already built for its transient routing view, but
+        durably mutates + persists `self.session` (unlike `condense()`). Reports before/after
+        turn + character counts; an already-short session is an honest no-op."""
+        from harness.session import compact_session
+        result = compact_session(self.session, llm=self.llm)
+        return result.get("message", "")
+    # #EXT-051-REQ-2 End
+
     # #EXT-036-REQ-18 Start
     def cmd_task(self, arg: str) -> str:
         """TODO task management (REQ-18): ``/task <text>`` adds a task for this repo,
@@ -1853,10 +1906,22 @@ class JcodeCli:
         memory = self._recall_memory(line)
         # #EXT-036-REQ-16 End
         orch = self._load_agent("orchestrator_agent.py", self.llm)
+        # #EXT-051-REQ-1 Start
+        # @path / @dir/ reference expansion (EXT-051): a deterministic, no-model-call string
+        # composition -- inlines each referenced file's content (bounded, truncation noted) or a
+        # bounded directory listing, read through the EXISTING gated fs.read/fs.list tools (the
+        # same seam /read and /ls already use). Runs on the raw `line`, AFTER the deterministic
+        # multistep/subagent-delegation/intent-fast-path checks above (which keep matching the RAW
+        # line so a referenced file's own prose content can never spuriously trigger one of those
+        # regexes) -- only the text that reaches the orchestrator/planner is expanded. A `line`
+        # with no `@` reference at all is returned byte-identical (a complete no-op).
+        from harness.atrefs import expand_at_refs
+        expanded_line = expand_at_refs(line, self._at_ref_read, self._at_ref_list)
+        # #EXT-051-REQ-1 End
         # #EXT-036-REQ-17 Start
         # #EXT-042-REQ-2 Start
-        augmented = _augment_with_history(line, history, getattr(self, "project_md", ""), memory,
-                                           getattr(self, "jcode_md", ""))
+        augmented = _augment_with_history(expanded_line, history, getattr(self, "project_md", ""),
+                                           memory, getattr(self, "jcode_md", ""))
         # #EXT-042-REQ-2 End
         # #EXT-036-REQ-17 End
         [d] = orch.decide({"request": augmented, "history": history})
