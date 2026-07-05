@@ -248,7 +248,8 @@ def _minimize_edits(cwd: str, test_cmd: str, orig: dict[str, str],
 
 def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
                    *, max_iters: int = 3, verbose: bool = False,
-                   runtime: "object | None" = None) -> dict:
+                   runtime: "object | None" = None,
+                   interrupt: "object | None" = None) -> dict:
     """Fix a failing multi-file test. Locate candidate files, then fix them CUMULATIVELY: try
     each candidate with fix_loop(keep_partial=True) so its best partial edit survives; KEEP the
     edit only if it strictly REDUCES the failing-test count (and build the next fix on top),
@@ -269,7 +270,15 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
     `Path.write_text`. `runtime=None` (the default) is unchanged from before this parameter
     existed -- every eval/test/sandbox caller (`harness/daily_driver.py`, `harness/multifile_eval.py`,
     `harness/spec_loop.py`, `harness/agent_loop.py`, `tests/test_ext003_multifile.py`) against a
-    throwaway temp dir keeps the exact prior raw-write behavior."""
+    throwaway temp dir keeps the exact prior raw-write behavior.
+
+    `interrupt` (EXT-055 REQ-2, Tenet 1): optional -- any object exposing `.is_cancelled() ->
+    bool` (e.g. `harness.interrupt.InterruptController`). Checked ONLY at the TOP of the
+    per-candidate loop below, i.e. a SAFE point before starting work on the NEXT candidate --
+    never mid-fix, never mid-write. When cancelled, this function stops trying further
+    candidates and returns its CURRENT partial result (whatever was kept so far) with an honest
+    note, instead of continuing. `interrupt=None` (the default -- every existing eval/test/sandbox
+    caller) is byte-identical to before this parameter existed."""
     from harness.coding_loop import fix_loop  # local import: avoid cycle at module load
 
     ok, out = _run(cwd, test_cmd)
@@ -284,6 +293,14 @@ def multi_file_fix(cwd: str, test_cmd: str, instruction: str, test_file: str,
     cands = candidate_files(cwd, out, test_file)
     tried, kept, kept_paths = [], [], []
     for cand in cands:
+        # #EXT-055-REQ-2 Start
+        # Cooperative cancel check (EXT-055): a SAFE point -- before starting the NEXT candidate,
+        # never mid-fix. `interrupt=None` (the default) makes this a complete no-op.
+        if interrupt is not None and interrupt.is_cancelled():
+            return {"solved": False, "file": None, "tried": tried, "fixed": kept, "dropped": [],
+                    "note": f"interrupted after {len(tried)} step(s) — partial work preserved; "
+                            "/rewind to undo"}
+        # #EXT-055-REQ-2 End
         snap = _snapshot(cwd)
         tried.append(Path(cand).name)
         fix_loop(cand, instruction, test_cmd, max_iters=max_iters, cwd=cwd,

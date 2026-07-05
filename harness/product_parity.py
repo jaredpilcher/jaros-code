@@ -300,13 +300,40 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "per-edit granularity; a delete-file Decision type for true un-create.",
     ),
     # #EXT-049-REQ-4 End
+    # #EXT-055-REQ-4 Start
     ProductParityRow(
         id=21, feature="Interrupt + steer mid-run",
-        state="missing",
-        current_state="Ctrl-C crash-safety guards exist; no graceful interrupt-and-steer loop.",
-        next_lever="Cooperative cancel points between plan steps (clerk checks an interrupt "
-                    "flag; partial state preserved via checkpoints).",
+        state="partial",
+        current_state="EXT-055: a cooperative `InterruptController` (`harness/interrupt.py`, a "
+                       "plain threadsafe flag, never a signal-raised exception) is polled at SAFE "
+                       "iteration boundaries -- BEFORE the next candidate file in "
+                       "`multi_file.py::multi_file_fix`'s cumulative fix loop, and BEFORE the "
+                       "next function in `spec_loop.py`'s `_decompose_build`/"
+                       "`_build_per_function` -- never mid-write/mid-Decision. On cancel, the "
+                       "loop STOPS gracefully and returns its CURRENT partial result with an "
+                       "honest 'interrupted after N step(s) — partial work preserved; /rewind to "
+                       "undo' note; no new persistence path (the existing EXT-049 checkpoint "
+                       "ring / EXT-009 snapshot already covers what's kept). The REPL "
+                       "(`harness/cli.py::_run_command_interruptible`) wires a real Ctrl-C during "
+                       "a RUNNING command to `request_cancel()` instead of letting an uncaught "
+                       "`KeyboardInterrupt` tear through and kill the session (today's actual "
+                       "behavior for a mid-command Ctrl-C); the REPL then reports the interrupt "
+                       "and returns to the prompt, where the user can immediately type a new "
+                       "instruction (the 'steer' half -- an ordinary next turn, no special amend "
+                       "mode). Idle-prompt Ctrl-C is unchanged. DEFAULT (no interrupt requested) "
+                       "is byte-identical to before this spec for every existing caller -- the "
+                       "cooperative parameter is `None`/uncancelled unless the REPL's SIGINT "
+                       "wiring actually fires. Honestly `partial`, not `works`: only two loops "
+                       "(`/fixrepo`/`/agent`'s FIX flow and BUILD flow's per-function build) got "
+                       "cooperative checks -- `/buildsystem`'s system-build loop and other "
+                       "long-running commands (`/run`, a raw `/build`) have no safe point to "
+                       "cancel at yet, and there is no explicit 'amend the in-flight plan' UX "
+                       "beyond typing a fresh instruction.",
+        next_lever="Cooperative cancel points in `/buildsystem`'s (harness/system_builder.py) "
+                    "module-by-module build loop; a genuine amend/steer mode that adjusts an "
+                    "in-flight multi-step plan rather than starting a new turn from scratch.",
     ),
+    # #EXT-055-REQ-4 End
     # #EXT-051-REQ-3 Start
     ProductParityRow(
         id=22, feature="Context management for long sessions",

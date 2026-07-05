@@ -899,8 +899,15 @@ class JcodeCli:
         # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
         # `/init`/`/rename`/`/move` already use -- so every revert this real-host command
         # performs is gated, EXT-037 root-jailed, and hash-chain logged.
+        # #EXT-055-REQ-3 Start
+        # `interrupt=get_interrupt_controller()` (EXT-055): the SAME process-wide controller the
+        # REPL's SIGINT wiring sets -- a graceful Ctrl-C mid-run stops this loop between
+        # candidates rather than tearing through it. A never-cancelled controller (the ordinary
+        # case) is a no-op -- byte-identical to before this parameter existed.
+        from harness.interrupt import get_interrupt_controller
         r = multi_file_fix(".", testcmd, instr, test_file, max_iters=3, verbose=True,
-                            runtime=self._write_runtime())
+                            runtime=self._write_runtime(), interrupt=get_interrupt_controller())
+        # #EXT-055-REQ-3 End
         # #EXT-037-REQ-10 End
         where = f" (fixed {r['file']})" if r.get("file") else ""
         return f"{'solved' if r['solved'] else 'not solved'}{where}; tried: {', '.join(r['tried']) or '—'}"
@@ -1136,7 +1143,13 @@ class JcodeCli:
         # `/fixrepo`/`/undo`/`/buildsystem` already use -- so every write a real `/agent`
         # invocation performs (FIX flow's multi_file_fix, and BUILD flow's module writes) is
         # gated, EXT-037 root-jailed, and hash-chain logged.
-        r = spec_driven_loop(arg, ".", runtime=self._write_runtime())
+        # #EXT-055-REQ-3 Start
+        # `interrupt=get_interrupt_controller()` (EXT-055): see cmd_fixrepo's identical comment --
+        # a never-cancelled controller is a complete no-op.
+        from harness.interrupt import get_interrupt_controller
+        r = spec_driven_loop(arg, ".", runtime=self._write_runtime(),
+                             interrupt=get_interrupt_controller())
+        # #EXT-055-REQ-3 End
         # #EXT-037-REQ-12 End
         status = "SOLVED" if r["solved"] else "unsolved"
         note = f" — {r['note']}" if r.get("note") else ""
@@ -1556,8 +1569,12 @@ class JcodeCli:
                 # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
                 # `/fixrepo`/`/undo` already use -- so a real `/plan`'s `fix` step is gated,
                 # EXT-037 root-jailed, and hash-chain logged.
+                # #EXT-055-REQ-3 Start
+                from harness.interrupt import get_interrupt_controller
                 r = multi_file_fix(".", "python -m pytest -q", a or arg, test_file, verbose=False,
-                                    runtime=self._write_runtime())
+                                    runtime=self._write_runtime(),
+                                    interrupt=get_interrupt_controller())
+                # #EXT-055-REQ-3 End
                 # #EXT-037-REQ-12 End
                 out.append(f"  {i}. fix  -> " + (f"solved {r.get('fixed')}" if r["solved"] else "not solved"))
             elif act == "run":
@@ -2083,8 +2100,12 @@ class JcodeCli:
             test_file = next((f for f in os.listdir(".") if f.startswith("test") and f.endswith(".py")), "")
             # #EXT-037-REQ-12 Start
             # `runtime=self._write_runtime()` (Tenet 1), mirroring `cmd_fixrepo`/`cmd_plan` above.
+            # #EXT-055-REQ-3 Start
+            from harness.interrupt import get_interrupt_controller
             r = multi_file_fix(".", "python -m pytest -q", instruction, test_file, max_iters=3,
-                                verbose=True, runtime=self._write_runtime())
+                                verbose=True, runtime=self._write_runtime(),
+                                interrupt=get_interrupt_controller())
+            # #EXT-055-REQ-3 End
             # #EXT-037-REQ-12 End
             where = f" (fixed {', '.join(r['fixed'])})" if r.get("fixed") else ""
             return f"{'solved' if r['solved'] else 'not solved'}{where} — multi-file"
@@ -2325,6 +2346,71 @@ class JcodeCli:
         return f"unknown command {head!r}. Try /help."
 
 
+# #EXT-055-REQ-3 Start
+def _run_command_interruptible(cli: "JcodeCli", line: str) -> str:
+    """Run ONE REPL command with SIGINT wired to the shared cooperative `InterruptController`
+    (EXT-055): while `cli.handle` is actually RUNNING, a Ctrl-C sets the controller's cancel flag
+    instead of raising `KeyboardInterrupt` at an arbitrary bytecode instruction -- so a command
+    whose loop polls `is_cancelled()` at a SAFE point (`harness/spec_loop.py`,
+    `harness/multi_file.py`) can stop GRACEFULLY and return its own partial result, rather than an
+    uncaught `KeyboardInterrupt` tearing straight through the REPL (today's behavior: a
+    `KeyboardInterrupt` mid-command is a `BaseException`, not caught by the REPL's existing
+    ``except Exception`` guard, so it propagates all the way out and kills the process).
+
+    Idle-prompt Ctrl-C (at ``input()``, not while a command is running) is COMPLETELY UNCHANGED --
+    this wiring only wraps the ``cli.handle()`` call itself, installed and torn down around it.
+
+    The controller is reset BEFORE this command starts (so a stale cancel from a PRIOR
+    interrupted run can never bleed into a fresh one), and the ORIGINAL SIGINT handler is always
+    restored in ``finally`` -- whether or not a cancel happened, whether or not ``handle()``
+    raised. On any platform/threading context where installing a signal handler isn't possible
+    (``ValueError``/``OSError`` -- e.g. not the main thread), this degrades to calling
+    ``cli.handle`` with no cooperative wiring at all -- never a crash from the wiring itself.
+
+    Returns the command's output text, with an honest "interrupted" note appended when a cancel
+    was actually requested during this command."""
+    from harness.interrupt import get_interrupt_controller, reset_interrupt_controller
+    controller = get_interrupt_controller()
+    reset_interrupt_controller()
+
+    installed = False
+    prev_handler = None
+    try:
+        import signal
+
+        def _on_sigint(signum, frame):
+            controller.request_cancel()
+
+        prev_handler = signal.signal(signal.SIGINT, _on_sigint)
+        installed = True
+    except (ValueError, OSError):
+        installed = False
+
+    try:
+        out = cli.handle(line, interactive=True)
+    except KeyboardInterrupt:
+        # A real KeyboardInterrupt still escaping (only possible when the wiring above couldn't
+        # be installed) is treated exactly like a cooperative cancel -- graceful, not a crash.
+        controller.request_cancel()
+        out = "(interrupted before completion)"
+    except Exception as exc:            # one bad command must NOT kill the interactive session
+        out = f"\033[31merror:\033[0m {exc}"
+    finally:
+        if installed:
+            try:
+                import signal as _signal
+                _signal.signal(_signal.SIGINT, prev_handler)
+            except (ValueError, OSError):
+                pass
+
+    if controller.is_cancelled():
+        note = ("\033[33minterrupted — partial work preserved (/rewind to undo, or type a new "
+                "instruction to steer)\033[0m")
+        out = f"{out}\n{note}" if out else note
+    return out
+# #EXT-055-REQ-3 End
+
+
 def repl(session_id: str | None = None) -> int:
     """Interactive Claude-Code-like prompt loop.
 
@@ -2377,12 +2463,19 @@ def repl(session_id: str | None = None) -> int:
         if line.strip() == "/clear":
             print("\033[2J\033[H", end="")
             continue
+        # #EXT-036-REQ-8 Start
+        # #EXT-055-REQ-3 Start
+        # `_run_command_interruptible` wraps `cli.handle(line, interactive=True)` with cooperative
+        # SIGINT wiring (EXT-055) -- it already catches every Exception/KeyboardInterrupt
+        # internally (mirrors the prior bare `except Exception` here exactly for the non-cancel
+        # path), so this outer try/except is a pure defense-in-depth belt-and-suspenders should
+        # the wiring helper itself somehow raise.
         try:
-            # #EXT-036-REQ-8 Start
-            out = cli.handle(line, interactive=True)
-            # #EXT-036-REQ-8 End
+            out = _run_command_interruptible(cli, line)
         except Exception as exc:            # one bad command must NOT kill the interactive session
             out = f"\033[31merror:\033[0m {exc}"
+        # #EXT-055-REQ-3 End
+        # #EXT-036-REQ-8 End
         if out:
             print(out)
 

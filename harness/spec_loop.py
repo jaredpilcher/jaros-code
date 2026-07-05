@@ -33,7 +33,8 @@ def _find_test(cwd: str) -> str:
 
 
 def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False,
-                     runtime: "object | None" = None) -> dict:
+                     runtime: "object | None" = None,
+                     interrupt: "object | None" = None) -> dict:
     """Structured (jarify-flow) loop. The FLOW is deterministic; the 2B never chooses the steps —
     it only fills the constrained sub-task (the fix / the code). Returns {solved, flow, note}.
 
@@ -43,7 +44,19 @@ def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     FIX/BUILD flow it dispatches to) performs onto `cwd` is routed through a real
     `code.write_file` Decision instead of a raw `Path.write_text`. `runtime=None` (the default --
     used by every existing eval/test caller against a throwaway temp dir) preserves the exact
-    prior direct-write behavior byte-for-byte."""
+    prior direct-write behavior byte-for-byte.
+
+    `interrupt` (EXT-055 REQ-2, Tenet 1): optional -- any object exposing `.is_cancelled() ->
+    bool`. Checked once at entry (a cancel requested before this call even started means NOTHING
+    is attempted) and threaded through to whichever flow actually runs its own iteration loop
+    (`multi_file_fix`'s per-candidate loop, `_decompose_build`'s per-build-step checks).
+    `interrupt=None` (the default -- every existing eval/test caller) is byte-identical to
+    before this parameter existed."""
+    # #EXT-055-REQ-2 Start
+    if interrupt is not None and interrupt.is_cancelled():
+        return {"solved": False, "flow": "interrupted",
+                "note": "interrupted before starting — nothing done"}
+    # #EXT-055-REQ-2 End
     green, _ = _run(cwd, _TEST_CMD)
     if green:
         return {"solved": True, "flow": "already-green", "note": "requirement already met"}
@@ -56,13 +69,14 @@ def spec_driven_loop(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
         mem = read_memory(cwd).strip()
         instr = f"Project conventions:\n{mem}\n\n{intent}" if mem else intent
         res = multi_file_fix(cwd, _TEST_CMD, instr, test_file, max_iters=max_iters, verbose=verbose,
-                              runtime=runtime)
+                              runtime=runtime, interrupt=interrupt)
         green, _ = _run(cwd, _TEST_CMD)
         return {"solved": green, "flow": "fix", "note": res.get("note", "")}
 
     # BUILD flow — no test yet: DECOMPOSE the intent into requirements, a test per requirement,
     # then implement against all (the richer jarify-flow). Single-function falls back to build_in_dir.
-    return _decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose, runtime=runtime)
+    return _decompose_build(intent, cwd, max_iters=max_iters, verbose=verbose, runtime=runtime,
+                            interrupt=interrupt)
 
 
 def plan_preview(intent: str, cwd: str) -> str:
@@ -181,10 +195,22 @@ def _build_class(intent: str, cwd: str, class_name: str, methods: list, *, max_i
 
 # #EXT-037-REQ-12 Start
 def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool = False,
-                     runtime: "object | None" = None) -> dict:
+                     runtime: "object | None" = None,
+                     interrupt: "object | None" = None) -> dict:
     """`runtime` (EXT-037 REQ-12, Tenet 1): optional -- threaded straight through to whichever
     build strategy below actually writes onto `cwd` (all three target the caller's real `cwd`,
-    unchanged); see `spec_driven_loop`'s docstring for the full contract."""
+    unchanged); see `spec_driven_loop`'s docstring for the full contract.
+
+    `interrupt` (EXT-055 REQ-2, Tenet 1): optional -- checked ONCE here, before dispatching to any
+    build strategy (so an already-requested cancel means nothing is attempted), and threaded
+    through to `_build_per_function`'s own per-function iteration checks below. `interrupt=None`
+    (the default) is byte-identical to before this parameter existed."""
+    # #EXT-055-REQ-2 Start
+    if interrupt is not None and interrupt.is_cancelled():
+        return {"solved": False, "flow": "interrupted", "requirements": 0,
+                "note": "interrupted before any build step ran — partial work preserved; "
+                        "/rewind to undo"}
+    # #EXT-055-REQ-2 End
     cls = _detect_class(intent)                         # class intents route to the whole-class build
     if cls:
         return _build_class(intent, cwd, cls, _extract_signatures(intent),
@@ -192,7 +218,7 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     sigs = _extract_signatures(intent)                  # deterministic signatures beat 2B params
     if len(sigs) >= 2:                                   # TASK-9: per-function concrete-sig build
         return _build_per_function(intent, cwd, sigs, max_iters=max_iters, verbose=verbose,
-                                   runtime=runtime)
+                                   runtime=runtime, interrupt=interrupt)
     reqs = [(n, "") for n, _ in _decompose(intent)]
     from harness.intent_loop import build_in_dir
     if len(reqs) <= 1:                                   # single-function: the existing spine
@@ -279,7 +305,8 @@ def _sanitize_source(text: str) -> str:
 
 # #EXT-037-REQ-12 Start
 def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3,
-                        verbose: bool = False, runtime: "object | None" = None) -> dict:
+                        verbose: bool = False, runtime: "object | None" = None,
+                        interrupt: "object | None" = None) -> dict:
     """TASK-9: build each function in ITS OWN module with a CONCRETE single-function stub, so
     fix_loop routes to the body-completer (which keeps the real signature and implements correctly,
     incl. list-aggregation — the whole-file rewriter kept *args and did max(args)). Then EXTRACT
@@ -298,7 +325,15 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     hybrid-probe `_build_whole_file(intent, alt, ...)` call further below always builds into a
     throwaway `tempfile.mkdtemp()` subdirectory `alt` (removed before this function returns) --
     never the caller's real root -- so it intentionally stays on `runtime=None`, unaffected by
-    this parameter. `runtime=None` (the default) is unchanged from before this parameter existed."""
+    this parameter. `runtime=None` (the default) is unchanged from before this parameter existed.
+
+    `interrupt` (EXT-055 REQ-2, Tenet 1): optional -- checked at the TOP of the per-function loop
+    below, i.e. a SAFE point BEFORE starting the next function's build (never mid-fix, never
+    mid-write). When cancelled, the loop stops there; every remaining (not-yet-started) function
+    is honestly stubbed (exactly like a failed per-function build already is, above) so the
+    assembled module still parses, and the hybrid whole-file fallback is SKIPPED (an interrupt
+    means stop, not try harder). `interrupt=None` (the default) is byte-identical to before this
+    parameter existed."""
     import ast
     from harness.coding_loop import Runtime, build_llm, _load_agent, fix_loop
     from harness.intent_loop import _stub
@@ -306,7 +341,13 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     imports: list[str] = []
     defs: list[str] = []
     failed: list[str] = []                              # functions whose per-function build didn't land
-    for func, params in sigs:
+    # #EXT-055-REQ-2 Start
+    interrupted_at: "int | None" = None
+    for i, (func, params) in enumerate(sigs):
+        if interrupt is not None and interrupt.is_cancelled():
+            interrupted_at = i
+            break
+        # #EXT-055-REQ-2 End
         fp = Path(cwd) / f"{func}.py"
         if _jaros_write(str(fp), _stub(f"def {func}({params})", func), cwd, runtime):
             # gate rejected the per-function stub -- degrade the same as a malformed build below
@@ -343,6 +384,14 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
         else:                                           # not found, or still a stub -> failed build
             defs.append(func_def or f"def {func}({params}):\n    raise NotImplementedError\n")
             failed.append(func)
+    # #EXT-055-REQ-2 Start
+    if interrupted_at is not None:
+        # every function from `interrupted_at` on was never even started -- stub each honestly
+        # so the assembled module still parses (same shape as a failed per-function build above).
+        for func, params in sigs[interrupted_at:]:
+            defs.append(f"def {func}({params}):\n    raise NotImplementedError\n")
+            failed.append(func)
+    # #EXT-055-REQ-2 End
     body = ("\n".join(imports) + "\n\n" if imports else "") + "\n\n".join(defs) + "\n"
     err = _jaros_write(str(Path(cwd) / "solution.py"), body, cwd, runtime)
     if err:
@@ -351,8 +400,12 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
     # TASK-10 hybrid: if any per-function build failed (e.g. body-completer botches is_odd), try the
     # *args whole-file build in a CLEAN temp dir and keep whichever solution.py has fewer stubs (more
     # functions implemented). Tie -> keep per-function (it has list-aggregation correct).
+    # #EXT-055-REQ-2 Start
+    # An interrupt means STOP, not "try harder" -- the hybrid whole-file fallback is skipped
+    # entirely once cancelled, even though `failed` is non-empty (the un-started functions).
     flow = "build-per-function"
-    if failed:
+    if failed and interrupted_at is None:
+    # #EXT-055-REQ-2 End
         import tempfile
         pf_sol = (Path(cwd) / "solution.py").read_text(encoding="utf-8")
         pf_stubs = pf_sol.count("raise NotImplementedError")
@@ -372,6 +425,10 @@ def _build_per_function(intent: str, cwd: str, sigs: list, *, max_iters: int = 3
                 cwd, runtime)
     final = final_path.read_text(encoding="utf-8")
     solved = "raise NotImplementedError" not in final     # all functions at least implemented
-    return {"solved": solved, "flow": flow, "requirements": len(sigs),
-            "note": f"{len(sigs)} functions ({flow.split('-', 1)[1]})"}
+    # #EXT-055-REQ-2 Start
+    note = (f"interrupted after {interrupted_at} step(s) — partial work preserved; /rewind to undo"
+            if interrupted_at is not None
+            else f"{len(sigs)} functions ({flow.split('-', 1)[1]})")
+    # #EXT-055-REQ-2 End
+    return {"solved": solved, "flow": flow, "requirements": len(sigs), "note": note}
 # #EXT-037-REQ-12 End

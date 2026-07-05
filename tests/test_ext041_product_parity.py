@@ -138,9 +138,13 @@ def test_score_default_rows_reflects_honest_current_baseline():
     # (EXT-048), #18 (EXT-054, MCP client slice 1 + slice 2: persistent connections + a
     # model-invocable routing path, both gated identically to the manual `/mcp call` path), #19
     # (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), #24 (EXT-045), and #25 (EXT-053) are
-    # genuine "works"
+    # genuine "works"; row #21 (EXT-055: a cooperative InterruptController checked at safe
+    # iteration boundaries in multi_file_fix/_build_per_function, plus REPL SIGINT wiring that
+    # stops a running command gracefully instead of an uncaught KeyboardInterrupt killing the
+    # session) is honestly "partial" -- only two loops got cooperative checks, /buildsystem and
+    # other long-running commands have no safe point yet, and there is no explicit amend/steer UX
     assert result["n_works"] == 13
-    assert result["n_partial"] == 0
+    assert result["n_partial"] == 1
     assert result["n_partial"] + result["n_missing"] == 3
     assert 0.0 <= result["pct"] < 100.0
 
