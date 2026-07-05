@@ -50,12 +50,11 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[★ REALIGN on the whole-PRODUCT bar]** the parity bar just expanded (supervisor 5e0b553): match the
-  WHOLE Claude Code CLI product, not just solving (GAP-MAP #12–27 + Product-Parity Checklist). See the new
-  **PRODUCT-SURFACE PARITY** axis below — this is the major new forward direction — high.
-- **[#16 user hooks — next product-surface build]** user-configurable lifecycle hooks
-  (PreToolUse/PostToolUse/SessionStart/Stop) consumed by the clerk at the existing validate()/execute()
-  seam — med · user extensibility, pure execution-plane (the Jaros gate IS the seam); via Jarify (new spec EXT-047). Flips row #16 missing→works.
+- **[#17 permission rules + modes UX — next product-surface build]** make the security gates
+  user-configurable: a permission-rules file (allow/ask/deny by tool + arg glob) layered over the
+  existing hard gates, plus a mode cycle (plan → default → acceptEdits) in the REPL — med · CC-defining
+  UX, tractable (the hard gates already exist; add a user-config layer that can only NARROW, never widen,
+  the built-in safety gates); via Jarify (new spec EXT-048). Flips row #17 partial→works.
 - **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
   does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
@@ -172,6 +171,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#16 user hooks]** run your own command automatically on lifecycle events (before/after any tool runs, session start/stop) via a `.jcode/hooks.json` file; a pre-tool hook that fails blocks the action — every hook runs through the same security gates, never around them — parity 50.0%→56.2% — 6cb4517.
 - **[EXT-041 Product-Parity Checklist]** the product-surface scoreboard — `/parity`, 16 rows #12–27, honest baseline **31.2%** (0 works / 10 partial / 6 missing) — b9c2822.
 - **[#15 custom skills]** drop a markdown file in your repo → a new /command jcode runs (your own workflows, no code) — parity 43.8%→50.0% HALFWAY — 2e66350.
 - **[#24 terminal UX]** jcode now streams each step live (file reads, edits) as it works + shows a model·$0·latency status line — parity 40.6%→43.8% — 3989fae.
