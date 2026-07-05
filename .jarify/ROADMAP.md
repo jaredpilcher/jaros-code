@@ -50,14 +50,15 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[★★ #112 TENET-1 broad host-write sweep — TOP NOW, owner-directive priority · MULTI-SLICE]** route
-  the deterministic host-mutating commands through code.write_file Decisions (optional-runtime idiom:
-  CLI→gated, eval-sandbox→raw). Per-module, full-suite-gated. Progress:
-  - ✅ **refactor.py (/rename //move)** — EXT-037 REQ-9, commit 2d58ae5, full suite 2018 green.
-  - ✅ **multi_file.py (/fixrepo + shared /undo restore)** — EXT-037 REQ-10, commit 468e3ee, 2030 green.
-  - ✅ **system_builder.py (/buildsystem //modifysystem, 1 chokepoint × 5 build variants)** — EXT-037 REQ-11, commit 81ec12b, 2043 green.
-  - ✅ **spec_loop.py (/agent) + cli.py /plan + _nl_fix** — EXT-037 REQ-12, commit c52f9e6, 2059 green. (Builder honestly flagged the last residual → slice 5.)
-  - ▶ **TRUE FINAL slice: intent_loop.py /build** — EXT-037 REQ-13, in flight. `/build` (intent→working function in cwd) is the last product command writing raw. After this the sweep is COMPLETE — every product command on Jaros.
+- **[✅✅ #112 TENET-1 host-write sweep — COMPLETE (owner-directive fulfilled)]** every product command that
+  performs a real-host write now routes through a Jaros code.write_file Decision (gate + path-jail +
+  hash-chain), via the optional-runtime idiom (CLI→gated, eval-sandbox→raw). 5 slices, all full-suite-green:
+  /rename //move (REQ-9, 2d58ae5) · /fixrepo //undo (REQ-10, 468e3ee) · /buildsystem //modifysystem
+  (REQ-11, 81ec12b) · /agent //plan //_nl_fix (REQ-12, c52f9e6) · /build (REQ-13, c276a4c, 2067 green).
+  Left raw BY DESIGN: eval/solve sandbox + oracle scratch (throwaway temp dirs), internal .jaros state
+  logs. Note: /patch //fix already Jaros-native (Decision path), intentionally rootless. → moved to LANDED.
+- **[next product-surface build]** pick by impact×tractability: #18 MCP client (biggest ecosystem win,
+  heavy) · #22 context-mgmt/@-refs · #19 subagent authoring · #23 background surface. Via Jarify.
   high · directly serves owner's everything-on-Jaros directive; via Jarify (REQs under EXT-037).
 - **[#18 MCP client — queued, larger effort]** external-tool protocol client (stdio/JSON-RPC, tool
   discovery, each MCP tool wrapped as a GATED Jaros tool so two-plane holds) — high impact (biggest
@@ -178,6 +179,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ Jaros-native host-write sweep COMPLETE]** every product command that writes to your repo (/rename, /move, /fixrepo, /undo, /buildsystem, /modifysystem, /agent, /plan, natural-language fix, /build) now goes through the Jaros runtime — gated, path-jailed, tamper-evident-logged — not raw Python. Owner's "everything on Jaros" directive fulfilled; 5 slices, commits 2d58ae5/468e3ee/81ec12b/c52f9e6/c276a4c. Only throwaway eval scratch + internal state logs stay raw by design.
 - **[Jaros-native: /agent + /plan + _nl_fix]** the plan/agent/natural-language fix commands now write through a real Jaros `code.write_file` Decision — slice 4 of the host-write sweep; the builder honestly corrected the site count (2 not 3) and flagged the last residual (/build) rather than claiming done — c52f9e6.
 - **[Jaros-native: /buildsystem + /modifysystem]** the system-generator (build a whole system from a sentence) now writes every generated file through a real Jaros `code.write_file` Decision — slice 3 of the host-write sweep, a single write-chokepoint threaded through all 5 build variants; eval/suite builds keep the fast raw path — 81ec12b.
 - **[Jaros-native: /fixrepo + /undo]** the multi-file auto-fix + undo commands now write through a real Jaros `code.write_file` Decision (gate + path-jail + hash-chain) — slice 2 of the host-write sweep; the shared restore code means /undo got gated for free — 468e3ee.
