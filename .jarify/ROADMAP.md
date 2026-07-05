@@ -50,11 +50,17 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 
 ## NOW (in flight — the top of the loop)
 
-- **[#17 permission rules + modes UX — next product-surface build]** make the security gates
-  user-configurable: a permission-rules file (allow/ask/deny by tool + arg glob) layered over the
-  existing hard gates, plus a mode cycle (plan → default → acceptEdits) in the REPL — med · CC-defining
-  UX, tractable (the hard gates already exist; add a user-config layer that can only NARROW, never widen,
-  the built-in safety gates); via Jarify (new spec EXT-048). Flips row #17 partial→works.
+- **[★ #110 TENET-1 COMPLIANCE — route product-surface HOST writes through Jaros Decisions]** (owner
+  2026-07-04: "build everything ON Jaros; CLI-outside is an OK exception but the MAJORITY must run in
+  Jaros"). AUDIT (memory [[jaros-code-jaros-native-audit]]): core IS native (side effects=Decision→gate→
+  executor→hash-chain; reasoning=single-purpose Jaros agents; hooks/permissions enforce at the gate seam).
+  ONE product-facing gap: `/init` writes JCODE.md to the host repo via raw `Path.write_text` (bypasses
+  path-jail+hash-chain) — route it (and sibling host-writes like /remember) through an fs.write Decision;
+  add a governance rule that new product-surface host-writes MUST be Decisions — high · directly serves the
+  owner's just-stated directive; via Jarify (new REQ under EXT-042/EXT-037).
+- **[#18 MCP client OR #20 checkpoint/rewind — next product-surface build]** after #110: #18 external-tool
+  protocol (biggest ecosystem win, heavier) or #20 per-edit checkpoint ring + /rewind (tractable) — med ·
+  pick by impact×tractability; via Jarify (new spec). Flips its row partial/missing→works.
 - **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
   does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
@@ -171,6 +177,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#17 permission rules + modes]** you can now configure what jcode may do — an allow/ask/deny rules file + plan/default/acceptEdits REPL modes; user rules can only NARROW the built-in safety gates, never widen them (proven: an "allow rm -rf" rule is still refused). Enforced INSIDE the Jaros runtime at the gate seam — parity 56.2%→59.4% — 7798132.
 - **[#16 user hooks]** run your own command automatically on lifecycle events (before/after any tool runs, session start/stop) via a `.jcode/hooks.json` file; a pre-tool hook that fails blocks the action — every hook runs through the same security gates, never around them — parity 50.0%→56.2% — 6cb4517.
 - **[EXT-041 Product-Parity Checklist]** the product-surface scoreboard — `/parity`, 16 rows #12–27, honest baseline **31.2%** (0 works / 10 partial / 6 missing) — b9c2822.
 - **[#15 custom skills]** drop a markdown file in your repo → a new /command jcode runs (your own workflows, no code) — parity 43.8%→50.0% HALFWAY — 2e66350.
