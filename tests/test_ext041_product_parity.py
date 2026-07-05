@@ -53,10 +53,17 @@ def test_no_row_is_inflated_to_works_today():
     safely denies by default headless; `/mode [plan|default|acceptEdits]` wired at the same seam
     -- `plan` withholds every write/shell Decision before the gate/hooks ever see it, `acceptEdits`
     narrowly auto-approves an `ask`-resolving WRITE Decision (never `shell.exec`); `/permissions`
-    lists configured rules; no config anywhere is byte-identical) are the rows genuinely delivered
-    end-to-end -- these pins were updated deliberately alongside each landing, not silently."""
+    lists configured rules; no config anywhere is byte-identical), and row #19 (Subagent
+    authoring surface, EXT-050: `.jcode/agents/<name>.md` project+user registry (frontmatter
+    `description`/`tools`/`model`), delegation via `/subagent`/a deterministic "delegate to X
+    subagent" phrasing routed through the SAME plain-language chain, a `tool_allowlist` at the
+    same `Runtime.apply` gate seam consulted ONLY AFTER the hard gate accepts the Decision so it
+    can only narrow never widen (explicit test), `/agents` additively lists discovered subagents;
+    narrowing `/agent`'s own Runtimes and a model-invocable auto-suggestion honestly deferred) are
+    the rows genuinely delivered end-to-end -- these pins were updated deliberately alongside each
+    landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 16, 17, 20, 24]
+    assert works == [12, 13, 14, 15, 16, 17, 19, 20, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -95,9 +102,9 @@ def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
-    # (EXT-048), #20 (EXT-049), and #24 (EXT-045) are genuine "works"
-    assert result["n_works"] == 8
-    assert result["n_partial"] + result["n_missing"] == 8
+    # (EXT-048), #19 (EXT-050), #20 (EXT-049), and #24 (EXT-045) are genuine "works"
+    assert result["n_works"] == 9
+    assert result["n_partial"] + result["n_missing"] == 7
     assert 0.0 <= result["pct"] < 100.0
 
 

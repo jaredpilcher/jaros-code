@@ -134,8 +134,11 @@ class Runtime:
                  ask_callback: "callable | None" = None,
                  # #EXT-048-REQ-4 End
                  # #EXT-049-REQ-2 Start
-                 checkpoint_ring: "object | None" = None) -> None:
+                 checkpoint_ring: "object | None" = None,
                  # #EXT-049-REQ-2 End
+                 # #EXT-050-REQ-3 Start
+                 tool_allowlist: "list[str] | None" = None) -> None:
+                 # #EXT-050-REQ-3 End
         # #EXT-045-REQ-1 End
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +183,18 @@ class Runtime:
         # every accepted Decision to the hash-chain -- no parallel history store.
         self._checkpoint_ring = checkpoint_ring
         # #EXT-049-REQ-2 End
+        # #EXT-050-REQ-3 Start
+        # Subagent tool-allowlist (EXT-050): `None` (the default) is a complete no-op -- every
+        # pre-EXT-050 caller of `Runtime(...)` behaves byte-identically. When supplied (a
+        # subagent's `tools:` frontmatter, via `harness.cli.JcodeCli._subagent_runtime`), `apply()`
+        # below refuses any Decision whose `type` is NOT in this list -- consulted STRICTLY AFTER
+        # the hard gate has already accepted the Decision, so this can only NARROW what the hard
+        # gate already permits, never widen past it (the safety invariant this spec proves).
+        try:
+            self._tool_allowlist = list(tool_allowlist) if tool_allowlist else None
+        except TypeError:
+            self._tool_allowlist = None
+        # #EXT-050-REQ-3 End
 
     # #EXT-048-REQ-4 Start
     def set_mode(self, mode: str) -> None:
@@ -251,6 +266,20 @@ class Runtime:
             self._emit({"phase": "error", "type": decision.type, "reason": gated.reason})
             # #EXT-045-REQ-1 End
             raise RuntimeError(f"gate rejected {decision.type}: {gated.reason}")
+        # #EXT-050-REQ-3 Start
+        # Subagent tool-allowlist (EXT-050): consulted ONLY here, AFTER the hard gate above has
+        # already accepted the Decision -- THE SAFETY INVARIANT (see harness/subagents.py module
+        # docstring): this check is unreachable when `gated.ok` is False (the `raise` above already
+        # returned control to the caller), so a subagent's `tools:` allowlist can NEVER un-block
+        # something the hard gate just refused -- it can only additionally NARROW what the hard
+        # gate already permits. `self._tool_allowlist` defaults to `None` -- byte-identical to
+        # before this spec for every caller that doesn't pass it.
+        if self._tool_allowlist is not None and decision.type not in self._tool_allowlist:
+            _reason = (f"subagent tool-allowlist denied {decision.type} "
+                       "(not in this subagent's allowed tool set)")
+            self._emit({"phase": "error", "type": decision.type, "reason": _reason})
+            raise RuntimeError(_reason)
+        # #EXT-050-REQ-3 End
         # #EXT-048-REQ-2 Start
         # User permission rules (EXT-048): consulted ONLY here, AFTER the hard gate above has
         # already accepted the Decision -- THE SAFETY INVARIANT (see harness/permissions.py
@@ -406,21 +435,31 @@ def python_syntax_error(src: str) -> str | None:
         return f"line {exc.lineno}: {exc.msg}"
 
 
-def build_llm():
+def build_llm(model: "str | None" = None):
     """Return the deterministic local reasoning client (EXT-006): greedy + seeded so the
     model is repeatable. Backend selected by JCODE_LLM_BACKEND:
       'llamacpp' (default) -> DeterministicLlamaCppClient (Gemma 4 2B (`e2b`) on Jetson, /v1/chat)
       'ollama'   (legacy)  -> DeterministicOllamaClient   (local Ollama, /api/generate, back-compat)
-    Either way it is a LOCAL model only (Tenet 2)."""
+    Either way it is a LOCAL model only (Tenet 2).
+
+    # #EXT-050-REQ-3 Start
+    ``model`` (EXT-050): an optional override of the model LABEL sent in the request payload --
+    defaults to `None` (every pre-EXT-050 caller keeps today's exact selection). This is a
+    RELABEL of the request to the SAME local endpoint, never a different backend/provider (Tenet
+    2 preserved) -- used by a user-authored subagent's optional `model:` frontmatter
+    (`harness.cli.JcodeCli._run_subagent`); genuinely rewiring to a different SERVED Jetson-fitting
+    model is EXT-021's multi-model-registry job, out of scope here.
+    # #EXT-050-REQ-3 End
+    """
     backend = os.environ.get("JCODE_LLM_BACKEND", "llamacpp").strip().lower()
     if backend in ("llamacpp", "llama.cpp", "llama_cpp", "llama-cpp"):
         from harness.llamacpp_client import DeterministicLlamaCppClient
-        return DeterministicLlamaCppClient()
+        return DeterministicLlamaCppClient(model=model)
     os.environ.setdefault("JAROS_LLM_PROVIDER", "ollama")
     os.environ.setdefault("OLLAMA_MODEL", MODEL)
     try:
         from harness.ollama_client import DeterministicOllamaClient
-        return DeterministicOllamaClient(model=MODEL)
+        return DeterministicOllamaClient(model=model or MODEL)
     except Exception:
         return create_llm_client(LlmConfig(provider="ollama"))
 

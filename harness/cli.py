@@ -19,7 +19,8 @@ Commands (Claude-Code-style):
   /statusline [on|off]          toggle a persistent "model · class · $0 · latency" status line
                                  above every prompt (EXT-045); shows the CURRENT line either way
   /parity                       Product-Parity Checklist: CC-product-surface parity score (EXT-041)
-  /agents  /tools               the live fleet/catalog
+  /agents  /tools               the live fleet/catalog (/agents also lists any user-authored
+                                 subagents discovered under .jcode/agents/<name>.md, EXT-050)
   /report                       latest convergence report
   /trend                        pass-rate history (full runs)
   /find <term>                  navigator agent -> fs.grep (locate code)
@@ -93,6 +94,12 @@ Commands (Claude-Code-style):
                                  file with {tool, arg, action} entries, action = allow|ask|deny,
                                  first match wins; the built-in hard safety gates ALWAYS run
                                  first — a user allow rule can never widen what they refuse, EXT-048)
+  /subagent <name> :: <task>    delegate to a user-authored subagent (drop a
+                                 .jcode/agents/<name>.md file with description/tools/model
+                                 frontmatter + a system-prompt body to add one; also reachable via
+                                 plain "delegate to <name> subagent: <task>"; its tools: allowlist
+                                 can only NARROW what the hard safety gates already permit, never
+                                 widen past them, EXT-050)
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -344,6 +351,17 @@ class JcodeCli:
         except Exception:
             self.skills = {}
         # #EXT-046-REQ-1 End
+        # #EXT-050-REQ-1 Start
+        # User-authorable subagents (EXT-050): discovered ONCE per CLI instance (mirrors the
+        # self.skills caching precedent immediately above) -- a missing/unreadable
+        # .jcode/agents/ (either tier) or any discovery failure falls back to {} rather than
+        # blocking construction.
+        try:
+            from harness.subagents import discover_subagents
+            self.subagents = discover_subagents(".")
+        except Exception:
+            self.subagents = {}
+        # #EXT-050-REQ-1 End
         # #EXT-047-REQ-3 Start
         # SessionStart lifecycle hooks (EXT-047): fire ONCE, here at construction -- a no-op
         # when no hooks are configured (self.hooks_config is {} in that case). `_stop_fired`
@@ -422,6 +440,91 @@ class JcodeCli:
             return None
     # #EXT-042-REQ-5 End
 
+    # #EXT-050-REQ-3 Start
+    def _subagent_runtime(self, tool_allowlist: "list[str] | None"):
+        """A scoped `Runtime` for a subagent delegation (EXT-050): carries the SAME
+        hooks/mode/permission_rules/ask_callback/checkpoint_ring wiring as the CLI's primary
+        `self.rt`, narrowed by `tool_allowlist` (the subagent's `tools:` frontmatter). This
+        narrowing is enforced at `Runtime.apply` STRICTLY AFTER the hard gate has already
+        accepted a Decision (see `harness.coding_loop.Runtime.apply`) -- it can only reject a
+        tool the subagent didn't list, never permit one the hard gates already refuse. Returns
+        `None` on any construction failure -- `_run_subagent` then falls back to the CLI's
+        primary (unnarrowed) `self.rt` rather than crash, exactly like `_write_runtime`."""
+        try:
+            from harness.coding_loop import Runtime
+            _on_event = None
+            if getattr(self, "stream", False):
+                from harness.tool_stream import make_printer
+                _on_event = make_printer()
+            return Runtime(
+                on_event=_on_event, hooks_config=getattr(self, "hooks_config", None),
+                mode=getattr(self, "mode", "default"),
+                permission_rules=getattr(self, "permission_rules", None),
+                ask_callback=(self._ask_permission if getattr(self, "_interactive", False) else None),
+                checkpoint_ring=getattr(self, "_checkpoint_ring", None),
+                tool_allowlist=tool_allowlist,
+            )
+        except Exception:
+            return None
+    # #EXT-050-REQ-3 End
+
+    # #EXT-050-REQ-2 Start
+    def _run_subagent(self, name: str, task: str) -> str:
+        """Delegate `task` to a user-authored subagent (EXT-050): its markdown body becomes a
+        system-prompt prefix folded into ONE plain-language request, routed through
+        `_route_plain` -- the SAME deterministic-fastpath -> orchestrator chain a typed
+        non-slash request already uses (no second reasoning mechanism, mirrors EXT-046's
+        `_run_skill`). The subagent's `tools:` allowlist narrows `self.rt` for the DURATION of
+        this delegated turn only (restored in `finally`); an optional `model:` override
+        similarly narrows/relabels `self.llm` for the duration only. An unregistered name
+        degrades to an honest error, never a crash."""
+        subagent = getattr(self, "subagents", {}).get(name)
+        if subagent is None:
+            return (f"no subagent named {name!r} is registered -- try /agents to see what's "
+                     "discovered (drop a .jcode/agents/<name>.md file to add one)")
+        from harness.subagents import render_subagent_prompt
+        augmented = render_subagent_prompt(subagent, task)
+        prior_rt = self.rt
+        prior_llm = self.llm
+        if getattr(subagent, "tools", None):
+            scoped_rt = self._subagent_runtime(list(subagent.tools))
+            if scoped_rt is not None:
+                self.rt = scoped_rt
+        if getattr(subagent, "model", None):
+            try:
+                from harness.coding_loop import build_llm
+                self.llm = build_llm(model=subagent.model)
+            except Exception:
+                self.llm = prior_llm
+        try:
+            out, _action_label = self._route_plain(augmented)
+        finally:
+            self.rt = prior_rt
+            self.llm = prior_llm
+        return out
+
+    def _match_subagent_delegation(self, line: str) -> "tuple[str, str] | None":
+        """Deterministic, no-model-call detection of an explicit subagent-delegation phrasing
+        (EXT-050): "delegate to <name> subagent: <task>" or "use the <name> subagent to <task>"
+        (case-insensitive). Returns `(name, task)` ONLY when `name` is an actual key in
+        `self.subagents` -- an unrelated plain request (or one naming an unregistered name) is
+        never misrouted, and returns `None`."""
+        subagents = getattr(self, "subagents", {}) or {}
+        if not subagents:
+            return None
+        import re as _re
+        m = _re.search(
+            r"\b(?:delegate\s+to|use(?:\s+the)?)\s+(\w+)\s+subagent\b(?:\s+to)?\s*[:\-]?\s*(.*)",
+            line, _re.I)
+        if not m:
+            return None
+        name = m.group(1)
+        if name not in subagents:
+            return None
+        task = m.group(2).strip() or line
+        return name, task
+    # #EXT-050-REQ-2 End
+
     # -- commands ----------------------------------------------------------
     def cmd_help(self, _arg: str) -> str:
         return __doc__.split("Commands (Claude-Code-style):", 1)[1].rstrip()
@@ -485,7 +588,25 @@ class JcodeCli:
 
     def cmd_agents(self, _arg: str) -> str:
         d = ROOT / ".jaros-data" / "agents"
-        return "agents: " + ", ".join(sorted(p.stem for p in d.glob("*.py") if not p.name.startswith("_")))
+        out = "agents: " + ", ".join(sorted(p.stem for p in d.glob("*.py") if not p.name.startswith("_")))
+        # #EXT-050-REQ-4 Start
+        # User-authored subagents (EXT-050): additive listing appended after the existing
+        # built-in Python agent fleet (unchanged above) -- a repo with no `.jcode/agents/`
+        # anywhere gets an honest empty note rather than a silent gap.
+        subagents = getattr(self, "subagents", {}) or {}
+        if subagents:
+            lines = []
+            for name in sorted(subagents):
+                sub = subagents[name]
+                desc = sub.description.strip() if sub.description else "(no description)"
+                lines.append(f"  /{name}  —  {desc}")
+            out += "\nuser-authored subagents (.jcode/agents/<name>.md):" + "".join(
+                "\n" + line for line in lines)
+        else:
+            out += ("\n(no user-authored subagents found — drop a .jcode/agents/<name>.md file "
+                     "with description/tools/model frontmatter to add one)")
+        # #EXT-050-REQ-4 End
+        return out
 
     def cmd_tools(self, _arg: str) -> str:
         d = ROOT / ".jaros-data" / "tools"
@@ -1534,6 +1655,17 @@ class JcodeCli:
         return "\n".join(lines)
     # #EXT-048-REQ-4 End
 
+    # #EXT-050-REQ-2 Start
+    def cmd_subagent(self, arg: str) -> str:
+        """Delegate a task to a user-authored subagent (EXT-050): `/subagent <name> :: <task>`
+        (mirrors the `::`-separated argument convention `/fix`/`/experiment` already use). See
+        `/agents` for what's discovered (drop a `.jcode/agents/<name>.md` file to add one)."""
+        bits = [b.strip() for b in (arg or "").split("::", 1)]
+        if len(bits) < 2 or not bits[0] or not bits[1]:
+            return "usage: /subagent <name> :: <task>   (see /agents for discovered subagents)"
+        return self._run_subagent(bits[0], bits[1])
+    # #EXT-050-REQ-2 End
+
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:
         """Interactive-only ambiguity check (REQ-8, Claude Code's AskUserQuestion analog):
@@ -1692,6 +1824,18 @@ class JcodeCli:
             # spec_driven_loop beat the free-form planner 3/3 vs 2/3; it also checkpoints (/undo).
             out = "\033[2m[agent → structured flow]\033[0m\n" + self.cmd_agent(line)
             return out, "agent"
+        # #EXT-050-REQ-2 Start
+        # Named subagent delegation (EXT-050): a deterministic, no-model-call fast path -- mirrors
+        # `_route_intent`'s refactor/nav style -- lets a plain request explicitly delegate to a
+        # REGISTERED user-authored subagent ("delegate to <name> subagent: <task>" / "use the
+        # <name> subagent to <task>"). Only fires when <name> is an actual key in `self.subagents`,
+        # so ordinary prose naming no subagent is never misrouted.
+        delegated = self._match_subagent_delegation(line)
+        if delegated is not None:
+            name, task = delegated
+            out = f"\033[2m[subagent → {name}]\033[0m\n" + self._run_subagent(name, task)
+            return out, f"subagent:{name}"
+        # #EXT-050-REQ-2 End
         intent = self._route_intent(line)   # deterministic refactor/nav routing (no 2B call)
         if intent:
             action, arg = intent

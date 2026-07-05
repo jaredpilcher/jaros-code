@@ -1,0 +1,77 @@
+{
+  "REQ-3": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 139,
+      "endLine": 141
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 186,
+      "endLine": 197
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 269,
+      "endLine": 282
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 445,
+      "endLine": 452
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 443,
+      "endLine": 469
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 354,
+      "endLine": 364
+    },
+    {
+      "file": "harness/subagents.py",
+      "startLine": 26,
+      "endLine": 149
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 471,
+      "endLine": 526
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1658,
+      "endLine": 1667
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1827,
+      "endLine": 1838
+    },
+    {
+      "file": "harness/subagents.py",
+      "startLine": 152,
+      "endLine": 164
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 592,
+      "endLine": 608
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 219,
+      "endLine": 249
+    }
+  ]
+}

@@ -15,10 +15,11 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, seven rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, nine rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
 skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #17 EXT-048's permission rules
-+ modes UX, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most
++ modes UX, #19 EXT-050's user-authorable subagents, #20 EXT-049's fine-grained checkpoint/
+rewind, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``; most
 others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
@@ -215,13 +216,37 @@ PARITY_ROWS: "list[ProductParityRow]" = [
         next_lever="Implement an MCP client as execution-plane adapters: each server tool "
                     "wrapped as a gated Jaros tool (two-plane preserved).",
     ),
+    # #EXT-050-REQ-5 Start
     ProductParityRow(
         id=19, feature="Subagent authoring surface",
-        state="partial",
-        current_state="Agents exist as Python in `.jaros-data/agents/` (builder-authored, not "
-                       "user-friendly); no user-authoring format.",
-        next_lever="Markdown agent spec -> loader compiles to a Jaros agent; router can delegate.",
+        state="works",
+        current_state="EXT-050: `.jcode/agents/<name>.md` (project) and `~/.jcode/agents/"
+                       "<name>.md` (user, project wins on a name collision) register a "
+                       "delegatable subagent -- `harness/subagents.py` discovers + parses "
+                       "optional frontmatter (`description`/`tools`/`model`) + a system-prompt "
+                       "body, never raising on a missing dir or a malformed file. "
+                       "`JcodeCli._run_subagent` composes the body with a delegated task and "
+                       "routes it through the SAME plain-language chain (`_route_plain`) a typed "
+                       "non-slash request already uses -- no second reasoning mechanism -- "
+                       "reachable via `/subagent <name> :: <task>` or a deterministic "
+                       "\"delegate to <name> subagent: <task>\" phrasing (only fires when <name> "
+                       "is actually registered). A subagent's `tools:` allowlist is enforced as a "
+                       "new `tool_allowlist` at `harness.coding_loop.Runtime.apply` -- the same "
+                       "gate seam EXT-047/EXT-048 use -- consulted ONLY AFTER the hard gate has "
+                       "already accepted the Decision, so it can only NARROW what the hard gates "
+                       "permit, never widen past them (proven by an explicit test: an "
+                       "allowlisted-but-denylisted `shell.exec` command is still refused by the "
+                       "hard gate). `/agents` additively lists discovered subagents alongside the "
+                       "existing built-in Python fleet; no `.jcode/agents/` anywhere is a "
+                       "byte-identical no-op.",
+        next_lever="Narrow the tool allowlist into `/agent`'s/`/fix`'s own internally-constructed "
+                    "Runtimes (mirrors EXT-049 row #20's identical residual for its checkpoint "
+                    "ring); a \"model-invocable when relevant\" auto-suggestion mode beyond an "
+                    "explicit `/subagent`/\"delegate to X\" phrasing; genuinely rewiring to a "
+                    "different SERVED Jetson-fitting model per subagent (EXT-021's job -- "
+                    "`model:` here only relabels the request to the same local endpoint).",
     ),
+    # #EXT-050-REQ-5 End
     # #EXT-049-REQ-4 Start
     ProductParityRow(
         id=20, feature="Fine-grained checkpoint / rewind",
