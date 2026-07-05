@@ -1,0 +1,65 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1349,
+      "endLine": 1459
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1478,
+      "endLine": 1499
+    },
+    {
+      "file": "tests/test_ext043_headless.py",
+      "startLine": 1,
+      "endLine": 277
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1349,
+      "endLine": 1459
+    },
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 74,
+      "endLine": 92
+    },
+    {
+      "file": "tests/test_ext043_headless.py",
+      "startLine": 1,
+      "endLine": 277
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1349,
+      "endLine": 1459
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1494,
+      "endLine": 1498
+    },
+    {
+      "file": "tests/test_ext043_headless.py",
+      "startLine": 1,
+      "endLine": 277
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1349,
+      "endLine": 1459
+    },
+    {
+      "file": "tests/test_ext043_headless.py",
+      "startLine": 1,
+      "endLine": 277
+    }
+  ]
+}

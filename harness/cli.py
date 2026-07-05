@@ -1346,31 +1346,157 @@ def repl(session_id: str | None = None) -> int:
             print(out)
 
 
-def main() -> int:
-    """Entry point: a one-shot request if given as args, else the interactive REPL.
+# #EXT-043-REQ-1 Start
+# #EXT-043-REQ-2 Start
+# #EXT-043-REQ-3 Start
+# #EXT-043-REQ-4 Start
+def _parse_headless_args(args: "list[str]") -> "tuple[str | None, str, int | None, list[str]]":
+    """Parse ``sys.argv[1:]`` for the headless/one-shot surface (EXT-043): a linear scan that
+    recognizes ``--resume <id>`` (unchanged from before this spec), ``--output-format
+    text|json``, and ``--max-turns N`` WHEREVER they occur, and leaves every other token, in its
+    original relative order, in ``rest``. When none of the three flags are present, ``rest ==
+    args`` exactly -- the input to the existing one-shot join is byte-identical to before this
+    spec, which is what makes the "no new flags -> no behavior change" guarantee mechanical.
 
-      python -m harness.cli                 # interactive REPL (Claude-Code-like)
-      python -m harness.cli /status         # run one command and exit
+    Never raises: an unrecognized ``--output-format`` value falls back to ``"text"``; a
+    non-integer ``--max-turns`` value falls back to ``None`` ("no cap") -- a malformed flag value
+    degrades gracefully rather than crashing a headless/scripted caller before it even runs.
+
+    Returns ``(session_id, output_format, max_turns, rest)``.
+    """
+    session_id: "str | None" = None
+    output_format = "text"
+    max_turns: "int | None" = None
+    rest: "list[str]" = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--resume" and i + 1 < len(args):
+            session_id = args[i + 1]
+            i += 2
+            continue
+        if a == "--output-format" and i + 1 < len(args):
+            val = args[i + 1].strip().lower()
+            output_format = val if val in ("text", "json") else "text"
+            i += 2
+            continue
+        if a == "--max-turns" and i + 1 < len(args):
+            try:
+                max_turns = int(args[i + 1])
+            except ValueError:
+                max_turns = None
+            i += 2
+            continue
+        rest.append(a)
+        i += 1
+    return session_id, output_format, max_turns, rest
+
+
+def _stdin_is_tty() -> bool:
+    """Best-effort stdin-is-a-terminal check. Any detection failure conservatively answers
+    ``True`` ("assume interactive") so a broken/unusual stdin can never silently swallow what
+    would otherwise have been a real interactive REPL session into a stdin read."""
+    import sys
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return True
+
+
+def _read_stdin_request() -> str:
+    """Read + strip the piped request from stdin. Never raises -- any read failure degrades to
+    ``""`` (an empty request), letting the caller decide what an empty piped request means."""
+    import sys
+    try:
+        return sys.stdin.read().strip()
+    except Exception:
+        return ""
+
+
+def _run_one_shot(request: str, session_id: "str | None", output_format: str,
+                   max_turns: "int | None") -> "tuple[str, int]":
+    """Run exactly ONE headless turn and return ``(text_to_print, exit_code)``.
+
+    ``max_turns`` (REQ-4): the one-shot path already performs exactly one turn, so ``N >= 1`` (or
+    ``None``, no cap) has no further effect beyond that existing ceiling -- documented honestly,
+    not silently ignored. ``N < 1`` is enforced as a genuine refusal: ``JcodeCli`` is never even
+    constructed, so a caller that caps at zero turns gets an honest, observable failure rather
+    than a flag that quietly does nothing.
+
+    ``output_format`` (REQ-2): ``"text"`` reproduces the exact pre-EXT-043 one-shot
+    ``try/except`` contract (same success text, same red ``error:`` text, same exit codes) --
+    this is what keeps the default/no-flags invocation byte-identical to before this spec.
+    ``"json"`` emits one machine-parseable object with ``request``/``response``/``ok``/``model``
+    (plus ``error`` when ``ok`` is false) instead (REQ-3: the exit code carries the same
+    success/failure signal a script would otherwise have to parse out of the text).
+    """
+    import json
+
+    if max_turns is not None and max_turns < 1:
+        msg = f"--max-turns {max_turns} < 1 -- refusing to run (0 turns permitted)"
+        if output_format == "json":
+            return json.dumps({"request": request, "response": None, "ok": False,
+                                "model": None, "error": msg}), 1
+        return f"\033[31merror:\033[0m {msg}", 1
+
+    try:
+        cli = JcodeCli(session_id=session_id)
+        response = cli.handle(request)
+        model = cli.model
+    except Exception as exc:            # a headless run must report cleanly, not dump a traceback
+        if output_format == "json":
+            return json.dumps({"request": request, "response": None, "ok": False,
+                                "model": None, "error": str(exc)}), 1
+        return f"\033[31merror:\033[0m {exc}", 1
+
+    if output_format == "json":
+        return json.dumps({"request": request, "response": response, "ok": True,
+                            "model": model}), 0
+    return response, 0
+# #EXT-043-REQ-4 End
+# #EXT-043-REQ-3 End
+# #EXT-043-REQ-2 End
+# #EXT-043-REQ-1 End
+
+
+def main() -> int:
+    """Entry point: a one-shot request if given as args or piped via stdin, else the
+    interactive REPL.
+
+      python -m harness.cli                          # interactive REPL (Claude-Code-like)
+      python -m harness.cli /status                  # run one command and exit
       python -m harness.cli "fix the bug in foo.py"   # one plain-language request
-      python -m harness.cli --resume <id>   # resume a prior session (REPL, or with a
-                                             # trailing one-shot request after the id)
+      python -m harness.cli --resume <id>            # resume a prior session (REPL, or with a
+                                                      # trailing one-shot request after the id)
+      echo "fix foo.py" | python -m harness.cli       # headless: request piped via stdin (EXT-043)
+      python -m harness.cli -                        # headless: read stdin unconditionally
+      python -m harness.cli --output-format json "req"   # machine-parseable JSON on stdout
+      python -m harness.cli --max-turns 0 "req"       # refuse to run (0 turns) -- exit non-zero
     """
     import sys
     args = sys.argv[1:]
-    # #EXT-036-REQ-12 Start
-    session_id = None
-    if args and args[0] == "--resume" and len(args) > 1:
-        session_id = args[1]
-        args = args[2:]
-    # #EXT-036-REQ-12 End
-    if args:
-        try:
-            print(JcodeCli(session_id=session_id).handle(" ".join(args)))
-        except Exception as exc:            # a one-shot must report cleanly, not dump a traceback
-            print(f"\033[31merror:\033[0m {exc}")
-            return 1
-        return 0
-    return repl(session_id=session_id)
+    # #EXT-043-REQ-1 Start
+    session_id, output_format, max_turns, rest = _parse_headless_args(args)
+
+    request: "str | None" = None
+    if rest == ["-"]:
+        request = _read_stdin_request()
+    elif rest:
+        request = " ".join(rest)
+    elif not _stdin_is_tty():
+        piped = _read_stdin_request()
+        if piped:
+            request = piped
+
+    if request is None:
+        return repl(session_id=session_id)
+
+    # #EXT-043-REQ-3 Start
+    text, code = _run_one_shot(request, session_id, output_format, max_turns)
+    print(text)
+    return code
+    # #EXT-043-REQ-3 End
+    # #EXT-043-REQ-1 End
 
 
 if __name__ == "__main__":

@@ -71,13 +71,25 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                        "continue/resume UX matching CC's `-c`/`-r <id|name>`/`--fork-session`.",
         next_lever="Durable session store + `jcode -c` / `-r` (the Jaros log is already the transcript).",
     ),
+    # #EXT-043-REQ-2 Start
     ProductParityRow(
         id=13, feature="Headless + piping + structured output",
-        state="partial",
-        current_state="One-shot `python -m harness.cli \"req\"` exists; no stdin pipe, no "
-                       "JSON/stream output, no `--max-turns` caps.",
-        next_lever="Thin deterministic output layer over the existing one-shot path.",
+        state="works",
+        current_state="EXT-043: stdin piping (`echo req | jcode`, and `jcode -` reads stdin "
+                       "unconditionally), `--output-format text|json` (JSON emits a single "
+                       "parseable `{request,response,ok,model}` object), a `--max-turns` cap "
+                       "(N<1 genuinely refuses to run -- JcodeCli is never constructed; N>=1 is "
+                       "a documented no-op above the one-shot path's existing single-turn "
+                       "ceiling), and deterministic exit codes (0 success / 1 on any "
+                       "construction/handle() failure) are all wired + test-covered, additive "
+                       "over the unchanged one-shot/REPL paths. `stream-json` (line-delimited "
+                       "event streaming) is honestly deferred -- no per-tool event stream exists "
+                       "at the `handle()` seam yet.",
+        next_lever="`stream-json` line-delimited output (needs a per-tool/heartbeat event "
+                    "stream threaded through `handle()`); `--json-schema`; an explicit `-p` "
+                    "alias flag mirroring `claude -p` 1:1.",
     ),
+    # #EXT-043-REQ-2 End
     ProductParityRow(
         id=14, feature="Project-instruction memory hierarchy",
         state="works",

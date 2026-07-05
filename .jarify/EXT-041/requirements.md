@@ -41,3 +41,13 @@ from the official Claude Code docs monthly (Claude Code is a moving target). Wir
 **Live honest baseline (2026-07-04):** aggregate parity = **31.2%** (0 works / 10 partial / 6
 missing of 16 rows) — the honest starting point for this axis, to converge from, not a claim of
 progress.
+
+**Update (2026-07-04, EXT-042):** row #14 (Project-instruction memory hierarchy) shipped
+end-to-end — `JCODE.md` auto-loaded at project + user levels into the orchestrator/planner
+context, plus `/init` — and is honestly the first row to reach `works`. Aggregate parity moved to
+**34.4%** (1 works / 9 partial / 6 missing of 16 rows).
+
+**Update (2026-07-04, EXT-043):** row #13 (Headless + piping + structured output) shipped
+end-to-end — stdin piping, `--output-format text|json`, a `--max-turns` cap, and deterministic
+exit codes over the existing one-shot path (`stream-json` honestly deferred). Aggregate parity
+moved to **37.5%** (2 works / 8 partial / 6 missing of 16 rows).
