@@ -1,0 +1,42 @@
+{
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 396,
+      "endLine": 407
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1805,
+      "endLine": 1876
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/mcp_config.py",
+      "startLine": 15,
+      "endLine": 115
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/mcp_client.py",
+      "startLine": 33,
+      "endLine": 328
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 213,
+      "endLine": 245
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": ".jaros-data/tools/mcp_tool_call_tool.py",
+      "startLine": 24,
+      "endLine": 107
+    }
+  ]
+}

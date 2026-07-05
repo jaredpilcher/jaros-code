@@ -112,6 +112,13 @@ Commands (Claude-Code-style):
                                  plain "delegate to <name> subagent: <task>"; its tools: allowlist
                                  can only NARROW what the hard safety gates already permit, never
                                  widen past them, EXT-050)
+  /mcp                           list configured MCP servers + their live-discovered tools (drop a
+                                 .jcode/mcp.json file with {"servers": {"<name>": {"command":...,
+                                 "args":[...], "env":{...}}}} to add one); an unreachable server
+                                 reports an honest inline error, never hangs (bounded timeout)
+  /mcp call <server> :: <tool> :: <json-args>   invoke a discovered MCP tool through the SAME
+                                 gated Decision path every other tool call uses — a denylisted
+                                 server launch command is refused by the hard gate, EXT-054
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -386,6 +393,18 @@ class JcodeCli:
         except Exception:
             self.subagents = {}
         # #EXT-050-REQ-1 End
+        # #EXT-054-REQ-4 Start
+        # MCP (Model Context Protocol) server config (EXT-054): discovered ONCE per CLI instance,
+        # mirroring the self.subagents caching precedent immediately above -- a missing/unreadable
+        # .jcode/mcp.json (either tier) or any discovery failure falls back to {} rather than
+        # blocking construction. Note: this caches only the CONFIG (which servers exist), not a
+        # live connection -- `/mcp` re-discovers tools live each time it's invoked.
+        try:
+            from harness.mcp_config import load_mcp_config
+            self.mcp_servers = load_mcp_config(".")
+        except Exception:
+            self.mcp_servers = {}
+        # #EXT-054-REQ-4 End
         # #EXT-047-REQ-3 Start
         # SessionStart lifecycle hooks (EXT-047): fire ONCE, here at construction -- a no-op
         # when no hooks are configured (self.hooks_config is {} in that case). `_stop_fired`
@@ -1782,6 +1801,79 @@ class JcodeCli:
             return "usage: /subagent <name> :: <task>   (see /agents for discovered subagents)"
         return self._run_subagent(bits[0], bits[1])
     # #EXT-050-REQ-2 End
+
+    # #EXT-054-REQ-4 Start
+    def cmd_mcp(self, arg: str) -> str:
+        """MCP (Model Context Protocol) client (EXT-054, first slice): `/mcp` (no argument) lists
+        every configured server (drop a `.jcode/mcp.json` -- or `~/.jcode/mcp.json` -- file with a
+        `{"servers": {"<name>": {"command":..., "args":[...], "env":{...}}}}` map to add one) and
+        LIVE-discovers its tools (bounded timeout; an unreachable server reports an honest inline
+        error without blocking the others). `/mcp call <server> :: <tool> :: <json-args>` invokes
+        a discovered tool through the SAME gated `mcp.tool_call` Decision path (`self.rt`) every
+        other tool call uses -- a denylisted server launch command is refused by the hard gate,
+        never bypassed."""
+        arg = (arg or "").strip()
+        if arg.startswith("call ") or arg.startswith("call\t"):
+            return self._mcp_call(arg[len("call "):].strip())
+        servers = getattr(self, "mcp_servers", {}) or {}
+        if not servers:
+            return ("(no MCP servers configured — drop a .jcode/mcp.json file with a "
+                     '{"servers": {"<name>": {"command":..., "args":[...], "env":{...}}}} map '
+                     "to add one)")
+        from harness.mcp_client import MCPServerSpec, discover_tools
+        lines = ["configured MCP servers:"]
+        for name in sorted(servers):
+            sd = servers[name]
+            spec = MCPServerSpec(name=name, command=sd.command, args=sd.args, env=sd.env)
+            result = discover_tools(spec, timeout=10.0)
+            if result.get("ok"):
+                tools = result.get("tools") or []
+                if tools:
+                    lines.append(f"  {name}:")
+                    for t in tools:
+                        desc = (t.description or "").strip() or "(no description)"
+                        lines.append(f"    {t.name}  —  {desc}")
+                else:
+                    lines.append(f"  {name}: (no tools reported)")
+            else:
+                lines.append(f"  {name}: (unreachable — {result.get('error') or 'unknown error'})")
+        return "\n".join(lines)
+
+    def _mcp_call(self, arg: str) -> str:
+        """`/mcp call <server> :: <tool> :: <json-args>` -- builds a real `mcp.tool_call` Decision
+        and applies it through `self.rt` (the gated seam); `<json-args>` is optional (defaults to
+        `{}`). An unknown server or invalid JSON returns an honest usage/error message rather than
+        raising; a gate refusal (e.g. a denylisted server launch command) surfaces the gate's own
+        rejection reason."""
+        bits = [b.strip() for b in (arg or "").split("::")]
+        if len(bits) < 2 or not bits[0] or not bits[1]:
+            return "usage: /mcp call <server> :: <tool> :: <json-args>   (see /mcp for what's configured)"
+        server_name, tool_name = bits[0], bits[1]
+        args_json = bits[2] if len(bits) > 2 and bits[2] else "{}"
+        servers = getattr(self, "mcp_servers", {}) or {}
+        sd = servers.get(server_name)
+        if sd is None:
+            return f"unknown MCP server {server_name!r} — see /mcp for what's configured"
+        import json as _json
+        try:
+            arguments = _json.loads(args_json)
+        except Exception:
+            return f"invalid JSON arguments: {args_json!r}"
+        decision = self._mk(
+            id=f"mcp-{uuid.uuid4().hex}", source="mcp",
+            type="mcp.tool_call",
+            payload={
+                "server": {"name": sd.name, "command": sd.command,
+                           "args": list(sd.args), "env": dict(sd.env)},
+                "tool": tool_name, "arguments": arguments,
+            },
+        )
+        try:
+            result = self.rt.apply(decision)
+        except RuntimeError as exc:
+            return f"mcp call refused: {exc}"
+        return str(result)
+    # #EXT-054-REQ-4 End
 
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:

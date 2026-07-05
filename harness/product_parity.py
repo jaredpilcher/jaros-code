@@ -210,13 +210,39 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "beyond `/permissions`'s flat listing.",
     ),
     # #EXT-048-REQ-5 End
+    # #EXT-054-REQ-5 Start
     ProductParityRow(
         id=18, feature="External-tool extensibility protocol (MCP client)",
-        state="missing",
-        current_state="None -- no MCP client exists.",
-        next_lever="Implement an MCP client as execution-plane adapters: each server tool "
-                    "wrapped as a gated Jaros tool (two-plane preserved).",
+        state="partial",
+        current_state="EXT-054 (first slice): `.jcode/mcp.json` (project) and `~/.jcode/mcp.json` "
+                       "(user, project wins on a name collision) register MCP stdio servers "
+                       "(`{\"servers\": {\"<name>\": {\"command\", \"args\", \"env\"}}}`). "
+                       "`harness/mcp_client.py` speaks the MCP stdio JSON-RPC transport -- launch "
+                       "(scrubbed environment), `initialize` + `notifications/initialized`, "
+                       "`tools/list`, `tools/call` -- with EVERY subprocess read timeout-bounded "
+                       "via a background-thread + `queue.Queue` reader (portable to Windows, "
+                       "unlike `select()` on a pipe), so a dead/hung/slow server degrades to an "
+                       "honest error and never hangs; `close()` always cleanly shuts down the "
+                       "subprocess (stdin EOF, then a process-tree kill if needed). Every "
+                       "`tools/call` reaches the host ONLY as a new `mcp.tool_call` Decision "
+                       "applied through `harness.coding_loop.Runtime.apply` -- the same gate -> "
+                       "executor -> decision-log seam every tool call already passes through -- "
+                       "via a new gated tool (`mcp_tool_call_tool.py`) whose `validate()` applies "
+                       "the SAME network-egress/destructive-command/privilege-escalation denylist "
+                       "`shell.exec` already enforces to the MCP server's LAUNCH command, so a "
+                       "denylisted server config is refused before any subprocess is ever spawned "
+                       "(proven by an explicit test, mirroring EXT-050's identical safety proof). "
+                       "`/mcp` lists configured servers + their live-discovered tools (an "
+                       "unreachable server reports an honest inline error without blocking the "
+                       "others); `/mcp call <server> :: <tool> :: <json-args>` invokes one through "
+                       "the gated path. No `.jcode/mcp.json` anywhere is a byte-identical no-op.",
+        next_lever="MCP resources and prompts (only tools/list+tools/call are implemented); "
+                    "server-initiated notifications; the HTTP/SSE transport (stdio only); a "
+                    "persistent server connection kept alive across turns (today's lifecycle "
+                    "launches a fresh subprocess per call); a model-invocable auto-suggestion mode "
+                    "beyond an explicit `/mcp call`.",
     ),
+    # #EXT-054-REQ-5 End
     # #EXT-050-REQ-5 Start
     ProductParityRow(
         id=19, feature="Subagent authoring surface",

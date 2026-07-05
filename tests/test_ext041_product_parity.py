@@ -123,8 +123,11 @@ def test_score_default_rows_reflects_honest_current_baseline():
     assert result["n_total"] == 16
     # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), #17
     # (EXT-048), #19 (EXT-050), #20 (EXT-049), #22 (EXT-051), #23 (EXT-052), #24 (EXT-045), and
-    # #25 (EXT-053) are genuine "works"
+    # #25 (EXT-053) are genuine "works"; #18 (EXT-054, MCP client first slice) is honestly
+    # "partial" -- config/handshake/discovery/gated invocation delivered, resources/prompts/
+    # notifications/SSE transport deferred
     assert result["n_works"] == 12
+    assert result["n_partial"] == 1
     assert result["n_partial"] + result["n_missing"] == 4
     assert 0.0 <= result["pct"] < 100.0
 
