@@ -958,3 +958,84 @@ attempt by an INDEPENDENT acceptance measure — this masks the ~17% total-failu
 - [ ] FOLLOW-UP (explicit, out of this task's scope): wiring `build_system_best_of_k` into the `/buildsystem`
   CLI command (today only reachable via direct harness import/tests) and a LIVE gemma re-measurement of the
   masked failure rate against `HARD_SLICE`/`coherence_suite.run_coherence_suite` — open
+
+### [REQ-26] Acceptance-completeness / done-honesty — a deterministic minimum acceptance floor  (DONE — offline mechanism, EXT-036 TASK-37, 2026-07-05)
+
+**MEASURED PROBLEM (2026-07-05), task #118:** `build_system`'s `_derive_acceptance_checklist(spec,
+mods, llm)` (REQ-2) proposes acceptance checks via the MODEL, so the checklist VARIES in
+completeness for the IDENTICAL sentence — a single datastore build derived 3 checks, another draw
+of the SAME sentence derived only 1. `build_system_best_of_k` (REQ-25) then EARLY-EXITS on
+whichever draw derived the fewest/easiest self-checks and reports `done=True` on a sparse 1-check
+bar — not real correctness. The model was also independently found to systematically MISS a
+'usage'/CLI-help check. So `done` was not comparable across builds/draws and could be hollow — a
+Tenet-3 gap sitting directly beneath REQ-25's best-of-k selection mechanism.
+
+**THE FIX — a DETERMINISTIC MINIMUM checklist the model can only ADD TO:** derived from the SPEC
+sentence + the built module API alone (NO model call, so it is IDENTICAL for the same input every
+time, closing the cross-draw inconsistency), composed via UNION with the model's own proposals so
+the bar for a given sentence can never be SPARSER than the minimum.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_minimum_acceptance(spec, mods, plan)` — a DETERMINISTIC
+  minimum checklist: the existing `_smoke_checklist` (import + `hasattr`) as the floor, a
+  USAGE/HELP check (running the entrypoint with no args AND with `--help`, asserting neither
+  crashes with an unhandled Python exception — the systematically-MISSED check), and one
+  subprocess check per conservatively-extracted command token the spec names
+  (`_extract_command_tokens` — quoted tokens like `'add'`/`'list'` plus a small fixed allow-list
+  of imperative verbs; under-extracts rather than hallucinates a command the sentence doesn't
+  name). Entry filename resolved by `_minimum_entry_filename` (plan's declared `entrypoint`, else
+  a module literally named `main.py`, else the last planned module — mirrors
+  `harness.system_suite._resolve_entry`'s convention). — **DONE 2026-07-05**
+- [x] NO ORACLE LEAK (Tenet 3): every minimum check asserts ONLY that the command doesn't
+  genuinely crash (`'Traceback (most recent call last)' not in result.stderr`) — never a specific
+  stdout VALUE, which would require knowing the answer up front. Empty stdin (`input=""`) is fed
+  so a stdin-driven CLI (REQ-23's convention) sees an immediate EOF rather than hanging. — **DONE
+  2026-07-05**
+- [x] `harness/system_builder.py::_compose_acceptance_checklist(spec, mods, llm, plan)` — the
+  FINAL checklist = the deterministic minimum UNIONED with `_derive_acceptance_checklist`'s own
+  model-derived proposals (REQ-2 is untouched — still a pure model-tier derivation on its own);
+  de-duplicated by `(name, code)` so an identical proposal is never double-counted. The model's
+  checks AUGMENT, never REPLACE, the minimum. Guarded: a model/derive failure or exception still
+  leaves the deterministic minimum in place. — **DONE 2026-07-05**
+- [x] `build_system`'s own ACCEPTANCE step now calls `_compose_acceptance_checklist` (replacing
+  the direct `_derive_acceptance_checklist` call) — `done=True` iff EVERY check in the composed,
+  minimum-inclusive checklist passes from a CLEAN state (the pre-existing from-clean-state /
+  REQ-5 repair-loop honesty rules are untouched); an empty checklist still never counts as done
+  (existing rule, now only reachable in the degenerate case where the minimum itself yields
+  nothing, e.g. no modules at all). — **DONE 2026-07-05**
+- [x] `build_system_best_of_k`'s `_score_build_attempt` (REQ-25) now scores every attempt against
+  the SAME composed, minimum-inclusive checklist instead of a purely model-derived one — a draw
+  that self-derives fewer model checks is still measured against the full deterministic floor, so
+  best-of-k selects/early-exits only when a draw genuinely passes the FULL bar, never a sparse
+  self-accepted one. `build_system`'s and `build_system_best_of_k`'s own signatures/other
+  behavior are otherwise byte-identical. — **DONE 2026-07-05**
+- [x] HONEST regression proven, not hidden: a fixture with a single trivial self-derived model
+  check (an `import` that never exercises the broken command) that previously would have looked
+  like a pass now correctly fails via the deterministic minimum's own command check — `done`
+  flips to the HONEST `False`. A matching control proves no NEW false negative (the same composed
+  bar reports `done=True` once the CLI is genuinely fixed). This is the intended, HONEST outcome
+  (a stricter, trustworthy bar can only lower a hollow accept-rate, never raise a real one) — not
+  a regression. — **DONE 2026-07-05**
+- [x] Proven OFFLINE (`tests/test_ext036_acceptance_completeness.py`, 16 tests, canned/fake `llm`,
+  no live model): `_extract_command_tokens`/`_minimum_entry_filename`/`_minimum_acceptance` unit
+  behavior (including never-raises on bad input); the minimum is deterministic/stable across
+  repeated calls on the same sentence; the composed checklist is never sparser than the minimum
+  and the model's proposals genuinely augment it; an identical model proposal dedupes against a
+  minimum check; the composed checklist survives a raising `llm`; an end-to-end build whose model
+  self-derives only ONE trivial (always-passing) check still gets `done=False` on a genuinely
+  broken CLI (caught by the minimum's own command check) and `done=True` once fixed (no new false
+  negative); `build_system_best_of_k` no longer early-exits on a sparse first-attempt pass and
+  lands the genuinely-fixed second attempt. `tests/test_ext036_acceptance.py` extended (1 updated
+  + 1 new test for the empty-checklist invariant under the new composition — an empty checklist
+  is now only reachable by monkeypatching BOTH the minimum and the model-derivation to `[]`, since
+  a real (non-monkeypatched) minimum is never empty for a non-empty module set). One pre-existing
+  REQ-23 governed-build fixture (`MAIN_MISSING_MUL` in `tests/test_ext036_system_builder.py`) was
+  updated to still DEFINE the `mul` function (satisfying the new stricter existence-based smoke
+  floor) while leaving it unwired from the CLI dispatch — preserving that file's "build_system's
+  own checklist is fooled by a dropped BEHAVIOR, not a dropped SYMBOL" premise under the new
+  deterministic floor, HONESTLY updated per the stricter (correct) bar rather than weakened. Full
+  `tests/` suite stays green: 2275 passed, 2 skipped (up from 2258/2). — **DONE 2026-07-05**
+- [ ] FOLLOW-UP (explicit, out of this task's scope, pre-existing per REQ-25): a LIVE gemma
+  re-measurement of accept-rates before/after this fix (the honest expectation is a LOWER
+  measured accept-rate, not a regression), and wiring `build_system_best_of_k` into the
+  `/buildsystem` CLI command — open

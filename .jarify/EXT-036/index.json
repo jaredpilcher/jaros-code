@@ -1,4 +1,37 @@
 {
+  "REQ-19": [
+    {
+      "file": "harness/experiment_store.py",
+      "startLine": 33,
+      "endLine": 184
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1704,
+      "endLine": 1750
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": "harness/multi_tests.py",
+      "startLine": 33,
+      "endLine": 153
+    }
+  ],
+  "REQ-24": [
+    {
+      "file": "harness/episodic_memory.py",
+      "startLine": 37,
+      "endLine": 256
+    }
+  ],
+  "REQ-21": [
+    {
+      "file": "harness/modification_suite.py",
+      "startLine": 51,
+      "endLine": 738
+    }
+  ],
   "REQ-23": [
     {
       "file": "harness/coherence_suite.py",
@@ -7,30 +40,30 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1561,
-      "endLine": 2020
+      "startLine": 1780,
+      "endLine": 2251
     }
   ],
   "REQ-17": [
     {
       "file": "harness/cli.py",
-      "startLine": 85,
-      "endLine": 89
+      "startLine": 171,
+      "endLine": 174
     },
     {
       "file": "harness/cli.py",
-      "startLine": 199,
-      "endLine": 205
+      "startLine": 343,
+      "endLine": 349
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1108,
-      "endLine": 1112
+      "startLine": 2088,
+      "endLine": 2095
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1235,
-      "endLine": 1237
+      "startLine": 2239,
+      "endLine": 2244
     },
     {
       "file": "harness/project_md.py",
@@ -41,38 +74,38 @@
   "REQ-16": [
     {
       "file": "harness/cli.py",
-      "startLine": 90,
-      "endLine": 94
+      "startLine": 175,
+      "endLine": 179
     },
     {
       "file": "harness/cli.py",
-      "startLine": 206,
-      "endLine": 212
+      "startLine": 358,
+      "endLine": 364
     },
     {
       "file": "harness/cli.py",
-      "startLine": 623,
-      "endLine": 627
+      "startLine": 1175,
+      "endLine": 1179
     },
     {
       "file": "harness/cli.py",
-      "startLine": 636,
-      "endLine": 641
+      "startLine": 1188,
+      "endLine": 1193
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1076,
-      "endLine": 1091
+      "startLine": 2056,
+      "endLine": 2071
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1109,
-      "endLine": 1111
+      "startLine": 2089,
+      "endLine": 2094
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1231,
-      "endLine": 1233
+      "startLine": 2223,
+      "endLine": 2225
     },
     {
       "file": "harness/repo_memory.py",
@@ -83,87 +116,82 @@
   "REQ-12": [
     {
       "file": "harness/cli.py",
-      "startLine": 75,
-      "endLine": 117
+      "startLine": 155,
+      "endLine": 202
     },
     {
       "file": "harness/cli.py",
-      "startLine": 192,
-      "endLine": 198
+      "startLine": 336,
+      "endLine": 342
     },
     {
       "file": "harness/cli.py",
-      "startLine": 929,
-      "endLine": 960
+      "startLine": 1592,
+      "endLine": 1628
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1107,
-      "endLine": 1113
+      "startLine": 2087,
+      "endLine": 2096
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1223,
-      "endLine": 1246
+      "startLine": 2215,
+      "endLine": 2254
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1247,
-      "endLine": 1249
+      "startLine": 2308,
+      "endLine": 2310
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1279,
-      "endLine": 1282
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 1316,
-      "endLine": 1321
+      "startLine": 2440,
+      "endLine": 2443
     },
     {
       "file": "harness/session.py",
       "startLine": 10,
-      "endLine": 87
+      "endLine": 141
     }
   ],
   "REQ-13": [
     {
       "file": "harness/cli.py",
-      "startLine": 120,
-      "endLine": 144
+      "startLine": 205,
+      "endLine": 229
     },
     {
       "file": "harness/cli.py",
-      "startLine": 496,
-      "endLine": 514
+      "startLine": 1019,
+      "endLine": 1045
     },
     {
       "file": "harness/cli.py",
-      "startLine": 523,
-      "endLine": 529
+      "startLine": 1054,
+      "endLine": 1060
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1491,
-      "endLine": 1558
+      "startLine": 1705,
+      "endLine": 1777
     }
   ],
   "REQ-14": [
     {
       "file": "harness/cli.py",
-      "startLine": 213,
-      "endLine": 217
+      "startLine": 365,
+      "endLine": 369
     },
     {
       "file": "harness/cli.py",
-      "startLine": 519,
-      "endLine": 522
+      "startLine": 1050,
+      "endLine": 1053
     },
     {
       "file": "harness/cli.py",
-      "startLine": 553,
-      "endLine": 588
+      "startLine": 1084,
+      "endLine": 1122
     },
     {
       "file": "harness/system_builder.py",
@@ -172,42 +200,42 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1230,
-      "endLine": 1488
+      "startLine": 1430,
+      "endLine": 1702
     }
   ],
   "REQ-4": [
     {
       "file": "harness/cli.py",
-      "startLine": 481,
-      "endLine": 551
+      "startLine": 1004,
+      "endLine": 1082
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 533,
-      "endLine": 557
+      "startLine": 564,
+      "endLine": 588
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 793,
-      "endLine": 837
+      "startLine": 956,
+      "endLine": 1008
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1000,
-      "endLine": 1207
+      "startLine": 1184,
+      "endLine": 1405
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1216,
-      "endLine": 1227
+      "startLine": 1416,
+      "endLine": 1427
     }
   ],
   "REQ-18": [
     {
       "file": "harness/cli.py",
-      "startLine": 962,
-      "endLine": 995
+      "startLine": 1669,
+      "endLine": 1702
     },
     {
       "file": "harness/task_store.py",
@@ -215,33 +243,21 @@
       "endLine": 164
     }
   ],
-  "REQ-19": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 997,
-      "endLine": 1043
-    },
-    {
-      "file": "harness/experiment_store.py",
-      "startLine": 33,
-      "endLine": 184
-    }
-  ],
   "REQ-8": [
     {
       "file": "harness/cli.py",
-      "startLine": 1045,
-      "endLine": 1074
+      "startLine": 2025,
+      "endLine": 2054
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1205,
-      "endLine": 1213
+      "startLine": 2296,
+      "endLine": 2304
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1296,
-      "endLine": 1298
+      "startLine": 2466,
+      "endLine": 2478
     },
     {
       "file": "harness/ask_user.py",
@@ -252,27 +268,13 @@
   "REQ-15": [
     {
       "file": "harness/cli.py",
-      "startLine": 1224,
-      "endLine": 1230
+      "startLine": 2216,
+      "endLine": 2222
     },
     {
       "file": "harness/session.py",
-      "startLine": 90,
-      "endLine": 156
-    }
-  ],
-  "REQ-21": [
-    {
-      "file": "harness/modification_suite.py",
-      "startLine": 51,
-      "endLine": 738
-    }
-  ],
-  "REQ-24": [
-    {
-      "file": "harness/episodic_memory.py",
-      "startLine": 37,
-      "endLine": 256
+      "startLine": 251,
+      "endLine": 317
     }
   ],
   "REQ-22": [
@@ -283,20 +285,13 @@
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 720,
-      "endLine": 792
+      "startLine": 883,
+      "endLine": 955
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1157,
-      "endLine": 1197
-    }
-  ],
-  "REQ-6": [
-    {
-      "file": "harness/multi_tests.py",
-      "startLine": 33,
-      "endLine": 153
+      "startLine": 1351,
+      "endLine": 1391
     }
   ],
   "REQ-20": [
@@ -309,56 +304,73 @@
   "REQ-1": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 240,
-      "endLine": 302
+      "startLine": 271,
+      "endLine": 333
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 294,
-      "endLine": 382
+      "startLine": 325,
+      "endLine": 413
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 385,
-      "endLine": 462
+      "startLine": 416,
+      "endLine": 493
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1064,
-      "endLine": 1077
+      "startLine": 1256,
+      "endLine": 1269
     }
   ],
   "REQ-3": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 465,
-      "endLine": 530
+      "startLine": 496,
+      "endLine": 561
     }
   ],
   "REQ-2": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 558,
-      "endLine": 719
+      "startLine": 589,
+      "endLine": 750
+    }
+  ],
+  "REQ-26": [
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 751,
+      "endLine": 882
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1392,
+      "endLine": 1396
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2283,
+      "endLine": 2285
     }
   ],
   "REQ-5": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 838,
-      "endLine": 998
+      "startLine": 1009,
+      "endLine": 1182
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 1208,
-      "endLine": 1215
+      "startLine": 1406,
+      "endLine": 1415
     }
   ],
   "REQ-25": [
     {
       "file": "harness/system_builder.py",
-      "startLine": 2023,
-      "endLine": 2145
+      "startLine": 2254,
+      "endLine": 2393
     }
   ]
 }

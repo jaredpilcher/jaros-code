@@ -236,14 +236,34 @@ def test_smoke_fallback_fails_a_broken_system_no_false_pass(tmp_path):
 # --- (d) an empty checklist never counts as done ------------------------------------------
 
 def test_empty_checklist_never_counts_as_done(tmp_path, monkeypatch):
+    """task #118 (REQ-26): `build_system`'s acceptance checklist is now the DETERMINISTIC
+    MINIMUM composed (union) with whatever the model proposes -- an empty checklist is only
+    possible when BOTH sides are empty. Monkeypatching both to `[]` proves the pre-existing
+    invariant (an empty checklist never vacuously counts as done) still holds under the new
+    composition."""
     import harness.system_builder as sb
 
     llm = _CannedLlm(plan=SIMPLE_PLAN, module_first={"calc.py": CALC_WORKING})
     monkeypatch.setattr(sb, "_derive_acceptance_checklist", lambda spec, mods, llm: [])
+    monkeypatch.setattr(sb, "_minimum_acceptance", lambda spec, mods, plan=None: [])
     result = build_system(SPEC, tmp_path / "built", llm=llm)
     assert result["shipped"] is True
     assert result["done"] is False
     assert result["unmet"] == ["no acceptance checklist derived"]
+
+
+def test_deterministic_minimum_still_gates_when_model_checklist_is_empty(tmp_path):
+    """task #118 (REQ-26): even when the MODEL derives zero usable self-checks (every tier
+    unparseable/vague), the DETERMINISTIC MINIMUM (usage/--help + smoke) still gates `done`
+    -- proving the minimum is a REAL floor (not a way to make `done` unconditionally False):
+    a genuinely working system still passes it."""
+    llm = _CannedLlm(plan=SIMPLE_PLAN, module_first={"calc.py": CALC_WORKING},
+                      checklist_first="not json at all", checklist_strict="still not json",
+                      checklist_subprocess="also not json")
+    result = build_system(SPEC, tmp_path / "built_minimum_only", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
 
 
 # --- (e) TASK-35: a SUBPROCESS-based tier catches a CLI bug the smoke fallback structurally

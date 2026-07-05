@@ -674,11 +674,18 @@ _CLI_DISPATCH = (
     "            print('unknown')\n"
 )
 
-# A real stdin-driven CLI missing the `mul` command entirely (the MEASURED single-requirement
-# drop, at small scale) -- `add`/`sub` both dispatch correctly.
+# A real stdin-driven CLI missing the `mul` COMMAND (the MEASURED single-requirement drop, at
+# small scale) -- `add`/`sub` both dispatch correctly. `mul(a, b)` is still DEFINED (satisfying
+# a plain existence/`hasattr` check -- e.g. the REQ-26/task #118 deterministic smoke floor,
+# which only knows the plan's declared exports, not real CLI behavior) but never wired into the
+# stdin dispatch, so it is genuinely unreachable via the real CLI -- exactly the measured defect
+# shape (a dropped DISPATCH branch, not a missing symbol), which build_system's own narrow
+# (existence-only) checklist still cannot see, preserving this file's whole "build_system's own
+# checklist is fooled" premise even under the new stricter deterministic minimum.
 MAIN_MISSING_MUL = (
     "def add(a, b):\n    return a + b\n\n\n"
     "def sub(a, b):\n    return a - b\n\n\n"
+    "def mul(a, b):\n    return a * b\n\n\n"
     + _CLI_DISPATCH.format(
         body="        if cmd == 'add':\n            print(add(int(parts[1]), int(parts[2])))\n"
              "        elif cmd == 'sub':\n            print(sub(int(parts[1]), int(parts[2])))\n"

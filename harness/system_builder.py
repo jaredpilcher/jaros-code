@@ -748,6 +748,138 @@ def _derive_acceptance_checklist(spec: str, mods: list[dict], llm) -> list[dict]
         checks = _smoke_checklist(mods)
     return checks
 # #EXT-036-REQ-2 End
+# #EXT-036-REQ-26 Start
+# TASK-37 (REQ-26): DETERMINISTIC MINIMUM acceptance floor -- closes a measured Tenet-3
+# honesty gap (task #118). MEASURED: `_derive_acceptance_checklist` proposes checks via the
+# MODEL, so the checklist VARIES in completeness for the IDENTICAL sentence (one datastore
+# build derived 3 checks, another draw of the same sentence derived only 1) -- `done`/
+# best-of-k then compare builds against a bar that isn't even comparable ACROSS DRAWS, and
+# the model was independently found to systematically MISS a usage/--help check. The fix: a
+# DETERMINISTIC minimum checklist, derived from the SPEC + the built module API alone (no
+# model call, so it is IDENTICAL for the same input every time), that the model's own
+# proposals can only ADD TO, never shrink below (`_compose_acceptance_checklist`). NO ORACLE
+# LEAK: every minimum check asserts only that the command runs WITHOUT AN UNHANDLED CRASH
+# (no Python traceback) -- never a specific stdout VALUE, which would require knowing the
+# answer up front.
+
+_MINIMUM_COMMAND_VERBS = {
+    "add", "list", "remove", "delete", "get", "set", "update", "create", "show",
+    "done", "clear", "insert", "count", "search", "find", "put", "push", "pop",
+    "enqueue", "dequeue", "subscribe", "publish", "start", "stop", "run",
+}
+_QUOTED_TOKEN_RE = re.compile(r"['\"]([a-zA-Z][a-zA-Z0-9_-]{0,20})['\"]")
+_WORD_TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]*")
+MAX_MINIMUM_COMMANDS = 6
+
+
+def _extract_command_tokens(spec: str) -> list[str]:
+    """Conservative, DETERMINISTIC extraction of command/subcommand tokens a SPEC sentence
+    names -- quoted short tokens (e.g. 'add'/'list') and a small FIXED allow-list of
+    imperative verbs appearing as whole words in the sentence. No model call; better to
+    under-extract than hallucinate a command the sentence doesn't really name. Order-
+    preserving, de-duplicated, bounded to `MAX_MINIMUM_COMMANDS`. Never raises."""
+    if not isinstance(spec, str) or not spec.strip():
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for m in _QUOTED_TOKEN_RE.finditer(spec):
+        tok = m.group(1).lower()
+        if tok not in seen:
+            seen.add(tok)
+            found.append(tok)
+    for m in _WORD_TOKEN_RE.finditer(spec):
+        tok = m.group(0).lower()
+        if tok in _MINIMUM_COMMAND_VERBS and tok not in seen:
+            seen.add(tok)
+            found.append(tok)
+    return found[:MAX_MINIMUM_COMMANDS]
+
+
+def _minimum_entry_filename(mods: list[dict], plan: "dict | None" = None) -> "str | None":
+    """Best-effort, DETERMINISTIC entrypoint filename for the minimum checklist -- prefers
+    the plan's own declared `entrypoint` (mirrors `harness.system_suite._resolve_entry`),
+    then a module literally named `main.py` (the pinned convention `FIRST_SLICE` sentences
+    already use), then the last planned module. Never raises."""
+    entry = plan.get("entrypoint") if isinstance(plan, dict) else None
+    if isinstance(entry, str) and entry.strip():
+        return entry.strip()
+    names = [m.get("name") for m in (mods or []) if isinstance(m, dict) and m.get("name")]
+    if "main.py" in names:
+        return "main.py"
+    return names[-1] if names else None
+
+
+def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[str]]") -> dict:
+    """One MINIMUM acceptance check: actually runs the built CLI's real entrypoint as a
+    subprocess for each argv list in `invocations` and asserts NONE of them crash with an
+    UNHANDLED Python exception (no traceback in stderr). Empty stdin (`input=""`) is fed so
+    a stdin-driven CLI (REQ-23's convention) sees an immediate EOF rather than hanging.
+    Deliberately does NOT assert on stdout CONTENT or an exact exit code -- asserting a
+    specific expected VALUE would require knowing the answer up front (an oracle leak); this
+    floor only asserts the command doesn't genuinely crash -- the systematically-missed bug
+    class TASK-35 measured (a CLI branch that skips required setup and raises)."""
+    code = (
+        "import subprocess, sys\n"
+        f"entry = {entry!r}\n"
+        f"for argv in {invocations!r}:\n"
+        "    result = subprocess.run([sys.executable, entry] + argv, capture_output=True,\n"
+        "                            text=True, timeout=20, input='')\n"
+        "    assert 'Traceback (most recent call last)' not in result.stderr, result.stderr\n"
+    )
+    return {"name": name, "code": code}
+
+
+def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None) -> list[dict]:
+    """The DETERMINISTIC MINIMUM acceptance checklist (REQ-26, task #118). Derived from the
+    SPEC + the built module API alone -- NO model call, so it is IDENTICAL for the same
+    input every time (fixing the measured cross-draw inconsistency). Always includes:
+      - the existing `_smoke_checklist` (import + `hasattr`) as the floor beneath everything
+      - a USAGE/HELP check: running the CLI with no args AND with `--help` must not crash
+        with an unhandled exception (the systematically-MISSED check)
+      - one subprocess check per conservatively-extracted command token the spec names
+        (`_extract_command_tokens`), each invoking the system's real CLI entrypoint
+    Composed by `_compose_acceptance_checklist` with the model's own proposals via UNION
+    (never REPLACING them) -- see `build_system`/`_score_build_attempt`. Never raises; `[]`
+    only when there are no modules to check at all (nothing built yet)."""
+    if not mods:
+        return []
+    checks = list(_smoke_checklist(mods))
+    entry = _minimum_entry_filename(mods, plan)
+    if entry:
+        checks.append(_no_crash_subprocess_check(
+            "minimum: usage/--help runs without crashing", entry, [[], ["--help"]]))
+        for cmd in _extract_command_tokens(spec):
+            checks.append(_no_crash_subprocess_check(
+                f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]]))
+    return checks
+
+
+def _compose_acceptance_checklist(spec: str, mods: list[dict], llm,
+                                   plan: "dict | None" = None) -> list[dict]:
+    """The FINAL acceptance checklist (REQ-26): the DETERMINISTIC MINIMUM
+    (`_minimum_acceptance`) UNIONED with the model's own proposals
+    (`_derive_acceptance_checklist`) -- the model's checks AUGMENT, never REPLACE, the
+    minimum, so the bar for a given sentence can never be SPARSER than the minimum. Closes
+    the measured gap where an easy self-derived checklist (as few as ONE trivial check)
+    let a build report a hollow `done=True`/win a best-of-k comparison on a sparse bar. A
+    check proposed by the model that is byte-identical to one already in the minimum is
+    de-duplicated (by `name` + `code`), never double-counted. Never raises: a model/derive
+    failure still leaves the deterministic minimum in place, which is never a fabricated
+    pass by itself (each minimum check is a real, run-for-real assertion)."""
+    minimum = _minimum_acceptance(spec, mods, plan)
+    try:
+        proposed = _derive_acceptance_checklist(spec, mods, llm)
+    except Exception:
+        proposed = []
+    combined = list(minimum)
+    seen = {(c.get("name"), c.get("code")) for c in minimum}
+    for c in proposed:
+        key = (c.get("name"), c.get("code"))
+        if key not in seen:
+            seen.add(key)
+            combined.append(c)
+    return combined
+# #EXT-036-REQ-26 End
 # #EXT-036-REQ-22 Start
 # TASK-25: wiring `harness/server_oracle.py` into `build_system`'s acceptance so a DETECTED
 # web service is HONESTLY HTTP-verified instead of falling back to the import-only
@@ -1257,7 +1389,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                         note=note, plan_repair=plan_repair, quality=quality)
         # #EXT-037-REQ-8 End
     # #EXT-036-REQ-22 End
-    checks = _derive_acceptance_checklist(spec, mods, llm)
+    # #EXT-036-REQ-26 Start
+    # TASK-37: COMPOSED checklist -- the deterministic minimum UNIONED with the model's own
+    # proposals, never sparser than the minimum (task #118, done-honesty).
+    checks = _compose_acceptance_checklist(spec, mods, llm, plan)
+    # #EXT-036-REQ-26 End
     if not checks:
         # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
@@ -2128,10 +2264,14 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
 
 def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tuple[int, int]:
     """INDEPENDENT scoring for one best-of-k attempt: NEVER trust `result`'s own self-reported
-    `done` -- derive a FRESH acceptance checklist from the attempt's own planned module API and
-    run every check for real against the attempt's own assembled root, counting real passes.
-    Returns ``(passed, total)``; ``total == 0`` means nothing could be checked at all (no plan /
-    no built modules -- a total build failure), scored 0. Never raises."""
+    `done` -- derive a FRESH, FULL (minimum-inclusive, REQ-26/task #118) acceptance checklist
+    from the attempt's own planned module API and run every check for real against the
+    attempt's own assembled root, counting real passes. A draw that self-derives fewer model
+    checks is still measured against the SAME deterministic minimum every other draw is, so
+    best-of-k selects/early-exits on a comparable, trustworthy bar -- never a sparse
+    self-accepted one. Returns ``(passed, total)``; ``total == 0`` means nothing could be
+    checked at all (no plan / no built modules -- a total build failure), scored 0. Never
+    raises."""
     if not isinstance(result, dict):
         return 0, 0
     plan = result.get("plan")
@@ -2140,7 +2280,9 @@ def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tu
     if not isinstance(mods, list) or not mods or not built:
         return 0, 0
     try:
-        checks = _derive_acceptance_checklist(spec, mods, llm)
+        # #EXT-036-REQ-26 Start
+        checks = _compose_acceptance_checklist(spec, mods, llm, plan)
+        # #EXT-036-REQ-26 End
     except Exception:
         checks = []
     if not checks:
