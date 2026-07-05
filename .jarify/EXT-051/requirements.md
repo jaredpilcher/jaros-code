@@ -1,7 +1,7 @@
 ---
 id: EXT-051
 title: Context management for long sessions (@path references + /compact)
-status: draft
+status: covered
 priority: medium
 ---
 
@@ -28,26 +28,26 @@ skill-substituted template (`_run_skill`, EXT-046) already share — so `@`-refs
 for both entry points via one wiring point.
 
 #### Acceptance Criteria
-- [ ] `harness.atrefs.find_at_refs(text)` returns the distinct `@`-prefixed path tokens in `text`,
+- [x] `harness.atrefs.find_at_refs(text)` returns the distinct `@`-prefixed path tokens in `text`,
       in first-seen order, anchored so it never matches an `@` embedded mid-word (e.g. an email
       address); an empty/`None` input returns `[]`, never raises.
-- [ ] `harness.atrefs.expand_at_refs(text, read_file, list_dir)` appends one labeled block per
+- [x] `harness.atrefs.expand_at_refs(text, read_file, list_dir)` appends one labeled block per
       distinct `@`-ref found, AFTER the original `text` (the `@token` itself is left in place,
       unrewritten); `text` with NO `@`-refs at all is returned byte-identical (a complete no-op).
-- [ ] A ref resolving to a real file inlines its content, bounded by a byte/char cap; content
+- [x] A ref resolving to a real file inlines its content, bounded by a byte/char cap; content
       that overflows the cap is truncated with an explicit truncation note in the block.
-- [ ] A ref ending in `/` is treated as a directory reference: `list_dir` is called instead of
+- [x] A ref ending in `/` is treated as a directory reference: `list_dir` is called instead of
       `read_file`, and the resulting block is a BOUNDED listing of entries (a fixed cap on entry
       count), never a recursive dump of the directory's contents.
-- [ ] A ref that `read_file`/`list_dir` reports as missing/unreadable (returns `None`, or raises)
+- [x] A ref that `read_file`/`list_dir` reports as missing/unreadable (returns `None`, or raises)
       degrades to an honest `(not found)`-style annotated block — `expand_at_refs` itself never
       raises regardless of what the callables do.
-- [ ] `harness.cli.JcodeCli._route_plain` expands `@`-refs (via callables wired to the existing
+- [x] `harness.cli.JcodeCli._route_plain` expands `@`-refs (via callables wired to the existing
       `fs.read`/`fs.list` `self._tool(...)` seam) into the text that reaches the
       orchestrator/planner's `decide()` call, proven via a stubbed orchestrator receiving the
       referenced file's content in its `request` context — for BOTH a directly typed plain
       request and a skill-substituted rendered template routed through `_run_skill`.
-- [ ] A plain request with no `@` token anywhere is byte-identical in its routing behavior to
+- [x] A plain request with no `@` token anywhere is byte-identical in its routing behavior to
       before this spec (no wasted tool calls, no altered orchestrator context).
 
 ### [REQ-2] `/compact` — deterministic session-transcript compaction
@@ -61,21 +61,21 @@ only VIEW for per-turn routing context), `compact_session()` durably mutates the
 into `harness/cli.py` as `cmd_compact`, reachable via `/compact`, documented in `/help`.
 
 #### Acceptance Criteria
-- [ ] `compact_session(session, llm=None, keep=CONDENSE_KEEP)` on a session with MORE than `keep`
+- [x] `compact_session(session, llm=None, keep=CONDENSE_KEEP)` on a session with MORE than `keep`
       turns: folds every turn before the most recent `keep` into one summary turn via the SAME
       `_summarize_turns()` helper `condense()` already uses (proven by an injected/stubbed `llm`
       whose output appears in the resulting summary text), replaces `session.turns` with
       `[summary] + recent_turns`, persists via `save_session`, and returns a result dict reporting
       `compacted=True` plus before/after turn count and character count.
-- [ ] `compact_session(session, ...)` on a session with `keep` turns or fewer is an honest no-op:
+- [x] `compact_session(session, ...)` on a session with `keep` turns or fewer is an honest no-op:
       returns `compacted=False` with an explanatory message, `session.turns` is left unchanged,
       and `_summarize_turns` (or the underlying `llm`) is never invoked.
-- [ ] `compact_session` never raises — a save failure or any other internal exception degrades to
+- [x] `compact_session` never raises — a save failure or any other internal exception degrades to
       a `compacted=False` result rather than crashing the caller.
-- [ ] `JcodeCli.cmd_compact(arg)` calls `compact_session(self.session, llm=self.llm)` and returns
+- [x] `JcodeCli.cmd_compact(arg)` calls `compact_session(self.session, llm=self.llm)` and returns
       its human-readable before/after message; `/compact` is documented in `cmd_help`'s output and
       the module docstring's command list.
-- [ ] `condense()`'s existing behavior, signature, and return shape are entirely unchanged by this
+- [x] `condense()`'s existing behavior, signature, and return shape are entirely unchanged by this
       requirement — `compact_session` is purely additive.
 
 ### [REQ-3] Honest Product-Parity Checklist update
@@ -89,10 +89,10 @@ deferred on row #14). `docs/GAP-MAP.md` row #22 and `tests/test_ext041_product_p
 honesty-pin are updated to match, mirroring how EXT-042/043/.../050 each did on landing.
 
 #### Acceptance Criteria
-- [ ] `harness/product_parity.py`'s row `id=22` `state` is `"works"`, with `current_state` naming
+- [x] `harness/product_parity.py`'s row `id=22` `state` is `"works"`, with `current_state` naming
       exactly what is delivered and what remains deferred, and `next_lever` naming only the
       residual gap.
-- [ ] `docs/GAP-MAP.md` row #22's `State`/`Current honest state`/`Next lever` columns are updated
+- [x] `docs/GAP-MAP.md` row #22's `State`/`Current honest state`/`Next lever` columns are updated
       to match.
-- [ ] `tests/test_ext041_product_parity.py`'s `works == [...]` pin (kept sorted) and the
+- [x] `tests/test_ext041_product_parity.py`'s `works == [...]` pin (kept sorted) and the
       `n_total`/`n_works` (and derived `n_partial + n_missing`) assertions include row #22.
