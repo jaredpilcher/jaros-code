@@ -15,10 +15,10 @@ Two-plane discipline (Tenet 1): this is pure execution-plane bookkeeping -- no m
 row state is a model judgement; every value here is a transcribed fact, sourced from GAP-MAP as
 of ``LAST_SYNCED``. Per Tenet 3, states are NEVER inflated: a row is ``"works"`` only when the
 matching CC feature is built AND wired end-to-end with a passing test suite -- not merely a
-lever named. As of ``LAST_SYNCED``, five rows (#12 EXT-044 sessions continue/resume/fork/name,
+lever named. As of ``LAST_SYNCED``, six rows (#12 EXT-044 sessions continue/resume/fork/name,
 #13 EXT-043 headless/piping, #14 EXT-042's JCODE.md instruction hierarchy, #15 EXT-046's custom
-skills/commands, #24 EXT-045's streaming tool events + statusline) are genuinely ``"works"``;
-most others remain ``"missing"``
+skills/commands, #16 EXT-047's user-configurable lifecycle hooks, #24 EXT-045's streaming tool
+events + statusline) are genuinely ``"works"``; most others remain ``"missing"``
 (GAP-MAP state ``unmeasured``) or ``"partial"`` (GAP-MAP state ``probed`` / ``lever-named``, i.e.
 something exists but the CC-parity feature is not yet delivered). That honest baseline, not a
 flattering one, is the entire point of the instrument.
@@ -149,14 +149,35 @@ PARITY_ROWS: "list[ProductParityRow]" = [
                     "tooling.",
     ),
     # #EXT-046-REQ-4 End
+    # #EXT-047-REQ-5 Start
     ProductParityRow(
         id=16, feature="User-configurable hooks",
-        state="missing",
-        current_state="The Jaros gate is exactly the right seam, but there is no user-facing "
-                       "hook configuration (PreToolUse/PostToolUse/SessionStart/Stop).",
-        next_lever="Hooks config consumed by the clerk at the existing validate()/execute() "
-                    "seam -- pure execution-plane.",
+        state="works",
+        current_state="EXT-047: `.jcode/hooks.json` (project) and `~/.jcode/hooks.json` (user, "
+                       "both tiers additive -- no name collision, every configured hook for an "
+                       "event fires) map PreToolUse/PostToolUse/SessionStart/Stop to shell "
+                       "commands, optionally `matcher`-scoped (a glob against the tool/Decision "
+                       "type) for Pre/PostToolUse. `harness.coding_loop.Runtime.apply` -- the "
+                       "ONE real gate -> executor -> decision-log choke point every tool call "
+                       "already passes through -- fires PreToolUse hooks BEFORE `validate()` and "
+                       "PostToolUse hooks AFTER a successful `execute()`; a PreToolUse hook that "
+                       "exits non-zero BLOCKS the call (the clerk refuses it, exactly like a "
+                       "gate rejection). SessionStart fires once at `JcodeCli` construction, Stop "
+                       "fires once at session end (`/quit`/EOF/interrupt in the REPL, or after "
+                       "the one-shot headless turn) -- idempotent, guarded against double-firing. "
+                       "Every hook's shell command runs through the SAME gated `shell.exec` "
+                       "Decision path (denylist + timeout + process-tree-kill) via a FRESH, "
+                       "hooks-disabled `Runtime` -- so firing a hook can never recursively "
+                       "re-trigger hook firing, and hooks never bypass the security gates. No "
+                       "`.jcode/hooks.json` anywhere is a complete no-op (zero behavior change); "
+                       "a malformed config degrades to `{}` rather than crashing. `/hooks` lists "
+                       "what's configured.",
+        next_lever="Surface fired-hook activity in the EXT-045 stream (today only PreToolUse "
+                    "blocks emit a stream `error` event; a successful hook's own output isn't "
+                    "narrated); a permission-rules-style ask/allow/deny UX around hooks "
+                    "(overlaps row #17).",
     ),
+    # #EXT-047-REQ-5 End
     ProductParityRow(
         id=17, feature="Permission rules + modes UX",
         state="partial",

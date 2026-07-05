@@ -40,10 +40,16 @@ def test_no_row_is_inflated_to_works_today():
     (Terminal UX polish, EXT-045: streaming tool-event lines from the same Decision-logging
     seam, suppressed under `--output-format json`/non-TTY, `statusline()` + `/statusline`
     toggle, `/help` updated; a live in-flight spinner, `/export`, tab-completion, and themes
-    honestly deferred) are the rows genuinely delivered end-to-end -- these pins were updated
-    deliberately alongside each landing, not silently."""
+    honestly deferred), and row #16 (User-configurable hooks, EXT-047: `.jcode/hooks.json`
+    project+user config maps PreToolUse/PostToolUse/SessionStart/Stop to shell commands fired at
+    the real `Runtime.apply` gate->executor choke point every tool call passes through, a
+    PreToolUse hook exiting non-zero blocks the call, every hook command runs through the same
+    gated `shell.exec` path via a hooks-disabled Runtime to prevent recursion, no config is a
+    byte-identical no-op; a richer stream/permission UX around hooks honestly deferred) are the
+    rows genuinely delivered end-to-end -- these pins were updated deliberately alongside each
+    landing, not silently."""
     works = [row.id for row in pp.PARITY_ROWS if row.state == "works"]
-    assert works == [12, 13, 14, 15, 24]
+    assert works == [12, 13, 14, 15, 16, 24]
 
 
 def test_score_aggregate_known_mix():
@@ -81,10 +87,10 @@ def test_score_all_missing_is_0_pct():
 def test_score_default_rows_reflects_honest_current_baseline():
     result = pp.score()
     assert result["n_total"] == 16
-    # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), and #24 (EXT-045) are
-    # genuine "works"
-    assert result["n_works"] == 5
-    assert result["n_partial"] + result["n_missing"] == 11
+    # rows #12 (EXT-044), #13 (EXT-043), #14 (EXT-042), #15 (EXT-046), #16 (EXT-047), and #24
+    # (EXT-045) are genuine "works"
+    assert result["n_works"] == 6
+    assert result["n_partial"] + result["n_missing"] == 10
     assert 0.0 <= result["pct"] < 100.0
 
 

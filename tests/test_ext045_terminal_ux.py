@@ -358,6 +358,9 @@ def test_output_format_json_suppresses_streaming_end_to_end(monkeypatch, capsys)
         def handle(self, request):
             return "stub response"
 
+        def on_stop(self):  # EXT-047: one-shot path fires Stop hooks via cli.on_stop()
+            pass
+
     monkeypatch.setattr(cli_mod, "JcodeCli", _StubCli)
     monkeypatch.setattr("sys.argv", ["harness.cli", "--output-format", "json", "do", "thing"])
     monkeypatch.setattr(cli_mod, "_stdout_is_tty", lambda: True)   # even on a "live terminal"...

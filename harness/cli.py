@@ -77,6 +77,11 @@ Commands (Claude-Code-style):
                                  a new /name command; args substitute into the template via
                                  $ARGUMENTS/$1/$2..., which then routes through the orchestrator
                                  like any plain request; a built-in command always wins, EXT-046)
+  /hooks                         list configured lifecycle hooks (drop a .jcode/hooks.json file
+                                 mapping PreToolUse/PostToolUse/SessionStart/Stop to shell
+                                 commands, run through the SAME gated shell.exec path every tool
+                                 call uses; a PreToolUse hook exiting non-zero BLOCKS the tool
+                                 call it gates, EXT-047)
   /experiment <hyp> :: <cmd>    define an experiment for this repo (EXT-036)
   /experiments                  list experiments (id + status + last result)
   /experiment run <id>          actually run the experiment (real subprocess, never faked)
@@ -220,7 +225,18 @@ class JcodeCli:
         if self.stream:
             from harness.tool_stream import make_printer
             _on_event = make_printer()
-        self.rt = Runtime(on_event=_on_event)
+        # #EXT-047-REQ-1 Start
+        # User-configurable lifecycle hooks (EXT-047): discovered ONCE per CLI instance (mirrors
+        # the self.jcode_md/self.skills caching precedent below) -- a missing/unreadable
+        # .jcode/hooks.json (either tier) or any discovery failure falls back to {} rather than
+        # blocking construction, which keeps this Runtime's hook-firing a complete no-op.
+        try:
+            from harness.hooks import load_hooks
+            self.hooks_config = load_hooks(".")
+        except Exception:
+            self.hooks_config = {}
+        # #EXT-047-REQ-1 End
+        self.rt = Runtime(on_event=_on_event, hooks_config=self.hooks_config)
         # #EXT-045-REQ-1 End
         self.llm = build_llm()
         self._load_agent = _load_agent
@@ -280,6 +296,38 @@ class JcodeCli:
         except Exception:
             self.skills = {}
         # #EXT-046-REQ-1 End
+        # #EXT-047-REQ-3 Start
+        # SessionStart lifecycle hooks (EXT-047): fire ONCE, here at construction -- a no-op
+        # when no hooks are configured (self.hooks_config is {} in that case). `_stop_fired`
+        # guards `on_stop()` (below) so a Stop hook can never double-fire for one session even
+        # if a caller invokes it more than once (e.g. an interrupted REPL loop).
+        self._stop_fired = False
+        self._session_start_outcomes: "list" = []
+        if self.hooks_config:
+            try:
+                from harness import hooks as _hooks
+                self._session_start_outcomes = _hooks.fire_event(
+                    "SessionStart", self.hooks_config, cwd=os.path.abspath("."))
+            except Exception:
+                self._session_start_outcomes = []
+        # #EXT-047-REQ-3 End
+
+    # #EXT-047-REQ-3 Start
+    def on_stop(self) -> None:
+        """Fire configured ``Stop`` lifecycle hooks (EXT-047) once, at session end -- called from
+        `repl()` (on `/quit`/EOF/interrupt) and `_run_one_shot()` (after its single turn
+        completes). A no-op when no hooks are configured, and idempotent (fires at most once per
+        `JcodeCli` instance). Never raises."""
+        if self._stop_fired or not getattr(self, "hooks_config", None):
+            return
+        self._stop_fired = True
+        try:
+            from harness import hooks as _hooks
+            self._stop_outcomes = _hooks.fire_event(
+                "Stop", self.hooks_config, cwd=os.path.abspath("."))
+        except Exception:
+            pass
+    # #EXT-047-REQ-3 End
 
     # -- helpers -----------------------------------------------------------
     def _tool(self, dtype: str, payload: dict):
@@ -808,7 +856,10 @@ class JcodeCli:
             if getattr(self, "stream", False):
                 from harness.tool_stream import make_printer
                 _on_event = make_printer()
-            rt = Runtime(root=root, on_event=_on_event)
+            # #EXT-047-REQ-2 Start
+            rt = Runtime(root=root, on_event=_on_event,
+                         hooks_config=getattr(self, "hooks_config", None))
+            # #EXT-047-REQ-2 End
             # #EXT-045-REQ-1 End
             out = rt.apply(self._mk(id=f"cli-{dtype}-{uuid.uuid4().hex}", source="cli",
                                      type=dtype, payload=full_payload))
@@ -1205,6 +1256,25 @@ class JcodeCli:
         return "custom skills:" + "".join("\n" + line for line in lines)
     # #EXT-046-REQ-3 End
 
+    # #EXT-047-REQ-4 Start
+    def cmd_hooks(self, _arg: str) -> str:
+        """List configured lifecycle hooks (EXT-047): drop a `.jcode/hooks.json` (or
+        `~/.jcode/hooks.json`) file mapping PreToolUse/PostToolUse/SessionStart/Stop to shell
+        commands (optionally `matcher`-scoped to a tool name for Pre/PostToolUse). Reports an
+        honest empty message when none are configured."""
+        cfg = getattr(self, "hooks_config", {}) or {}
+        if not cfg:
+            return ("(no hooks configured — drop a .jcode/hooks.json file with "
+                     "PreToolUse/PostToolUse/SessionStart/Stop entries to add one)")
+        lines = ["configured hooks:"]
+        from harness.hooks import VALID_EVENTS
+        for event in VALID_EVENTS:
+            for hd in cfg.get(event, []):
+                scope = f" (matcher={hd.matcher!r})" if hd.matcher else ""
+                lines.append(f"  {event}{scope}: {hd.command}")
+        return "\n".join(lines)
+    # #EXT-047-REQ-4 End
+
     # #EXT-036-REQ-8 Start
     def _maybe_ask(self, request: str) -> str:
         """Interactive-only ambiguity check (REQ-8, Claude Code's AskUserQuestion analog):
@@ -1519,8 +1589,14 @@ def repl(session_id: str | None = None) -> int:
             line = input("\033[36mjcode›\033[0m ")
         except (EOFError, KeyboardInterrupt):
             print()
+            # #EXT-047-REQ-3 Start
+            cli.on_stop()  # Stop hooks fire once at session end
+            # #EXT-047-REQ-3 End
             return 0
         if line.strip() in ("/quit", "/exit", "/q"):
+            # #EXT-047-REQ-3 Start
+            cli.on_stop()  # Stop hooks fire once at session end
+            # #EXT-047-REQ-3 End
             return 0
         if line.strip() == "/clear":
             print("\033[2J\033[H", end="")
@@ -1659,6 +1735,9 @@ def _run_one_shot(request: str, session_id: "str | None", output_format: str,
             set_session_name(cli.session, name_to_set)
         response = cli.handle(request)
         model = cli.model
+        # #EXT-047-REQ-3 Start
+        cli.on_stop()  # a one-shot run both starts and stops within this call
+        # #EXT-047-REQ-3 End
     except Exception as exc:            # a headless run must report cleanly, not dump a traceback
         if output_format == "json":
             return json.dumps({"request": request, "response": None, "ok": False,

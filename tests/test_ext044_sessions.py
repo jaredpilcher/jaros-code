@@ -367,6 +367,11 @@ class _StubCliCls:
             raise RuntimeError("stub handle failure")
         return _StubCliCls.response
 
+    def on_stop(self):
+        # EXT-047: the headless one-shot path now calls cli.on_stop() to fire Stop hooks at
+        # session end (a one-shot run is a full start+stop session). No-op stub stand-in.
+        pass
+
 
 @pytest.fixture(autouse=True)
 def _reset_stub_cli():

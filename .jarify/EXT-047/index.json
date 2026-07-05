@@ -1,0 +1,87 @@
+{
+  "REQ-5": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 152,
+      "endLine": 180
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/hooks.py",
+      "startLine": 36,
+      "endLine": 150
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 228,
+      "endLine": 238
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/hooks.py",
+      "startLine": 153,
+      "endLine": 257
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 128,
+      "endLine": 130
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 150,
+      "endLine": 156
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 177,
+      "endLine": 193
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 219,
+      "endLine": 230
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 859,
+      "endLine": 862
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 299,
+      "endLine": 313
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 315,
+      "endLine": 330
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1592,
+      "endLine": 1594
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1597,
+      "endLine": 1599
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1738,
+      "endLine": 1740
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1259,
+      "endLine": 1276
+    }
+  ]
+}

@@ -124,7 +124,10 @@ class Runtime:
 
     # #EXT-045-REQ-1 Start
     def __init__(self, data_dir: Path = DATA_DIR, root: "str | None" = None,
-                 on_event: "callable | None" = None) -> None:
+                 on_event: "callable | None" = None,
+                 # #EXT-047-REQ-2 Start
+                 hooks_config: "dict | None" = None) -> None:
+                 # #EXT-047-REQ-2 End
         # #EXT-045-REQ-1 End
         state_dir = data_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -144,6 +147,13 @@ class Runtime:
         # complete no-op: every pre-EXT-045 caller of `Runtime(...)` behaves byte-identically.
         self._on_event = on_event
         # #EXT-045-REQ-1 End
+        # #EXT-047-REQ-2 Start
+        # User-configurable lifecycle hooks (EXT-047): `None`/`{}` (the default) is a complete
+        # no-op -- every pre-EXT-047 caller of `Runtime(...)` behaves byte-identically. When
+        # non-empty, PreToolUse/PostToolUse hooks fire around each Decision this Runtime applies
+        # (see `apply` below) -- see `harness.hooks` for the gated firing mechanism.
+        self._hooks_config = hooks_config
+        # #EXT-047-REQ-2 End
 
     # #EXT-045-REQ-1 Start
     def _emit(self, event: dict) -> None:
@@ -164,6 +174,23 @@ class Runtime:
                 and isinstance(decision.payload, dict) and "root" not in decision.payload):
             decision = _dataclass_replace(decision, payload={**decision.payload, "root": self._root})
         # #EXT-037-REQ-1 End
+        # #EXT-047-REQ-2 Start
+        # PreToolUse hooks (EXT-047): fire BEFORE the gate even sees this Decision. A hook that
+        # exits non-zero BLOCKS the tool call -- the clerk refuses it, exactly like a gate
+        # rejection, deterministically and honestly (no partial effect ever happens). A no-op
+        # when `self._hooks_config` is empty/None (the default) -- byte-identical to before.
+        if self._hooks_config:
+            from harness import hooks as _hooks
+            try:
+                pre_outcomes = _hooks.fire_event(
+                    "PreToolUse", self._hooks_config, tool_name=decision.type, cwd=self._root)
+            except Exception:
+                pre_outcomes = []
+            _block_reason = _hooks.blocking_reason(pre_outcomes) if pre_outcomes else None
+            if _block_reason:
+                self._emit({"phase": "error", "type": decision.type, "reason": _block_reason})
+                raise RuntimeError(f"PreToolUse hook blocked {decision.type}: {_block_reason}")
+        # #EXT-047-REQ-2 End
         # #EXT-045-REQ-1 Start
         self._emit({"phase": "call", "type": decision.type, "payload": decision.payload,
                     "source": decision.source})
@@ -189,6 +216,18 @@ class Runtime:
         # #EXT-045-REQ-1 Start
         self._emit({"phase": "result", "type": decision.type, "output": outcome.output})
         # #EXT-045-REQ-1 End
+        # #EXT-047-REQ-2 Start
+        # PostToolUse hooks (EXT-047): fire AFTER a successful execute() -- observational only
+        # (the tool call already happened; nothing left to refuse), so a failing PostToolUse
+        # hook is recorded but never raised. No-op when `self._hooks_config` is empty/None.
+        if self._hooks_config:
+            from harness import hooks as _hooks
+            try:
+                _hooks.fire_event(
+                    "PostToolUse", self._hooks_config, tool_name=decision.type, cwd=self._root)
+            except Exception:
+                pass
+        # #EXT-047-REQ-2 End
         return outcome.output
 # #EXT-003-REQ-1 End
 

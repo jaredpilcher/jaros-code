@@ -45,6 +45,12 @@ class _StubCli:
             raise RuntimeError("stub handle failure")
         return _StubCli.response
 
+    def on_stop(self):
+        # EXT-047: a one-shot run both starts and stops within its call, so the headless path
+        # now calls cli.on_stop() to fire any configured Stop hooks. The real JcodeCli.on_stop
+        # is internally guarded (never raises); the stub just needs to accept the call.
+        pass
+
 
 @pytest.fixture(autouse=True)
 def _reset_stub():
