@@ -38,40 +38,70 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
    MCP client, subagent authoring, checkpoint/rewind, interrupt-and-steer, context management, a
    background-runs surface, terminal UX, install/health, multimodal (GAP-MAP rows #12–27).
 
+**★ CAPABILITY IS THE CENTRAL, HARDER BAR — and I OWN driving it (owner directive, 2026-07-05).**
+Matching Claude Code on **Opus 4.8** means matching its **actual coding ability**, not only its
+feature surface. Product-surface parity is now ~84% (largely LANDED — see the trail); it is NO
+LONGER the frontier. The frontier is **capability**: the small local model genuinely solving
+harder problems (real systems from a sentence, real-repo edits, the uncurated SWE-bench slice),
+honestly verified. This is the whole point of the wager (a thin harness is the limit, not the
+model). **I own this convergence directly — I do NOT defer capability to another agent.** When a
+second agent is also working a capability file (e.g. `system_builder.py`), we COORDINATE to avoid
+concurrent-edit collisions, but the GOAL is shared and mine to drive: every tick steers to the
+highest impact×tractability CAPABILITY gap, measured honestly, until jcode codes as well as Opus 4.8.
+
 ## Scoreboard (brief — detail in `docs/GAP-MAP.md`)
 
 - **Capability scoreboard** (how WELL it solves): external hard bar uncurated SWE-bench-Lite **~13%**
   (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **1736 green**. Security envelope: closed for the build pipeline (one open gap: runtime OS-egress enforcement).
+- Full test suite: **2258 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+  Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 
 ---
 
 ## NOW (in flight — the top of the loop)
 
-- **[★ PRODUCT-SURFACE at 78.1% (12 works + 1 partial / 16) — daytime watched builds]** the host-write
-  sweep + all clean partial→works rows LANDED (see trail). MCP client FIRST SLICE landed (0659213, row #18
-  missing→partial). Remaining, by impact×tractability:
-  - **[#18 MCP slice 2 — make it usable → partial→works]** persistent server connection kept alive across
-    turns + MODEL-INVOCABLE MCP tools (orchestrator can choose to call a configured MCP tool while solving,
-    not just explicit `/mcp call`) — high · isolated new code (mcp_*.py), no system_builder.py collision;
-    via Jarify (EXT-054 REQ-N). Then resources/prompts/SSE are later slices.
-  - **[#21 interrupt+steer]** cooperative cancel points between plan steps — med · control-flow change to
-    the run loop, WATCH it (higher regression risk); via Jarify.
-  - **[#26 multimodal]** image → e4b vision → structured description → build pipeline — med · model-backed.
-  - #27 intentionally out-of-scope (IDE/desktop/web) → achievable ≈ 12/15 + MCP.
-- **[★ #118 acceptance-completeness — PARALLEL AGENT's thread (system_builder.py); I steer CLEAR]** make
-  build_system's acceptance derivation deterministic+complete so `done` is trustworthy + best-of-k selects
-  on a real bar (measured 2026-07-05: best-of-k done=true on a SPARSE 1-check self-acceptance = not a real
-  win). The supervisor/parallel agent owns system_builder.py — do NOT dispatch my builders there (collision).
+### ★★ CAPABILITY — the frontier I own (the North Star's harder bar)
 
-## RE-MEASURED — #86 datastore (2026-07-04)
+**Honest capability state (measured this session, 2026-07-05):** the real-systems build class moved
+its blocker from a DETERMINISTIC defect (plan-coherence — FIXED: /buildsystem now ships coherent
+multi-file systems incl a database module, no repair needed) to a **MODEL-REASONING** frontier: the 2B
+writes structurally-plausible but **behaviorally-buggy** implementation code (datastore: fails 3/3 of
+its own acceptance; json-todo: best-of-3 passes only 1/3). **best-of-k at k=3 does NOT rescue it.** This
+matches the mapped hard-class reasoning ceiling. External hard bar: uncurated SWE-bench-Lite ~13%. THIS
+is where jcode is not yet Opus-4.8-class — and closing it is the mission.
 
-- **False-done CLOSED (honest win):** with the subprocess-acceptance tier (ca493a1), 0/5 then 0/6 builds
-  falsely report done — the done-signal is honest on live output. Accept-rate 0/6, but NOT a reasoning
-  limit: 6/6 fail at the SAME coherence defect (`cli.py: imports unknown 'database'`), a repairable
-  planning incoherence → moved the lever to the plan-repair NOW item above (not best-of-k).
+- **[#118 acceptance-completeness / done-honesty — HIGH, I DRIVE IT]** make build_system's acceptance
+  derivation DETERMINISTIC + COMPLETE (consistent full requirement set per sentence) so `done` is
+  trustworthy across builds + best-of-k selects on a REAL bar, not a sparse 1-check self-acceptance
+  (measured: best-of-k reported done=true on a draw that derived only 1 check). This is the prerequisite
+  for a trustworthy capability number. Touches system_builder.py — COORDINATE with the concurrent agent
+  on that file (avoid simultaneous edits / re-verify before commit), but it is OURS to land, not to defer.
+- **[real-systems implementation-correctness — HIGH, the core reasoning gap]** attack the "plausible but
+  buggy code" frontier with GENERIC harness scaffolding that extracts more reasoning WITHOUT overfitting:
+  best-of-k scored on the FULL requirement bar (once #118 lands), self-repair that runs the acceptance
+  tests and feeds concrete failures back, method-dependency-aware decomposition, and honest per-class
+  measurement (creation/modification suites at harder tiers, held-out). Every lift proven on a HELD-OUT
+  class, never the tuned one (Tenet 3).
+- **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
+  from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
+  **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
+  authored suite. Wire real solve paths into `record_verified` (flywheel fuel).
+- **[the model lever — PRIME-001 commitment 2c: the self-distillation flywheel]** the measured truth:
+  training a token-distribution LoRA on the current 2–3B base is scoreboard-NULL (loss↓ but resolves 0 —
+  a reasoning limit, not a data limit; [[jaros-code-training-plane]]). So the model lever is (a) accumulate
+  VERIFIED reasoning traces (test-passing solve paths) as sovereign training data; (b) evaluate a stronger
+  **fast-trainable Jetson-fit base** (best-first, ~8GB, cloud still forbidden) — the honest path to lift
+  the reasoning ceiling. Probe-gated with a pre-registered kill criterion; measured by the SAME held-out
+  admission rule (training grants no exemption).
+
+### Product-surface — LARGELY LANDED (~84%, no longer the frontier)
+
+13 works + 2 partial of 16 (parity 84.4%). All host-writes on Jaros; MCP client WORKS; hooks, permissions,
+subagents, checkpoint/rewind, context-mgmt, background-runs, /doctor, interrupt (partial) all landed (trail
+below). Remaining tail, opportunistic (NOT the priority): #18 MCP polish (resources/prompts/SSE), #21
+steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). #27 intentionally out-of-scope.
 
 ## NEXT (planned specs/requirements to create + implement — this week)
 
@@ -179,6 +209,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[#21 interrupt + steer (partial)]** a running multi-step command can now be gracefully interrupted (Ctrl-C stops the command, not the REPL) with partial work preserved (/rewind to undo); provably additive — no interrupt requested = byte-identical (proven ×2 loops). Row #21 missing→partial, parity 81.2%→84.4% — 28f86bd.
 - **[#18 MCP client — WORKS]** slice 2: MCP servers now stay connected across turns (clean shutdown, no leaked subprocess) and jcode's model can CHOOSE to call a configured MCP tool while solving (not just manual `/mcp call`) — still through the gated Decision path (proven can't-escalate + never-hijacks a normal request). Row #18 partial→WORKS, parity 78.1%→81.2% (13 of 16). Deferred honestly: MCP resources/prompts/notifications + HTTP-SSE transport — 038a40d.
 - **[#18 MCP client — first slice]** jcode can now connect to external MCP tool servers — configure one in .jcode/mcp.json, `/mcp` discovers its tools, `/mcp call` runs them through the gated Jaros runtime (a denylisted server command is refused; a hung server times out fast, never hangs). Honest first slice → row #18 missing→PARTIAL, parity 75.0%→78.1% (12 works + 1 partial). Deferred: resources/prompts/notifications/SSE, persistent connection, model-invocable — 0659213.
 - **[#25 install + /doctor]** jcode now has a `/doctor` health check (is the Jetson reachable? model served? git/docker present? data dir writable? — each with a fix hint, bounded so it never hangs) + a minimal pip-installable `jcode` command — parity 71.9%→75.0% (12 of 16) — 4a66653.
