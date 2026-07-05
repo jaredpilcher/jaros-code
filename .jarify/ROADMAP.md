@@ -53,9 +53,9 @@ CLI PRODUCT, not just the model's task-solving** (owner/supervisor clarification
 - **[★ REALIGN on the whole-PRODUCT bar]** the parity bar just expanded (supervisor 5e0b553): match the
   WHOLE Claude Code CLI product, not just solving (GAP-MAP #12–27 + Product-Parity Checklist). See the new
   **PRODUCT-SURFACE PARITY** axis below — this is the major new forward direction — high.
-- **[#24 terminal UX — next product-surface build]** stream tool events as they log (the hash-chain
-  already has them) + a statusline (model · class · $0 · latency) + `/help` polish — med · visible
-  "feels like a real product" polish, leverages existing logging; via Jarify (new spec EXT-045). Flips row #24 partial→works.
+- **[#15 custom skills/commands — next product-surface build]** user drops a `.jcode/skills/<name>.md`
+  file → a new `/command` the deterministic router recognizes (body = a plan template the orchestrator
+  runs) — med · user extensibility, a CC-defining feature; via Jarify (new spec EXT-046). Flips row #15 missing→works.
 - **[#86 datastore end-to-end verify]** (carried) quick re-measure now that the plan-repair landed (0ac92bd):
   does the repaired multi-file notes-cli now BUILD + PASS acceptance? — high · a fast number that closes the #86 sqlite loop.
 
@@ -119,12 +119,14 @@ log). New meta-item: **build the Product-Parity Checklist instrument** (feature-
 the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 **Product-surface — NEXT-tractable (thin deterministic layers, high parity value):**
+- **[#24 terminal UX]** jcode now streams each step live (file reads, edits) as it works + shows a model·$0·latency status line — parity 40.6%→43.8% — 3989fae.
 - **[#12 sessions]** jcode now saves & resumes conversations — continue your last chat, resume one by name, or fork it; the thread persists — parity 37.5%→40.6% — 7bbba00.
 - **[#13 headless]** jcode is now runnable from a script/pipe with machine-readable JSON output + exit codes (CI-friendly) — parity 34.4%→37.5% — 64df843.
 - **[#14 JCODE.md]** auto-loaded per-repo instruction file + user level + `/init` generator (the
   CLAUDE.md-equivalent) — high · foundational (feeds every session) + directly serves long-horizon alignment.
 - **[#13 headless/Unix]** print mode + stdin pipe + `--output-format json/stream-json` + exit codes +
   `--max-turns` — high · CI/scriptability; a thin deterministic layer over the existing one-shot path.
+- **[#24 terminal UX]** jcode now streams each step live (file reads, edits) as it works + shows a model·$0·latency status line — parity 40.6%→43.8% — 3989fae.
 - **[#12 sessions]** continue / resume / fork / named durable transcripts (`jcode -c` / `-r`) — high ·
   the Jaros hash-chain log already IS the transcript; add the store + REPL UX.
 - **[#24 terminal UX]** streaming tool events (already hash-chain-logged) + statusline (model·class·$0·latency) — med.
@@ -168,6 +170,7 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 ## LANDED (recent trail — newest first)
 
 - **[EXT-041 Product-Parity Checklist]** the product-surface scoreboard — `/parity`, 16 rows #12–27, honest baseline **31.2%** (0 works / 10 partial / 6 missing) — b9c2822.
+- **[#24 terminal UX]** jcode now streams each step live (file reads, edits) as it works + shows a model·$0·latency status line — parity 40.6%→43.8% — 3989fae.
 - **[#12 sessions]** jcode now saves & resumes conversations — continue your last chat, resume one by name, or fork it; the thread persists — parity 37.5%→40.6% — 7bbba00.
 - **[#13 headless]** jcode is now runnable from a script/pipe with machine-readable JSON output + exit codes (CI-friendly) — parity 34.4%→37.5% — 64df843.
 - **[#14 JCODE.md]** the auto-loaded per-repo + user project-instructions file (CLAUDE.md-equivalent) + /init generator, injected into the planner context every session — parity 31.2%→34.4% — dbb0811.
