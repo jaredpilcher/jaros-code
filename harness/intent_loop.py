@@ -24,6 +24,10 @@ from pathlib import Path
 from harness.coding_loop import Runtime, build_llm, fix_loop, _load_agent
 from jaros.core import create_decision
 
+# #EXT-037-REQ-13 Start
+from harness.multi_file import _jaros_write
+# #EXT-037-REQ-13 End
+
 # #EXT-035-REQ-3 Start
 import ast as _ast
 
@@ -128,12 +132,31 @@ def build_from_intent(task: dict, *, max_iters: int = 3, verbose: bool = False,
                         # #EXT-027-REQ-3 End
 
 
+# #EXT-037-REQ-13 Start
 def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
-                 signature: str | None = None, *, max_iters: int = 3, verbose: bool = False) -> dict:
+                 signature: str | None = None, *, max_iters: int = 3, verbose: bool = False,
+                 runtime: "object | None" = None) -> dict:
     """CLI-facing generative build (EXT-008): turn an intent into a working function + its tests,
     written into a REAL directory (no hidden oracle, unlike build_from_intent). Reuses the same
     grains: the test-writer writes tests from the intent, then fix_loop implements against them.
-    Returns {self_pass, files, note}. The generative spine exposed for interactive use."""
+    Returns {self_pass, files, note}. The generative spine exposed for interactive use.
+
+    `runtime` (EXT-037 REQ-13, Tenet 1): optional -- any object exposing `.apply(decision)`, e.g.
+    `harness.coding_loop.Runtime`. This is the LAST product command that still wrote raw host
+    files: `harness/cli.py`'s `cmd_build` (`/build <func> <intent>`) calls this directly against
+    `cwd="."`, the real host working directory. When `runtime` is given, every write this function
+    performs onto `cwd` (the code + test writes inside the `run_tests` probe closure, and the two
+    final writes below) is routed through `harness.multi_file._jaros_write` as a real
+    `code.write_file` Decision -- the SAME gate (`validate_decision`) + EXT-037 root-jail +
+    hash-chain log every other Jaros write Decision goes through -- instead of a raw
+    `Path.write_text`. `runtime=None` (the default -- used by every existing eval/test caller
+    against a throwaway temp/sandbox dir with no meaningful project root, e.g.
+    `harness/spec_loop.py`'s own build fallback when it is itself called with `runtime=None`,
+    `harness/agent_loop.py`'s eval-only `execute_step` 'build' action, and `harness/build_eval.py`/
+    `tests/test_ext008_intent.py`) preserves the exact prior direct-write behavior byte-for-byte.
+    A gate rejection degrades to an honest failed result (`self_pass=False`, the rejection reason
+    in `note`) -- never a crash from a downstream read that would otherwise assume the write
+    succeeded."""
     # Powered by the canonical BEHAVIORAL SOLVE (EXT-012 system): the 2B writes a Gherkin behavior spec
     # for the intent (comprehension step pins the exact case), derives its OWN tests, implements, and
     # fixes against them — the same system proven on held-out real commits. The eval and this product
@@ -145,10 +168,14 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
     current = tp.read_text(encoding="utf-8") if tp.exists() else None
     test_name = f"test_{module}.py"
     testp = Path(cwd) / test_name
+    write_err: list[str] = []
 
     def run_tests(code: str, test_code: str) -> tuple[bool, str]:
-        tp.write_text(code, encoding="utf-8", newline="\n")
-        testp.write_text(test_code, encoding="utf-8", newline="\n")
+        err1 = _jaros_write(tp, code, cwd, runtime)
+        err2 = _jaros_write(testp, test_code, cwd, runtime)
+        if err1 or err2:
+            write_err.append(err1 or err2)
+            return False, (err1 or err2)
         # #EXT-005-REQ-12 Start
         from harness.proc_treekill import run_with_treekill
         ok, output = run_with_treekill(f"python -m pytest -q {test_name}", cwd, timeout=60, capture=True)
@@ -156,11 +183,16 @@ def build_in_dir(cwd: str, intent: str, target: str, func: str | None = None,
         # #EXT-005-REQ-12 End
 
     r = behavioral_solve(intent, func, current, "", module, run_tests, max_fix=max_iters)
-    tp.write_text(r["code"] or (current or _stub(signature or "", func)), encoding="utf-8", newline="\n")
-    testp.write_text(r["tests"], encoding="utf-8", newline="\n")
+    if write_err:
+        return {"self_pass": False, "files": [], "note": write_err[0]}
+    final_err1 = _jaros_write(tp, r["code"] or (current or _stub(signature or "", func)), cwd, runtime)
+    final_err2 = _jaros_write(testp, r["tests"], cwd, runtime)
+    if final_err1 or final_err2:
+        return {"self_pass": False, "files": [], "note": final_err1 or final_err2}
     return {"self_pass": r["self_pass"], "files": [target, test_name],
             "note": ("built via behavioral solve — passes its own Gherkin-derived tests" if r["self_pass"]
                      else "implemented via behavioral solve; did not pass its self-tests")}
+# #EXT-037-REQ-13 End
 
 
 def _run_oracle(module: str, target: str, impl: str, oracle_test: str, test_cmd: str,

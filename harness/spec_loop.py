@@ -198,7 +198,10 @@ def _decompose_build(intent: str, cwd: str, *, max_iters: int = 3, verbose: bool
     if len(reqs) <= 1:                                   # single-function: the existing spine
         func = reqs[0][0] if reqs else next(
             (w for w in intent.replace("(", " ").split() if w.isidentifier()), "solution")
-        r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters, verbose=verbose)
+        # #EXT-037-REQ-13 Start
+        r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters, verbose=verbose,
+                         runtime=runtime)
+        # #EXT-037-REQ-13 End
         return {"solved": bool(r.get("self_pass")), "flow": "build", "requirements": len(reqs),
                 "note": r.get("note", "")}
     # FALLBACK (no explicit signatures): *args stubs -> whole-file rewriter implements all.

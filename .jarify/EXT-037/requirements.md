@@ -48,6 +48,8 @@ implementation:
   - tests/test_ext037_buildsystem_jaros_write.py
   - harness/spec_loop.py
   - tests/test_ext037_agent_plan_jaros_write.py
+  - harness/intent_loop.py
+  - tests/test_ext037_build_jaros_write.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -764,3 +766,89 @@ unwired here since this requirement's scope is `spec_loop.py` itself.
   (FIX and BUILD flows) and `_decompose_build`'s three build strategies; the hybrid-probe temp-dir
   build in `_build_per_function` stays raw (no Decision recorded for `alt`-root writes); and the
   full suite has no regression
+
+### [REQ-13] `intent_loop.py`'s `/build` writes are Jaros-native (Tenet 1)  (covered)
+
+**Owner directive (2026-07-04) — Tenet-1 compliance sweep, tracker #112, TRUE FINAL SLICE (5).**
+`harness/intent_loop.py`'s `build_in_dir` — the last real-host write path in this sweep — writes
+the model-generated code + its self-written tests directly onto the caller's real `cwd` via raw
+`Path.write_text` (inside the `run_tests` probe closure, and in the two final writes after
+`behavioral_solve` returns), bypassing the gate, the REQ-1 root-jail, and the hash-chain log every
+other compliant host write goes through. The real-host caller is `harness/cli.py`'s `cmd_build`
+(`/build <func> <intent>`, turning an intent into a working function in the CURRENT directory) —
+the one product command still writing raw before this requirement. This closes that gap, mirroring
+the PROVEN REQ-9/REQ-10/REQ-11/REQ-12 idiom exactly: an optional `runtime` parameter that, when
+supplied, performs each write as a real `code.write_file` Decision applied through `Runtime.apply`
+(gate + REQ-1 root-jail + hash-chain log); `runtime=None` (the default) preserves the exact prior
+direct-write behavior byte-for-byte, so every existing eval/test/sandbox caller against a
+throwaway temp dir is unaffected.
+
+**Reused, not duplicated:** `build_in_dir` imports `harness/multi_file.py`'s existing
+`_jaros_write(path, content, root, runtime)` helper (REQ-10) rather than writing a fourth copy of
+the same idiom.
+
+**Caller audit (host → runtime, eval/oracle → raw), checked per site, not assumed:**
+- `harness/cli.py`'s `cmd_build` (real-host, `cwd="."`) now passes `runtime=self._write_runtime()`
+  — the same root-anchored `Runtime` `/rename`/`/move`/`/fixrepo`/`/undo`/`/buildsystem`/`/agent`
+  already use.
+- `harness/spec_loop.py`'s `_decompose_build` single-function fallback (line ~201) — flagged as an
+  explicit, real-host follow-up by REQ-12 rather than silently deferred — now threads its own
+  already-existing `runtime` parameter straight through to `build_in_dir(..., runtime=runtime)`,
+  closing that named gap in the same move (no new parameter needed there; REQ-12 already added
+  it).
+- `harness/agent_loop.py`'s `execute_step` `"build"` action (line ~112) also calls `build_in_dir`
+  without a `runtime` — RE-CONFIRMED (not assumed) eval-only, exactly as REQ-10 found for the
+  sibling `"fix"` action: an exhaustive grep shows `harness.agent_loop.agent_loop`/`execute_step`
+  is reached only by `harness/agentic_eval.py` and `tests/test_agent_loop.py`/
+  `tests/test_ext037_root_enforcement.py` — never by any live CLI command. `harness/cli.py`'s
+  `cmd_agent` (`/agent`) calls `harness.spec_loop.spec_driven_loop` instead, a completely different
+  function. Left unwired here, honestly, not silently — no host-write gap exists at this site.
+- `harness/intent_loop.py`'s own `build_from_intent` (the daily-driver/Foundry oracle-scoring
+  spine, EXT-008) and the `_run_oracle` helper it calls are OUT OF SCOPE by design: both always
+  build into a `tempfile.TemporaryDirectory()` they create themselves — never a caller-supplied
+  project root — so they are internal scratch/eval concerns (like `system_builder.py`'s
+  acceptance-check scratch and `spec_loop.py`'s hybrid-probe temp dir), not real-host writes.
+  Neither function gained a `runtime` parameter; confirmed by their unchanged signatures.
+  `harness/daily_driver.py`, `harness/foundry.py`, `scripts/probe_intent.py`,
+  `tests/test_ext005_daily_driver.py`, `tests/test_ext008_intent.py`, and every other
+  `build_from_intent`/`_run_oracle` caller is an eval/exploration script, never a live CLI command
+  — confirmed by grep, none of them are reached from `harness/cli.py`.
+
+**This COMPLETES the Tenet-1 host-write sweep (tracker #112):** every product command that
+performs a real-host write — `/rename`/`/move` (REQ-9), `/fixrepo`/`/undo` (REQ-10),
+`/buildsystem`/`/modifysystem` (REQ-11), `/agent`/`/plan`/`_nl_fix` (REQ-12), and now `/build`
+(REQ-13) — is Jaros-native: gated, EXT-037 root-jailed, and hash-chain logged.
+
+#### Acceptance Criteria
+- [x] `harness/intent_loop.py`'s `build_in_dir(cwd, intent, target, func=None, signature=None, *,
+  max_iters=3, verbose=False, runtime=None)` gains the optional keyword-only `runtime` parameter;
+  every write it performs onto `cwd` (the `run_tests` probe's code + test writes, and the two
+  final writes after `behavioral_solve` returns) is routed through `harness/multi_file.py`'s
+  existing `_jaros_write(path, content, root=cwd, runtime)` helper instead of a raw
+  `Path.write_text`
+- [x] `runtime=None` (the default) preserves the exact current raw-write behavior byte-for-byte —
+  no existing eval/test/sandbox caller (`harness/build_eval.py`, `harness/agentic_eval.py`,
+  `harness/daily_driver.py`, `harness/foundry.py`, `tests/test_ext008_intent.py`) is affected
+- [x] `harness/cli.py`'s `cmd_build` passes `runtime=self._write_runtime()` to `build_in_dir` — the
+  same root-anchored `Runtime` every other Tenet-1-compliant product command already uses
+- [x] `harness/spec_loop.py`'s `_decompose_build` single-function fallback passes its own
+  already-existing `runtime` parameter through to `build_in_dir(..., runtime=runtime)`, closing the
+  gap REQ-12 explicitly flagged and left out of scope
+- [x] `harness/agent_loop.py`'s `execute_step` `"build"` action is RE-CONFIRMED eval-only (reached
+  only by `harness/agentic_eval.py` and tests, never a live CLI command) and is left unwired,
+  documented honestly rather than silently
+- [x] `harness/intent_loop.py`'s `build_from_intent`/`_run_oracle` (the hidden-oracle eval spine,
+  always building into a self-created `tempfile.TemporaryDirectory()`) are confirmed OUT OF SCOPE
+  and unchanged — no `runtime` parameter added, no signature change
+- [x] A gate rejection (e.g. a path escaping root) degrades to an honest failed result
+  (`self_pass=False`, the rejection reason in `note`, `files: []`) — never an uncaught exception —
+  from `build_in_dir`
+- [x] Proven by `tests/test_ext037_build_jaros_write.py`: `build_in_dir` routes its code + test
+  writes through a `code.write_file` Decision when a runtime is supplied (a fake recording
+  runtime, and a real `harness.coding_loop.Runtime` proving the gate + REQ-1 root-jail actually
+  fire); a root-jail rejection through the Decision path is honest (no crash, no partial effect);
+  the `runtime=None` raw fallback is byte-identical to the pre-existing behavior; `/build` (via
+  `JcodeCli.dispatch`) genuinely records a `code.write_file` Decision on the hash-chain
+  `DecisionLog` for a real host-rooted temp directory; `_run_oracle`/`build_from_intent` are
+  confirmed unchanged by signature inspection; `harness/agent_loop.py`'s eval-only `build` action
+  is confirmed unchanged by source inspection; and the full suite has no regression

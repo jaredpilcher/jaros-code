@@ -723,7 +723,13 @@ class JcodeCli:
             return "usage: /build <func_name> <intent>   e.g. /build is_prime check if a number is prime"
         func, intent = bits[0], bits[1]
         from harness.intent_loop import build_in_dir
-        r = build_in_dir(".", intent, f"{func}.py", func)
+        # #EXT-037-REQ-13 Start
+        # `runtime=self._write_runtime()` (Tenet 1) -- the same root-anchored `Runtime`
+        # `/rename`/`/move`/`/fixrepo`/`/undo`/`/buildsystem`/`/agent` already use -- so a real
+        # `/build` invocation's code + test writes are gated, EXT-037 root-jailed, and
+        # hash-chain logged, closing the last real-host write path in this sweep (tracker #112).
+        r = build_in_dir(".", intent, f"{func}.py", func, runtime=self._write_runtime())
+        # #EXT-037-REQ-13 End
         return f"[build {'OK' if r['self_pass'] else 'partial'}] {r['note']}\n  files: {', '.join(r['files'])}"
 
     # #EXT-036-REQ-4 Start

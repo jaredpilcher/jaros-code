@@ -971,3 +971,77 @@ reusing it rather than duplicating it.
 
 #### Implements
 - [REQ-12] `spec_loop.py`'s `/agent`/`/plan`/`_nl_fix` writes are Jaros-native (Tenet 1)
+
+### [TASK-17] `intent_loop.py`'s `/build` writes are Jaros-native (REQ-13)
+
+Tenet-1 compliance sweep (tracker #112), TRUE FINAL SLICE (5). `harness/intent_loop.py`'s
+`build_in_dir` — the last real-host write path in this sweep — writes model-generated code +
+its self-written tests directly onto the caller's real `cwd` via raw `Path.write_text` (inside
+the `run_tests` probe closure, and in the two final writes after `behavioral_solve` returns),
+bypassing the gate + REQ-1 root-jail + hash-chain log. Mirror the PROVEN REQ-9/REQ-10/REQ-11/
+REQ-12 idiom exactly, reusing `harness/multi_file.py`'s existing `_jaros_write(path, content,
+root, runtime)` helper (no fourth copy of the same idiom). The real-host caller is
+`harness/cli.py`'s `cmd_build` (`/build <func> <intent>`); `harness/spec_loop.py`'s
+`_decompose_build` single-function fallback also reaches `build_in_dir` via `/agent` and already
+carries its own `runtime` parameter (REQ-12) that simply needs threading through.
+
+#### Steps
+1. In `harness/intent_loop.py`, import `_jaros_write` from `harness.multi_file` (reused, not
+   duplicated). Add an optional keyword-only `runtime: object | None = None` parameter to
+   `build_in_dir(cwd, intent, target, func=None, signature=None, *, max_iters=3, verbose=False,
+   runtime=None)`.
+2. Replace the `run_tests(code, test_code)` inner closure's two raw `tp.write_text(code, ...)` /
+   `testp.write_text(test_code, ...)` calls with `_jaros_write(tp, code, cwd, runtime)` /
+   `_jaros_write(testp, test_code, cwd, runtime)`; if either returns a non-`None` error, record it
+   and have `run_tests` report `(False, err)` to `behavioral_solve` without ever attempting the
+   pytest subprocess against a file that may not exist.
+3. After `behavioral_solve` returns, if a write error was recorded in step 2, return
+   `{"self_pass": False, "files": [], "note": err}` immediately (never fall through to the final
+   writes on a target that already failed to write once). Otherwise replace the two final raw
+   `tp.write_text(...)` / `testp.write_text(...)` calls with `_jaros_write(tp, ..., cwd, runtime)` /
+   `_jaros_write(testp, r["tests"], cwd, runtime)`; if either errors, return the same honest failed
+   shape (`self_pass=False`, `files=[]`, the error in `note`) instead of the normal success dict.
+4. In `harness/cli.py`'s `cmd_build`, pass `runtime=self._write_runtime()` to `build_in_dir(".",
+   intent, f"{func}.py", func)` — the same root-anchored `Runtime` every other Tenet-1-compliant
+   product command already uses. No other CLI change.
+5. In `harness/spec_loop.py`'s `_decompose_build` single-function fallback (the `len(reqs) <= 1`
+   branch, `r = build_in_dir(cwd, intent, f"{func}.py", func, max_iters=max_iters,
+   verbose=verbose)`), add `runtime=runtime` — `_decompose_build` already carries this parameter
+   from REQ-12/TASK-16; this closes the one gap that task explicitly flagged and left out of
+   scope.
+6. RE-CONFIRM (do not modify) `harness/agent_loop.py`'s `execute_step` `"build"` action, which
+   also calls `build_in_dir(cwd, intent, f"{func}.py", func)` without a `runtime`: grep every
+   caller of `harness.agent_loop.agent_loop`/`execute_step` and confirm it is reached only by
+   `harness/agentic_eval.py` and `tests/test_agent_loop.py`/`tests/test_ext037_root_enforcement.py`
+   — never by any live CLI command (`harness/cli.py`'s `cmd_agent` calls
+   `harness.spec_loop.spec_driven_loop` instead). Leave it unwired, documented honestly.
+7. RE-CONFIRM (do not modify) `harness/intent_loop.py`'s own `build_from_intent` and the
+   `_run_oracle` helper it calls: both always build into a `tempfile.TemporaryDirectory()` they
+   create themselves, never a caller-supplied project root, so they are internal scratch/eval
+   concerns (like `system_builder.py`'s acceptance-check scratch and `spec_loop.py`'s
+   hybrid-probe temp dir) — confirmed out of scope by their unchanged signatures (no `runtime`
+   parameter added). Grep every caller (`harness/daily_driver.py`, `harness/foundry.py`,
+   `scripts/probe_intent.py`, `tests/test_ext005_daily_driver.py`, `tests/test_ext008_intent.py`)
+   to confirm none is reached from `harness/cli.py`.
+8. Add `tests/test_ext037_build_jaros_write.py` covering: `build_in_dir` routes its code + test
+   writes through a `code.write_file` Decision when a runtime is supplied (a fake recording
+   runtime, and a real `harness.coding_loop.Runtime` proving the gate + REQ-1 root-jail actually
+   fire on an escaping target built directly as a Decision); a rejecting fake runtime produces an
+   honest failed result (`self_pass=False`, `files=[]`, the error in `note`), no crash, no file
+   ever created; `runtime=None` (the default) is byte-identical to the pre-existing behavior;
+   `/build` (via `JcodeCli.dispatch`) genuinely records a `code.write_file` Decision on the
+   hash-chain `DecisionLog` for a real host-rooted temp directory; `_run_oracle`/
+   `build_from_intent` are confirmed unchanged by signature inspection (no `runtime` parameter);
+   and `harness/agent_loop.py`'s eval-only `build` action is confirmed unchanged by source
+   inspection. `harness.behavioral_solve.behavioral_solve` and
+   `harness.proc_treekill.run_with_treekill` are monkeypatched to deterministic fakes so no live
+   model call or real pytest subprocess is needed.
+9. Run `python -m pytest tests/ -q` synchronously in the foreground (background it with
+   `run_with_heartbeat` per the observability convention) and confirm the exit code and full pass
+   count, with no regression to `tests/test_ext013_jaros_solve.py`, `tests/test_spec_loop.py`, or
+   any prior EXT-037 task's tests. This completes the Tenet-1 host-write sweep (tracker #112):
+   `/rename`/`/move` (REQ-9), `/fixrepo`/`/undo` (REQ-10), `/buildsystem`/`/modifysystem`
+   (REQ-11), `/agent`/`/plan`/`_nl_fix` (REQ-12), and now `/build` (REQ-13) are all Jaros-native.
+
+#### Implements
+- [REQ-13] `intent_loop.py`'s `/build` writes are Jaros-native (Tenet 1)
