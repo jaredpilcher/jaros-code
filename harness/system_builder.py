@@ -413,6 +413,84 @@ def _repair_plan_entrypoint(plan: dict) -> "tuple[dict, str | None]":
 # #EXT-036-REQ-1 End
 
 
+# #EXT-036-REQ-32 Start (TASK-42: deterministic plan-repair for MULTI-module
+# "entrypoint not a listed module")
+_ENTRYPOINT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.py$")
+
+
+def _repair_plan_entrypoint_multi(plan: dict) -> "tuple[dict, str | None]":
+    """Deterministic plan-repair (TASK-42, REQ-32): fixes the MEASURED MULTI-module
+    "entrypoint not a listed module" coherence defect (`graph-bfs-shortest-path-cli`,
+    `.jaros-data/hardtier_failure_diag.json`) -- the model plans >=2 logic modules (e.g.
+    `graph_builder.py`, `bfs_solver.py`) but sets `entrypoint` to a DIFFERENT filename
+    (e.g. `main.py`, the sentence's pinned entrypoint convention, see TASK-15) that it
+    never adds as a module -- `validate_plan` correctly rejects the whole plan
+    ("entrypoint not a listed module") and 0 modules build, even though the model
+    clearly needs a CLI wrapper it just never listed.
+
+    `_repair_plan_entrypoint` (TASK-19) already fills this gap for a SINGLE listed
+    module (rename); that function's own docstring/tests deliberately leave EVERY
+    multi-module case untouched ("ambiguous which module should host the entrypoint").
+    This function narrows that gap to the ONE unambiguous multi-module shape: the
+    listed modules import NOTHING from each other at all (a fully disconnected set --
+    no module has already taken on an orchestrator/wiring role). MEASURED LIVE (3/3
+    identical draws for graph-bfs-shortest-path-cli): this is exactly that shape. With
+    no existing module importing any sibling, there is no candidate to guess between --
+    ADDING a brand-new entrypoint module that imports every listed module (mirroring
+    `_repair_plan_dangling_imports`'s additive-only convention) is the least-ambiguous
+    completion: it never renames or removes anything the model planned, it only
+    supplies the CLI wrapper the `entrypoint` field already declared the model wanted.
+
+    SAFETY (declines to repair -- plan stays rejected exactly as before -- whenever):
+      - fewer than 2 modules (the single-module case is `_repair_plan_entrypoint`'s, and
+        0 modules is already its own "no modules" defect);
+      - `entrypoint` is missing/not a string/empty, or already a listed module name
+        (nothing to repair);
+      - any listed module entry is malformed/unnamed (nothing safe to reason about);
+      - `entrypoint` isn't a well-formed `<identifier>.py` filename (ambiguous what to
+        add);
+      - ANY listed module already imports another listed module -- that existing wiring
+        relationship makes it genuinely ambiguous which module (if any) should have
+        been the entrypoint, so this function makes NO guess (mirrors
+        `_repair_plan_entrypoint`'s own multi-module conservatism; the pre-existing
+        `test_ext036_planrepair.py::test_multi_module_mismatched_entrypoint_still_rejected`
+        plan -- `cli.py` importing `calculator.py` -- is exactly this ambiguous shape and
+        stays rejected).
+
+    Never raises. Returns ``(plan, note)`` -- ``note`` is ``None`` when no repair was
+    made, else a short human-readable description for traceability/honesty."""
+    if not isinstance(plan, dict):
+        return plan, None
+    mods = plan.get("modules")
+    entrypoint = plan.get("entrypoint")
+    if not isinstance(mods, list) or len(mods) < 2:
+        return plan, None
+    if not isinstance(entrypoint, str) or not entrypoint:
+        return plan, None
+    names = [m.get("name") for m in mods if isinstance(m, dict) and m.get("name")]
+    if len(names) != len(mods):
+        return plan, None  # a malformed/unnamed module entry -- nothing safe to guess
+    if entrypoint in names:
+        return plan, None  # already coherent
+    if not _ENTRYPOINT_NAME_RE.match(entrypoint):
+        return plan, None  # not a sane module filename -- ambiguous, don't guess
+    for m in mods:
+        imports = m.get("imports") if isinstance(m, dict) else None
+        if isinstance(imports, list) and any(i in names for i in imports):
+            # An existing module already wires to a sibling -- genuinely ambiguous which
+            # module (if any) should host the entrypoint. No guess; leave rejected.
+            return plan, None
+    new_module = {
+        "name": entrypoint,
+        "responsibility": "CLI entrypoint wiring the other modules together",
+        "exports": [{"name": "main", "signature": "def main():"}],
+        "imports": list(names),
+    }
+    plan["modules"] = mods + [new_module]
+    return plan, f"plan-repair: added missing entrypoint module {entrypoint} importing {names}"
+# #EXT-036-REQ-32 End
+
+
 # #EXT-036-REQ-1 Start (TASK-36: deterministic plan-repair for dangling LOCAL imports)
 def _repair_plan_dangling_imports(plan: dict) -> "tuple[dict, str | None]":
     """Deterministic plan-repair (TASK-36, REQ-1): fixes the MEASURED DANGLING-LOCAL-IMPORT
@@ -1522,13 +1600,24 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # plan isn't rejected. Never weakens validate_plan's other checks (see
     # _repair_plan_entrypoint's own multi-module conservatism).
     plan, plan_repair_note = _repair_plan_entrypoint(plan)
-    # TASK-36: runs SECOND (after the entrypoint repair, while any module-count-dependent
-    # conservatism above has already had its say) so BOTH measured defects in one plan get
+    # #EXT-036-REQ-32 Start
+    # TASK-42: runs SECOND (right after the single-module entrypoint repair, before the
+    # dangling-import repair) -- fills the analogous MULTI-module "entrypoint not listed"
+    # gap that TASK-19 deliberately left untouched, but only for the one unambiguous
+    # shape (a fully disconnected module set); see the function's own docstring for the
+    # safety conditions. A no-op on the plan `_repair_plan_entrypoint` already fixed
+    # (single-module) or that has no such defect.
+    plan, plan_repair_multi_note = _repair_plan_entrypoint_multi(plan)
+    # #EXT-036-REQ-32 End
+    # TASK-36: runs THIRD (after both entrypoint repairs, while any module-count-dependent
+    # conservatism above has already had its say) so ALL measured defects in one plan get
     # repaired — the datastore plan trips both "imports unknown" and (sometimes)
     # "entrypoint not listed". Additive-only; never touches a plan with no dangling local
     # imports.
     plan, dangling_import_note = _repair_plan_dangling_imports(plan)
-    plan_repair = "; ".join(n for n in (plan_repair_note, dangling_import_note) if n)
+    plan_repair = "; ".join(
+        n for n in (plan_repair_note, plan_repair_multi_note, dangling_import_note) if n
+    )
     # #EXT-036-REQ-1 End
     defects = validate_plan(plan)
     if defects:

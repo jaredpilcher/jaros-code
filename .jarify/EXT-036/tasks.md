@@ -1785,6 +1785,63 @@ the parent against `review_checks` and the baseline via the live gate, like REQ-
    green, and record the exact pass/skip count + exit code (no regression vs the
    pre-change baseline).
 
+### [TASK-42] Deterministic plan-repair for MULTI-module entrypoint-not-listed (REQ-32, hard-tier diagnostic #86)
+
+MEASURED (hard-tier capability diagnostic, `.jaros-data/hardtier_failure_diag.json`,
+2026-07-06): `graph-bfs-shortest-path-cli` fails at the PLAN stage — `note = "plan
+failed coherence validation: entrypoint not a listed module"` — a pure deterministic
+plan-coherence rejection, not a reasoning failure. LIVE-REPRODUCED (3/3 identical draws
+against served gemma-4-e2b): the plan lists 2 modules (`graph_builder.py`,
+`bfs_solver.py`), both with `imports: []` (no module imports the other), `entrypoint:
+"main.py"` not among them. `_repair_plan_entrypoint` (TASK-19) only repairs the
+single-module case, deliberately leaving every multi-module case untouched. Build the
+narrow, safe multi-module extension.
+
+#### Steps
+1. In `harness/system_builder.py`, add `_repair_plan_entrypoint_multi(plan) -> (plan,
+   note)` right after `_repair_plan_entrypoint` (before `_repair_plan_dangling_imports`).
+   Fires ONLY when: `plan["modules"]` has 2+ well-formed (named) entries; `entrypoint`
+   is a non-empty string matching `^[A-Za-z_][A-Za-z0-9_]*\.py$` and not already among
+   the listed module names; AND no listed module's `imports` references another listed
+   module (a fully disconnected set — the exact measured graph-bfs shape). When it
+   fires, ADD a new module entry named `entrypoint` whose `exports` is a minimal
+   `def main():` and whose `imports` lists every currently-listed module name —
+   additive only, mirroring `_repair_plan_dangling_imports`'s convention (never renames
+   or removes an existing module). When ANY listed module already imports another
+   (an existing wiring relationship — genuinely ambiguous which module, if any, should
+   host the entrypoint), or the entrypoint/module shapes are malformed, make NO repair
+   — return the plan unchanged so `validate_plan` still rejects it exactly as before.
+   Never raises. Wrap the new function with `# #EXT-036-REQ-32 Start` / `# #EXT-036-REQ-32
+   End`.
+2. Wire it into `build_system`'s plan-repair sequence (~lines 1519-1531): call it right
+   after `_repair_plan_entrypoint` and before `_repair_plan_dangling_imports`; fold its
+   note into the existing `plan_repair` string alongside the other two notes. Wrap the
+   changed lines with `# #EXT-036-REQ-32 Start` / `# #EXT-036-REQ-32 End`.
+3. Confirm, against the LIVE served model, that `build_system(graph_bfs_sentence, ...,
+   llm=build_llm())` no longer rejects at the plan stage (the coherence-rejection note is
+   gone; the build proceeds to the BUILD phase) — this is the WIN this task unblocks; it
+   does not require the build to fully oracle-pass (a separate reasoning question).
+4. Add `tests/test_ext036_planrepair_multi.py` (no live model, offline `_extract_json`
+   plan literals only): (a) the exact measured graph-bfs shape (2 disconnected modules,
+   mismatched entrypoint) is repaired and `validate_plan(repaired) == []`, asserting the
+   added module's name/imports; (b) the pre-existing `test_ext036_planrepair.py`
+   multi-module case (`cli.py` imports `calculator.py`) is UNCHANGED by
+   `_repair_plan_entrypoint_multi` (still rejected) — proving no regression to that
+   pinned conservatism; (c) a 3-module chain (`a.py`->`b.py`->`c.py`) with a mismatched
+   entrypoint is left untouched/still rejected (an existing wiring relationship makes it
+   ambiguous); (d) a malformed-entrypoint variant (e.g. not ending in `.py`, containing a
+   space, or empty) is left untouched/still rejected; (e) the function never raises on
+   malformed/edge-case plan input (`None`, missing keys, non-list `modules`, non-dict
+   module entries, non-string entrypoint); (f) the existing single-module repair test
+   (`test_ext036_planrepair.py`) stays green, unaffected by this new function.
+5. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change baseline, 2315 passed / 2 skipped).
+
+#### Implements
+- [REQ-32] Deterministic plan-repair for MULTI-module "entrypoint not a listed module"
+  (this task introduces AND fully implements REQ-32's mechanism)
+
 #### Implements
 - [REQ-31] 7B-GENERATE acceptance checks (this task introduces AND fully implements
   REQ-31's offline mechanism; wiring into `build_system` + the live A/B gate measurement

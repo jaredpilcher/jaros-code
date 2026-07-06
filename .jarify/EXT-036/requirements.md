@@ -1298,3 +1298,53 @@ follow-up).
   `build_system`/`build_system_best_of_k` (mirroring REQ-30's `check_reviewer` kwarg
   pattern), and a LIVE A/B gate measurement (7B-generate vs 7B-review vs baseline) on the
   20-task false-done suite before either mechanism is flipped on by default — open
+
+### [REQ-32] Deterministic plan-repair for MULTI-module "entrypoint not a listed module" (DONE — EXT-036 TASK-42, 2026-07-06)
+
+**MEASURED (hard-tier capability diagnostic, `.jaros-data/hardtier_failure_diag.json`,
+2026-07-06):** the `graph-bfs-shortest-path-cli` CREATION task fails at the PLAN stage —
+`build_system`'s `note` = `"plan failed coherence validation: entrypoint not a listed
+module"` — a pure deterministic plan-coherence rejection, never reaching the reasoning
+stage. LIVE-CONFIRMED (3/3 identical draws against the served gemma-4-e2b): the model
+plans exactly 2 logic modules (`graph_builder.py`, `bfs_solver.py`), BOTH with `imports:
+[]` (no module imports any sibling — a fully disconnected pair), and sets `entrypoint:
+"main.py"`, a filename it never adds as a module — `validate_plan` correctly rejects
+the whole plan and 0 modules build. `_repair_plan_entrypoint` (TASK-19, REQ-1) already
+fixes the analogous SINGLE-module case (rename) but deliberately leaves EVERY
+multi-module case untouched ("ambiguous which module should host the entrypoint") — this
+requirement fills that gap for the one unambiguous multi-module shape.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_repair_plan_entrypoint_multi(plan) -> (plan, note)` —
+  when the plan lists 2+ modules, `entrypoint` is a well-formed `<identifier>.py`
+  filename not among the listed module names, and NO listed module imports another
+  listed module (a fully disconnected set — no existing candidate to guess between),
+  ADD a new module named `entrypoint` whose `imports` list every currently-listed
+  module (mirrors `_repair_plan_dangling_imports`'s additive-only convention — never
+  renames or removes anything the model planned). — **DONE 2026-07-06**
+- [x] SAFE / conservative: when ANY listed module already imports another (an existing
+  wiring relationship exists, so it is genuinely ambiguous which module — if any —
+  should host the entrypoint), or the entrypoint name/module shapes are malformed, the
+  function makes NO repair and the plan is left to fail `validate_plan` exactly as
+  before (no wrong guess). — **DONE 2026-07-06**
+- [x] Wired into `build_system`'s plan-repair sequence, running after
+  `_repair_plan_entrypoint` (TASK-19) and before `_repair_plan_dangling_imports`
+  (TASK-36), so a plan tripping multiple defects gets all of them repaired in one pass;
+  its note is folded into the existing `plan_repair` field. — **DONE 2026-07-06**
+- [x] No regression to the pre-existing conservatism: the ALREADY-PINNED
+  `test_ext036_planrepair.py` multi-module case (`cli.py` importing `calculator.py`,
+  a genuine existing-wiring shape) still fails coherence validation exactly as before
+  this task (that plan has an inter-module import, so this new function correctly
+  declines to touch it). The existing single-module repair (TASK-19) is unchanged. —
+  **DONE 2026-07-06**
+- [x] `graph-bfs-shortest-path-cli` now PASSES plan validation after the repair (the
+  deterministic rejection is unblocked; the build proceeds past the plan stage) —
+  CONFIRMED LIVE against the served gemma-4-e2b. — **DONE 2026-07-06**
+- [x] Proven OFFLINE (`tests/test_ext036_planrepair_multi.py`, no live model): the
+  measured graph-bfs shape (fully disconnected 2-module plan) is repaired and becomes
+  coherent; the pre-existing single-module repair test stays green; a genuinely
+  ambiguous multi-module plan (an inter-module import already exists) is left rejected;
+  a malformed-entrypoint variant is left rejected; the function never raises on
+  malformed/edge-case plan input. Full `tests/` suite re-run via
+  `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirmed green
+  with no regression. — **DONE 2026-07-06**
