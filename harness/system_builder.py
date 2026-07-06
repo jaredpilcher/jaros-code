@@ -1655,6 +1655,120 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
     return built, unmet, repairs
 # #EXT-036-REQ-5 End
 
+# #EXT-036-REQ-34 Start
+# TASK-44 (REQ-34, owner idea, roadmap 57e8341): OPT-IN iterative REPLAN-AS-MODIFICATION
+# recovery. When the targeted per-check patch above (`_repair_system`) still leaves a build
+# NOT DONE, step back and treat the remaining gap as a MODIFICATION: describe where the
+# system actually landed vs the spec's target, apply the fix via the existing MODIFICATION
+# plane (`modify_system`), re-check, and iterate. This can fix things a local per-check patch
+# cannot (e.g. a whole missing module / a structural change), and reuses proven machinery
+# rather than inventing a new apply mechanism.
+MAX_REPLAN_ROUNDS = 3   # bounded iterative replan-as-modification recovery, REQ-34
+
+
+def _build_replan_request(spec: str, root: Path, built: dict[str, str], checks: list[dict],
+                           unmet: list[str]) -> str:
+    """Build a plain MODIFICATION request describing the gap between the built system and the
+    spec, for REQ-34's replan-as-modification recovery. Uses ONLY the spec text, the CURRENT
+    built module sources, and each FAILING check's NAME + its REAL run ERROR (obtained by
+    actually running the check, exactly like `_repair_module_for_check`'s existing feedback
+    loop) -- NEVER the check's own assertion CODE (which can embed a hidden expected value)
+    and never any other oracle-only sentinel. Never raises (a check-run failure just yields an
+    empty error string for that name)."""
+    lines = [
+        "The following system was built for this spec but does not yet fully satisfy it. "
+        "Assess where the project actually landed vs the spec's target, then modify it to "
+        "bridge the gap.",
+        "",
+        f"SPEC: {spec}",
+        "",
+        "CURRENT MODULES:",
+        _sources_blob(built)[:4000],
+        "",
+        "FAILING ACCEPTANCE CHECKS (name: real run error -- never the check's own code):",
+    ]
+    for name in unmet:
+        check = next((c for c in (checks or []) if c.get("name") == name), None)
+        err = ""
+        if check is not None:
+            try:
+                _, err = _run_check_verbose(root, check)
+            except Exception:
+                err = ""
+        lines.append(f"- {name}: {(err or '')[:300]}")
+    return "\n".join(lines)
+
+
+def _replan_as_modification(spec: str, root: Path, built: dict[str, str], checks: list[dict],
+                             unmet: list[str], llm, *, max_rounds: int = MAX_REPLAN_ROUNDS,
+                             runtime: "object | None" = None
+                             ) -> "tuple[dict[str, str], list[str], int]":
+    """Iterative REPLAN-AS-MODIFICATION recovery (REQ-34): builds a modification request from
+    the gap (see `_build_replan_request`), applies it via `modify_system` (the existing
+    MODIFICATION plane), re-runs the FULL acceptance checklist, and repeats up to
+    `max_rounds` times.
+
+    CONVERGENCE GATE (mirrors `_repair_system`'s non-degrading floor, made STRICTER here per
+    REQ-34): a round is ACCEPTED only when it STRICTLY REDUCES the unmet-check COUNT AND
+    regresses no check that was passing before the round (a SET comparison, so a swap-in
+    regression on a different check can never slip through as a same-count coincidence);
+    otherwise the round is REJECTED -- every module `modify_system` touched this round is
+    restored to its pre-round content (disk + the returned dict) and the loop STOPS. Bounded
+    to `max_rounds`; stops early once `done` (0 unmet). Never raises -- any `modify_system`
+    failure just stops the loop and returns the best-seen state so far.
+
+    0-FALSE-DONE (Tenet 3): the caller recomputes `done` from a FRESH run of the real
+    acceptance checks after this returns -- this function can only ever produce a genuinely
+    fresh passing state on disk, never fabricate one.
+
+    Returns `(built, unmet, rounds_run)` where `rounds_run` counts only ACCEPTED rounds."""
+    all_names = [c.get("name", "?") for c in (checks or [])]
+    best_built, best_unmet = dict(built), list(unmet)
+    rounds_run = 0
+    try:
+        for round_no in range(1, max_rounds + 1):
+            if not unmet:
+                break
+            pre_round_built = dict(built)
+            pre_round_unmet_set = set(unmet)
+
+            mod_request = _build_replan_request(spec, root, built, checks, unmet)
+            try:
+                result = modify_system(dict(built), mod_request, root, llm=llm, runtime=runtime)
+            except Exception:
+                break
+            candidate_built = dict(result.get("modules") or built)
+
+            new_unmet_list = [c.get("name", "?") for c in (checks or []) if not _run_check(root, c)]
+            new_unmet_set = set(new_unmet_list)
+            passed_before_round = set(all_names) - pre_round_unmet_set
+            regressed = passed_before_round & new_unmet_set
+            improved = len(new_unmet_set) < len(pre_round_unmet_set)
+
+            if regressed or not improved:
+                # REJECT this round: restore any module `modify_system` touched back to its
+                # pre-round content (disk + dict) and stop -- never worse than best-seen.
+                for name, code in pre_round_built.items():
+                    if candidate_built.get(name) != code:
+                        # #EXT-037-REQ-11 Start
+                        _jailed_write(root, name, code, runtime)
+                        # #EXT-037-REQ-11 End
+                built = pre_round_built
+                break
+
+            rounds_run = round_no
+            built = candidate_built
+            unmet = new_unmet_list
+            best_built, best_unmet = dict(built), list(unmet)
+    except Exception:
+        pass   # never raise -- fall through with the best progress made
+
+    # Final safety net: never return worse than the best-seen (non-regressing, improving) state.
+    if len(unmet) > len(best_unmet):
+        built, unmet = best_built, best_unmet
+    return built, unmet, rounds_run
+# #EXT-036-REQ-34 End
+
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
             repairs=None, plan_repair: str = "", security=None, quality=None) -> dict:
@@ -1680,7 +1794,8 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
 # ACCEPTANCE stage (see the SECOND `#EXT-036-REQ-30` region in this function).
 def build_system(spec: str, root: "str | Path", *, llm=None,
                   runtime: "object | None" = None,
-                  check_reviewer=None) -> dict:
+                  check_reviewer=None,
+                  replan_on_failure: bool = False) -> dict:
     """PLAN -> topological BUILD (syntax-gated + repair) -> ASSEMBLE -> ACCEPTANCE.
 
     Returns ``{modules: {name: code}, shipped: bool, done: bool, unmet: [names], plan: {...}}``
@@ -1709,7 +1824,17 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     spec + built module sources ONLY (no oracle leak) before the checklist gates `done`. This
     function never performs any model swap itself -- `check_reviewer` is just an injected llm;
     orchestrating which model actually serves as the reviewer (e.g. a Jetson gemma<->7B swap)
-    is a CALLER concern, out of scope here."""
+    is a CALLER concern, out of scope here.
+
+    ``replan_on_failure`` (EXT-036 REQ-34, task #57e8341): OPTIONAL, default `False` -- a
+    complete no-op, leaving this function BYTE-IDENTICAL to before this parameter existed (no
+    behavior change, proven by a dedicated regression test). When `True` AND the build is
+    still NOT DONE after the normal acceptance + `_repair_system` targeted patch, an iterative
+    REPLAN-AS-MODIFICATION recovery (`_replan_as_modification`) runs: it reframes the
+    remaining gap as a MODIFICATION request and applies it via `modify_system` (the existing
+    MODIFICATION plane), re-checks, and iterates up to `MAX_REPLAN_ROUNDS` times,
+    convergence-gated so it never regresses a previously-passing check and never fabricates
+    `done` -- `done` is always the real acceptance checklist passing."""
     # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
@@ -1933,6 +2058,23 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm, runtime=runtime)
         # #EXT-037-REQ-11 End
     # #EXT-036-REQ-5 End
+    # #EXT-036-REQ-34 Start
+    # TASK-44 (REQ-34): OPT-IN iterative replan-as-modification recovery -- default
+    # `replan_on_failure=False` is a complete no-op (this whole block never runs), keeping
+    # `build_system` BYTE-IDENTICAL to before this task for every existing caller/test. When
+    # `True` and the targeted per-check repair above still leaves the build NOT DONE, step
+    # back and REPLAN the remaining gap as a MODIFICATION (reusing `modify_system`),
+    # convergence-gated, bounded to `MAX_REPLAN_ROUNDS`.
+    replan_note = ""
+    if replan_on_failure and unmet:
+        _beat("REPLAN")  # #EXT-040-REQ-3
+        pre_replan_unmet_count = len(unmet)
+        built, unmet, replan_rounds = _replan_as_modification(
+            spec, root, built, checks, unmet, llm, runtime=runtime)
+        if replan_rounds:
+            replan_note = (f" (replan-as-modification: {replan_rounds} round(s), "
+                            f"unmet {pre_replan_unmet_count}->{len(unmet)})")
+    # #EXT-036-REQ-34 End
     # #EXT-036-REQ-4 Start
     done = not unmet
     _beat("DONE" if done else "NOT-DONE")  # #EXT-040-REQ-3
@@ -1940,6 +2082,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     if repairs:
         rounds = len({r["round"] for r in repairs})
         note += f" (after {rounds} repair round(s))"
+    # #EXT-036-REQ-34 Start
+    note += replan_note
+    # #EXT-036-REQ-34 End
     # #EXT-037-REQ-8 Start
     return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note,
                     repairs=repairs, plan_repair=plan_repair, quality=quality)

@@ -1401,3 +1401,70 @@ trailing prose) then a single `json.loads`, with zero repair on failure.
   repaired. Full `tests/` suite re-run via `python -m harness.run_with_heartbeat --
   python -m pytest tests/ -q`, confirmed green with no regression. — **DONE
   2026-07-06**
+
+### [REQ-34] Iterative REPLAN-AS-MODIFICATION build recovery (DONE — offline mechanism, EXT-036 TASK-44, 2026-07-06)
+
+**Owner idea (roadmap 57e8341):** today's `_repair_system` (REQ-5) only ever attempts a
+per-module, per-check PATCH when a build fails acceptance — feed the failing check's
+error + the current module sources back to the model for a targeted corrected module.
+The owner's richer idea: when that still isn't enough, step BACK and REPLAN — assess
+where the project actually landed vs the spec's target, produce a MODIFICATION plan to
+bridge the gap, apply it via the existing MODIFICATION plane (`modify_system`, REQ-14),
+re-check, and ITERATE (2nd/3rd/4th round). This can fix things a local per-check patch
+cannot (add a missing module, restructure), and reuses proven machinery rather than
+inventing a new apply mechanism.
+
+#### Acceptance Criteria
+- [x] `build_system` gains an OPT-IN, keyword-only `replan_on_failure: bool = False`
+  parameter; the default leaves `build_system` BYTE-IDENTICAL to before this
+  requirement for every existing caller/test (proven by a dedicated regression test,
+  not just asserted). — **DONE 2026-07-06**
+- [x] When `True` AND the build is still NOT DONE after normal acceptance +
+  `_repair_system`'s targeted patch, an iterative recovery loop
+  (`_replan_as_modification`) runs, bounded to `MAX_REPLAN_ROUNDS = 3`: (1) build a
+  MODIFICATION request from the SPEC + the CURRENT built module sources + the FAILING
+  acceptance checks' NAMES and their REAL run errors (obtained by actually running each
+  check, the same feedback convention `_repair_module_for_check` already uses) — NEVER
+  a check's own assertion CODE (which can embed a hidden expected value) and never any
+  other oracle-only sentinel; (2) apply via `modify_system(current_modules, mod_request,
+  root, llm=llm)` (REUSES the existing MODIFICATION plane, REQ-14, rather than inventing
+  a new apply mechanism); (3) re-run the FULL acceptance checklist on the new modules. —
+  **DONE 2026-07-06**
+- [x] CONVERGENCE GATE mirroring `_repair_system`'s non-degrading floor, made STRICTER: a
+  round is kept ONLY when it STRICTLY REDUCES the unmet-check COUNT AND regresses no
+  check that was passing before the round (a SET comparison, so a swap-in regression on
+  a different check can never slip through as a same-count coincidence); otherwise the
+  round is REJECTED — every module touched that round is reverted to its pre-round
+  content (disk + the returned dict) and the loop STOPS (bounded, no infinite loop,
+  never worse than best-seen). — **DONE 2026-07-06**
+- [x] 0-FALSE-DONE preserved (Tenet 3): `done` is always the REAL acceptance checklist
+  passing after this recovery returns — the recovery can only ever produce a genuinely
+  fresh passing state, never fabricate one. — **DONE 2026-07-06**
+- [x] Proven OFFLINE (`tests/test_ext036_replan.py`, canned/stubbed `llm`/`modify_system`,
+  no live model): (a) FIXES — a synthetic build failing 2 acceptance checks, with a
+  canned `modify_system` fix, reaches `done=True`/`unmet=[]` after 1 replan round through
+  the full `build_system(..., replan_on_failure=True)` pipeline; (b) NO-REGRESSION /
+  NO-INFINITE-LOOP — a canned `modify_system` that makes no improvement stops after
+  round 1 (never loops needlessly), and one that fixes one check while regressing a
+  different, previously-passing check is REJECTED and reverted (disk + dict), the
+  original still-failing check remaining the reported unmet, the previously-passing one
+  never regressing; (c) BOUNDED — a canned `modify_system` that fixes exactly one more
+  check per round across 4 starting-unmet checks is capped at exactly
+  `MAX_REPLAN_ROUNDS = 3` accepted rounds, one check remaining unmet, proving the bound
+  is real (the loop stops because of the cap, not because it ran out of progress to
+  make); (d) BYTE-IDENTICAL WHEN OFF — `replan_on_failure=False` (the default, both
+  implicit and explicit) never invokes `modify_system` at all and produces a result
+  dict identical to before this requirement, on a fixed synthetic failing build; (e) NO
+  ORACLE LEAK — the modification request built for the model contains the spec, the
+  current module source, and the failing check's NAME, but never a hidden
+  expected-output sentinel embedded only in the check's own assertion code (a check
+  whose CODE carries a distinct sentinel that its REAL run error never surfaces is used
+  to prove the exclusion directly); (f) never raises when `modify_system` itself raises,
+  or when a build is already done (the recovery is a complete no-op). Full `tests/`
+  suite re-run via `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`;
+  no regression vs the pre-change baseline (2356 passed / 2 skipped). — **DONE
+  2026-07-06**
+- [ ] LIVE measurement: does replan-as-modification lift any of the currently
+  repair-failing hard-tier CREATION-suite tasks (e.g. `kv-store-ttl`,
+  `priority-jobqueue`)? — open, owned by the parent (this task builds and offline-proves
+  the mechanism only; it does not run a live gemma measurement).

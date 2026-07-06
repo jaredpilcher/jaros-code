@@ -1907,6 +1907,59 @@ acceptance-checks/fix extraction call site, so the fix is a generic robustness l
    green, and record the exact pass/skip count + exit code (no regression vs the
    pre-change baseline, 2322 passed / 2 skipped).
 
+### [TASK-44] Iterative REPLAN-AS-MODIFICATION build recovery (REQ-34, owner idea, roadmap 57e8341)
+
+Today's `_repair_system` (REQ-5) only ever does a per-module, per-check PATCH on
+acceptance failure. The owner's richer idea: step BACK and REPLAN — assess where the
+project actually landed vs the spec's target, produce a MODIFICATION request bridging
+the gap, apply it via the existing MODIFICATION plane (`modify_system`, REQ-14), re-check,
+and ITERATE. Reuses proven machinery; no new apply mechanism.
+
+#### Steps
+1. In `harness/system_builder.py`, right after `_repair_system` (before `_result`), add
+   `MAX_REPLAN_ROUNDS = 3`, `_build_replan_request(spec, root, built, checks, unmet)`
+   (builds a plain modification request from the spec text + `_sources_blob(built)` +
+   each failing check's NAME and its REAL run error via `_run_check_verbose` — never the
+   check's own `code`), and `_replan_as_modification(spec, root, built, checks, unmet,
+   llm, *, max_rounds=MAX_REPLAN_ROUNDS, runtime=None)`: a bounded loop that, per round,
+   builds the request, calls `modify_system(dict(built), mod_request, root, llm=llm,
+   runtime=runtime)`, re-runs the FULL `checks` list, and accepts the round ONLY when the
+   unmet COUNT strictly decreases AND no check that passed before the round now fails (a
+   SET comparison); on reject, revert every module `modify_system` touched back to its
+   pre-round content (disk via `_jailed_write` + the returned dict) and stop. Never
+   raises. Wrap with `# #EXT-036-REQ-34 Start` / `# #EXT-036-REQ-34 End`.
+2. Add a keyword-only `replan_on_failure: bool = False` parameter to `build_system`'s
+   signature + docstring. After the existing REQ-5 `_repair_system` call, when
+   `replan_on_failure` is `True` and `unmet` is still non-empty, call
+   `_replan_as_modification` and fold a diagnostic note ("replan-as-modification: N
+   round(s), unmet X->Y") into the returned `note` only when at least one round was
+   accepted. Default `False` must leave `build_system` byte-identical to before this
+   task (the whole block is skipped; no note/behavior change). Wrap the changed lines
+   with `# #EXT-036-REQ-34 Start` / `# #EXT-036-REQ-34 End`.
+3. Add `tests/test_ext036_replan.py` (offline, canned `llm`/stubbed `modify_system`, no
+   live model): (a) FIXES — a synthetic 2-check-failing build with a canned
+   `modify_system` fix reaches `done=True` after 1 replan round through the full
+   `build_system(..., replan_on_failure=True)` pipeline; (b) a canned `modify_system`
+   that makes no improvement stops after round 1 (no infinite loop); (c) a canned
+   `modify_system` that fixes one check but regresses a different, previously-passing
+   one is REJECTED and reverted (disk + dict), never regressing the original passing
+   check; (d) a canned `modify_system` that fixes exactly one more check per round
+   across 4 starting-unmet checks is capped at exactly `MAX_REPLAN_ROUNDS` accepted
+   rounds; (e) `replan_on_failure=False` (default, implicit and explicit) never invokes
+   `modify_system` and produces a result identical to before this task on a fixed
+   synthetic failing build; (f) the modification request built for the model never
+   contains a hidden expected-output sentinel embedded only in a failing check's own
+   assertion code (only its NAME + its REAL run error); (g) never raises when
+   `modify_system` raises, and is a complete no-op when the build is already done.
+4. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change baseline, 2356 passed / 2 skipped).
+
+#### Implements
+- [REQ-34] Iterative REPLAN-AS-MODIFICATION build recovery (this task introduces AND
+  fully implements REQ-34's offline mechanism; a LIVE measurement of whether it lifts
+  any repair-failing hard-tier CREATION-suite task remains open, owned by the parent)
+
 #### Implements
 - [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for
   malformed model JSON (this task introduces AND fully implements REQ-33's mechanism)
