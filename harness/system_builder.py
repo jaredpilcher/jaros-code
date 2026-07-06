@@ -2178,6 +2178,91 @@ def _regenerate_module(name: str, code: str, mod_sentence: str, llm, *,
     return new_code, ok
 
 
+# #EXT-036-REQ-35 Start
+# TASK-45 (REQ-35): a modification is not always a change to an EXISTING module — it may
+# genuinely require a NEW module (e.g. "add rate-limiting" to a system with no rate-limiter
+# module yet). `_identify_targets` above only ever names EXISTING modules; this adds the
+# analogous NEW-module judgment + the deterministic build path for it, reusing the SAME
+# syntax-gate/repair loop `_regenerate_module` uses (`syntax_ok`/`REPAIR_PROMPT` verbatim) so
+# no module-building logic is duplicated.
+IDENTIFY_NEW_MODULE_PROMPT = (
+    "NEW-MODULE CHECK: given the existing system's modules and a change request, does "
+    "satisfying the change require an ENTIRELY NEW module that does not already exist?\n\n"
+    "EXISTING MODULES: {names}\n\n"
+    "CHANGE REQUEST: {sentence}\n\n"
+    "If the change can be done by only editing the existing modules above, output exactly: "
+    "NONE\n"
+    "Otherwise output ONLY a JSON list of the new module filename(s) needed (e.g. "
+    '["ratelimiter.py"]) -- each a NEW filename not already in the existing list above. '
+    "No prose."
+)
+
+NEW_MODULE_PROMPT = (
+    "WRITE NEW MODULE `{name}` needed to satisfy this change to an existing system: "
+    "{sentence}\n\n"
+    "EXISTING MODULES (for context/imports):\n{sources}\n\n"
+    "Output ONLY the full source of the new module `{name}` (no markdown fences, no prose)."
+)
+
+MAX_NEW_MODULES = 3   # bounded — never fabricate an unbounded number of new files
+
+
+def _identify_new_modules(modules: dict, mod_sentence: str, llm, *,
+                           max_new: int = MAX_NEW_MODULES) -> list:
+    """Model judgment (REQ-35): does the modification require an entirely NEW module that does
+    not already exist? AMBIGUITY-GUARDED (Tenet 3): any vague/empty/unparseable output
+    (including the literal ``NONE``, or a name that isn't a plausible new bare-filename, or one
+    that duplicates an existing module) yields ``[]`` — no new module is added, and the
+    pre-existing regenerate-only flow is unaffected. Bounded to at most ``max_new`` new module
+    names, de-duplicated, in the order named. Never raises (an unreachable model degrades to
+    ``[]``, exactly like ``_identify_targets``)."""
+    names_list = ", ".join(sorted(modules or {}))
+    try:
+        raw = _call(llm, IDENTIFY_NEW_MODULE_PROMPT.format(names=names_list, sentence=mod_sentence),
+                    max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    raw = (raw or "").strip()
+    if not raw or raw.upper().startswith("NONE"):
+        return []
+    parsed = _extract_json(raw, "[", "]")
+    if not isinstance(parsed, list):
+        return []
+    new_names: list = []
+    for n in parsed:
+        if not isinstance(n, str):
+            continue
+        n = n.strip()
+        if not n or n in modules or n in new_names:
+            continue
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\.py$", n):
+            continue
+        new_names.append(n)
+        if len(new_names) >= max_new:
+            break
+    return new_names
+
+
+def _build_new_module(name: str, mod_sentence: str, modules: dict, llm, *,
+                       max_repair: int = MAX_REPAIR_ATTEMPTS) -> tuple:
+    """Build one brand-NEW module ``name`` the modification requires (REQ-35), given the
+    existing modules' sources for import context, then the SAME bounded syntax-gate/repair
+    loop ``_regenerate_module``/``_build_module`` use (``syntax_ok``/``REPAIR_PROMPT``,
+    verbatim — no module-building logic duplicated). Returns ``(code, syntax_ok)``."""
+    sources = "\n\n".join(f"# {n}:\n{c}" for n, c in (modules or {}).items())
+    new_code = _strip_fences(_call(llm, NEW_MODULE_PROMPT.format(
+        name=name, sentence=mod_sentence, sources=sources), max_tokens=BUILD_MAX_TOKENS))
+    ok, err = syntax_ok(new_code)
+    for _ in range(max_repair):
+        if ok:
+            break
+        new_code = _strip_fences(_call(llm, REPAIR_PROMPT.format(name=name, err=err, code=new_code),
+                                        max_tokens=BUILD_MAX_TOKENS))
+        ok, err = syntax_ok(new_code)
+    return new_code, ok
+# #EXT-036-REQ-35 End
+
+
 def _modify_result(*, modules, applied: bool, regressed=None, new_behavior_ok: bool = False,
                     note: str = "") -> dict:
     return {"modules": modules, "applied": applied, "regressed": regressed or [],
@@ -2227,13 +2312,18 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
       2. The model IDENTIFIES which module(s) ``mod_sentence`` targets (``_identify_targets``)
          and REGENERATES each one with the change, given its current source (
          ``_regenerate_module``), syntax-gated + bounded-repaired (reusing ``syntax_ok``/
-         ``REPAIR_PROMPT``, TASK-4's per-module gate).
-      3. ASSEMBLE the modified module(s) onto ``root``.
+         ``REPAIR_PROMPT``, TASK-4's per-module gate). The model is ALSO asked (REQ-35,
+         ``_identify_new_modules``) whether the change needs an entirely NEW module that
+         doesn't already exist; any clearly-named new module(s) (bounded, ambiguity-guarded)
+         are built from scratch (``_build_new_module``, the SAME syntax-gate/repair loop).
+      3. ASSEMBLE the modified module(s) AND any newly-added module(s) onto ``root``.
       4. REGRESSION GATE (the honesty core, mirrors TASK-5's ``_repair_system`` revert): the
-         baseline-passing checks are re-run; if ANY of them now fails, the modified module(s)
-         are REVERTED to their pre-modification content (disk + the returned dict) and
-         ``applied`` is False. Non-degrading — a modification is only accepted when it does
-         not break anything that used to work.
+         baseline-passing checks are re-run; if ANY of them now fails (or the deterministic
+         import smoke-gate below regresses), the modified module(s) are REVERTED to their
+         pre-modification content (disk + the returned dict), ``applied`` is False, and any
+         newly-ADDED module(s) are REMOVED entirely (disk + dict) — never leaving an orphan
+         file or a half-wired system (REQ-35). Non-degrading — a modification is only
+         accepted when it does not break anything that used to work.
       5. Best-effort: a NEW-behavior checklist is derived from ``mod_sentence`` itself and run
          against the (accepted) modified system; ``new_behavior_ok`` reports whether it passed
          (advisory — ``applied`` never depends on it, since the model-authored new-behavior
@@ -2245,8 +2335,9 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
 
     ``runtime`` (EXT-037 REQ-11, Tenet 1): optional, same contract as ``build_system``'s own
     ``runtime`` -- threaded to every module write below (the current-system assembly, the
-    modified-module assembly and its half-written revert, and the regression-gate revert).
-    ``runtime=None`` (the default) is unchanged from before this parameter existed.
+    modified-module assembly and its half-written revert, the regression-gate revert, and any
+    newly-added module's write, REQ-35). ``runtime=None`` (the default) is unchanged from
+    before this parameter existed.
     """
     root = Path(root)
     modules = dict(modules or {})
@@ -2289,7 +2380,15 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
 
     # 2. IDENTIFY + REGENERATE the targeted module(s) WITH the change.
     targets = _identify_targets(modules, mod_sentence, llm)
-    if not targets:
+    # #EXT-036-REQ-35 Start
+    # TASK-45: the modification may ALSO (or INSTEAD) require an entirely NEW module. This
+    # call always runs so the "no new module" case is itself a genuine judgment, not a skipped
+    # step -- but when it returns [] (the vast majority of modifications, and every existing
+    # regenerate-only test in this file), every line below behaves BYTE-IDENTICALLY to before
+    # this task (each `new_module_names`/`added_names` loop is simply a no-op 0-iteration pass).
+    new_module_names = _identify_new_modules(modules, mod_sentence, llm)
+    # #EXT-036-REQ-35 End
+    if not targets and not new_module_names:
         return _modify_result(modules=modules, applied=False,
                                note="could not identify a target module for the modification — no change made")
 
@@ -2305,11 +2404,24 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         modules[name] = new_code
         changed_names.append(name)
 
-    if not changed_names:
+    # #EXT-036-REQ-35 Start
+    added_names = []
+    for name in new_module_names:
+        try:
+            new_code, ok = _build_new_module(name, mod_sentence, modules, llm)
+        except Exception:
+            continue
+        if not ok:
+            continue
+        modules[name] = new_code
+        added_names.append(name)
+    # #EXT-036-REQ-35 End
+
+    if not changed_names and not added_names:
         return _modify_result(modules=modules, applied=False,
                                note="modification produced no syntactically valid change — no change made")
 
-    # 3. ASSEMBLE the modified module(s).
+    # 3. ASSEMBLE the modified module(s) and any newly-ADDED module(s).
     # #EXT-037-REQ-1 Start
     _assembly_error: "str | None" = None
     for name in changed_names:
@@ -2319,12 +2431,28 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         if escape is not None:
             _assembly_error = escape
             break
+    # #EXT-036-REQ-35 Start
+    if _assembly_error is None:
+        for name in added_names:
+            escape = _jailed_write(root, name, modules[name], runtime)
+            if escape is not None:
+                _assembly_error = escape
+                break
+    # #EXT-036-REQ-35 End
     if _assembly_error is not None:
         for name in changed_names:                # never leave a half-written system
             modules[name] = pre_mod[name]
             # #EXT-037-REQ-11 Start
             _jailed_write(root, name, pre_mod[name], runtime)
             # #EXT-037-REQ-11 End
+        # #EXT-036-REQ-35 Start
+        for name in added_names:                  # never leave an orphaned new-module file
+            modules.pop(name, None)
+            try:
+                (root / name).unlink()
+            except OSError:
+                pass
+        # #EXT-036-REQ-35 End
         return _modify_result(modules=modules, applied=False, note=f"assembly failed: {_assembly_error}")
     # #EXT-037-REQ-1 End
 
@@ -2346,11 +2474,24 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
             _jailed_write(root, name, pre_mod[name], runtime)
             # #EXT-037-REQ-11 End
             # #EXT-037-REQ-1 End
+        # #EXT-036-REQ-35 Start
+        for name in added_names:   # a regression reverts the WHOLE modification, incl. new files
+            modules.pop(name, None)
+            try:
+                (root / name).unlink()
+            except OSError:
+                pass
+        # #EXT-036-REQ-35 End
         all_regressed = regressed + [n for n in import_regressed if n not in regressed]
         note = "modification regressed existing behavior — reverted: " + ", ".join(regressed) if regressed else \
             "modification reverted"
         if import_regressed:
             note += ("; " if regressed else " — ") + "import-broken: " + ", ".join(import_regressed)
+        # #EXT-036-REQ-35 Start
+        if added_names:
+            note += ("; " if (regressed or import_regressed) else " — ") + \
+                "removed added module(s): " + ", ".join(added_names)
+        # #EXT-036-REQ-35 End
         return _modify_result(modules=modules, applied=False, regressed=all_regressed, note=note)
 
     # 5. Best-effort NEW-behavior check, derived from the mod_sentence itself.
@@ -2363,6 +2504,10 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     note = "applied — existing behavior preserved"
     if new_checks:
         note += "; new behavior " + ("confirmed" if new_behavior_ok else "not confirmed")
+    # #EXT-036-REQ-35 Start
+    if added_names:
+        note += "; added module(s): " + ", ".join(added_names)
+    # #EXT-036-REQ-35 End
     return _modify_result(modules=modules, applied=True, new_behavior_ok=new_behavior_ok, note=note)
 # #EXT-036-REQ-14 End
 

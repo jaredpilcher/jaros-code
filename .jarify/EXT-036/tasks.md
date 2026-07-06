@@ -1963,3 +1963,83 @@ and ITERATE. Reuses proven machinery; no new apply mechanism.
 #### Implements
 - [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for
   malformed model JSON (this task introduces AND fully implements REQ-33's mechanism)
+
+### [TASK-45] `modify_system` can ADD new modules, not just regenerate existing ones (REQ-35, owner steer, roadmap 45508cf, task #128)
+
+`modify_system` (REQ-14) pipeline: assemble current system -> BASELINE (record passing
+checks + importable modules) -> `_identify_targets(modules, mod_sentence, llm)` returns
+EXISTING module names only -> `_regenerate_module` each -> assemble -> REGRESSION GATE
+(behavioral `baseline_passing` + `import_regressed`) -> on any regression REVERT
+changed modules to `pre_mod`. It can NEVER add a new module a modification genuinely
+needs (e.g. "add rate-limiting" to a system with no rate-limiter module yet).
+
+#### Steps
+1. In `harness/system_builder.py`, add `_identify_new_modules(modules, mod_sentence,
+   llm, *, max_new=MAX_NEW_MODULES=3) -> list`: a small model judgment (a new
+   `IDENTIFY_NEW_MODULE_PROMPT`) asking whether the change needs a module that does NOT
+   already exist. AMBIGUITY-GUARDED: an empty/falsy response or the literal `NONE`
+   (case-insensitive) yields `[]`; otherwise parse a JSON list (`_extract_json`) and
+   keep only entries that are strings, NOT already in `modules`, match a plausible bare
+   `*.py` filename (`^[A-Za-z_][A-Za-z0-9_]*\.py$`), de-duplicated, bounded to
+   `max_new`. Never raises (an `llm.complete` exception -> `[]`). Wrap with
+   `# #EXT-036-REQ-35 Start` / `# #EXT-036-REQ-35 End`.
+2. Add `_build_new_module(name, mod_sentence, modules, llm, *,
+   max_repair=MAX_REPAIR_ATTEMPTS) -> tuple`: builds ONE brand-new module from scratch
+   (a new `NEW_MODULE_PROMPT` given the existing modules' sources for import context),
+   then the SAME bounded syntax-gate/repair loop `_regenerate_module`/`_build_module`
+   use (`syntax_ok`/`REPAIR_PROMPT`, reused verbatim — no module-building logic
+   duplicated). Wrap with the same markers. Choose prompt wording for both new prompts
+   that shares NO substring with any existing routed prompt-key used across the
+   `tests/test_ext036_*.py` canned-llm stubs (`"MODIFICATION TARGET"`, `"APPLY
+   MODIFICATION"`, `"SYNTAX ERROR"`, `"RUNNABLE PYTHON CODE"`, `"ACCEPTANCE CHECKS"`,
+   `"COMPLETE Python module"`, `"build PLAN"`, etc.) so every pre-existing stub's
+   default/fallback branch (not this task's new step) keeps routing every pre-existing
+   test's prompts exactly as before.
+3. In `modify_system`, right after `targets = _identify_targets(...)`, call
+   `new_module_names = _identify_new_modules(...)` (ALWAYS runs, so "no new module" is
+   itself a genuine judgment, not a skipped step). Change the early-return guard to
+   `if not targets and not new_module_names: return ...` (unchanged message). Build each
+   named new module via `_build_new_module` (skip on exception/non-syntax-ok, mirroring
+   the existing per-target loop) into a new `added_names` list; change the "no
+   syntactically valid change" guard to `if not changed_names and not added_names`.
+   Assemble each added module via `_jailed_write(root, name, code, runtime)` (Tenet 1)
+   AFTER the existing regenerated-module assembly loop, folding any assembly failure
+   into the SAME revert path (added modules removed from disk + dict too, never a
+   half-written system). Extend BOTH the assembly-failure revert AND the REGRESSION-GATE
+   revert (behavioral `regressed` OR `import_regressed`) to additionally, on that same
+   path, `modules.pop(name, None)` and best-effort `(root / name).unlink()` for every
+   name in `added_names` — never leaving an orphan file or a half-wired system. Fold
+   added-module names into the returned `note` on both the success and failure paths.
+   Wrap every changed/added line with `# #EXT-036-REQ-35 Start` / `# #EXT-036-REQ-35
+   End`. BYTE-IDENTICAL when `new_module_names`/`added_names` end up empty (the
+   injectable-idiom: every new loop is then a 0-iteration no-op) — every pre-existing
+   `tests/test_ext036_modify.py` / `tests/test_ext037_buildsystem_jaros_write.py` /
+   `tests/test_ext037_root_enforcement.py` test must pass completely unmodified.
+4. NEVER raises (Tenet 3): matches `modify_system`'s existing never-raise contract at
+   every new step; `applied=False` + a diagnostic `note` on any failure. NO ORACLE LEAK:
+   the identify/build prompts see only the existing module sources + the modification
+   sentence, never a hidden/expected output.
+5. Add `tests/test_ext036_modify_add.py` (OFFLINE, canned llm mirroring
+   `tests/test_ext036_modify.py`'s `_CannedModifyLlm` fixture style, no live model, no
+   Jetson): (a) a purely-additive modification (no existing target) adds a new module
+   and keeps it when nothing regresses (file genuinely on disk + in the returned dict);
+   (b) BYTE-IDENTICAL when the llm names no new module (a clean regenerate-only
+   modification behaves exactly as before, no stray new-module file); (c) a regression
+   (a changed existing module breaks a previously-passing baseline check) REVERTS the
+   regenerated module(s) AND REMOVES the added module (file gone + dropped from the
+   returned dict); (d) bounded to at most 3 new modules even when the model names 5;
+   (e) ambiguity-guarded — a vague/empty/`NONE` answer (and malformed/duplicate/existing
+   names) adds nothing; (f) never raises when the model raises at either the identify or
+   the build step; (g) `runtime` is genuinely threaded to the added module's write (a
+   fake recording runtime, mirroring `tests/test_ext037_buildsystem_jaros_write.py`'s
+   `_FakeApplyRuntime`, proves the write goes through a real `code.write_file` Decision).
+   Also re-run the pre-existing `tests/test_ext036_modify.py`,
+   `tests/test_ext037_buildsystem_jaros_write.py`, and
+   `tests/test_ext037_root_enforcement.py` to confirm byte-identical behavior. Run the
+   FULL `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change baseline).
+
+#### Implements
+- [REQ-35] `modify_system` can ADD a new module, not just regenerate existing ones
+  (this task introduces AND fully implements REQ-35's mechanism)

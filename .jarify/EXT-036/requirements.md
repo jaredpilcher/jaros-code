@@ -1468,3 +1468,59 @@ inventing a new apply mechanism.
   repair-failing hard-tier CREATION-suite tasks (e.g. `kv-store-ttl`,
   `priority-jobqueue`)? — open, owned by the parent (this task builds and offline-proves
   the mechanism only; it does not run a live gemma measurement).
+
+### [REQ-35] `modify_system` can ADD a new module, not just regenerate existing ones (DONE — EXT-036 TASK-45, 2026-07-06)
+
+**Owner steer (roadmap 45508cf, task #128):** `modify_system` (REQ-14) composes
+`_identify_targets`, which only ever names EXISTING modules, so a modification that
+genuinely needs a brand-new module (e.g. "add rate-limiting" to a system with no
+rate-limiter module yet) could never be satisfied — the modification plane could
+regenerate but never GROW the system.
+
+#### Acceptance Criteria
+- [x] A deterministic-shaped, AMBIGUITY-GUARDED model judgment
+  (`_identify_new_modules(modules, mod_sentence, llm)`) asks whether the modification
+  requires an entirely NEW module that does not already exist; any vague/empty/
+  unparseable answer (including the literal `NONE`) yields `[]` — no new module is
+  added — **DONE 2026-07-06**. Names are filtered to plausible bare `*.py` filenames not
+  already an existing module, de-duplicated, and BOUNDED to at most 3 new modules per
+  modification (`MAX_NEW_MODULES = 3`).
+- [x] Each genuinely-named new module is built via the SAME bounded syntax-gate/repair
+  loop `_regenerate_module`/`_build_module` already use (`syntax_ok`/`REPAIR_PROMPT`,
+  reused verbatim — no module-building logic duplicated), given the existing modules'
+  sources for import context (`_build_new_module`) — **DONE 2026-07-06**. Assembled
+  additively onto `root` via `_jailed_write` (Tenet 1), with `runtime` threaded through
+  exactly like every other write `modify_system` performs.
+- [x] The REGRESSION GATE is extended: on ANY regression (a previously-passing
+  behavioral check now failing, OR the deterministic import smoke-gate's
+  baseline-importable-now-broken signal, TASK-21), the modified/regenerated module(s)
+  are reverted to their pre-modification content AS BEFORE, AND any newly-ADDED
+  module(s) are REMOVED entirely — deleted on disk and dropped from the returned
+  `modules` dict — so a rejected modification never leaves an orphaned new-module file
+  or a half-wired system — **DONE 2026-07-06**.
+- [x] BYTE-IDENTICAL when no new module is genuinely identified: the add-path is an
+  injectable no-op — every new loop over `new_module_names`/`added_names` is simply a
+  0-iteration pass, so the pre-existing regenerate-only pipeline (assembly, the
+  regression gate, the best-effort new-behavior check, the returned note) is completely
+  unaffected, and every pre-existing `tests/test_ext036_modify.py`/
+  `tests/test_ext037_buildsystem_jaros_write.py`/`tests/test_ext037_root_enforcement.py`
+  test passes unmodified — **DONE 2026-07-06**.
+- [x] NEVER raises (Tenet 3): an unreachable/misbehaving model at either the
+  identification or the build step degrades gracefully (no new modules identified /
+  that one module's build is skipped), matching `modify_system`'s existing
+  never-raise contract; `applied=False` + a diagnostic `note` on any failure. NO ORACLE
+  LEAK: the identify/build prompts see only the existing module sources + the
+  modification sentence, never a hidden/expected output — **DONE 2026-07-06**.
+- [x] Proven OFFLINE (`tests/test_ext036_modify_add.py`, canned llm, no live model): a
+  purely-additive modification (no existing target) adds a new module and keeps it when
+  nothing regresses, with the write genuinely landing on disk; the regenerate-only path
+  is BYTE-IDENTICAL when the model names no new module; a regression (from a changed
+  existing module) reverts the regenerated module(s) AND removes the added module (file
+  gone + dropped from the dict); the new-module count is bounded to at most 3 even when
+  the model names 5; a vague/empty/`NONE` answer (and malformed/duplicate/existing
+  names) adds nothing; a raising model at either the identify or the build step never
+  crashes `modify_system`; and `runtime` is genuinely threaded to the added module's
+  write (a fake recording runtime proves the write goes through a `code.write_file`
+  Decision, never a raw `Path.write_text` alongside it). Full `tests/` suite re-run via
+  `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`; no regression
+  vs. the pre-change baseline. — **DONE 2026-07-06**
