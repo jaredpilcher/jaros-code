@@ -65,3 +65,67 @@ solve path** (a harness build) AND its reasoning on hard SWE is itself uncertain
 
 **Honest bottom line:** we filled every lever we could (harness, selection, training-infra) and MEASURED the boundary.
 The ~13% is the honest small-local-model frontier today. Not giving up — bookmarked with concrete triggers.
+
+---
+
+## GAP-2 — Generic ORDERING check for the deterministic minimum (priority/LRU-class semantic false-dones)
+
+**State:** `open (2026-07-06)`. Assessed (not built) per the EXT-036 REQ-26/27/28 done-honesty line
+(`harness/system_builder.py`, HEAD `065815c`, `system_builder.py` clean at `cbced82`
+"TASK-42 - multi-module entrypoint plan-repair").
+
+**The measured gap:** `build_system`'s deterministic-minimum acceptance floor (REQ-26 `_minimum_acceptance`,
+REQ-27 `_derive_roundtrip_pair`/`_roundtrip_acceptance_check`, REQ-28 `allow_usage_validation`) closes
+runtime-defect false-dones (crash / graceful-error-at-rc=0 / silent-non-persistence) but is BLIND to
+runs-fine-but-WRONG-ORDER semantic bugs. Measured on `priority-jobqueue-cli` (`harness/system_suite.py`
+`FIRST_SLICE`): a build that runs, and round-trips (enqueues a job, `run` returns SOME job), still reports
+`done=True` against the deterministic minimum even if it dequeues in INSERTION order rather than
+priority order — the independent oracle (`checks=[(...,"enqueue low 1\nenqueue high 5\nrun\n","ran high")]`)
+correctly rejects it. Same class: `kv-store-ttl` (TTL expiry timing), any `sorted`/LRU/FIFO/LIFO spec.
+
+**Why a generic, SAFE ordering check was assessed as NOT feasible to build now (the honest verdict):**
+1. **The motivating class's own interface is STDIN-line-protocol, not argv.** `priority-jobqueue-cli`'s
+   sentence states `python main.py` with no argv, reading `enqueue <name> <priority>` / `run` as STDIN
+   LINES. The existing REQ-27 round-trip mechanism (`_roundtrip_acceptance_check`) only knows how to probe
+   an ARGV-style CLI (`subprocess.run([sys.executable, entry, add_cmd, *sentinel_args])`); it does not
+   fire for this task at all today (`_derive_roundtrip_pair` finds no `add`/`list`-vocabulary word — the
+   sentence uses `enqueue`/`run`). A generic ordering check would first need a GENERIC, spec-derived
+   argv-vs-stdin-protocol detector (a materially different, unbuilt capability) before it could even probe
+   the right invocation shape — building the ordering assertion on top of that gap compounds two unproven
+   mechanisms into one gating check.
+2. **The priority VALUE's argument position is not safely inferable in general.** Even where a spec pins
+   an exact invocation (as `FIRST_SLICE`'s task deliberately does — `enqueue <name> <priority>`), a
+   general user sentence has no such guarantee. Guessing the priority argument's position/shape
+   (`name, priority` vs `priority, name` vs a flag) for an arbitrary spec risks the check either (a)
+   silently mis-feeding the "priority" value as ordinary content, so a genuinely CORRECT priority queue
+   fails our check for a spurious reason (a **false negative on the deterministic minimum floor** — the
+   single worst outcome for a gating check, worse than the status quo semantic blind spot, because it
+   would flip a real pass to `done=False` with no way for the builder loop to tell why), or (b) requiring
+   agreement across multiple guessed conventions, which only reduces but does not eliminate that risk and
+   starts to look like tuning the check to this benchmark's exact phrasing rather than a genuinely generic
+   mechanism (the same overfitting concern Tenet 3 forbids).
+3. **LRU is materially harder still** — "correct order" depends on an ACCESS HISTORY (a prior `get`
+   interleaved with adds), not just insertion order of two sentinels; asserting it generically needs a
+   multi-step probe sequence tied to an LRU-specific mental model, which is a different (harder) mechanism
+   again, not a generalization of the add/list round-trip.
+4. A narrower SAFE subset does exist — FIFO/LIFO order-of-two-sentinels (reusing the proven argv add/list
+   round-trip verbatim, no new argument-shape guessing) and "sorted-by-the-single-added-value" (two
+   sentinel values with a clear alphabetic/numeric order) — but neither covers the actual measured
+   `priority-jobqueue-cli` false-done, and building only that subset would not close the motivating gap
+   or satisfy a true-positive test on the priority class, so it was not pursued piecemeal without owner
+   sign-off on a scoped-down version.
+
+**Net: the false-negative risk (silently flipping a genuinely-correct build to `done=False` on a gating
+floor) outweighs closing this one measured false-positive class, and a safe version would not actually
+close the motivating example.** No code was changed for this gap (assessment only); this is a
+`docs`-only bookmark commit, not a code change.
+
+**REVISIT TRIGGERS (fill this gap when any fires):**
+1. A generic, spec-derived argv-vs-stdin-line-protocol detector gets built for another reason (it would
+   remove blocker #1 above and make the STDIN-driven classes probeable at all).
+2. A CLI-interface convention gets PINNED harness-wide for order-bearing commands (e.g. `build_system`
+   itself starts requiring/generating a machine-readable interface manifest per module, not just prose) —
+   removing the argument-position guess entirely.
+3. The FIFO/LIFO/sorted-by-value SAFE subset is explicitly requested as a scoped-down, honestly-labeled
+   partial win (it would not close the priority-jobqueue example, but would close a related, narrower
+   false-done class with near-zero incremental false-negative risk).
