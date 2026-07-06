@@ -270,8 +270,11 @@ _WRONG_STACK = "class Stack:\n    def __init__(self):\n        self._items = []\
 
 
 def _build_seed_tasks():
+    # NOTE: filtered to the two ORIGINAL seeds -- the build-module category has since
+    # grown a hard tier (build_hard_rate_limiter/build_hard_lru_cache, TASK-11); those
+    # are covered by their own dedicated hard-tier tests below, not here.
     return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
-            if t["category"] == "build-module"]
+            if t["category"] == "build-module" and t["id"] in {"build_stack", "build_word_freq"}]
 
 
 class _FakeTestWriter:
@@ -409,8 +412,11 @@ def test_build_module_task_scored_unsolved_when_the_built_solution_fails_the_ora
 # #EXT-005-REQ-13 Start
 
 def _multi_file_seed_tasks():
+    # NOTE: filtered to the two ORIGINAL seeds -- the multi-file category has since
+    # grown a hard tier (mfx_hard_*, TASK-11); those are covered by their own
+    # dedicated hard-tier tests below, not here.
     return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
-            if t["category"] == "multi-file"]
+            if t["category"] == "multi-file" and t["id"] in {"mfx_geometry_area", "mfx_cart_discount"}]
 
 
 def test_load_daily_tasks_loads_multi_file_seed_tasks():
@@ -500,8 +506,11 @@ def test_multi_file_task_scored_unsolved_when_multi_file_fix_does_not_reach_gree
 # #EXT-005-REQ-13 Start
 
 def _refactor_seed_tasks():
+    # NOTE: filtered to the two ORIGINAL seeds -- the refactor category has since
+    # grown a hard tier (refactor_hard_*, TASK-11); those are covered by their own
+    # dedicated hard-tier tests below, not here.
     return [t for t in load_daily_tasks(root=DAILY_ROOT, split="dev")
-            if t["category"] == "refactor"]
+            if t["category"] == "refactor" and t["id"] in {"refactor_calc_total", "refactor_check_stock"}]
 
 
 def test_load_daily_tasks_loads_refactor_seed_tasks():
@@ -998,4 +1007,218 @@ def test_ops_prompt_never_leaks_the_oracle_expected_patterns(monkeypatch):
             assert pattern not in captured["prompt"]
     assert json.dumps(task["oracle"]) not in captured["prompt"]  # the raw oracle dict never appears
     assert task["instruction"] in captured["prompt"]  # the instruction IS shown
+# #EXT-005-REQ-13 End
+
+
+# ---------------------------------------------------------------------------
+# Hard-tier growth (2026-07-06, docs/GAP-MAP.md #51): the dev+holdout split was
+# SATURATED (19/19 = 100% weighted, .jaros-data/artifacts/dd_fullrun.json) -- too
+# easy to be discriminating. These tests are pure DATA-authoring verification: every
+# new hard task loads with the right category/split, and its own oracle is honestly
+# correct (the reference/intended solution passes; an obviously-wrong solution
+# fails) -- an oracle that's wrong would make the instrument lie (Tenet 3). No new
+# runner logic is added here; fix/multi-file/refactor/build-module routing already
+# exists (TASK-2..TASK-5).
+# ---------------------------------------------------------------------------
+# #EXT-005-REQ-13 Start
+
+_HARD_TASK_IDS = {
+    "fix": ["fix_hard_invoice_double_tax", "fix_hard_mutable_default_leak",
+            "fix_hard_gpa_credit_weighting"],
+    "multi-file": ["mfx_hard_units_shared_root", "mfx_hard_stats_shared_root",
+                   "mfx_hard_pipeline_deep_chain"],
+    "refactor": ["refactor_hard_recursive_rename", "refactor_hard_distractor_name"],
+    "build-module": ["build_hard_rate_limiter", "build_hard_lru_cache"],
+}
+_HARD_HOLDOUT_IDS = {
+    "fix_hard_gpa_credit_weighting", "mfx_hard_pipeline_deep_chain",
+    "refactor_hard_distractor_name", "build_hard_lru_cache",
+}
+
+
+def test_hard_tier_tasks_load_with_correct_category_and_split():
+    tasks = load_daily_tasks()
+    by_id = {t["id"]: t for t in tasks}
+    for category, ids in _HARD_TASK_IDS.items():
+        for task_id in ids:
+            assert task_id in by_id, f"{task_id} did not load"
+            assert by_id[task_id]["category"] == category
+            expected_split = "holdout" if task_id in _HARD_HOLDOUT_IDS else "dev"
+            assert by_id[task_id]["split"] == expected_split
+
+    # exactly 4 of the 10 new hard tasks are frozen in holdout/ (not tuned against)
+    holdout_ids = {t["id"] for t in tasks if t["split"] == "holdout"}
+    assert _HARD_HOLDOUT_IDS <= holdout_ids
+
+
+def test_hard_tier_fix_and_multifile_oracles_are_correct():
+    """The given (buggy) ``files`` must FAIL test_cmd (that's the whole point -- an
+    unsolved starting state); a small reference fix applied to the SAME files must PASS.
+    An oracle that a correct fix can't pass, or that the buggy start already passes,
+    would silently make every attempt look solved/unsolved regardless of the model."""
+    from harness.multi_file import _run
+
+    fixes = {
+        "fix_hard_invoice_double_tax": ("invoice.py", "return _apply_tax(taxed, tax_rate)", "return taxed"),
+        "fix_hard_mutable_default_leak": ("leaves.py", "def _collect_leaves(node, acc=[]):",
+                                          "def _collect_leaves(node, acc=None):\n"
+                                          "    if acc is None:\n        acc = []"),
+        "fix_hard_gpa_credit_weighting": ("gpa.py", "total_credits += 1", "total_credits += credits"),
+        "mfx_hard_units_shared_root": ("units.py", "'lb': 435.592", "'lb': 453.592"),
+        "mfx_hard_stats_shared_root": ("stats.py", "count = 1", "count += 1"),
+        "mfx_hard_pipeline_deep_chain": ("parse.py", "float(parts[1])", "float(parts[2])"),
+    }
+    tasks = {t["id"]: t for t in load_daily_tasks() if t["id"] in fixes}
+    assert set(tasks) == set(fixes)
+
+    for task_id, (target_file, needle, replacement) in fixes.items():
+        task = tasks[task_id]
+        # (a) the given buggy files FAIL.
+        with __import__("tempfile").TemporaryDirectory() as d:
+            wd = Path(d)
+            for name, content in task["files"].items():
+                (wd / name).write_text(content, encoding="utf-8")
+            ok_buggy, _ = _run(str(wd), task["test_cmd"])
+        assert ok_buggy is False, f"{task_id}: buggy files unexpectedly already pass"
+
+        # (b) applying the reference fix PASSES.
+        assert needle in task["files"][target_file], f"{task_id}: fix-point text not found"
+        fixed_files = dict(task["files"])
+        fixed_files[target_file] = fixed_files[target_file].replace(needle, replacement)
+        with __import__("tempfile").TemporaryDirectory() as d:
+            wd = Path(d)
+            for name, content in fixed_files.items():
+                (wd / name).write_text(content, encoding="utf-8")
+            ok_fixed, out = _run(str(wd), task["test_cmd"])
+        assert ok_fixed is True, f"{task_id}: reference fix did not pass: {out}"
+
+
+def test_hard_tier_refactor_oracles_are_correct():
+    """Two-part oracle (behavior preserved AND structural rename happened) using the REAL
+    ``rename_symbol`` + ``_rename_structural_ok`` the runner itself calls -- not a
+    reimplementation. A correct rename must pass both parts; a no-op (nothing renamed)
+    must fail the structural part."""
+    import tempfile
+
+    from harness.daily_driver import _rename_structural_ok
+    from harness.multi_file import _run
+    from harness.refactor import rename_symbol
+
+    cases = {
+        "refactor_hard_recursive_rename": ("_memo_fib", "_cached_fib"),
+        "refactor_hard_distractor_name": ("_sum_positive", "_sum_gains"),
+    }
+    tasks = {t["id"]: t for t in load_daily_tasks() if t["id"] in cases}
+    assert set(tasks) == set(cases)
+
+    for task_id, (old, new) in cases.items():
+        task = tasks[task_id]
+        target = task["target"]
+
+        # correct rename: both parts pass.
+        with tempfile.TemporaryDirectory() as d:
+            wd = Path(d)
+            for name, content in task["files"].items():
+                (wd / name).write_text(content, encoding="utf-8")
+            rename_symbol(str(wd), old, new, task["test_cmd"])
+            ok_behavior, out = _run(str(wd), task["test_cmd"])
+            ok_structural = _rename_structural_ok(wd, old, new, target)
+        assert ok_behavior is True, f"{task_id}: behavior broke after correct rename: {out}"
+        assert ok_structural is True, f"{task_id}: structural check failed after correct rename"
+
+        # no-op (nothing renamed): structural part must fail (old still a def, new absent).
+        with tempfile.TemporaryDirectory() as d:
+            wd = Path(d)
+            for name, content in task["files"].items():
+                (wd / name).write_text(content, encoding="utf-8")
+            ok_structural_noop = _rename_structural_ok(wd, old, new, target)
+        assert ok_structural_noop is False, f"{task_id}: no-op incorrectly scored structurally solved"
+
+
+def test_hard_tier_build_module_oracles_are_correct():
+    """The held-out ``oracle_test`` must PASS a correct reference implementation and FAIL an
+    obviously-wrong one -- graded exactly like ``_run_build_module_task`` does (write
+    ``oracle_test`` + the solution into a fresh dir, run ``test_cmd``)."""
+    import tempfile
+
+    from harness.multi_file import _run
+
+    solutions = {
+        "build_hard_rate_limiter": {
+            "good": (
+                "class RateLimiter:\n"
+                "    def __init__(self, max_calls, window_seconds):\n"
+                "        self.max_calls = max_calls\n"
+                "        self.window_seconds = window_seconds\n"
+                "        self._calls = []\n\n"
+                "    def allow(self, timestamp):\n"
+                "        cutoff = timestamp - self.window_seconds\n"
+                "        self._calls = [t for t in self._calls if t > cutoff]\n"
+                "        if len(self._calls) < self.max_calls:\n"
+                "            self._calls.append(timestamp)\n"
+                "            return True\n"
+                "        return False\n"
+            ),
+            "wrong": (
+                "class RateLimiter:\n"
+                "    def __init__(self, max_calls, window_seconds):\n"
+                "        self.max_calls = max_calls\n"
+                "        self.window_seconds = window_seconds\n"
+                "        self._calls = []\n\n"
+                "    def allow(self, timestamp):\n"
+                "        self._calls.append(timestamp)\n"
+                "        return True\n"
+            ),
+        },
+        "build_hard_lru_cache": {
+            "good": (
+                "class LRUCache:\n"
+                "    def __init__(self, capacity):\n"
+                "        self.capacity = capacity\n"
+                "        self._data = {}\n"
+                "        self._order = []\n\n"
+                "    def get(self, key):\n"
+                "        if key not in self._data:\n"
+                "            return -1\n"
+                "        self._touch(key)\n"
+                "        return self._data[key]\n\n"
+                "    def put(self, key, value):\n"
+                "        if key in self._data:\n"
+                "            self._data[key] = value\n"
+                "            self._touch(key)\n"
+                "            return\n"
+                "        if len(self._data) >= self.capacity:\n"
+                "            oldest = self._order.pop(0)\n"
+                "            del self._data[oldest]\n"
+                "        self._data[key] = value\n"
+                "        self._order.append(key)\n\n"
+                "    def _touch(self, key):\n"
+                "        self._order.remove(key)\n"
+                "        self._order.append(key)\n"
+            ),
+            "wrong": (
+                "class LRUCache:\n"
+                "    def __init__(self, capacity):\n"
+                "        self.capacity = capacity\n"
+                "        self._data = {}\n\n"
+                "    def get(self, key):\n"
+                "        return self._data.get(key, -1)\n\n"
+                "    def put(self, key, value):\n"
+                "        self._data[key] = value\n"
+            ),
+        },
+    }
+    tasks = {t["id"]: t for t in load_daily_tasks() if t["id"] in solutions}
+    assert set(tasks) == set(solutions)
+
+    for task_id, variants in solutions.items():
+        task = tasks[task_id]
+        for variant, expect_pass in (("good", True), ("wrong", False)):
+            with tempfile.TemporaryDirectory() as d:
+                wd = Path(d)
+                (wd / task["target"]).write_text(variants[variant], encoding="utf-8")
+                (wd / "test_oracle_check.py").write_text(task["oracle_test"], encoding="utf-8")
+                ok, out = _run(str(wd), task["test_cmd"])
+            assert ok is expect_pass, (
+                f"{task_id} ({variant}): expected pass={expect_pass}, got {ok}: {out}")
 # #EXT-005-REQ-13 End

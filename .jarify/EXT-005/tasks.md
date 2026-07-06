@@ -354,3 +354,43 @@ from `harness/system_suite.py` rather than duplicating subprocess/tree-kill logi
 
 #### Implements
 - [REQ-15] Shadow-mode parity replay harness
+
+### [TASK-11] Grow the daily-driver suite past saturation with a hard tier + frozen holdout (docs/GAP-MAP.md #51)
+
+MEASURED 2026-07-06 (`.jaros-data/artifacts/dd_fullrun.json`): the dev split scored 19/19 = 100%
+weighted with gemma — every task passes, so the instrument can no longer show where jcode falls
+short of Claude Code (it is SATURATED). This task is pure eval-DATA authoring (no runner-logic
+change — `fix`/`multi-file`/`refactor`/`build-module` routing already exists from TASK-2..TASK-5):
+it grows the suite with 10 realistic harder tasks in the highest-weight categories (`fix`,
+`multi-file`, then `refactor`, `build-module`) and freezes 4 of them into a new `holdout/` split.
+
+#### Steps
+1. Author 10 new task JSON files under `evals/daily_driver/`, honest realistic difficulty (multi-hop
+   root-cause reasoning, non-obvious shared root causes, subtle-behavior-preserving refactors, and
+   multi-edge-case stateful build-module classes) — NOT designed to make gemma fail, whether it
+   passes is measured not engineered: 3 `fix` (`fix_hard_invoice_double_tax`,
+   `fix_hard_mutable_default_leak` in `dev/`; `fix_hard_gpa_credit_weighting` in `holdout/`), 3
+   `multi-file` (`mfx_hard_units_shared_root`, `mfx_hard_stats_shared_root` in `dev/`;
+   `mfx_hard_pipeline_deep_chain` in `holdout/`), 2 `refactor` (`refactor_hard_recursive_rename` in
+   `dev/`; `refactor_hard_distractor_name` in `holdout/`), 2 `build-module`
+   (`build_hard_rate_limiter` in `dev/`; `build_hard_lru_cache` in `holdout/`).
+2. Create `evals/daily_driver/holdout/` (did not exist before) and populate it with the 4 tasks
+   above — frozen, never tuned against, matching `load_daily_tasks()`'s existing dev+holdout
+   loading contract (already implemented; no code change needed).
+3. VERIFY each new task's oracle is honestly correct BEFORE it counts: the reference/intended
+   solution passes its oracle (test_cmd for fix/multi-file/refactor, `oracle_test` for
+   build-module) AND an obviously-wrong solution (the given buggy `files`, a no-op rename, or a
+   deliberately-broken build-module class) fails it. No oracle leak into any answer path.
+4. `tests/test_ext005_daily_driver.py`: add `test_hard_tier_tasks_load_with_correct_category_and_split`,
+   `test_hard_tier_fix_and_multifile_oracles_are_correct`, `test_hard_tier_refactor_oracles_are_correct`,
+   and `test_hard_tier_build_module_oracles_are_correct` — offline, no model call, reusing the REAL
+   harness mechanisms (`harness.multi_file._run`, `harness.refactor.rename_symbol`,
+   `harness.daily_driver._rename_structural_ok`) the runner itself calls, so the tests prove the
+   oracle is correct against the actual grading path, not a reimplementation. Full `tests/` suite
+   stays green.
+5. Update `evals/daily_driver/README.md`: the category count table (seed + hard-tier + total per
+   category), the hard-tier task-naming/difficulty description, and a note that `holdout/` is now
+   frozen.
+
+#### Implements
+- [REQ-13] The Pursuit scoreboard is the parity instrument (grow the daily-driver past saturation with a discriminating hard tier + frozen holdout)

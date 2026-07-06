@@ -4,9 +4,10 @@ The headline scoreboard number: **how much of what Claude Code does for a workin
 engineer can jaros-code do, end-to-end, on the Jetson.** Frequency-weighted by real
 usage; deterministic oracles only; dev/holdout split (holdout read ≤1×/week).
 
-> Status: **v0 design + seed** (2026-07-01). This README is the schema-in-embryo; it
-> will be formalized as a spec (EXT-035) and a weighted runner once the two oracle
-> types below are validated on seed tasks (probe-before-build). NOT yet the live number.
+> Status: **live** (2026-07-06). The runner (`harness/daily_driver.py`) is built and routes
+> all 8 categories; the suite is 29 tasks (19 original + a 10-task hard tier, §"Task count +
+> difficulty tiers" below) with a frozen `holdout/` split. This is the real, current headline
+> instrument — see `.jaros-data/artifacts/dd_fullrun.json` for the last full-split read.
 
 ## Category taxonomy + weights (PURSUIT §2.1 — target ~100 tasks)
 
@@ -61,3 +62,35 @@ repo state. Emits per-category + weighted pass rate into the scoreboard. Jaros-n
 ## Seed tasks (this dir) — validate the two novel oracle types before building the runner
 - `dev/nav_callers_of.json` — `navigate` / answer-oracle (the new type; the crux).
 - `dev/edit_clamp.json` — `edit` / pytest-oracle (reuses proven infra; sanity anchor).
+
+## Task count + difficulty tiers (grown 2026-07-06, docs/GAP-MAP.md #51)
+
+MEASURED 2026-07-06 (`.jaros-data/artifacts/dd_fullrun.json`): the original 19-task dev-only
+split scored 19/19 = 100% weighted with gemma — SATURATED, no longer discriminating (every task
+passed, so it can't show a real capability gap vs Claude Code). The suite was grown with a
+**hard tier** of 10 realistic-difficulty tasks in the highest-weight categories, honestly
+authored (whether gemma passes is measured, not engineered):
+
+| category | seed tasks | + hard tier | total |
+|----------|-----------:|------------:|------:|
+| `navigate` | 1 | — | 1 |
+| `edit` | 2 | — | 2 |
+| `fix` | 6 | 3 | 9 |
+| `write-tests` | 2 | — | 2 |
+| `refactor` | 2 | 2 | 4 |
+| `build-module` | 2 | 2 | 4 |
+| `multi-file` | 2 | 3 | 5 |
+| `ops` | 2 | — | 2 |
+| **total** | **19** | **10** | **29** |
+
+Hard-tier tasks are prefixed `fix_hard_*` / `mfx_hard_*` / `refactor_hard_*` / `build_hard_*` and
+require multi-line/multi-hop reasoning rather than a single-line bug: a root cause reached only
+by tracing a 3-function call chain (`fix`), a shared root cause in a low-level file used by two
+independent callers or a 3-hop import chain (`multi-file`), a rename that must reach a recursive
+self-call or avoid a confusable distractor name while preserving behavior (`refactor`), and a
+multi-edge-case stateful class — a sliding-window rate limiter, an LRU cache (`build-module`).
+
+**`holdout/` is FROZEN** (2026-07-06): 4 of the 10 hard tasks (one per category above) live under
+`evals/daily_driver/holdout/` and are never tuned against — read at most ~1×/week per the design
+rule below, so `load_daily_tasks()` (which loads `dev/` + `holdout/` by default) reports an honest
+held-out number alongside the dev number in the `bySplit` field of the scorecard.
