@@ -107,6 +107,11 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   extraction mechanism than patching/best-of-k, worth measuring even though the residual is reasoning-bound;
   honest negative accepted if it hits the ceiling. This is the modification-axis exploration reframed as
   build-recovery. Via Jarify.
+- **[✅ LANDED d0516b7 (REQ-35, 2026-07-06) — modify_system now ADDS + regenerates]** SHIPPED: `_identify_new_modules`
+  + `_build_new_module` (bounded ≤3, ambiguity-guarded, reuse syntax-gate/repair), wired after `_identify_targets`;
+  regression-gate revert extended to REMOVE added modules; byte-identical when off; NO oracle leak; suite 2384.
+  Completes the modification plane (was regenerate-only) + structurally unblocks replan's add-module half. Capability
+  effect being measured (`.jaros-data/add_modules_gate.py`). Original item ↓ for provenance:
 - **[★ modify_system: ADD new modules, not just regenerate existing (owner 2026-07-06) — completes the
   modification plane]** MEASURED limitation (surfaced by the REQ-34 replan build): `modify_system`'s
   `_identify_targets` only offers EXISTING modules to change, so it can REGENERATE a file but never ADD a
