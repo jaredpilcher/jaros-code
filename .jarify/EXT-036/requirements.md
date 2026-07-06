@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -1176,3 +1176,80 @@ strategy, not the built app, is the source of the mis-grade.
      passing round-trip check) the full minimum-acceptance checklist is all-pass.
   Full `tests/` suite re-run via `python -m harness.run_with_heartbeat -- python -m pytest
   tests/ -q`, confirmed green with no regression. — **DONE 2026-07-05**
+
+### [REQ-30] Optional 7B-review of model-proposed acceptance checks (DONE — offline mechanism, EXT-036 TASK-40, 2026-07-05)
+
+**MEASURED PROBLEM (2026-07-05), memory [[jaros-code-build-acceptance-honesty]]:**
+REQ-26's composed acceptance checklist (deterministic minimum UNION model-proposed
+checks) is honest about the FLOOR, but the model-PROPOSED portion (the SAME small
+model that built the system also writes checks for its own build) is a MIXED bag:
+some HALLUCINATE (an invented API `from main import encode`, an invented value
+`assert convert(300,'K','C')==27.78` when 300K=26.85), FALSE-NEGATIVING 8/20
+genuinely-correct systems on the 20-task suite; others correctly CATCH real
+breakage (rpn-calc, kv-store-ttl). Blanket-TRUSTING the model-proposed checks
+false-negatives correct builds; blanket-DEMOTING them (a reverted attempt, parked
+in `git stash@{0}`) introduced 2 FALSE-DONES.
+
+**VALIDATED FIX (owner's idea, PRE-REGISTERED KILL CRITERION probed 2026-07-05,
+`.jaros-data/sevenb_review_probe.py`, task #122):** a STRONGER model
+(qwen2.5-coder-7b) REVIEWS+CORRECTS each model-proposed check from the VISIBLE
+SPEC + CODE ONLY — never any hidden/expected output (NO ORACLE LEAK). Probe
+result: the 7B fixed 3/4 hallucinated checks (turned a currently-failing bogus
+check into a passing-or-dropped one) AND preserved 1/1 real-bug check (left it
+genuinely failing) — passing the pre-registered bar. This requirement builds the
+production-grade, injectable mechanism the probe validated; the live gemma<->7B
+Jetson swap orchestration + the 20-task false-done gate that flips this on by
+default are explicit follow-ups, out of scope here.
+
+#### Acceptance Criteria
+- [x] `harness/acceptance_review.py::review_checks(spec, modules, proposed_checks,
+  reviewer_llm) -> list[dict]` — a pure, injectable function reusing the EXACT
+  `REVIEW_PROMPT` wording and fence-stripping/DROP-parse logic validated by the probe.
+  For each proposed check, calls `reviewer_llm.complete(LlmRequest(prompt=...,
+  params={"temperature": 0.0, "max_tokens": 1024})).text`; corrects a hallucinated
+  API/import to the real one, recomputes an asserted VALUE from the spec's stated
+  rules (or drops the assertion if the spec doesn't determine it), or DROPS the
+  whole check (omitted from the returned list) when it can't be verified from
+  spec+code alone. — **DONE 2026-07-05**
+- [x] NO ORACLE LEAK (Tenet 3): the reviewer sees ONLY `spec` + the built `modules`
+  source + the ONE proposed check — never any hidden/expected output. — **DONE
+  2026-07-05**
+- [x] NEVER raises: a `reviewer_llm.complete` exception (unreachable model,
+  malformed response, anything) leaves that ONE check UNCHANGED (conservative —
+  keep the model's original proposal rather than silently losing/mangling it),
+  never crashes the caller and never treats a reviewer outage as a drop. — **DONE
+  2026-07-05**
+- [x] Wired into `harness/system_builder.py::build_system` (and
+  `_score_build_attempt`/`build_system_best_of_k`, REQ-25) as an OPTIONAL
+  keyword-only refinement `check_reviewer=None`. Default `None` leaves
+  `build_system`'s behavior BYTE-IDENTICAL to before this task (proven by a
+  dedicated regression test). When a `check_reviewer` IS supplied, ONLY the
+  MODEL-PROPOSED portion of the composed checklist (REQ-26) — never the
+  deterministic minimum, which always gates as-is and is never sent to the
+  reviewer — is replaced by `review_checks`'s corrected/dropped output BEFORE the
+  checklist gates `done`. `build_system` performs NO model-swap orchestration
+  itself: `check_reviewer` is just an injected llm; which model actually serves
+  as the reviewer (e.g. a live Jetson gemma<->7B swap) is a CALLER concern, kept
+  out of scope so `build_system` stays fast, gemma-default, and offline-testable.
+  — **DONE 2026-07-05**
+- [x] Proven OFFLINE (`tests/test_ext036_acceptance_review.py`, fake/canned
+  `llm`/`reviewer_llm` stubs, no live model, no network): `review_checks` unit
+  behavior — corrects a hallucinated check to the real API, drops an
+  unverifiable check, keeps a real-bug check UNCHANGED when the reviewer is
+  "told to keep it" (proving review never launders a genuine defect-catch into a
+  pass), keeps the original check unchanged when the reviewer raises, strips
+  markdown fences the same way the validated probe does, never raises on
+  empty/bad input, and the reviewer prompt carries only spec+code+the one check
+  (no oracle leak). End-to-end: a hallucinated model-proposed check on a
+  genuinely-working synthetic CLI flips `done` False->True once reviewed
+  (dropped); a real-bug model-proposed check stays failing (`done=False`,
+  0-false-done preserved) even when the reviewer is told to keep it; a
+  fixed-build regression test proves `check_reviewer=None` (both the implicit
+  default and an explicit `None`) is byte-identical on `shipped`/`done`/`unmet`/
+  `note`/`modules`; a reviewer that raises on every call never crashes
+  `build_system` (degrades to the unreviewed composed checklist). — **DONE
+  2026-07-05**
+- [ ] FOLLOW-UP (explicit, out of this task's scope): the live gemma<->7B
+  Jetson-swap orchestration that actually serves `check_reviewer` with the
+  stronger model in production, and a LIVE 20-task false-done-gate measurement
+  before flipping `check_reviewer` on by default in `/buildsystem` — open

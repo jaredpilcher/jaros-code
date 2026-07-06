@@ -1446,8 +1446,13 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
     # #EXT-037-REQ-8 End
 
 
+# #EXT-036-REQ-30 Start
+# TASK-40: `check_reviewer` keyword param (default None -- byte-identical no-op) added to
+# the signature + docstring below; the actual review step lives further down in the
+# ACCEPTANCE stage (see the SECOND `#EXT-036-REQ-30` region in this function).
 def build_system(spec: str, root: "str | Path", *, llm=None,
-                  runtime: "object | None" = None) -> dict:
+                  runtime: "object | None" = None,
+                  check_reviewer=None) -> dict:
     """PLAN -> topological BUILD (syntax-gated + repair) -> ASSEMBLE -> ACCEPTANCE.
 
     Returns ``{modules: {name: code}, shipped: bool, done: bool, unmet: [names], plan: {...}}``
@@ -1465,7 +1470,19 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     real ``code.write_file`` Decision (gated, hash-chain logged) instead of a raw
     ``Path.write_text``. ``runtime=None`` (the default) is unchanged from before this parameter
     existed -- every existing eval/test/suite caller against a throwaway sandbox directory is
-    unaffected."""
+    unaffected.
+
+    ``check_reviewer`` (EXT-036 REQ-30, task #122): OPTIONAL -- any object exposing
+    ``.complete(LlmRequest) -> .text``, injected via ``harness.acceptance_review.review_checks``.
+    Default ``None`` leaves this function BYTE-IDENTICAL to before this parameter existed (no
+    behavior change, proven by a dedicated regression test). When given, the MODEL-PROPOSED
+    portion of the composed acceptance checklist (REQ-26) -- never the deterministic minimum,
+    which always gates as-is -- is reviewed+corrected by `check_reviewer` against the visible
+    spec + built module sources ONLY (no oracle leak) before the checklist gates `done`. This
+    function never performs any model swap itself -- `check_reviewer` is just an injected llm;
+    orchestrating which model actually serves as the reviewer (e.g. a Jetson gemma<->7B swap)
+    is a CALLER concern, out of scope here."""
+    # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
     # TASK-4: observability phase beats -- /status shows the LIVE build phase (PLAN/ASSEMBLE/
@@ -1640,6 +1657,24 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # proposals, never sparser than the minimum (task #118, done-honesty).
     checks = _compose_acceptance_checklist(spec, mods, llm, plan)
     # #EXT-036-REQ-26 End
+    # #EXT-036-REQ-30 Start
+    # TASK-40: OPTIONAL 7B-review of the MODEL-PROPOSED checks only -- default
+    # `check_reviewer=None` is a complete no-op (this whole block is skipped), keeping
+    # `build_system` byte-identical to before this task. The deterministic minimum is NEVER
+    # sent to the reviewer and always gates as-is; only the non-minimum, model-proposed
+    # subset of `checks` is replaced by `review_checks`'s corrected/dropped output.
+    if check_reviewer is not None:
+        try:
+            _minimum_now = _minimum_acceptance(spec, mods, plan)
+            _minimum_keys = {(c.get("name"), c.get("code")) for c in _minimum_now}
+            _proposed_now = [c for c in checks if (c.get("name"), c.get("code")) not in _minimum_keys]
+            if _proposed_now:
+                from harness.acceptance_review import review_checks
+                _reviewed_now = review_checks(spec, built, _proposed_now, check_reviewer)
+                checks = list(_minimum_now) + _reviewed_now
+        except Exception:
+            pass  # never raises -- keep the composed checklist as-is on any reviewer failure
+    # #EXT-036-REQ-30 End
     if not checks:
         # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
@@ -2508,7 +2543,12 @@ def build_system_governed(spec: str, root: "str | Path", *, llm=None,
 # ASSEMBLE only the best-scoring attempt onto the caller's `root`. Selection is 100% deterministic
 # (test-gated); only generation (`build_system` itself) is model-driven.
 
-def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tuple[int, int]:
+# #EXT-036-REQ-30 Start
+# TASK-40: `check_reviewer` keyword param (default None -- byte-identical no-op) added to
+# the signature + docstring below; the review step itself is the SECOND `#EXT-036-REQ-30`
+# region further down inside this function.
+def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm,
+                          check_reviewer=None) -> tuple[int, int]:
     """INDEPENDENT scoring for one best-of-k attempt: NEVER trust `result`'s own self-reported
     `done` -- derive a FRESH, FULL (minimum-inclusive, REQ-26/task #118) acceptance checklist
     from the attempt's own planned module API and run every check for real against the
@@ -2517,7 +2557,13 @@ def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tu
     best-of-k selects/early-exits on a comparable, trustworthy bar -- never a sparse
     self-accepted one. Returns ``(passed, total)``; ``total == 0`` means nothing could be
     checked at all (no plan / no built modules -- a total build failure), scored 0. Never
-    raises."""
+    raises.
+
+    ``check_reviewer`` (EXT-036 REQ-30, task #122): OPTIONAL, mirrors `build_system`'s own
+    parameter -- default ``None`` is byte-identical to before this parameter existed. When
+    given, the non-minimum (model-proposed) portion of the composed checklist is
+    reviewed+corrected against this attempt's own spec + built module sources before scoring."""
+    # #EXT-036-REQ-30 End
     if not isinstance(result, dict):
         return 0, 0
     plan = result.get("plan")
@@ -2531,6 +2577,21 @@ def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tu
         # #EXT-036-REQ-26 End
     except Exception:
         checks = []
+    # #EXT-036-REQ-30 Start
+    # TASK-40: same optional review step `build_system` performs -- skipped entirely when
+    # `check_reviewer` is None (the default), keeping this function byte-identical to before.
+    if check_reviewer is not None and checks:
+        try:
+            _minimum_now = _minimum_acceptance(spec, mods, plan)
+            _minimum_keys = {(c.get("name"), c.get("code")) for c in _minimum_now}
+            _proposed_now = [c for c in checks if (c.get("name"), c.get("code")) not in _minimum_keys]
+            if _proposed_now:
+                from harness.acceptance_review import review_checks
+                _reviewed_now = review_checks(spec, built, _proposed_now, check_reviewer)
+                checks = list(_minimum_now) + _reviewed_now
+        except Exception:
+            pass  # never raises -- keep the composed checklist as-is on any reviewer failure
+    # #EXT-036-REQ-30 End
     if not checks:
         return 0, 0
     passed = 0
@@ -2543,8 +2604,13 @@ def _score_build_attempt(spec: str, attempt_root: Path, result: dict, llm) -> tu
     return passed, len(checks)
 
 
+# #EXT-036-REQ-30 Start
+# TASK-40: `check_reviewer` keyword param (default None -- byte-identical no-op) added to
+# the signature + docstring below, threaded through to `build_system`/`_score_build_attempt`
+# in the two call sites further down inside this function (also tagged).
 def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 3,
-                            runtime: "object | None" = None) -> dict:
+                            runtime: "object | None" = None,
+                            check_reviewer=None) -> dict:
     """Build ``spec`` up to `k` times (each into its OWN fresh, isolated temp subdir so attempts
     never contaminate each other or `root`), independently score every attempt with a freshly
     derived + actually-RUN acceptance checklist (`_score_build_attempt`), and ASSEMBLE only the
@@ -2570,7 +2636,14 @@ def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 
     ``shutil.rmtree``'d before this function returns (see the ``finally`` block) -- not a
     meaningful project root to gate -- so those internal calls intentionally stay on
     ``runtime=None``. ``runtime=None`` for the final assembly too (the default) is unchanged
-    from before this parameter existed."""
+    from before this parameter existed.
+
+    ``check_reviewer`` (EXT-036 REQ-30, task #122): OPTIONAL, mirrors `build_system`'s own
+    parameter -- default ``None`` leaves every attempt's build + scoring byte-identical to
+    before this parameter existed. When given, it is threaded to BOTH each attempt's
+    `build_system` call and `_score_build_attempt`'s independent scoring, so a passed-in
+    reviewer is applied consistently across generation and selection."""
+    # #EXT-036-REQ-30 End
     root = Path(root)
     k = max(1, int(k)) if k else 1
     attempts: list[dict] = []
@@ -2580,14 +2653,18 @@ def build_system_best_of_k(spec: str, root: "str | Path", *, llm=None, k: int = 
         for i in range(k):
             attempt_root = Path(tempfile.mkdtemp(prefix=f"jarify_bok_{i}_"))
             tmp_dirs.append(attempt_root)
+            # #EXT-036-REQ-30 Start
+            # TASK-40: thread `check_reviewer` through to both generation and scoring.
             try:
-                result = build_system(spec, attempt_root, llm=llm)
+                result = build_system(spec, attempt_root, llm=llm, check_reviewer=check_reviewer)
             except Exception as exc:
                 result = _result(shipped=False, done=False, note=f"attempt {i} raised: {exc}")
             try:
-                passed, total = _score_build_attempt(spec, attempt_root, result, llm)
+                passed, total = _score_build_attempt(spec, attempt_root, result, llm,
+                                                       check_reviewer=check_reviewer)
             except Exception:
                 passed, total = 0, 0
+            # #EXT-036-REQ-30 End
             attempts.append({"result": result, "passed": passed, "total": total})
             if total > 0 and passed == total:
                 winner = attempts[-1]

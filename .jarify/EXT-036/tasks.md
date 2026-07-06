@@ -1684,3 +1684,67 @@ mis-classified as a runtime defect.
 #### Implements
 - [REQ-28] Per-command minimum-acceptance probes must not mis-grade usage/argument-validation
   as a runtime defect (this task introduces AND fully implements REQ-28)
+
+### [TASK-40] Optional 7B-review of model-proposed acceptance checks (REQ-30, task #122)
+
+VALIDATED FIX (owner's idea, pre-registered kill criterion probed and PASSED 2026-07-05,
+`.jaros-data/sevenb_review_probe.py`): REQ-26's composed acceptance checklist is honest
+about the deterministic FLOOR, but its model-PROPOSED portion is a mixed bag — some
+HALLUCINATE (an invented API/import, an invented expected value), false-negativing
+correct builds; others correctly catch real breakage. A STRONGER model
+(qwen2.5-coder-7b) reviewing+correcting each model-proposed check from the VISIBLE
+spec+code ONLY (no oracle leak) fixed 3/4 hallucinated checks and preserved 1/1
+real-bug check in the probe. Build the production-grade, injectable mechanism the
+probe validated.
+
+#### Steps
+1. Add `harness/acceptance_review.py` with `review_checks(spec, modules, proposed_checks,
+   reviewer_llm) -> list[dict]`, reusing the EXACT `REVIEW_PROMPT` wording and
+   fence-stripping/DROP-parse logic from `.jaros-data/sevenb_review_probe.py`
+   (`REVIEW_PROMPT`, `_write_and_run`-equivalent parse, the review loop). Calls
+   `reviewer_llm.complete(LlmRequest(prompt=..., params={"temperature": 0.0,
+   "max_tokens": 1024})).text` per check; corrects a hallucinated API/import, recomputes
+   or drops an asserted value per the spec's stated rules, or drops the whole check when
+   unverifiable. NO ORACLE LEAK: the reviewer sees only spec + built module sources + the
+   one proposed check, never any hidden/expected output. NEVER raises: a
+   `reviewer_llm.complete` exception leaves that ONE check unchanged (conservative).
+2. Wrap the new module's content with `# #EXT-036-REQ-30 Start` / `# #EXT-036-REQ-30 End`
+   per the links skill.
+3. In `harness/system_builder.py`, add a keyword-only `check_reviewer=None` parameter to
+   `build_system`, `_score_build_attempt`, and `build_system_best_of_k` (default `None`
+   leaves every one of these BYTE-IDENTICAL to before this task — no behavior change
+   unless a caller explicitly passes `check_reviewer`). When supplied: recompute the
+   deterministic minimum (`_minimum_acceptance`, no model call) to identify which entries
+   of the already-composed checklist (`_compose_acceptance_checklist`, REQ-26) are
+   MODEL-PROPOSED (i.e. not in the minimum); pass ONLY that subset to
+   `harness.acceptance_review.review_checks` along with the attempt's own `built` module
+   sources; replace the checklist with `minimum + reviewed` BEFORE it gates `done` (in
+   `build_system`) / scoring (in `_score_build_attempt`). The deterministic minimum is
+   NEVER sent to the reviewer and always gates as-is. `build_system_best_of_k` threads
+   `check_reviewer` to both its per-attempt `build_system` call and
+   `_score_build_attempt`. Wrap all new/changed lines with `# #EXT-036-REQ-30 Start` /
+   `# #EXT-036-REQ-30 End`.
+   IMPORTANT (scope boundary): do NOT perform any Jetson model-swap orchestration inside
+   `build_system`/`build_system_best_of_k` — `check_reviewer` is just an injected llm
+   object; which model actually serves as the reviewer (e.g. a live gemma<->7B swap) is a
+   CALLER concern, kept out of scope so these functions stay fast, gemma-default, and
+   offline-testable.
+4. Add `tests/test_ext036_acceptance_review.py` (fake/canned `llm`/`reviewer_llm` stubs,
+   no live model, no network): unit-test `review_checks` (corrects a hallucinated check,
+   drops an unverifiable one, keeps a real-bug check UNCHANGED when the reviewer is "told
+   to keep it", keeps the original unchanged when the reviewer raises, strips markdown
+   fences, never raises on bad/empty input, no-oracle-leak prompt shape); end-to-end
+   `build_system(..., check_reviewer=...)` tests (a hallucinated model-proposed check on a
+   genuinely-working synthetic build flips `done` False->True once reviewed; a real-bug
+   model-proposed check stays failing/`done=False` even when the reviewer is told to keep
+   it; `check_reviewer=None` — both implicit default and explicit `None` — is
+   byte-identical on `shipped`/`done`/`unmet`/`note`/`modules` on a fixed synthetic build;
+   a reviewer that raises on every call never crashes `build_system`).
+5. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change count).
+
+#### Implements
+- [REQ-30] Optional 7B-review of model-proposed acceptance checks (this task introduces
+  AND fully implements REQ-30's offline mechanism; the live model-swap + false-done-gate
+  measurement remain open follow-ups)
