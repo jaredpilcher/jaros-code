@@ -1524,3 +1524,80 @@ regenerate but never GROW the system.
   Decision, never a raw `Path.write_text` alongside it). Full `tests/` suite re-run via
   `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`; no regression
   vs. the pre-change baseline. — **DONE 2026-07-06**
+
+### [REQ-37] A spec-DERIVED behavioral PROPERTY check for build_system acceptance (PGS-style, arXiv 2506.18315) (DONE — offline mechanism, EXT-036 TASK-46, 2026-07-06)
+
+**Owner directive (task #130):** the crash-based REQ-26 minimum acceptance floor (+REQ-27's
+error-marker/round-trip strengthening) catches a system that *crashes* or gracefully prints
+its own error, but nothing in the composed checklist catches a system that never crashes yet
+behaves *semantically wrong* — e.g. a priority queue that dequeues in the wrong order, or a
+codec whose `decode(encode(x)) != x`. A PGS-style (Property-Generated-and-Scored, arXiv
+2506.18315) spec-derived behavioral PROPERTY check closes that class.
+
+**SACRED-SAFE BY CONSTRUCTION:** this requirement only ever ADDS a check to the composed
+acceptance checklist (REQ-26/`_compose_acceptance_checklist`) — it can flip a build's `done`
+from `True` to `False` (catching a genuine semantic/ordering bug the existing checks missed)
+but can **never** flip `False` to `True`, so it structurally cannot manufacture a false-done.
+The only risk is an over-strict FALSE-NEGATIVE, which the tri-state grading rule below is
+specifically designed to avoid.
+
+#### Acceptance Criteria
+- [x] `_derive_spec_properties(spec, llm)`: given the SPEC STRING ONLY (never the built code —
+  no leak, no self-deception cycle), the model proposes 0-2 ABSTRACT behavioral properties the
+  system must satisfy (e.g. "an item added with higher priority is dequeued before a
+  lower-priority item"; "the reported count increases by exactly 1 after each add"; "decoding
+  the encoding of X returns X"). If none is clearly derivable, `[]` — no property is invented,
+  and that task keeps today's behavior exactly. Bounded to `MAX_SPEC_PROPERTIES = 2`; guarded
+  (any model/parse failure yields `[]`); never raises — **DONE 2026-07-06**.
+- [x] `_build_property_check(prop, mods, llm, *, plan=None)`: converts one abstract property
+  into a runnable acceptance check that exercises the BUILT CLI through a REAL subprocess
+  invocation (mirrors `_roundtrip_acceptance_check`/`_propose_subprocess_checklist`'s
+  subprocess-only, never-`import` convention) — reusing the SAME `_is_subprocess_check` filter
+  and `_minimum_entry_filename` entrypoint-resolution already proven elsewhere in this module.
+  Any unusable property, no resolvable entrypoint, a model/parse failure, or code that doesn't
+  survive the subprocess-check filter returns `None` — no check is added (fewer checks, never a
+  fabricated one) — **DONE 2026-07-06**.
+- [x] TRI-STATE GRADING RULE, encoded EXPLICITLY and enforced DETERMINISTICALLY (not left to the
+  model's own code structure) via `_wrap_property_check`, which wraps the model-authored check
+  body in a harness-controlled `try`/`except`:
+    - **VIOLATED** — the property test RAN and its assertion DEFINITIVELY failed (a genuine
+      `AssertionError`) → the check FAILS (`done` can flip to `False`, catching the bug).
+    - **INCONCLUSIVE** — the CLI couldn't be invoked as the check assumed, or ANY other
+      exception was raised → treated as a PASS (never manufacture a false-negative from a
+      broken/mismatched test).
+    - **SATISFIED** — the property test ran to completion with no exception → PASS.
+  — **DONE 2026-07-06**.
+- [x] Wired into `build_system` as an OPTIONAL, injectable, default-OFF keyword parameter
+  (`spec_properties: bool = False`) — a complete no-op when omitted/`False`, so every existing
+  caller/test is BYTE-IDENTICAL to before this task. When `True`, the derived property checks
+  are UNIONED (purely additively) into the composed acceptance checklist right after the
+  optional `check_reviewer` step, so `done` requires them too — never removing or weakening any
+  existing check — **DONE 2026-07-06**.
+- [x] NO ORACLE LEAK: `_derive_spec_properties`'s prompt is formatted from the SPEC STRING
+  alone — never the built module sources, the acceptance checklist, or any expected output —
+  **DONE 2026-07-06**.
+- [x] Proven OFFLINE (`tests/test_ext036_property_check.py`, canned llm, no live model, no
+  Jetson): (a) a wrong-ordering priority-queue build → the property is VIOLATED → the check
+  FAILS → `build_system(..., spec_properties=True)` reports `done=False` (the SAME wrong build
+  reports `done=True` with the flag off, proving the property check is what catches it); (b) a
+  correct priority-queue build → SATISFIED → `done=True` (no new false-negative); (c) an
+  inconclusive/broken property test (a `subprocess.check_call` against a nonexistent script,
+  raising `CalledProcessError` — not `AssertionError` — before its own `assert` is ever reached)
+  is treated as a PASS, and a mirror-image control (a genuine `AssertionError` with no exotic
+  exception involved) still FAILS, proving the tri-state wrapper doesn't launder every failure
+  into a pass; (d) a task with no derivable property (`"[]"`) adds no check, behavior unchanged
+  (including bounding to `MAX_SPEC_PROPERTIES` when the model over-proposes, and `None` returns
+  from `_build_property_check` on an unusable property/no entrypoint/malformed output/an
+  in-process-only check that fails the subprocess filter); (e) never raises when the model
+  raises at either the derivation or the build-check step, at both the helper-function level and
+  through the full `build_system` call; (f) no-oracle-leak — the derivation prompt is asserted
+  BYTE-EQUAL to `PROPERTY_DERIVATION_PROMPT.format(spec=spec)`, and none of the built module's
+  source/plan JSON/expected-output text ever appears in it; (g) the flag off (by omission, and
+  explicitly `False`) never calls `_derive_spec_properties` at all (monkeypatched to raise if
+  called) and matches the explicit-`False` result exactly. Full `tests/` suite re-run via
+  `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`; no regression vs. the
+  pre-change baseline — **DONE 2026-07-06**.
+- [ ] A 20-task trustbar measurement (WIN = `false_done` drops without the overall `done`-rate
+  cratering) gates whether this mechanism is promoted from opt-in to default-on — open, owner
+  reserved this measurement before the architect commits (task #130's own scope is the offline
+  mechanism only).

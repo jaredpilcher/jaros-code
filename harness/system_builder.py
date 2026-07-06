@@ -169,6 +169,19 @@ failing attempt scores 0 and is skipped over; if every attempt fails, the least-
 returned with ``done=False`` and an honest note (never a manufactured pass). Does not modify
 ``build_system``/``build_system_governed``/``build_system_escalating`` in any way — wiring this
 into the ``/buildsystem`` CLI command is an explicit follow-up (REQ-25).
+
+TASK-46 (REQ-37) adds an OPTIONAL, opt-in (``spec_properties=False`` default, byte-identical
+when off) spec-DERIVED behavioral PROPERTY check for ``build_system``'s acceptance step
+(PGS-style, arXiv 2506.18315): 0-2 ABSTRACT properties (e.g. "higher priority dequeues
+first", "decode(encode(x)) == x") are derived from the SPEC STRING ALONE (never the built
+code — no leak) and, when a runnable subprocess-driven check can be built for one, it is
+ADDED to the composed acceptance checklist. SAFE BY CONSTRUCTION: purely additive to the
+checklist union, so it can only flip ``done`` True->False (catching a semantic/ordering bug
+the crash-based REQ-26 floor misses), never False->True — it cannot manufacture a
+false-done. A DETERMINISTIC wrapper (``_wrap_property_check``) enforces a tri-state grading
+rule regardless of what the model wrote: a genuine ``AssertionError`` from the property test
+is the only definitive VIOLATION (fails); any other exception is INCONCLUSIVE (a pass, never
+a manufactured false-negative); a clean run is SATISFIED (a pass).
 """
 
 from __future__ import annotations
@@ -184,6 +197,9 @@ import subprocess  # TASK-21: deterministic import smoke-gate (modify_system reg
 # #EXT-036-REQ-14 End
 import sys
 import tempfile
+# #EXT-036-REQ-37 Start
+import textwrap  # TASK-46: deterministic indent-wrap of a model-authored property check
+# #EXT-036-REQ-37 End
 # #EXT-037-REQ-11 Start
 import uuid  # TASK-15: Decision ids for the optional Jaros-native write path
 # #EXT-037-REQ-11 End
@@ -1427,6 +1443,158 @@ def _http_check_label(check: dict) -> str:
     path = check.get("path") or "/"
     return f"{method} {path}"
 # #EXT-036-REQ-22 End
+# #EXT-036-REQ-37 Start
+# TASK-46 (REQ-37): a spec-DERIVED behavioral PROPERTY check (PGS-style, arXiv 2506.18315)
+# for build_system acceptance -- catches SEMANTIC/ORDERING false-dones the crash-based
+# REQ-26 minimum floor misses (e.g. a priority queue that dequeues in the WRONG order, or a
+# codec whose decode(encode(x)) != x -- neither ever crashes, they just behave WRONG). SAFE
+# BY CONSTRUCTION: this only ever ADDS a check to the composed acceptance checklist (REQ-26)
+# -- it can flip a build's `done` from True->False (catching a genuine semantic bug the
+# existing checks missed) but can NEVER flip False->True, so it cannot manufacture a
+# false-done; the only risk is an over-strict FALSE-NEGATIVE, which the tri-state grading
+# rule below is specifically designed to avoid.
+#
+# Two-plane split: `_derive_spec_properties` is ONE model judgment (0-2 abstract properties
+# from the SPEC STRING ONLY -- NEVER the built code, so there is no leak/self-deception
+# cycle: the model can't just read its own implementation and assert whatever it happens to
+# do); `_build_property_check` is a second, narrow model call converting one property into a
+# runnable subprocess-driven check (mirrors `_roundtrip_acceptance_check`/
+# `_propose_subprocess_checklist`'s real-CLI convention, never `import`-ing the built
+# modules); `_wrap_property_check` is a DETERMINISTIC (no model) wrapper enforcing the
+# tri-state grading rule below regardless of what the model wrote.
+#
+# GRADING RULE (tri-state, critical -- minimizes false-negatives):
+#   - VIOLATED     = the property test RAN and its assertion DEFINITIVELY failed (an
+#                    `AssertionError`) -> the check FAILS (catches the semantic bug).
+#   - INCONCLUSIVE = the CLI couldn't be invoked as the check assumed, or ANY other
+#                    exception was raised -> treated as a PASS (never manufacture a
+#                    false-negative from a broken/mismatched test).
+#   - SATISFIED    = the property test ran to completion with no exception -> PASS.
+
+MAX_SPEC_PROPERTIES = 2
+
+PROPERTY_DERIVATION_PROMPT = (
+    "SPEC: {spec}\n\n"
+    "Identify 0 to 2 ABSTRACT BEHAVIORAL PROPERTIES this system must satisfy -- general "
+    "rules about its behavior, not specific example commands or values. Examples of the "
+    "KIND of property to name: a priority queue -- 'an item added with higher priority is "
+    "dequeued before a lower-priority item'; a counter/notes system -- 'the reported count "
+    "increases by exactly 1 after each add'; a codec -- 'decoding the encoding of X returns "
+    "X'. If no such property is clearly implied by the spec, output an empty list -- do NOT "
+    "invent one. Output ONLY a JSON list (no prose, no code): "
+    '[{{"property": "<one-sentence abstract behavioral property>"}}]. Output [] if none apply.'
+)
+
+PROPERTY_CHECK_PROMPT = (
+    "BEHAVIORAL PROPERTY CHECK: this system must satisfy the property below. Write ONE "
+    "acceptance check that exercises the property through the system's REAL command-line "
+    "interface, invoked as a genuine subprocess (never `import` the built modules).\n"
+    "The system exposes this API: {api}\n"
+    "The system's entrypoint file is: {entry}\n"
+    "PROPERTY: {property}\n\n"
+    "Write standalone Python using `subprocess.run` (or check_output/check_call/Popen) that "
+    "invokes the entrypoint one or more times and asserts the property holds via a real "
+    "`assert` statement. Do NOT assert one specific expected VALUE you would have to know in "
+    "advance -- only assert the STRUCTURAL/RELATIVE property stated above (an ordering, an "
+    "invariant, a round-trip). Output ONLY a JSON object (no prose, no markdown fences): "
+    '{{"name": "<short label>", "code": "<standalone runnable python that spawns a real '
+    'subprocess and asserts the property>"}}.'
+)
+
+
+def _derive_spec_properties(spec: str, llm) -> list[dict]:
+    """Derive 0-2 ABSTRACT behavioral properties from the SPEC STRING ONLY (REQ-37). NEVER
+    given the built code -- no leak, no self-deception cycle. Guarded: any model/parse
+    failure, or a malformed/unparseable response, yields `[]` (no property derived -- keeps
+    today's behavior exactly, never a spurious check). Bounded to `MAX_SPEC_PROPERTIES`.
+    Never raises."""
+    if not isinstance(spec, str) or not spec.strip():
+        return []
+    try:
+        raw = _call(llm, PROPERTY_DERIVATION_PROMPT.format(spec=spec), max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return []
+    items = _extract_json(raw, "[", "]")
+    if not isinstance(items, list):
+        return []
+    out: list[dict] = []
+    for it in items:
+        if isinstance(it, dict):
+            desc = it.get("property")
+        elif isinstance(it, str):
+            desc = it
+        else:
+            desc = None
+        if isinstance(desc, str) and desc.strip():
+            out.append({"property": desc.strip()})
+        if len(out) >= MAX_SPEC_PROPERTIES:
+            break
+    return out
+
+
+def _wrap_property_check(code: str) -> str:
+    """DETERMINISTIC wrapper (no model) enforcing REQ-37's tri-state grading rule
+    regardless of what the model-authored property-check `code` does: it runs inside a
+    function, and only an `AssertionError` raised from it is graded a definitive VIOLATION
+    (non-zero exit); ANY other exception (the CLI didn't behave as the check assumed, a bad
+    invocation, a timeout, ...) is INCONCLUSIVE and exits 0 -- a PASS, never manufacturing a
+    false failure. A clean run (SATISFIED) also exits 0. `code` is assumed to already have
+    passed `_is_subprocess_check` (parses + contains a real subprocess call + a real
+    assert) before being wrapped."""
+    body = textwrap.indent(code.rstrip("\n") + "\n", "    ")
+    return (
+        "def _property_test():\n"
+        + body +
+        "try:\n"
+        "    _property_test()\n"
+        "except AssertionError as _e:\n"
+        "    print('PROPERTY_CHECK_RESULT: VIOLATED: ' + str(_e))\n"
+        "    raise SystemExit(1)\n"
+        "except Exception as _e:\n"
+        "    print('PROPERTY_CHECK_RESULT: INCONCLUSIVE: ' + str(_e))\n"
+        "    raise SystemExit(0)\n"
+        "else:\n"
+        "    print('PROPERTY_CHECK_RESULT: SATISFIED')\n"
+        "    raise SystemExit(0)\n"
+    )
+
+
+def _build_property_check(prop: dict, mods: "list[dict]", llm, *,
+                           plan: "dict | None" = None) -> "dict | None":
+    """Convert ONE abstract behavioral property (REQ-37) into a runnable acceptance check
+    exercising the BUILT CLI through a real subprocess invocation (mirrors
+    `_roundtrip_acceptance_check`/`_propose_subprocess_checklist`'s subprocess-only, no
+    in-process `import` convention). Guarded: an unusable `prop`, no resolvable entrypoint,
+    any model/parse failure, or code that doesn't survive the SAME `_is_subprocess_check`
+    filter used elsewhere in this module returns `None` -- no check is added (fewer checks,
+    never a fabricated one). The surviving check's `code` is DETERMINISTICALLY wrapped
+    (`_wrap_property_check`) so the tri-state grading rule holds regardless of what the
+    model wrote. Never raises."""
+    description = prop.get("property") if isinstance(prop, dict) else None
+    if not isinstance(description, str) or not description.strip():
+        return None
+    entry = _minimum_entry_filename(mods, plan)
+    if not entry:
+        return None
+    api = _module_api(mods or [])
+    try:
+        raw = _call(llm, PROPERTY_CHECK_PROMPT.format(api=api, entry=entry, property=description),
+                    max_tokens=CHECKLIST_MAX_TOKENS)
+    except Exception:
+        return None
+    proposed = _extract_json(raw, "{", "}")
+    if not isinstance(proposed, dict):
+        return None
+    name = proposed.get("name")
+    code = proposed.get("code")
+    if not isinstance(name, str) or not name.strip() or not _is_subprocess_check(code):
+        return None
+    wrapped = _wrap_property_check(code)
+    ok, _err = syntax_ok(wrapped)
+    if not ok:
+        return None
+    return {"name": f"property: {name.strip()}", "code": wrapped}
+# #EXT-036-REQ-37 End
 # #EXT-036-REQ-4 Start
 
 # #EXT-037-REQ-7 Start
@@ -1795,7 +1963,11 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
 def build_system(spec: str, root: "str | Path", *, llm=None,
                   runtime: "object | None" = None,
                   check_reviewer=None,
-                  replan_on_failure: bool = False) -> dict:
+                  replan_on_failure: bool = False,
+                  # #EXT-036-REQ-37 Start
+                  spec_properties: bool = False,
+                  # #EXT-036-REQ-37 End
+                  ) -> dict:
     """PLAN -> topological BUILD (syntax-gated + repair) -> ASSEMBLE -> ACCEPTANCE.
 
     Returns ``{modules: {name: code}, shipped: bool, done: bool, unmet: [names], plan: {...}}``
@@ -1834,7 +2006,18 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     remaining gap as a MODIFICATION request and applies it via `modify_system` (the existing
     MODIFICATION plane), re-checks, and iterates up to `MAX_REPLAN_ROUNDS` times,
     convergence-gated so it never regresses a previously-passing check and never fabricates
-    `done` -- `done` is always the real acceptance checklist passing."""
+    `done` -- `done` is always the real acceptance checklist passing.
+
+    ``spec_properties`` (EXT-036 REQ-37, task #130): OPTIONAL, default ``False`` -- a
+    complete no-op, leaving this function BYTE-IDENTICAL to before this parameter existed
+    (no behavior change, proven by a dedicated regression test). When ``True``, 0-2
+    ABSTRACT behavioral properties are derived from the SPEC ALONE (``_derive_spec_properties``
+    -- never the built code, no oracle leak) and, when a runnable subprocess check can be
+    built for a property (``_build_property_check``), it is ADDED to the composed
+    acceptance checklist so ``done`` requires it too. SAFE BY CONSTRUCTION: this is purely
+    ADDITIVE to the checklist union -- it can only flip a build's ``done`` from True to
+    False (catching a genuine semantic/ordering bug the crash-only floor misses), never the
+    reverse, so it cannot manufacture a false-done."""
     # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
@@ -2039,6 +2222,21 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         except Exception:
             pass  # never raises -- keep the composed checklist as-is on any reviewer failure
     # #EXT-036-REQ-30 End
+    # #EXT-036-REQ-37 Start
+    # TASK-46: OPTIONAL spec-derived behavioral PROPERTY checks -- default
+    # `spec_properties=False` is a complete no-op (this whole block is skipped), keeping
+    # `build_system` byte-identical to before this task. When enabled, this is PURELY
+    # ADDITIVE to the composed checklist (never removes/weakens an existing check) -- see
+    # the REQ-37 block above for the full safety argument + tri-state grading rule.
+    if spec_properties:
+        try:
+            for _prop in _derive_spec_properties(spec, llm):
+                _pcheck = _build_property_check(_prop, mods, llm, plan=plan)
+                if _pcheck is not None:
+                    checks.append(_pcheck)
+        except Exception:
+            pass  # never raises -- a property-check failure just means fewer checks, never more
+    # #EXT-036-REQ-37 End
     if not checks:
         # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,

@@ -2043,3 +2043,79 @@ needs (e.g. "add rate-limiting" to a system with no rate-limiter module yet).
 #### Implements
 - [REQ-35] `modify_system` can ADD a new module, not just regenerate existing ones
   (this task introduces AND fully implements REQ-35's mechanism)
+
+### [TASK-46] A spec-DERIVED behavioral PROPERTY check for build_system acceptance (REQ-37, PGS-style, arXiv 2506.18315, task #130)
+
+The crash-based REQ-26 minimum acceptance floor (+ REQ-27's error-marker/round-trip
+strengthening) catches a system that crashes or gracefully prints its own error, but
+nothing in the composed checklist catches a system that never crashes yet behaves
+semantically WRONG (e.g. a priority queue that dequeues in the wrong order, a codec whose
+`decode(encode(x)) != x`). A PGS-style, spec-DERIVED behavioral PROPERTY check closes that
+class. SACRED-SAFE BY CONSTRUCTION: this only ever ADDS a check to the composed acceptance
+checklist — it can flip `done` True->False (catching a genuine semantic bug), never the
+reverse, so it cannot manufacture a false-done; the only risk is an over-strict
+false-negative, minimized by the tri-state grading rule below.
+
+#### Steps
+1. In `harness/system_builder.py`, add `_derive_spec_properties(spec, llm) -> list[dict]`:
+   ONE model judgment given the SPEC STRING ONLY (never the built code — no leak, no
+   self-deception cycle) asking for 0-2 ABSTRACT behavioral properties the system must
+   satisfy (e.g. a priority queue -- "an item added with higher priority is dequeued
+   before a lower-priority item"; a counter/notes system -- "the reported count increases
+   by exactly 1 after each add"; a codec -- "decoding the encoding of X returns X"). If
+   none is clearly derivable, `[]` — never invent one. Bounded to
+   `MAX_SPEC_PROPERTIES = 2`; guarded (any model/parse failure -> `[]`); never raises.
+   Wrap with `# #EXT-036-REQ-37 Start` / `# #EXT-036-REQ-37 End`.
+2. Add `_build_property_check(prop, mods, llm, *, plan=None) -> dict | None`: converts one
+   property into a runnable acceptance check that exercises the BUILT CLI through a REAL
+   subprocess invocation, reusing `_minimum_entry_filename` (entrypoint resolution) and the
+   SAME `_is_subprocess_check` filter (`_propose_subprocess_checklist`'s convention) already
+   proven elsewhere in this module — no duplicated CLI-exercising logic. Any unusable
+   property, no resolvable entrypoint, a model/parse failure, or code that fails the
+   subprocess-check filter returns `None` (fewer checks, never a fabricated one). Wrap with
+   the same markers.
+3. Add `_wrap_property_check(code) -> str`: a DETERMINISTIC (no model) wrapper enforcing the
+   TRI-STATE grading rule regardless of what the model wrote — the property-check body runs
+   inside a function; only a genuine `AssertionError` from it is graded a definitive
+   VIOLATION (non-zero exit, the check FAILS); ANY other exception (the CLI couldn't be
+   invoked as the check assumed, a bad invocation, ...) is INCONCLUSIVE and exits 0 (a PASS,
+   never manufacturing a false-negative); a clean run (SATISFIED) also exits 0. `_run_check`/
+   `_run_check_verbose` (REQ-4/REQ-5) are reused UNMODIFIED to actually run the wrapped
+   check — no new execution path.
+4. In `build_system`, add an injectable keyword parameter `spec_properties: bool = False`
+   (default is a complete no-op, keeping `build_system` BYTE-IDENTICAL to before this task
+   for every existing caller/test). When `True`, immediately after the optional
+   `check_reviewer` step (REQ-30) and before the `if not checks:` empty-checklist guard,
+   call `_derive_spec_properties(spec, llm)`, and for each returned property call
+   `_build_property_check(prop, mods, llm, plan=plan)`; any non-`None` result is APPENDED to
+   `checks` (purely additive to the union — never removes/replaces an existing check).
+   Guarded (`try`/`except Exception: pass`) so a property-derivation failure never raises and
+   never reduces the checklist below what it would otherwise have been. Wrap every
+   changed/added line with `# #EXT-036-REQ-37 Start` / `# #EXT-036-REQ-37 End`.
+5. NO ORACLE LEAK: `_derive_spec_properties`'s prompt is formatted from the SPEC STRING
+   alone — never the built module sources, the acceptance checklist, or any expected output.
+6. Add `tests/test_ext036_property_check.py` (OFFLINE, canned llm, no live model, no
+   Jetson): (a) a wrong-ordering priority-queue build -> property VIOLATED -> the check
+   FAILS -> `build_system(..., spec_properties=True)` reports `done=False` (the SAME wrong
+   build reports `done=True` with the flag off, isolating the property check as the cause);
+   (b) a correct priority-queue build -> SATISFIED -> `done=True` (no new false-negative);
+   (c) an inconclusive/broken property test (a `subprocess.check_call` against a
+   nonexistent script, raising `CalledProcessError` before its own `assert` is ever reached)
+   is treated as a PASS, plus a mirror-image control (a genuine `AssertionError` with no
+   exotic exception) still FAILS; (d) a task with no derivable property (`"[]"`) adds no
+   check, behavior unchanged (incl. bounding to `MAX_SPEC_PROPERTIES` and `None` returns on
+   an unusable property/no entrypoint/malformed output/an in-process-only check); (e) never
+   raises when the model raises at either the derivation or the build-check step, at both
+   the helper-function level and through the full `build_system` call; (f) no-oracle-leak —
+   the derivation prompt is asserted BYTE-EQUAL to `PROPERTY_DERIVATION_PROMPT.format(spec=spec)`,
+   and none of the built module's source/plan JSON ever appears in it; (g) the flag off (by
+   omission, and explicitly `False`) never calls `_derive_spec_properties` at all
+   (monkeypatched to raise if called) and matches the explicit-`False` result exactly. Run
+   the FULL `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q` and confirm
+   it stays green at the new count, with no regression vs. the pre-change baseline. Do NOT
+   commit — a 20-task trustbar gate + the architect handle promotion/commit.
+
+#### Implements
+- [REQ-37] A spec-DERIVED behavioral PROPERTY check for build_system acceptance (this task
+  introduces AND fully implements REQ-37's offline mechanism; the 20-task trustbar
+  measurement gating opt-in->default-on promotion remains open)
