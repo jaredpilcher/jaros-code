@@ -90,8 +90,12 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   live gate). Owner's extension: have the 7B **GENERATE** the acceptance checks from scratch (from the
   VISIBLE spec + built code, NO ORACLE LEAK), unshackled from Gemma's hallucinations. Add a
   `generate_checks(...)` variant beside `review_checks` (injectable/default-off), then **A/B it on the
-  same 20-task live gate** — 7B-generate vs 7B-review vs baseline. Wins ONLY if it beats review's
-  done-rate (0.60) with the SAME 0 false-dones (sacred). Small delta on existing infra (EXT-036).
+  same 20-task live gate** — 7B-generate vs 7B-review vs baseline. ★ VERDICT (2026-07-06, REQ-31
+  87c5a39): **REVIEW WINS** — done-rate review 0.55 vs generate 0.35 vs baseline 0.30, all 0
+  false-dones. Generate is measurably WORSE: review's anchoring to Gemma's proposals keeps checks
+  grounded in the ACTUAL built interface; generate writes stricter checks against its own imagined
+  interface → more false-negatives (9 vs 5). 7B-REVIEW stays the 7B-acceptance mode; generate stays
+  committed-not-preferred. Honest measured negative — acceptance-honesty arc COMPLETE.
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
