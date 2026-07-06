@@ -1103,3 +1103,76 @@ beneath REQ-26's own floor: "runs without crashing" is not the same claim as "wo
   self-derived check); an end-to-end run against a fake CLI whose add+list genuinely
   round-trips (writes then reads back a real file/store) reports `done=True`; full
   `tests/` suite stays green. — **DONE 2026-07-05**
+
+### [REQ-28] Per-command minimum-acceptance probes must not mis-grade usage/argument-validation as a runtime defect  (DONE — EXT-036 TASK-39, 2026-07-05)
+
+**MEASURED FALSE-NEGATIVE (2026-07-05), physical verification of a genuinely-working best-of-k
+build:** REQ-26's per-command minimum check (`_minimum_acceptance`'s loop over
+`_extract_command_tokens(spec)`, each probed via `_no_crash_subprocess_check(..., [[cmd,
+"x"]])`) feeds exactly ONE guessed positional arg per command — it has no way to know a
+command's real arity. A best-of-k (k=5) attempt built a GENUINELY WORKING SQLite notes CLI
+(physically verified: `add "T" "BODY"` persists, `list` shows it, all requirements met,
+`n_unmet=0`), but its `add` command takes TWO positional args (title + content); probed with
+only one (`add x`), it correctly prints its OWN usage/argument-validation message (e.g.
+`"Error: 'add' command requires a title and content."`) at `rc=0` — the CORRECT behavior for
+a mis-arity call. REQ-27's `_has_error_marker` correctly flags the bare `Error:`-prefixed line
+as an error marker (that check's own job, and it must keep doing so for a GENUINE runtime
+error), so the per-command `add` check FAILS, and `build_system`'s overall acceptance reports
+`done=false` ("best attempt passes 4/5 acceptance checks") even though the app is genuinely
+working. This is a FALSE-NEGATIVE — the bar under-claims a working app — which is exactly as
+dishonest a Tenet-3 defect as a false-done: `_minimum_acceptance`'s own GUESSED-ARITY probing
+strategy, not the built app, is the source of the mis-grade.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_is_usage_validation_message(text)` (+ a generated-code
+  mirror, `_USAGE_VALIDATION_HELPER_SRC`, built from the SAME pattern strings — single
+  source of truth, no drift) — a conservative, DETERMINISTIC classifier for output that is
+  clearly a USAGE/ARGUMENT-VALIDATION message rather than a genuine runtime defect: an
+  argparse-style `usage:` line, `"the following arguments are required"`, `"too few/many
+  arguments"`, `"expected ... argument(s)"`, a `"requires a/an/<N>"` phrasing (the measured
+  `"'add' command requires a title and content"` shape), `"provide a/an/the"`, a
+  `"required argument"` phrase (NOT the Python-runtime `"required positional argument"`
+  shape — deliberately NOT matched, see the negative test below), and `"missing
+  argument/option/parameter"` immediately adjacent (NOT the Python-runtime `"missing N
+  required positional argument"` TypeError shape, which has `"N required positional"`
+  between the two words and so does not match). Conservative by construction: every pattern
+  is chosen so it matches the vocabulary of a program's OWN CLI-arity-validation message
+  while provably NOT matching REQ-27's motivating genuine-defect text (the graceful
+  `"An error occurred while listing notes: ... missing 1 required positional argument:
+  'db_path'"` TypeError string) or any other REQ-27 true-positive fixture. — **DONE
+  2026-07-05**
+- [x] `_no_crash_subprocess_check(name, entry, invocations, *, allow_usage_validation=False)`
+  gains the new keyword-only parameter (default `False`, so every EXISTING call site — the
+  usage/`--help` check, the smoke floor — is byte-identical in behavior). When
+  `allow_usage_validation=True`, the generated check's error-marker assertion becomes: fail
+  only if `_has_error_marker(combined)` is True AND `_is_usage_validation_message(combined)`
+  is False — i.e. a genuine error marker is excused ONLY when it is ALSO classified as a
+  usage/argument-validation message; a genuine runtime error (no usage vocabulary present)
+  still fails exactly as before. The PRE-EXISTING no-traceback assertion (`'Traceback (most
+  recent call last)' not in result.stderr`) is COMPLETELY UNCHANGED and unconditional — an
+  actual unhandled crash always still fails regardless of this parameter. — **DONE
+  2026-07-05**
+- [x] `_minimum_acceptance`'s per-command loop (the `[[cmd, "x"]]` GUESSED-ARITY probes)
+  now passes `allow_usage_validation=True` — this is the ONLY call site changed. The
+  usage/`--help` check (`[[], ["--help"]]`) and `_roundtrip_acceptance_check` (REQ-27's
+  arity-AWARE round-trip, which already tries both 1 and 2 positional args and so never
+  needs to excuse a usage-validation message) are explicitly left STRICT/unchanged, per
+  scope. — **DONE 2026-07-05**
+- [x] NO ORACLE LEAK (Tenet 3): the classifier is a closed-form deterministic vocabulary
+  match derived from the interface/spec-level convention of CLI usage messages in general —
+  never derived from or tuned to any specific built app's hidden expected output. — **DONE
+  2026-07-05**
+- [x] HARD DUAL TEST proving BOTH directions at once, run through the ACTUAL
+  `_minimum_acceptance` + `_run_check`/`_run_check_verbose` machinery against two synthetic
+  on-disk CLIs (`tests/test_ext036_usage_validation_floor.py`):
+  1. TRUE-POSITIVE PRESERVED — a CLI whose `list` command (invoked correctly) prints
+     `"Error: no such table: notes"` at `rc=0` still FAILS its per-command check (and the
+     full minimum-acceptance checklist is NOT all-pass) — REQ-27's genuine-defect catch is
+     untouched by this relaxation.
+  2. FALSE-NEGATIVE FIXED — a CLI whose `add` command, when probed with only one guessed
+     arg, prints its own `"... requires a title and content."` usage message at `rc=0`, but
+     whose real two-arg `add <title> <content>` genuinely persists to disk and is visible
+     via `list` — the per-command `add` check now PASSES, and (composed with a genuinely
+     passing round-trip check) the full minimum-acceptance checklist is all-pass.
+  Full `tests/` suite re-run via `python -m harness.run_with_heartbeat -- python -m pytest
+  tests/ -q`, confirmed green with no regression. — **DONE 2026-07-05**

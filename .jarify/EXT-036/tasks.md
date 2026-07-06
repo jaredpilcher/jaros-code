@@ -1631,3 +1631,56 @@ note) — `done=True` was HOLLOW, a new false-done class directly beneath REQ-26
 #### Implements
 - [REQ-27] Behavioral acceptance honesty — error-in-output detection + add/list round-trip
   (this task introduces AND fully implements REQ-27 for its stated scope)
+
+### [TASK-39] Fix false-negative: per-command guessed-arity probe must not mis-grade usage/argument-validation as a runtime defect (REQ-28)
+
+MEASURED FALSE-NEGATIVE (2026-07-05): a best-of-k (k=5) attempt built a GENUINELY WORKING
+SQLite notes CLI (physically verified: `add "T" "BODY"` persists, `list` shows it, all
+requirements met, `n_unmet=0`), but `build_system`'s acceptance still reported `done=false`
+("best attempt passes 4/5 acceptance checks"). Root cause: `_minimum_acceptance`'s
+per-command probe (`_no_crash_subprocess_check(..., [[cmd, "x"]])`) feeds exactly ONE
+guessed positional arg per command; the winning app's `add` takes TWO args (title +
+content), so `add x` correctly prints its own usage/argument-validation message
+(`"Error: 'add' command requires a title and content."`) at rc=0 — REQ-27's
+`_has_error_marker` correctly flags the bare `Error:`-prefixed line, so the per-command
+check FAILS even though the app is genuinely working. Correct argument validation was
+mis-classified as a runtime defect.
+
+#### Steps
+1. Add `harness/system_builder.py::_is_usage_validation_message(text)` plus a
+   generated-code mirror `_USAGE_VALIDATION_HELPER_SRC` (built from the SAME compiled
+   pattern strings — single source of truth): a conservative, DETERMINISTIC classifier for
+   usage/argument-validation vocabulary (`usage:`, "the following arguments are required",
+   "too few/many arguments", "expected ... argument(s)", "requires a/an/<N>", "provide
+   a/an/the", "required argument", "missing argument/option/parameter") — every pattern
+   chosen so it does NOT match REQ-27's genuine-defect fixture text (the graceful "An error
+   occurred while listing notes: ... missing 1 required positional argument: 'db_path'"
+   TypeError string, which has "1 required positional" between "missing" and "argument" and
+   so never matches).
+2. Add a new keyword-only parameter `allow_usage_validation=False` to
+   `_no_crash_subprocess_check`. Default `False` leaves every EXISTING call site
+   byte-identical. When `True`, the generated error-marker assertion becomes: fail only if
+   `_has_error_marker(combined)` AND NOT `_is_usage_validation_message(combined)`. The
+   pre-existing no-traceback assertion is left completely unconditional/unchanged.
+3. In `_minimum_acceptance`, pass `allow_usage_validation=True` ONLY on the per-command
+   `[[cmd, "x"]]` guessed-arity loop over `_extract_command_tokens(spec)`. The usage/`--help`
+   check (`[[], ["--help"]]`) and `_roundtrip_acceptance_check` (REQ-27's arity-aware
+   round-trip) are left completely untouched/strict.
+4. Wrap all new/changed lines with `# #EXT-036-REQ-28 Start` / `# #EXT-036-REQ-28 End` per
+   the links skill, placed immediately after the existing `# #EXT-036-REQ-27 End` region so
+   REQ-26/REQ-27's own tag boundaries are untouched.
+5. Add `tests/test_ext036_usage_validation_floor.py`: build two synthetic on-disk CLIs and
+   run the ACTUAL `_minimum_acceptance` + `_run_check`/`_run_check_verbose` checklist against
+   each. (a) TRUE-POSITIVE PRESERVED: a CLI whose `list` (invoked correctly) prints
+   `"Error: no such table: notes"` at rc=0 — assert the per-command `list` check still fails
+   and the full minimum-acceptance checklist is NOT all-pass. (b) FALSE-NEGATIVE FIXED: a
+   CLI whose `add x` (one guessed arg) prints `"Error: 'add' command requires a title and
+   content."` at rc=0 but whose real `add <title> <content>` genuinely persists to sqlite
+   and is visible via `list` — assert the per-command `add` check passes AND the full
+   composed minimum-acceptance checklist is all-pass (round-trip included).
+6. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm green,
+   and record the exact pass/skip count + exit code (no regression vs the pre-change count).
+
+#### Implements
+- [REQ-28] Per-command minimum-acceptance probes must not mis-grade usage/argument-validation
+  as a runtime defect (this task introduces AND fully implements REQ-28)

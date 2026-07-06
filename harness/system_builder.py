@@ -809,7 +809,11 @@ def _minimum_entry_filename(mods: list[dict], plan: "dict | None" = None) -> "st
     return names[-1] if names else None
 
 
-def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[str]]") -> dict:
+def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[str]]", *,
+                                # #EXT-036-REQ-28 Start
+                                allow_usage_validation: bool = False,
+                                # #EXT-036-REQ-28 End
+                                ) -> dict:
     """One MINIMUM acceptance check: actually runs the built CLI's real entrypoint as a
     subprocess for each argv list in `invocations` and asserts NONE of them crash with an
     UNHANDLED Python exception (no traceback in stderr). Empty stdin (`input=""`) is fed so
@@ -821,11 +825,22 @@ def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[st
     STRENGTHENED (REQ-27, task #121): also asserts the run's combined stdout+stderr contains
     no standalone ERROR MARKER (`_has_error_marker`) -- closes the measured false-done class
     where a CLI gracefully CATCHES its own exception and PRINTS it at `rc=0` (no traceback at
-    all), which the pre-existing no-traceback check alone could not see."""
+    all), which the pre-existing no-traceback check alone could not see.
+    STRENGTHENED AGAIN (REQ-28, task #86): `allow_usage_validation`, keyword-only and default
+    `False` (every existing call site unchanged), lets a GUESSED-ARITY probe (one guessed
+    positional arg, which may be the WRONG arity for the real command) excuse an error marker
+    that is ITSELF classified as a usage/argument-validation message (`_is_usage_validation_message`)
+    -- e.g. a 2-arg `add` command correctly printing "requires a title and content" when
+    probed with only one arg is correct behavior, not a defect. A genuine runtime error (no
+    usage vocabulary present) still fails exactly as before; the no-traceback assertion is
+    completely unconditional/unchanged."""
     code = (
         # #EXT-036-REQ-27 Start
         _ERROR_MARKER_HELPER_SRC +
         # #EXT-036-REQ-27 End
+        # #EXT-036-REQ-28 Start
+        (_USAGE_VALIDATION_HELPER_SRC if allow_usage_validation else "") +
+        # #EXT-036-REQ-28 End
         "import subprocess, sys\n"
         f"entry = {entry!r}\n"
         f"for argv in {invocations!r}:\n"
@@ -834,8 +849,15 @@ def _no_crash_subprocess_check(name: str, entry: str, invocations: "list[list[st
         "    assert 'Traceback (most recent call last)' not in result.stderr, result.stderr\n"
         # #EXT-036-REQ-27 Start
         "    _combined = (result.stdout or '') + (result.stderr or '')\n"
-        "    assert not _has_error_marker(_combined), _combined\n"
         # #EXT-036-REQ-27 End
+        # #EXT-036-REQ-28 Start
+        + (
+            "    assert not (_has_error_marker(_combined) "
+            "and not _is_usage_validation_message(_combined)), _combined\n"
+            if allow_usage_validation else
+            "    assert not _has_error_marker(_combined), _combined\n"
+        )
+        # #EXT-036-REQ-28 End
     )
     return {"name": name, "code": code}
 
@@ -855,7 +877,13 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
     STRENGTHENED (REQ-27, task #121): every check above additionally rejects a graceful
     error-marker in the run output (see `_no_crash_subprocess_check`), and -- when the spec
     clearly names an add+list command pair -- a BEHAVIORAL round-trip check is added too
-    (`_roundtrip_acceptance_check`): real persistence, not just no-crash."""
+    (`_roundtrip_acceptance_check`): real persistence, not just no-crash.
+    STRENGTHENED AGAIN (REQ-28, task #86): the per-command loop's GUESSED-ARITY probe (one
+    guessed arg, which may be the wrong arity for the real command) now excuses an error
+    marker that is itself a usage/argument-validation message (see
+    `_no_crash_subprocess_check`'s `allow_usage_validation`) -- correct argument validation
+    is no longer mis-graded as a runtime defect. The usage/`--help` check and the
+    arity-aware round-trip check are left strict/unchanged."""
     if not mods:
         return []
     checks = list(_smoke_checklist(mods))
@@ -865,7 +893,11 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
             "minimum: usage/--help runs without crashing", entry, [[], ["--help"]]))
         for cmd in _extract_command_tokens(spec):
             checks.append(_no_crash_subprocess_check(
-                f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]]))
+                f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]],
+                # #EXT-036-REQ-28 Start
+                allow_usage_validation=True,
+                # #EXT-036-REQ-28 End
+            ))
         # #EXT-036-REQ-27 Start
         pair = _derive_roundtrip_pair(spec)
         if pair:
@@ -1035,6 +1067,65 @@ def _roundtrip_acceptance_check(entry: str, add_cmd: str, list_cmd: str) -> dict
     )
     return {"name": f"minimum: '{add_cmd}'+'{list_cmd}' round-trip persists", "code": code}
 # #EXT-036-REQ-27 End
+# #EXT-036-REQ-28 Start
+# TASK-39 (REQ-28): fixes a MEASURED FALSE-NEGATIVE sitting directly beneath REQ-27's own
+# floor. A best-of-k (k=5) attempt built a GENUINELY WORKING SQLite notes CLI (physically
+# verified: add persists, list shows it, n_unmet=0), but `build_system`'s acceptance still
+# reported `done=false` -- the per-command MINIMUM check (`_no_crash_subprocess_check`,
+# fed exactly ONE guessed positional arg per command since it can't know a command's real
+# arity) probed the winning app's two-arg `add` with only one arg; the app correctly
+# printed its OWN usage/argument-validation message ("Error: 'add' command requires a
+# title and content.") at rc=0, and REQ-27's `_has_error_marker` correctly flagged the bare
+# "Error:"-prefixed line, failing the check even though the app genuinely works. The fix:
+# a conservative usage/argument-validation vocabulary classifier that excuses an error
+# marker ONLY when it is itself recognizable as usage/argument-validation feedback, applied
+# ONLY to the per-command GUESSED-ARITY probe (never to the arity-aware round-trip check or
+# the unconditional traceback assertion, which stay strict -- REQ-27's own genuine-defect
+# catch, e.g. "list" gracefully printing "no such table" at rc=0, is untouched).
+
+_USAGE_VALIDATION_PATTERNS = (
+    r"(?i)\busage\s*:",
+    r"(?i)\bthe following arguments are required\b",
+    r"(?i)\btoo (few|many) arguments\b",
+    r"(?i)\bexpected\b.{0,20}\bargument",
+    r"(?i)\brequires?\s+(a|an|\d+)\b",
+    r"(?i)\bprovide\s+(a|an|the)\b",
+    r"(?i)\brequired\s+argument\b",
+    r"(?i)\bmissing\s+(argument|option|parameter)\b",
+)
+_USAGE_VALIDATION_RES = tuple(re.compile(p) for p in _USAGE_VALIDATION_PATTERNS)
+
+
+def _is_usage_validation_message(text) -> bool:
+    """Deterministic, CONSERVATIVE classifier (REQ-28): True if `text` (a run's combined
+    stdout+stderr) reads as USAGE/ARGUMENT-VALIDATION feedback about a mis-arity/missing-
+    argument invocation, rather than a genuine runtime defect -- an argparse-style `usage:`
+    line, "the following arguments are required", "too few/many arguments", "expected ...
+    argument(s)", a self-descriptive "requires a/an/<N> ..." phrasing (the measured
+    "'add' command requires a title and content" shape), "provide a/an/the ...", a bare
+    "required argument" phrase, or "missing argument/option/parameter" immediately adjacent.
+    Deliberately does NOT match the Python-runtime "missing N required positional argument"
+    TypeError shape (REQ-27's own motivating genuine-defect text) -- there, "N required
+    positional" sits between "missing" and "argument", and no "requires"/"required argument"/
+    "missing argument" pattern above matches "required positional argument" or "missing 1
+    required" as written. Never raises on non-string/empty input."""
+    if not isinstance(text, str) or not text:
+        return False
+    return any(p.search(text) for p in _USAGE_VALIDATION_RES)
+
+
+# Generated-code MIRROR of `_is_usage_validation_message` above, built from the SAME pattern
+# strings (single source of truth -- no drift) so a subprocess-run acceptance check can call
+# it without importing this harness module.
+_USAGE_VALIDATION_HELPER_SRC = (
+    "import re\n"
+    f"_usage_validation_res = [re.compile(p) for p in {list(_USAGE_VALIDATION_PATTERNS)!r}]\n"
+    "def _is_usage_validation_message(text):\n"
+    "    if not text:\n"
+    "        return False\n"
+    "    return any(p.search(text) for p in _usage_validation_res)\n"
+)
+# #EXT-036-REQ-28 End
 # #EXT-036-REQ-22 Start
 # TASK-25: wiring `harness/server_oracle.py` into `build_system`'s acceptance so a DETECTED
 # web service is HONESTLY HTTP-verified instead of falling back to the import-only
