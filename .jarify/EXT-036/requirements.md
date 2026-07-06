@@ -1348,3 +1348,56 @@ requirement fills that gap for the one unambiguous multi-module shape.
   malformed/edge-case plan input. Full `tests/` suite re-run via
   `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirmed green
   with no regression. — **DONE 2026-07-06**
+
+### [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for malformed model JSON (DONE — EXT-036 TASK-43, 2026-07-06)
+
+**MEASURED (plan-coherence gap-hunt, 2026-07-06):** across 40 CREATION-suite builds
+(20 tasks x2 draws) the ONLY not-shipped failures were `todo-list-cli` on BOTH draws,
+note = "planner produced no parseable JSON plan". Repro: `todo-list-cli`'s plan is a
+large JSON object whose `"acceptance"` field is a long prose string that, on some gemma
+draws, carries an UNESCAPED literal control character (a raw newline) inside the JSON
+string value — `json.loads` raises and `harness/system_builder.py::_extract_json`
+(lines 290-300) returns `None` with no repair attempt, so no plan is produced and the
+build never ships. `_extract_json` is shared by the PLAN step AND every
+acceptance-checks/fix-extraction call site (`~735/800/1269/1393/1862`), so a fix here
+is a generic robustness lift, not a plan-only patch. Root cause: `_extract_json` does one
+greedy `opener.*closer` regex (spanning to the LAST closer, which can over-span into
+trailing prose) then a single `json.loads`, with zero repair on failure.
+
+#### Acceptance Criteria
+- [x] `_extract_json` gains a bounded REPAIR fallback used ONLY when its ORIGINAL
+  greedy-match-then-`json.loads` fails (missing match, or `json.loads` raises) — the
+  original code path is preserved UNCHANGED and tried FIRST, so any input the OLD
+  code already parsed returns the IDENTICAL parsed object, byte-for-byte
+  (★ non-negotiable — proven by regression test, not just asserted). — **DONE
+  2026-07-06**
+- [x] On failure, a BALANCED-bracket/brace extraction (depth-counted, string-literal
+  aware so quote/escape state — including a malformed literal control char inside a
+  string — never perturbs the depth count) is tried, preferred over a second blind
+  greedy-to-last-closer attempt, because it does not over-span into trailing prose
+  containing a stray closer. — **DONE 2026-07-06**
+- [x] If still unparseable, a MINIMAL, string-aware repair is applied to each
+  candidate span: literal control characters (`\n`/`\r`/`\t`/other bytes < 0x20)
+  found INSIDE a JSON string literal are escaped to their proper JSON form, and a
+  trailing comma immediately before a closing `}`/`]` (outside any string) is
+  dropped; the repaired text is retried through `json.loads`. — **DONE 2026-07-06**
+- [x] Markdown code-fence lines (```` ``` ````/```` ```json ````) are stripped before
+  the balanced/repair attempts (normalization only; the preserved original-path
+  regex already tolerated fences and is untouched). — **DONE 2026-07-06**
+- [x] NEVER raises: an unparseable/garbage input still returns `None` after every
+  extraction/repair attempt is exhausted. — **DONE 2026-07-06**
+- [x] Drop-in replacement: identical signature (`_extract_json(raw, opener, closer)`),
+  no caller changes required; both `("{","}")` (plan/fix objects) and `("[","]")`
+  (acceptance-checks arrays) modes are exercised. — **DONE 2026-07-06**
+- [x] Proven OFFLINE (`tests/test_ext036_extract_json_repair.py`, no live model): (a)
+  the MEASURED todo-list shape (a plan-shaped JSON object with an unescaped literal
+  newline inside the `acceptance` string) now returns the correct dict, was `None`
+  before; (b) a valid JSON object followed by trailing prose containing a stray `}`
+  returns the correct object (greedy-to-last-closer would have over-spanned or failed
+  to parse); (c) several ALREADY-VALID JSON payloads (escaped `\n`, nested objects,
+  arrays, the `[`,`]` acceptance-checks array mode) parse to the IDENTICAL object as
+  the pre-change code — an explicit regression guard; (d) genuinely non-JSON garbage
+  input still returns `None`, never raises; (e) a trailing-comma-only defect is
+  repaired. Full `tests/` suite re-run via `python -m harness.run_with_heartbeat --
+  python -m pytest tests/ -q`, confirmed green with no regression. — **DONE
+  2026-07-06**

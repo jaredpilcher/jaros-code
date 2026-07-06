@@ -1846,3 +1846,67 @@ narrow, safe multi-module extension.
 - [REQ-31] 7B-GENERATE acceptance checks (this task introduces AND fully implements
   REQ-31's offline mechanism; wiring into `build_system` + the live A/B gate measurement
   against `review_checks`/baseline remain open follow-ups, owned by the parent)
+
+### [TASK-43] Robust `_extract_json`: balanced extraction + bounded repair (REQ-33, plan-coherence gap-hunt 2026-07-06)
+
+MEASURED (plan-coherence gap-hunt, 40 builds = 20 CREATION tasks x2 draws): the ONLY
+not-shipped failures were `todo-list-cli` on both draws, note "planner produced no
+parseable JSON plan". Repro: the plan's `"acceptance"` field is a long prose string
+that on some draws carries an UNESCAPED literal control character (a raw newline)
+inside the JSON string value; `_extract_json` (`harness/system_builder.py:290-300`)
+does one greedy `opener.*closer` regex + a single `json.loads` with no repair, so it
+returns `None` and the build never ships. This function backs the PLAN step AND every
+acceptance-checks/fix extraction call site, so the fix is a generic robustness lift.
+
+#### Steps
+1. In `harness/system_builder.py`, add two new private helpers right above
+   `_extract_json`: `_balanced_span(text, opener, closer)` — find the first `opener`
+   and return the substring up to its DEPTH-MATCHED `closer` via a string-literal-aware
+   scan (tracks `in_string`/backslash-escape state so quote/escape handling — including
+   a malformed literal control char inside a string — never perturbs the brace/bracket
+   depth count); returns `None` if no balanced span is found. And
+   `_repair_json_candidate(text)` — a single string-aware pass that (i) escapes any
+   literal control character (`\n`/`\r`/`\t`/other byte < 0x20) found INSIDE a string
+   literal to its proper JSON escape, and (ii) drops a comma immediately before a
+   closing `}`/`]` (outside any string, skipping intervening whitespace). Never raises;
+   returns the input unchanged on falsy input. Wrap both with `# #EXT-036-REQ-33 Start`
+   / `# #EXT-036-REQ-33 End`.
+2. Add `_strip_md_fences(raw)`: drop any line that is just a fence marker
+   (```` ``` ````/```` ```json ````, regex `^\s*```` optionally followed by a lang tag),
+   keep everything else — a no-op when no `` ``` `` is present. Wrap with the same
+   markers.
+3. Rewrite `_extract_json(raw, opener, closer)` so the EXISTING greedy
+   `re.search(re.escape(opener) + r".*" + re.escape(closer), raw, re.DOTALL)` +
+   `json.loads(m.group(0))` call is preserved VERBATIM as the FIRST thing tried and
+   returned on success — this is the byte-identical-valid-path guarantee (★ CRITICAL):
+   any input the OLD code already parsed takes this exact branch, unchanged. Only when
+   that fails (no match, or `json.loads` raises) does it fall through to: (a) strip
+   markdown fences via `_strip_md_fences`; (b) try `_balanced_span` on the
+   fence-stripped text, then a second greedy match on the fence-stripped text (skip if
+   identical to a candidate already tried), then the original (unstripped) greedy span
+   if one existed — parsing each with `json.loads`, returning on first success; (c) if
+   still unparsed, run `_repair_json_candidate` on each of those candidates (in the same
+   order) and retry `json.loads`, returning on first success; (d) return `None`. Never
+   raises at any step. Wrap the changed function body with `# #EXT-036-REQ-33 Start` /
+   `# #EXT-036-REQ-33 End`. Same signature; no caller changes anywhere.
+4. Add `tests/test_ext036_extract_json_repair.py` (no live model): (a) the MEASURED
+   todo-list shape — a plan-shaped JSON object whose `"acceptance"` string contains a
+   raw embedded newline — now returns the correct dict via
+   `_extract_json(raw, "{", "}")` (was `None` before this task; assert by literally
+   running the OLD single-greedy-regex-then-json.loads logic inline in the test and
+   confirming it fails, to prove this is a genuine fix not a pre-existing pass); (b) a
+   valid JSON object followed by trailing prose containing a stray `}` returns the
+   correct object; (c) several already-valid JSON payloads (escaped `\n`, nested
+   objects/arrays, a valid `[`,`]` checks-array) parse to the IDENTICAL object as the
+   pre-change greedy-regex+`json.loads` reference implementation kept inline in the
+   test as an oracle — the explicit regression guard; (d) genuinely non-JSON garbage
+   input returns `None`, never raises; (e) a trailing-comma-only defect
+   (`{"a": 1, "b": [1, 2,],}`-shaped) is repaired and parses; (f) `_balanced_span` and
+   `_repair_json_candidate` never raise on `None`/empty/malformed input.
+5. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change baseline, 2322 passed / 2 skipped).
+
+#### Implements
+- [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for
+  malformed model JSON (this task introduces AND fully implements REQ-33's mechanism)

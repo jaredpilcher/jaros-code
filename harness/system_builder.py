@@ -287,17 +287,167 @@ Output ONLY a JSON object (no prose) with this exact shape:
 Rules: each module does ONE thing; imports must reference modules you list; put the CLI/entrypoint last; keep it minimal but complete."""
 
 
+# #EXT-036-REQ-33 Start
+def _strip_md_fences(raw: str) -> str:
+    """Drop markdown code-fence marker lines (``` or ```json) from `raw`, keeping every
+    other line untouched. A no-op when no fence marker is present. Purely a normalization
+    step for the repair fallback below -- never used on the byte-identical valid-JSON path."""
+    if not raw or "```" not in raw:
+        return raw
+    lines = raw.split("\n")
+    kept = [ln for ln in lines if not re.match(r"^\s*```", ln)]
+    return "\n".join(kept)
+
+
+def _balanced_span(text: str, opener: str, closer: str):
+    """Find the first `opener` in `text` and return the substring up to its DEPTH-MATCHED
+    `closer`, tracking JSON string-literal state (quotes + backslash-escapes) so that an
+    opener/closer character that appears INSIDE a string value -- including a malformed
+    literal control character embedded in that string -- never perturbs the depth count.
+    Returns None if no balanced span is found. Never raises."""
+    if not text:
+        return None
+    start = text.find(opener)
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
+def _repair_json_candidate(text: str) -> str:
+    """Best-effort, minimal, string-aware repair of a JSON-ish span that failed to parse:
+    (1) escape literal control characters (newline/tab/carriage-return and any other byte
+    < 0x20) found INSIDE a JSON string literal to their proper JSON escape -- the MEASURED
+    defect (a model emits a raw newline inside a JSON string instead of the escaped `\\n`);
+    (2) drop a comma that appears immediately before a closing '}'/']' (outside any
+    string, skipping intervening whitespace) -- a trailing-comma defect. Never raises;
+    returns falsy input unchanged."""
+    if not text:
+        return text
+    out: list[str] = []
+    in_string = False
+    escape = False
+    i = 0
+    n = len(text)
+    escapes = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    while i < n:
+        ch = text[i]
+        if in_string:
+            if escape:
+                out.append(ch)
+                escape = False
+            elif ch == "\\":
+                out.append(ch)
+                escape = True
+            elif ch == '"':
+                in_string = False
+                out.append(ch)
+            elif ch in escapes:
+                out.append(escapes[ch])
+            elif ord(ch) < 0x20:
+                out.append("\\u%04x" % ord(ch))
+            else:
+                out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _extract_json(raw: str, opener: str, closer: str):
     """Best-effort JSON extraction: the model output may carry prose or markdown fences
     around the JSON payload; pull the outermost {..}/[..] span and parse it. Returns None
-    (never raises) when no parseable payload is found."""
-    m = re.search(re.escape(opener) + r".*" + re.escape(closer), raw or "", re.DOTALL)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return None
+    (never raises) when no parseable payload is found.
+
+    ★ Byte-identical valid path: the ORIGINAL greedy first-opener-to-LAST-closer match +
+    `json.loads` is preserved verbatim as the first thing tried; any input the old code
+    already parsed takes that exact branch, unchanged. Only on failure does this fall
+    through to a balanced-bracket extraction (string-literal aware, avoids over-spanning
+    into trailing prose that contains a stray closer) and then a bounded, string-aware
+    repair (escaping unescaped control characters inside string values; dropping trailing
+    commas) before giving up."""
+    raw = raw or ""
+    m = re.search(re.escape(opener) + r".*" + re.escape(closer), raw, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # ROBUSTNESS FALLBACK -- the plain greedy match above failed (missing, malformed, or
+    # over-spanning into trailing prose). Gather candidate spans, preferring a balanced
+    # extraction, then attempt each with a bounded repair.
+    candidates: list[str] = []
+    text = _strip_md_fences(raw)
+    balanced = _balanced_span(text, opener, closer)
+    if balanced is not None:
+        # Only trust the balanced span when what follows it is NOT itself another
+        # apparent top-level JSON value of the same bracket type (e.g. several
+        # `[...]\n[...]` arrays concatenated, one per line) -- that shape is a
+        # multi-value payload some callers deliberately handle themselves when
+        # `_extract_json` returns None (e.g. `_extract_requirements_json`'s
+        # line-by-line fallback), and must keep seeing None here, unchanged.
+        start_idx = text.find(opener)
+        tail = text[start_idx + len(balanced):].strip() if start_idx != -1 else ""
+        if not tail or not tail.startswith(opener):
+            candidates.append(balanced)
+    if text != raw:
+        m2 = re.search(re.escape(opener) + r".*" + re.escape(closer), text, re.DOTALL)
+        if m2 and m2.group(0) not in candidates:
+            candidates.append(m2.group(0))
+    if m and m.group(0) not in candidates:
+        candidates.append(m.group(0))
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    for candidate in candidates:
+        repaired = _repair_json_candidate(candidate)
+        if repaired == candidate:
+            continue
+        try:
+            return json.loads(repaired)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return None
+# #EXT-036-REQ-33 End
 
 
 def validate_plan(plan: dict) -> list[str]:
