@@ -96,6 +96,17 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   grounded in the ACTUAL built interface; generate writes stricter checks against its own imagined
   interface → more false-negatives (9 vs 5). 7B-REVIEW stays the 7B-acceptance mode; generate stays
   committed-not-preferred. Honest measured negative — acceptance-honesty arc COMPLETE.
+- **[★ ITERATIVE REPLAN-AS-MODIFICATION on build failure (owner seed 2026-07-06) — NEXT big capability lever]**
+  when a build fails acceptance, don't just per-module-repair (today's `_repair_system`, a local patch) —
+  step back and REPLAN: assess where the project ACTUALLY landed vs the spec's target, emit a MODIFICATION
+  PLAN to bridge the gap, apply it via the existing `modify_system` plane, re-check, and ITERATE (2nd/3rd/4th).
+  Unifies the build + modification planes (currently disconnected). GUARDRAILS: convergence-gated (each
+  round must REDUCE failing checks, else stop + keep best-so-far — no infinite replanning, same no-regression
+  floor as the repair loop); NO ORACLE LEAK (replan sees spec + built code + which checks failed, never hidden
+  outputs); MEASURED on the tasks where per-module repair FAILS (kv-store-ttl, priority-jobqueue) — a different
+  extraction mechanism than patching/best-of-k, worth measuring even though the residual is reasoning-bound;
+  honest negative accepted if it hits the ceiling. This is the modification-axis exploration reframed as
+  build-recovery. Via Jarify.
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
