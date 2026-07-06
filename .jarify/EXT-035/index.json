@@ -1,14 +1,26 @@
 {
+  "REQ-1": [
+    {
+      "file": "harness/cli_wrapper.py",
+      "startLine": 14,
+      "endLine": 71
+    },
+    {
+      "file": "tests/test_ext035_cli_wrapper.py",
+      "startLine": 14,
+      "endLine": 112
+    }
+  ],
   "REQ-3": [
     {
       "file": "harness/intent_loop.py",
-      "startLine": 27,
-      "endLine": 47
+      "startLine": 31,
+      "endLine": 51
     },
     {
       "file": "harness/intent_loop.py",
-      "startLine": 109,
-      "endLine": 116
+      "startLine": 113,
+      "endLine": 120
     },
     {
       "file": "harness/import_wiring.py",
@@ -63,18 +75,6 @@
       "file": "tests/test_ext035_foundry.py",
       "startLine": 14,
       "endLine": 94
-    }
-  ],
-  "REQ-1": [
-    {
-      "file": "harness/cli_wrapper.py",
-      "startLine": 14,
-      "endLine": 71
-    },
-    {
-      "file": "tests/test_ext035_cli_wrapper.py",
-      "startLine": 14,
-      "endLine": 112
     }
   ]
 }

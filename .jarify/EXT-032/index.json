@@ -4,11 +4,6 @@
       "file": "harness/repair_solve.py",
       "startLine": 25,
       "endLine": 107
-    },
-    {
-      "file": "tests/test_repair_solve.py",
-      "startLine": 1,
-      "endLine": 207
     }
   ],
   "REQ-2": [
@@ -16,11 +11,6 @@
       "file": "harness/repair_solve.py",
       "startLine": 110,
       "endLine": 133
-    },
-    {
-      "file": ".jaros-data/qwen3_repair_probe.py",
-      "startLine": 1,
-      "endLine": 173
     }
   ]
 }

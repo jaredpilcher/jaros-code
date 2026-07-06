@@ -12,8 +12,8 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1840,
-      "endLine": 1847
+      "startLine": 1857,
+      "endLine": 1864
     },
     {
       "file": "harness/mcp_session.py",
@@ -41,20 +41,20 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1822,
-      "endLine": 1900
+      "startLine": 1839,
+      "endLine": 1917
     }
   ],
   "REQ-7": [
     {
       "file": "harness/cli.py",
-      "startLine": 1902,
-      "endLine": 2006
+      "startLine": 1919,
+      "endLine": 2023
     },
     {
       "file": "harness/cli.py",
-      "startLine": 2183,
-      "endLine": 2193
+      "startLine": 2204,
+      "endLine": 2214
     }
   ],
   "REQ-1": [

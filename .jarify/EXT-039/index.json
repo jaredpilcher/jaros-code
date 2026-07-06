@@ -1,14 +1,14 @@
 {
   "REQ-1": [
     {
-      "file": "harness/system_suite.py",
-      "startLine": 626,
-      "endLine": 685
-    },
-    {
       "file": "harness/datastore_oracle.py",
       "startLine": 47,
       "endLine": 340
+    },
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 626,
+      "endLine": 685
     },
     {
       "file": "tests/test_ext039_datastore_oracle.py",

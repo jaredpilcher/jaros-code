@@ -7,35 +7,35 @@
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 175,
-      "endLine": 182
+      "startLine": 178,
+      "endLine": 185
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 291,
-      "endLine": 310
+      "startLine": 320,
+      "endLine": 339
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 323,
-      "endLine": 330
+      "startLine": 352,
+      "endLine": 359
     }
   ],
   "REQ-3": [
     {
       "file": "harness/cli.py",
-      "startLine": 271,
-      "endLine": 277
+      "startLine": 312,
+      "endLine": 318
     },
     {
       "file": "harness/cli.py",
-      "startLine": 284,
-      "endLine": 286
+      "startLine": 325,
+      "endLine": 327
     },
     {
       "file": "harness/cli.py",
-      "startLine": 932,
-      "endLine": 989
+      "startLine": 1255,
+      "endLine": 1312
     }
   ],
   "REQ-1": [
@@ -48,8 +48,8 @@
   "REQ-4": [
     {
       "file": "harness/product_parity.py",
-      "startLine": 225,
-      "endLine": 242
+      "startLine": 285,
+      "endLine": 302
     }
   ]
 }

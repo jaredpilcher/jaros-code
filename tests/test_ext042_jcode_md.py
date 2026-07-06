@@ -185,7 +185,7 @@ def test_nl_fix_receives_jcode_md_preamble(tmp_path, monkeypatch):
     seen_instructions: list[str] = []
 
     def fake_multi_file_fix(root, testcmd, instruction, test_file, max_iters=3, verbose=True,
-                            runtime=None):
+                            runtime=None, interrupt=None):
         seen_instructions.append(instruction)
         return {"solved": True, "fixed": []}
 
@@ -240,7 +240,7 @@ def test_absent_jcode_md_nl_fix_unchanged(tmp_path, monkeypatch):
     seen_instructions: list[str] = []
 
     def fake_multi_file_fix(root, testcmd, instruction, test_file, max_iters=3, verbose=True,
-                            runtime=None):
+                            runtime=None, interrupt=None):
         seen_instructions.append(instruction)
         return {"solved": True, "fixed": []}
 

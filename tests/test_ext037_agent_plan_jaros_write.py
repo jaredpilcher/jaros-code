@@ -289,7 +289,7 @@ def test_spec_driven_loop_threads_runtime_to_fix_flow(tmp_path, monkeypatch):
     calls = {}
 
     def _spy_multi_file_fix(cwd, test_cmd, instruction, test_file, *, max_iters=3,
-                            verbose=False, runtime=None):
+                            verbose=False, runtime=None, interrupt=None):
         calls["runtime"] = runtime
         return {"solved": True, "note": "spy"}
 
@@ -309,7 +309,8 @@ def test_spec_driven_loop_threads_runtime_to_fix_flow(tmp_path, monkeypatch):
 def test_spec_driven_loop_threads_runtime_to_build_flow(tmp_path, monkeypatch):
     calls = {}
 
-    def _spy_decompose_build(intent, cwd, *, max_iters=3, verbose=False, runtime=None):
+    def _spy_decompose_build(intent, cwd, *, max_iters=3, verbose=False, runtime=None,
+                             interrupt=None):
         calls["runtime"] = runtime
         return {"solved": True, "flow": "build", "requirements": 0, "note": "spy"}
 

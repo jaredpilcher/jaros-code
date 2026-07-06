@@ -108,7 +108,7 @@ def test_nl_fix_receives_bounded_history(monkeypatch):
     seen_instructions: list[str] = []
 
     def fake_multi_file_fix(root, testcmd, instruction, test_file, max_iters=3, verbose=True,
-                            runtime=None):
+                            runtime=None, interrupt=None):
         seen_instructions.append(instruction)
         return {"solved": True, "fixed": []}
 

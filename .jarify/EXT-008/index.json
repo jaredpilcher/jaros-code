@@ -1,24 +1,24 @@
 {
   "REQ-4": [
     {
+      "file": "harness/intent_loop.py",
+      "startLine": 86,
+      "endLine": 92
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 123,
+      "endLine": 125
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 204,
+      "endLine": 210
+    },
+    {
       "file": "tests/test_ext008_intent_deps.py",
       "startLine": 19,
       "endLine": 29
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 60,
-      "endLine": 66
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 88,
-      "endLine": 90
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 141,
-      "endLine": 147
     }
   ]
 }

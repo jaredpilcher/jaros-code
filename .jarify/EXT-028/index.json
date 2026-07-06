@@ -4,11 +4,6 @@
       "file": "harness/dependency_structure.py",
       "startLine": 96,
       "endLine": 177
-    },
-    {
-      "file": "tests/test_dependency_structure.py",
-      "startLine": 1,
-      "endLine": 230
     }
   ],
   "REQ-2": [
@@ -16,11 +11,6 @@
       "file": "harness/dependency_structure.py",
       "startLine": 180,
       "endLine": 251
-    },
-    {
-      "file": "tests/test_dependency_structure.py",
-      "startLine": 1,
-      "endLine": 230
     }
   ]
 }

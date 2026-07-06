@@ -22,15 +22,15 @@
     },
     {
       "file": "harness/cli.py",
-      "startLine": 484,
-      "endLine": 510
+      "startLine": 535,
+      "endLine": 561
     }
   ],
   "REQ-1": [
     {
       "file": "harness/cli.py",
-      "startLine": 363,
-      "endLine": 373
+      "startLine": 388,
+      "endLine": 398
     },
     {
       "file": "harness/subagents.py",
@@ -41,18 +41,18 @@
   "REQ-2": [
     {
       "file": "harness/cli.py",
-      "startLine": 512,
-      "endLine": 567
+      "startLine": 563,
+      "endLine": 618
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1711,
-      "endLine": 1720
+      "startLine": 1828,
+      "endLine": 1837
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1880,
-      "endLine": 1891
+      "startLine": 2187,
+      "endLine": 2198
     },
     {
       "file": "harness/subagents.py",
@@ -63,15 +63,15 @@
   "REQ-4": [
     {
       "file": "harness/cli.py",
-      "startLine": 633,
-      "endLine": 649
+      "startLine": 733,
+      "endLine": 749
     }
   ],
   "REQ-5": [
     {
       "file": "harness/product_parity.py",
-      "startLine": 219,
-      "endLine": 249
+      "startLine": 254,
+      "endLine": 284
     }
   ]
 }

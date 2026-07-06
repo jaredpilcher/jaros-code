@@ -4,11 +4,6 @@
       "file": "harness/collaborative_solve.py",
       "startLine": 60,
       "endLine": 173
-    },
-    {
-      "file": "tests/test_collaborative_solve.py",
-      "startLine": 1,
-      "endLine": 452
     }
   ],
   "REQ-2": [
@@ -16,6 +11,11 @@
       "file": "harness/collaborative_solve.py",
       "startLine": 247,
       "endLine": 744
+    },
+    {
+      "file": "tests/test_solve_live_path.py",
+      "startLine": 38,
+      "endLine": 40
     },
     {
       "file": "tests/test_solve_live_path.py",

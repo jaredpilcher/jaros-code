@@ -1,16 +1,6 @@
 {
   "REQ-3": [
     {
-      "file": "harness/intent_loop.py",
-      "startLine": 57,
-      "endLine": 59
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 126,
-      "endLine": 128
-    },
-    {
       "file": "harness/daily_driver.py",
       "startLine": 42,
       "endLine": 52
@@ -34,6 +24,16 @@
       "file": "harness/daily_driver.py",
       "startLine": 693,
       "endLine": 708
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 61,
+      "endLine": 63
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 130,
+      "endLine": 132
     },
     {
       "file": "tests/test_ext027_autocapture.py",

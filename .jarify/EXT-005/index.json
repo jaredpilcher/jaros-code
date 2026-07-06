@@ -66,19 +66,34 @@
   ],
   "REQ-12": [
     {
-      "file": "harness/agent_loop.py",
-      "startLine": 124,
-      "endLine": 127
-    },
-    {
       "file": "harness/cli.py",
-      "startLine": 849,
-      "endLine": 856
+      "startLine": 1512,
+      "endLine": 1519
     },
     {
       "file": "harness/build_eval.py",
       "startLine": 158,
       "endLine": 164
+    },
+    {
+      "file": "harness/agent_loop.py",
+      "startLine": 124,
+      "endLine": 127
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 138,
+      "endLine": 164
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 179,
+      "endLine": 183
+    },
+    {
+      "file": "harness/proc_treekill.py",
+      "startLine": 23,
+      "endLine": 68
     },
     {
       "file": "harness/pass1_eval.py",
@@ -94,21 +109,6 @@
       "file": "harness/pass1_eval.py",
       "startLine": 223,
       "endLine": 225
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 106,
-      "endLine": 132
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 152,
-      "endLine": 156
-    },
-    {
-      "file": "harness/proc_treekill.py",
-      "startLine": 23,
-      "endLine": 68
     },
     {
       "file": "tests/test_pass1_treekill.py",

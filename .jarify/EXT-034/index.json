@@ -1,6 +1,11 @@
 {
   "REQ-3": [
     {
+      "file": "harness/swebench_solve.py",
+      "startLine": 34,
+      "endLine": 282
+    },
+    {
       "file": "tests/test_swebench_solve.py",
       "startLine": 31,
       "endLine": 39
@@ -29,31 +34,14 @@
       "file": "tests/test_swebench_solve.py",
       "startLine": 467,
       "endLine": 575
-    },
-    {
-      "file": "harness/swebench_solve.py",
-      "startLine": 34,
-      "endLine": 285
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "tests/test_swebench.py",
-      "startLine": 28,
-      "endLine": 35
-    },
-    {
-      "file": "tests/test_swebench.py",
-      "startLine": 195,
-      "endLine": 420
-    },
-    {
-      "file": "harness/swebench.py",
-      "startLine": 114,
-      "endLine": 289
     }
   ],
   "REQ-1": [
+    {
+      "file": "harness/swebench.py",
+      "startLine": 54,
+      "endLine": 122
+    },
     {
       "file": "tests/test_swebench.py",
       "startLine": 27,
@@ -63,11 +51,23 @@
       "file": "tests/test_swebench.py",
       "startLine": 102,
       "endLine": 188
-    },
+    }
+  ],
+  "REQ-2": [
     {
       "file": "harness/swebench.py",
-      "startLine": 54,
-      "endLine": 111
+      "startLine": 125,
+      "endLine": 300
+    },
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 28,
+      "endLine": 35
+    },
+    {
+      "file": "tests/test_swebench.py",
+      "startLine": 195,
+      "endLine": 420
     }
   ]
 }

@@ -6,46 +6,17 @@
       "endLine": 125
     },
     {
-      "file": "tests/test_ext013_jaros_ops.py",
-      "startLine": 18,
-      "endLine": 298
-    },
-    {
       "file": "harness/jaros_solve_ops.py",
       "startLine": 34,
       "endLine": 114
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": "tests/test_swebench_live.py",
-      "startLine": 135,
-      "endLine": 215
     },
     {
-      "file": "harness/swebench_live.py",
-      "startLine": 113,
-      "endLine": 181
-    }
-  ],
-  "REQ-3": [
-    {
-      "file": "tests/test_ext013_orchestrator_judge.py",
-      "startLine": 15,
-      "endLine": 251
-    },
-    {
-      "file": ".jaros-data/agents/orchestrator_judge_agent.py",
-      "startLine": 30,
-      "endLine": 151
+      "file": "tests/test_ext013_jaros_ops.py",
+      "startLine": 18,
+      "endLine": 298
     }
   ],
   "REQ-8": [
-    {
-      "file": "tests/test_ext013_orchestrator_judge.py",
-      "startLine": 257,
-      "endLine": 404
-    },
     {
       "file": ".jaros-data/agents/orchestrator_judge_agent.py",
       "startLine": 58,
@@ -55,30 +26,47 @@
       "file": ".jaros-data/agents/orchestrator_judge_agent.py",
       "startLine": 116,
       "endLine": 129
+    },
+    {
+      "file": "tests/test_ext013_orchestrator_judge.py",
+      "startLine": 257,
+      "endLine": 404
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": ".jaros-data/agents/orchestrator_judge_agent.py",
+      "startLine": 30,
+      "endLine": 151
+    },
+    {
+      "file": "tests/test_ext013_orchestrator_judge.py",
+      "startLine": 15,
+      "endLine": 251
     }
   ],
   "REQ-6": [
     {
-      "file": "tests/test_ext013_locate.py",
-      "startLine": 16,
-      "endLine": 236
-    },
-    {
       "file": ".jaros-data/agents/locate_agent.py",
       "startLine": 26,
       "endLine": 216
-    }
-  ],
-  "REQ-4": [
-    {
-      "file": "tests/test_ext013_jaros_solve.py",
-      "startLine": 15,
-      "endLine": 497
     },
     {
-      "file": "harness/behavioral_solve.py",
-      "startLine": 116,
-      "endLine": 361
+      "file": "tests/test_ext013_locate.py",
+      "startLine": 16,
+      "endLine": 236
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/gherkin_agent.py",
+      "startLine": 15,
+      "endLine": 60
+    },
+    {
+      "file": ".jaros-data/agents/code_agent.py",
+      "startLine": 16,
+      "endLine": 106
     }
   ],
   "REQ-5": [
@@ -93,16 +81,28 @@
       "endLine": 328
     }
   ],
-  "REQ-1": [
+  "REQ-4": [
     {
-      "file": ".jaros-data/agents/code_agent.py",
-      "startLine": 16,
-      "endLine": 106
+      "file": "harness/behavioral_solve.py",
+      "startLine": 116,
+      "endLine": 361
     },
     {
-      "file": ".jaros-data/agents/gherkin_agent.py",
+      "file": "tests/test_ext013_jaros_solve.py",
       "startLine": 15,
-      "endLine": 60
+      "endLine": 497
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": "harness/swebench_live.py",
+      "startLine": 113,
+      "endLine": 181
+    },
+    {
+      "file": "tests/test_swebench_live.py",
+      "startLine": 136,
+      "endLine": 216
     }
   ]
 }

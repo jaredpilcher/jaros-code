@@ -7,28 +7,28 @@
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 232,
-      "endLine": 237
+      "startLine": 478,
+      "endLine": 483
     },
     {
       "file": "harness/cli.py",
-      "startLine": 60,
-      "endLine": 66
+      "startLine": 264,
+      "endLine": 270
     },
     {
       "file": "harness/cli.py",
-      "startLine": 72,
-      "endLine": 75
+      "startLine": 332,
+      "endLine": 335
     },
     {
       "file": "harness/cli.py",
-      "startLine": 90,
-      "endLine": 94
+      "startLine": 628,
+      "endLine": 632
     },
     {
       "file": "harness/cli.py",
-      "startLine": 637,
-      "endLine": 640
+      "startLine": 2436,
+      "endLine": 2439
     }
   ],
   "REQ-5": [

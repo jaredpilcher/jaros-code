@@ -1,36 +1,61 @@
 {
+  "REQ-2": [
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 604,
+      "endLine": 607
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 619,
+      "endLine": 623
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 635,
+      "endLine": 640
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 737,
+      "endLine": 741
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 748,
+      "endLine": 757
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1423,
+      "endLine": 1427
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1436,
+      "endLine": 1445
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1510,
+      "endLine": 1523
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1544,
+      "endLine": 1546
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1575,
+      "endLine": 1583
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/repo_context.py",
       "startLine": 19,
       "endLine": 130
-    },
-    {
-      "file": "tests/test_repo_context.py",
-      "startLine": 1,
-      "endLine": 131
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 565,
-      "endLine": 601
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 694,
-      "endLine": 709
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 1370,
-      "endLine": 1387
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 1452,
-      "endLine": 1512
     }
   ]
 }

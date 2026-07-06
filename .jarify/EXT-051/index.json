@@ -2,13 +2,13 @@
   "REQ-1": [
     {
       "file": "harness/cli.py",
-      "startLine": 428,
-      "endLine": 458
+      "startLine": 479,
+      "endLine": 509
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1909,
-      "endLine": 1920
+      "startLine": 2227,
+      "endLine": 2238
     },
     {
       "file": "harness/atrefs.py",
@@ -19,8 +19,8 @@
   "REQ-2": [
     {
       "file": "harness/cli.py",
-      "startLine": 1540,
-      "endLine": 1550
+      "startLine": 1657,
+      "endLine": 1667
     },
     {
       "file": "harness/session.py",
@@ -31,8 +31,8 @@
   "REQ-3": [
     {
       "file": "harness/product_parity.py",
-      "startLine": 275,
-      "endLine": 298
+      "startLine": 337,
+      "endLine": 360
     }
   ]
 }

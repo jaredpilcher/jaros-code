@@ -2,13 +2,13 @@
   "REQ-1": [
     {
       "file": "harness/cli.py",
-      "startLine": 253,
-      "endLine": 263
+      "startLine": 669,
+      "endLine": 679
     },
     {
       "file": "harness/product_parity.py",
-      "startLine": 29,
-      "endLine": 279
+      "startLine": 35,
+      "endLine": 542
     }
   ]
 }

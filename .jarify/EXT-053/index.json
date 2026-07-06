@@ -1,28 +1,4 @@
 {
-  "REQ-2": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 645,
-      "endLine": 656
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 2457,
-      "endLine": 2472
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 2523,
-      "endLine": 2527
-    }
-  ],
-  "REQ-4": [
-    {
-      "file": "harness/product_parity.py",
-      "startLine": 349,
-      "endLine": 372
-    }
-  ],
   "REQ-1": [
     {
       "file": "harness/doctor.py",
@@ -35,11 +11,28 @@
       "endLine": 241
     }
   ],
-  "REQ-3": [
+  "REQ-2": [
     {
-      "file": "pyproject.toml",
-      "startLine": 1,
-      "endLine": 30
+      "file": "harness/cli.py",
+      "startLine": 681,
+      "endLine": 692
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2783,
+      "endLine": 2798
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2849,
+      "endLine": 2853
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 410,
+      "endLine": 433
     }
   ]
 }

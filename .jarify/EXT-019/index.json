@@ -3,19 +3,14 @@
     {
       "file": "harness/passk_probe.py",
       "startLine": 29,
-      "endLine": 266
-    },
-    {
-      "file": "tests/test_passk_probe.py",
-      "startLine": 1,
-      "endLine": 200
+      "endLine": 269
     }
   ],
   "REQ-2": [
     {
       "file": "harness/passk_probe.py",
-      "startLine": 270,
-      "endLine": 386
+      "startLine": 273,
+      "endLine": 389
     }
   ]
 }

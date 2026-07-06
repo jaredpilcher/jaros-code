@@ -14,37 +14,37 @@
   "REQ-7": [
     {
       "file": "harness/commit_replay.py",
-      "startLine": 405,
-      "endLine": 447
+      "startLine": 439,
+      "endLine": 481
     }
   ],
   "REQ-9": [
     {
       "file": "harness/commit_replay.py",
-      "startLine": 1199,
-      "endLine": 1288
+      "startLine": 1276,
+      "endLine": 1365
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 1302,
-      "endLine": 1350
+      "startLine": 1379,
+      "endLine": 1447
     }
   ],
   "REQ-10": [
     {
       "file": "harness/commit_replay.py",
-      "startLine": 1302,
-      "endLine": 1350
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 1405,
+      "startLine": 1412,
       "endLine": 1414
     },
     {
-      "file": "tests/test_ext011_corpus.py",
-      "startLine": 203,
-      "endLine": 264
+      "file": "harness/commit_replay.py",
+      "startLine": 1419,
+      "endLine": 1428
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 1502,
+      "endLine": 1524
     }
   ]
 }

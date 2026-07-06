@@ -1,53 +1,53 @@
 {
-  "REQ-1": [
-    {
-      "file": "tests/test_plan_then_code.py",
-      "startLine": 22,
-      "endLine": 172
-    },
-    {
-      "file": ".jaros-data/agents/plan_agent.py",
-      "startLine": 21,
-      "endLine": 77
-    }
-  ],
   "REQ-2": [
-    {
-      "file": "tests/test_plan_then_code.py",
-      "startLine": 23,
-      "endLine": 309
-    },
     {
       "file": ".jaros-data/tools/strategy_filter_tool.py",
       "startLine": 30,
       "endLine": 166
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 23,
+      "endLine": 309
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": ".jaros-data/agents/plan_agent.py",
+      "startLine": 21,
+      "endLine": 77
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 22,
+      "endLine": 172
     }
   ],
   "REQ-3": [
     {
-      "file": "tests/test_plan_then_code.py",
-      "startLine": 24,
-      "endLine": 622
+      "file": "harness/commit_replay.py",
+      "startLine": 1059,
+      "endLine": 1178
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 982,
-      "endLine": 1101
+      "startLine": 1541,
+      "endLine": 1543
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 1431,
-      "endLine": 1433
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 1450,
-      "endLine": 1457
+      "startLine": 1566,
+      "endLine": 1573
     },
     {
       "file": "harness/behavioral_solve.py",
-      "startLine": 247,
-      "endLine": 275
+      "startLine": 253,
+      "endLine": 281
+    },
+    {
+      "file": "tests/test_plan_then_code.py",
+      "startLine": 24,
+      "endLine": 622
     }
   ]
 }

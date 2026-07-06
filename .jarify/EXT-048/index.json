@@ -7,28 +7,28 @@
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 162,
-      "endLine": 171
+      "startLine": 168,
+      "endLine": 177
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 173,
-      "endLine": 179
+      "startLine": 199,
+      "endLine": 205
     },
     {
       "file": "harness/coding_loop.py",
-      "startLine": 200,
-      "endLine": 215
+      "startLine": 226,
+      "endLine": 241
     },
     {
       "file": "harness/cli.py",
-      "startLine": 914,
-      "endLine": 918
+      "startLine": 1344,
+      "endLine": 1348
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1336,
-      "endLine": 1374
+      "startLine": 1788,
+      "endLine": 1826
     },
     {
       "file": "harness/permissions.py",
@@ -39,8 +39,8 @@
   "REQ-2": [
     {
       "file": "harness/coding_loop.py",
-      "startLine": 243,
-      "endLine": 279
+      "startLine": 283,
+      "endLine": 319
     },
     {
       "file": "harness/permissions.py",
@@ -51,30 +51,30 @@
   "REQ-3": [
     {
       "file": "harness/cli.py",
-      "startLine": 217,
-      "endLine": 219
+      "startLine": 261,
+      "endLine": 263
     },
     {
       "file": "harness/cli.py",
-      "startLine": 270,
-      "endLine": 273
+      "startLine": 321,
+      "endLine": 324
     },
     {
       "file": "harness/cli.py",
-      "startLine": 367,
-      "endLine": 381
+      "startLine": 458,
+      "endLine": 472
     },
     {
       "file": "harness/cli.py",
-      "startLine": 1670,
-      "endLine": 1677
+      "startLine": 2427,
+      "endLine": 2434
     }
   ],
   "REQ-1": [
     {
       "file": "harness/cli.py",
-      "startLine": 250,
-      "endLine": 267
+      "startLine": 294,
+      "endLine": 311
     },
     {
       "file": "harness/permissions.py",
@@ -85,8 +85,8 @@
   "REQ-5": [
     {
       "file": "harness/product_parity.py",
-      "startLine": 182,
-      "endLine": 210
+      "startLine": 184,
+      "endLine": 212
     }
   ]
 }

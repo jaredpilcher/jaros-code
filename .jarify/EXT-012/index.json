@@ -1,32 +1,5 @@
 {
-  "REQ-12": [
-    {
-      "file": "tests/test_generate_and_test.py",
-      "startLine": 37,
-      "endLine": 387
-    },
-    {
-      "file": ".jaros-data/tools/generate_and_test_tool.py",
-      "startLine": 41,
-      "endLine": 119
-    },
-    {
-      "file": "harness/generate_test_solve.py",
-      "startLine": 58,
-      "endLine": 187
-    },
-    {
-      "file": "harness/commit_replay.py",
-      "startLine": 829,
-      "endLine": 1005
-    }
-  ],
   "REQ-13": [
-    {
-      "file": "tests/test_selftest_augmenter.py",
-      "startLine": 37,
-      "endLine": 330
-    },
     {
       "file": ".jaros-data/tools/selftest_augmenter_tool.py",
       "startLine": 59,
@@ -34,8 +7,35 @@
     },
     {
       "file": "harness/commit_replay.py",
-      "startLine": 685,
-      "endLine": 826
+      "startLine": 762,
+      "endLine": 903
+    },
+    {
+      "file": "tests/test_selftest_augmenter.py",
+      "startLine": 37,
+      "endLine": 330
+    }
+  ],
+  "REQ-12": [
+    {
+      "file": ".jaros-data/tools/generate_and_test_tool.py",
+      "startLine": 41,
+      "endLine": 119
+    },
+    {
+      "file": "harness/commit_replay.py",
+      "startLine": 906,
+      "endLine": 1204
+    },
+    {
+      "file": "harness/generate_test_solve.py",
+      "startLine": 58,
+      "endLine": 187
+    },
+    {
+      "file": "tests/test_generate_and_test.py",
+      "startLine": 37,
+      "endLine": 387
     }
   ]
 }
