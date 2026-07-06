@@ -107,6 +107,17 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   extraction mechanism than patching/best-of-k, worth measuring even though the residual is reasoning-bound;
   honest negative accepted if it hits the ceiling. This is the modification-axis exploration reframed as
   build-recovery. Via Jarify.
+- **[★ modify_system: ADD new modules, not just regenerate existing (owner 2026-07-06) — completes the
+  modification plane]** MEASURED limitation (surfaced by the REQ-34 replan build): `modify_system`'s
+  `_identify_targets` only offers EXISTING modules to change, so it can REGENERATE a file but never ADD a
+  new one. But a SYSTEM edit is system-level, not file-level — "add a caching layer", "split into
+  service+client", "add the missing entrypoint" all require ADDING modules. Extend modify_system (the
+  GENERAL modification case) to let a modification plan introduce NEW modules (name + responsibility +
+  wiring), reusing build_system's per-module build + syntax-gate + the plan-coherence validators/repairs
+  (validate_plan, entrypoint/import repairs incl REQ-32). Completes the modification capability AND
+  unblocks the "add a missing module" half of the replan-as-modification recovery (above). Same guardrails:
+  regression-gated (REQ-14 already gates modify — never break untouched behavior), test-verified, no oracle
+  leak. Via Jarify.
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
