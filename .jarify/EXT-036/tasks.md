@@ -1748,3 +1748,44 @@ probe validated.
 - [REQ-30] Optional 7B-review of model-proposed acceptance checks (this task introduces
   AND fully implements REQ-30's offline mechanism; the live model-swap + false-done-gate
   measurement remain open follow-ups)
+
+### [TASK-41] 7B-GENERATE acceptance checks from scratch (REQ-31, owner idea #122b)
+
+Owner's EXTENSION of TASK-40/REQ-30: `review_checks` is bounded by Gemma's own proposed
+checks (it can only correct/patch them). Build the GENERATE variant: prompt a stronger
+model to WRITE acceptance checks from scratch, using ONLY the visible spec + built module
+sources (no oracle leak) — unshackled from Gemma's hallucinations entirely. Standalone and
+offline-testable; NOT wired into `build_system` in this task — it will be A/B-measured by
+the parent against `review_checks` and the baseline via the live gate, like REQ-30 was.
+
+#### Steps
+1. Add `harness/acceptance_review.py::generate_checks(spec, modules, generator_llm,
+   max_checks=4) -> list[dict]`, modeled on `REVIEW_PROMPT`'s honesty framing but "WRITE
+   checks" instead of "correct this check". Calls `generator_llm.complete(LlmRequest(
+   prompt=..., params={"temperature": 0.0, "max_tokens": 1024})).text` once with a new
+   `GENERATE_PROMPT` built from ONLY `spec` + the built `modules` source — never any
+   hidden/expected output (NO ORACLE LEAK). Returns `{"name": str, "code": str}` dicts
+   (same shape `_compose_acceptance_checklist` entries / `_run_check_verbose` consume).
+2. Parse the model's raw response conservatively: strip markdown fences (reuse
+   `review_checks`'s `_clean_reviewed_code`), split multiple fenced Python blocks into
+   separate checks, honor a whole-response `DROP`, and OMIT any block that doesn't parse
+   as valid Python with a real `assert` (a check the model can't write → omit it, never
+   fabricate). Bound the result to `max_checks`. NEVER raises: a `generator_llm.complete`
+   exception or any unparseable/garbage response returns `[]`.
+3. Do NOT modify `review_checks` or wire `generate_checks` into `build_system` in this
+   task — standalone only. Wrap all new code with `# #EXT-036-REQ-31 Start` /
+   `# #EXT-036-REQ-31 End` per the links skill.
+4. Add `tests/test_ext036_generate_checks.py` (fake `generator_llm` stubs, no live model,
+   no network): a well-formed multi-check response parses into the right number of
+   runnable `{name, code}` dicts; the no-oracle-leak prompt shape (spec + code present,
+   no oracle-only string); fenced-code stripping and multi-block splitting; a
+   raising/garbage/DROP/syntax-error generator each yields `[]` without crashing;
+   `max_checks` bounding.
+5. Run `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirm
+   green, and record the exact pass/skip count + exit code (no regression vs the
+   pre-change baseline).
+
+#### Implements
+- [REQ-31] 7B-GENERATE acceptance checks (this task introduces AND fully implements
+  REQ-31's offline mechanism; wiring into `build_system` + the live A/B gate measurement
+  against `review_checks`/baseline remain open follow-ups, owned by the parent)

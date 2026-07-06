@@ -27,6 +27,9 @@ and never touches model-manager/Jetson serving itself.
 
 from __future__ import annotations
 
+import ast
+import re
+
 from jaros.llm import LlmRequest
 
 # #EXT-036-REQ-30 Start
@@ -107,3 +110,128 @@ def review_checks(spec: str, modules: "dict[str, str]", proposed_checks: "list[d
         reviewed.append(corrected)
     return reviewed
 # #EXT-036-REQ-30 End
+
+
+# #EXT-036-REQ-31 Start
+# TASK-41 (REQ-31): 7B-GENERATE -- the owner's extension of REQ-30. Where `review_checks`
+# is BOUNDED by Gemma's own proposed checks (it can only correct/drop what Gemma wrote), this
+# writes acceptance checks FROM SCRATCH -- unshackled from Gemma's hallucinations -- using
+# ONLY the visible spec + built module sources (NO ORACLE LEAK, same honesty framing as
+# `REVIEW_PROMPT`/`.jaros-data/sevenb_review_probe.py`). Standalone + injectable, for an A/B
+# live-gate measurement against `review_checks` and the unassisted baseline (not wired into
+# `build_system` in this task -- see EXT-036 REQ-31 acceptance criteria).
+GENERATE_PROMPT = (
+    "You are WRITING acceptance tests for a program built from a SPEC.\n"
+    "Use ONLY the SPEC and CODE below. You have NO hidden expected outputs.\n\n"
+    "SPEC:\n{spec}\n\nCODE:\n{code}\n\n"
+    "Write up to {max_checks} concrete acceptance checks proving the SPEC is satisfied. Each "
+    "check is standalone runnable Python that imports the built module(s) shown above and "
+    "asserts REAL behavior derived from the code.\n"
+    "Rules:\n"
+    "1. Reference ONLY APIs that actually exist in the CODE shown above -- never invent one.\n"
+    "2. If a check asserts an expected VALUE, compute that value FROM THE SPEC'S STATED RULES "
+    "ONLY -- never guess or invent one.\n"
+    "3. If you cannot derive ANY check that is verifiable from the spec+code alone, output "
+    "exactly: DROP\n"
+    "Output EACH check as its own fenced Python block, e.g.:\n"
+    "```python\n# <short name>\n<runnable check code>\n```\n"
+    "No prose outside the fenced blocks."
+)
+
+_FENCED_BLOCK_RE = re.compile(r"```(?:python)?\s*\n?(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+def _is_runnable_check(code: str) -> bool:
+    """A generated check is only usable if it parses as valid Python AND contains a real
+    ``assert`` -- mirrors the deterministic executable-check filter used elsewhere in the
+    acceptance pipeline (``harness.system_builder._is_executable_check``), reimplemented here
+    so this module stays self-contained (no import of the builder's internals)."""
+    if not isinstance(code, str) or not code.strip():
+        return False
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return False
+    return any(isinstance(node, ast.Assert) for node in ast.walk(tree))
+
+
+def _name_for_block(code: str, index: int) -> str:
+    """Derive a short check name from a leading ``# comment`` line, if the generator left
+    one; otherwise fall back to a positional label."""
+    for line in code.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            label = line.lstrip("#").strip()
+            if label:
+                return label
+        break
+    return f"generated check {index + 1}"
+
+
+def _parse_generated_checks(raw: str, max_checks: int) -> "list[dict]":
+    """Parse the generator's raw response into `{"name", "code"}` dicts: strip markdown
+    fences (reusing `_clean_reviewed_code`, the SAME fence-stripping `review_checks` uses),
+    split multiple fenced blocks into separate checks, honor a whole-response ``DROP`` (the
+    generator judged nothing derivable), and OMIT any block that isn't runnable Python with a
+    real assertion (a check the model can't write is dropped, never fabricated). Bounded to
+    `max_checks`. Never raises -- any parse error simply yields fewer (possibly zero) checks."""
+    text = (raw or "").strip()
+    if not text or text.upper().startswith("DROP"):
+        return []
+    blocks = _FENCED_BLOCK_RE.findall(text)
+    if not blocks:
+        blocks = [text]
+    out: list[dict] = []
+    for i, block in enumerate(blocks):
+        if len(out) >= max_checks:
+            break
+        try:
+            cleaned = _clean_reviewed_code(block)
+        except Exception:
+            continue
+        if not cleaned or cleaned.strip().upper() == "DROP":
+            continue
+        if not _is_runnable_check(cleaned):
+            continue  # the model couldn't write a verifiable check for this slot -- omit it
+        out.append({"name": _name_for_block(cleaned, i), "code": cleaned})
+    return out
+
+
+def generate_checks(spec: str, modules: "dict[str, str]", generator_llm,
+                     max_checks: int = 4) -> "list[dict]":
+    """7B-GENERATE acceptance checks (REQ-31) FROM SCRATCH, from ONLY the visible `spec` +
+    built `modules` source -- NEVER any hidden/expected output (NO ORACLE LEAK, Tenet 3;
+    same honesty framing as `review_checks`/`REVIEW_PROMPT`). Calls
+    ``generator_llm.complete(LlmRequest(prompt=..., params={"temperature": 0.0,
+    "max_tokens": 1024})).text`` once with `GENERATE_PROMPT`, asking the (stronger) model to
+    WRITE runnable acceptance checks that import the built module(s) and assert behavior
+    derivable from the spec's stated rules -- unlike `review_checks`, this is NOT bounded by
+    any Gemma-proposed check to correct; the generator writes free-form.
+
+    Returns a list of `{"name": str, "code": str}` dicts (the same shape
+    `_compose_acceptance_checklist` entries / `_run_check_verbose` consume), bounded to
+    `max_checks`. Parses the response by stripping markdown fences (reusing
+    `_clean_reviewed_code`) and splitting multiple fenced blocks into separate checks; a
+    whole-response ``DROP``, an unparseable/non-asserting block, or any exception from
+    `generator_llm.complete` or parsing is handled CONSERVATIVELY -- that check (or the whole
+    call) is simply OMITTED. NEVER raises: this function always returns a list, `[]` at
+    worst, never propagating an exception to the caller."""
+    try:
+        code_blob = "\n\n".join(
+            f"# {name}\n{src}" for name, src in (modules or {}).items()
+        )[:6000]
+        spec_blob = (spec or "")[:1500]
+        prompt = GENERATE_PROMPT.format(spec=spec_blob, code=code_blob,
+                                         max_checks=max(1, int(max_checks or 1)))
+        raw = (generator_llm.complete(
+            LlmRequest(prompt=prompt, params={"temperature": 0.0, "max_tokens": 1024})
+        ).text or "")
+    except Exception:
+        return []
+    try:
+        return _parse_generated_checks(raw, max_checks)
+    except Exception:
+        return []
+# #EXT-036-REQ-31 End

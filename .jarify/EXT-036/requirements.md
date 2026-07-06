@@ -1253,3 +1253,48 @@ default are explicit follow-ups, out of scope here.
   Jetson-swap orchestration that actually serves `check_reviewer` with the
   stronger model in production, and a LIVE 20-task false-done-gate measurement
   before flipping `check_reviewer` on by default in `/buildsystem` — open
+
+### [REQ-31] 7B-GENERATE acceptance checks — the stronger model writes checks from scratch, unshackled from Gemma's proposals (DONE — offline mechanism, EXT-036 TASK-41, 2026-07-06)
+
+**Owner's extension of REQ-30 (task #122b, 2026-07-06):** REQ-30's `review_checks` is
+BOUNDED by Gemma's own proposed checks — the 7B can only correct/patch what Gemma wrote,
+never invent a better check Gemma never thought to propose. This requirement builds the
+GENERATE variant: the stronger model writes acceptance checks FROM SCRATCH from ONLY the
+visible spec + built module sources (NO ORACLE LEAK, same honesty framing as REQ-30's
+`REVIEW_PROMPT`) — unshackled from Gemma's hallucinated proposals entirely. It is standalone
+and injectable, for an A/B live-gate measurement against `review_checks` and the unassisted
+baseline; it is NOT wired into `build_system` in this task (that wiring + the live measurement
+are the caller's/parent's next step, mirroring how REQ-30's offline mechanism preceded its own
+follow-up).
+
+#### Acceptance Criteria
+- [x] `harness/acceptance_review.py::generate_checks(spec, modules, generator_llm,
+  max_checks=4) -> list[dict]` — a pure, injectable function that prompts `generator_llm`
+  (a `.complete(LlmRequest(prompt=..., params={"temperature": 0.0, "max_tokens":
+  1024})).text`-style object) to WRITE runnable acceptance checks proving the spec is
+  satisfied, using ONLY `spec` + the built `modules` source. Returns a list of
+  `{"name": str, "code": str}` dicts (the same shape `_compose_acceptance_checklist`
+  entries / `_run_check_verbose` consume), bounded to `max_checks`. — **DONE 2026-07-06**
+- [x] NO ORACLE LEAK (Tenet 3): the prompt sent to `generator_llm` contains ONLY `spec` +
+  the built `modules` source — NEVER any hidden/expected output or oracle of any kind.
+  — **DONE 2026-07-06**
+- [x] Parses the generator's raw response conservatively: strips markdown fences (reusing
+  `review_checks`'s `_clean_reviewed_code`), splits multiple fenced Python blocks into
+  separate checks, honors a whole-response `DROP`, and OMITS any block that doesn't parse
+  as valid Python with a real `assert` (a check the model can't write is dropped, never
+  fabricated). — **DONE 2026-07-06**
+- [x] NEVER raises: a `generator_llm.complete` exception, or any unparseable/garbage
+  response, returns `[]` (conservative — no generated checks rather than a crash or a
+  fabricated one). — **DONE 2026-07-06**
+- [x] `review_checks` (REQ-30) is UNCHANGED by this task — `generate_checks` is new,
+  additive code alongside it. — **DONE 2026-07-06**
+- [x] Proven OFFLINE (`tests/test_ext036_generate_checks.py`, fake `generator_llm` stubs, no
+  live model, no network): a well-formed multi-check response parses into the right number
+  of runnable checks; the no-oracle-leak prompt shape; fenced-code stripping and
+  multi-block splitting; a raising/garbage/DROP generator each yields `[]` without
+  crashing. Full `tests/` suite re-run via `python -m harness.run_with_heartbeat --
+  python -m pytest tests/ -q`, confirmed green with no regression. — **DONE 2026-07-06**
+- [ ] FOLLOW-UP (explicit, out of this task's scope): wiring `generate_checks` into
+  `build_system`/`build_system_best_of_k` (mirroring REQ-30's `check_reviewer` kwarg
+  pattern), and a LIVE A/B gate measurement (7B-generate vs 7B-review vs baseline) on the
+  20-task false-done suite before either mechanism is flipped on by default — open
