@@ -84,6 +84,14 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   tests and feeds concrete failures back, method-dependency-aware decomposition, and honest per-class
   measurement (creation/modification suites at harder tiers, held-out). Every lift proven on a HELD-OUT
   class, never the tuned one (Tenet 3).
+- **[7B-GENERATE the acceptance checks (owner seed #122b, 2026-07-06) — NEXT, cheap on landed infra]**
+  the landed 7B-REVIEW (REQ-30) is bounded by Gemma's proposals — it can only PATCH Gemma's checks, so
+  a check Gemma botched too badly to salvage stays broken (likely the 4 residual false-negatives in the
+  live gate). Owner's extension: have the 7B **GENERATE** the acceptance checks from scratch (from the
+  VISIBLE spec + built code, NO ORACLE LEAK), unshackled from Gemma's hallucinations. Add a
+  `generate_checks(...)` variant beside `review_checks` (injectable/default-off), then **A/B it on the
+  same 20-task live gate** — 7B-generate vs 7B-review vs baseline. Wins ONLY if it beats review's
+  done-rate (0.60) with the SAME 0 false-dones (sacred). Small delta on existing infra (EXT-036).
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
