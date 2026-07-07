@@ -55,7 +55,7 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **2432 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+- Full test suite: **2440 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
@@ -140,9 +140,15 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
 
 ## NEXT (planned specs/requirements to create + implement — this week)
 
-- **[best-of-k oracle-select]** a generic reliability lever: sample k build draws, select the one
-  that genuinely passes the (now-honest) acceptance — high · motivated by measured gemma per-draw
-  unreliability (datastore + coherence); likely a new REQ under EXT-036 or a new spec.
+- **[research-augmented-planning lift measurement]** EXT-038 REQ-4 landed the WIRING
+  (`enable_research=True`); whether it actually LIFTS the real-library-systems-tier accept rate is
+  unmeasured — a held-out A/B (`enable_research` on vs off) over Flask/pandas/requests/click/
+  sqlalchemy build tasks, honest per Tenet 3 — med · the natural next-lever question this wiring opens.
+- **[traceability debt — EXT-004/EXT-007]** structural sweep found BOTH missing `index.json` entirely
+  (stale pre-index.json `implementation: file/ranges` frontmatter instead) — a `jarify-manage-links`
+  regeneration agent is in flight (task #64) as of 2026-07-07, mapping each REQ to real line ranges in
+  `harness/cli.py` (2905 lines) / `harness/eval_runner.py` — med · closes the last 2 of 12 specs found
+  non-compliant with the 5-file structural rule (the other 10 already backfilled, commit 139031a).
 - **[✅ LANDED 1b3395e + bc266da (EXT-039 REQ-2, 2026-07-07) — Redis + Postgres rungs]** SHIPPED:
   `harness/service_provisioner.py` — two real-service rungs sharing one provision/verify/teardown
   shape. Redis: `provision_redis`/`teardown` (Docker, `--rm`, mem-capped, never leaks) + a pure-stdlib
@@ -159,10 +165,16 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
   caller, no longer a per-script discipline to remember. 3/3 new tests pass (load-bearing:
   research proven locked DURING task execution, released after, and after a task exception). Suite
   2429→2432, no regression.
-- **[EXT-038 — remaining half]** wire the read-only web-research fetch plane into the PLANNER itself
-  (fetched text as untrusted DATA reaching a build/modify decision) — high · makes #85's fetch
-  capability actually INFORM builds, not just exist standalone. The eval-leak side (above) is done;
-  this is the actual-use wiring, a separate, larger touch on the planner/orchestrator prompt path.
+- **[✅ LANDED e12c4e6 (EXT-038 REQ-4, 2026-07-07) — SPEC FULLY COVERED]** SHIPPED: `research_context()`
+  in `harness/web_research.py` (deterministic library-name detection, 5-entry curated table:
+  flask/pandas/requests/click/sqlalchemy, zero network on no match, one guarded fetch on a match, never
+  raises) + `build_system(..., enable_research=False)` in `harness/system_builder.py` — default-off
+  byte-identical, prepends fetched+fenced docs to the PLAN prompt only when explicitly enabled and a
+  match is found. 8/8 new tests pass (incl. a byte-identical regression proof for the off-path). All 4
+  EXT-038 requirements now covered — the web-research plane closes end-to-end for the first time
+  (guards → fetch → eval-safety → actual planner use). Suite 2432→2440, no regression. NOT yet done:
+  MEASURING whether research-augmented planning lifts the real-library build accept-rate — an honest,
+  separate follow-up (the wiring is proven; the capability lift is unmeasured).
 - **[EXT-041 (new spec)]** repo-comprehension + complex planning for large real repos: accurate
   repo map + plan changes across a real multi-file repo — med · #87, extends `harness/repo_map.py`.
 - **[acceptance-completeness at scale]** widen the false-done probe across MANY creation classes (not
