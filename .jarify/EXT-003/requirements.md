@@ -157,3 +157,28 @@ identifier tokens. (The module docstring already anticipated this: "A future AST
       (word-token boundary), and the red-suite-reverts path still holds. Full suite stays green
 - [x] Add `harness/refactor.py` to EXT-003 traceability (index.json) — it is currently UNTRACED — tagging the REQ-6
       ranges, and record `harness/refactor.py` in the frontmatter `implementation` list
+
+### [REQ-7] Deterministic double-application repair fallback (self-composition call-chain bugs)
+
+MEASURED gap (daily-driver `fix` category, `fix_hard_invoice_double_tax`, 2026-07-06): a multi-function
+call-chain bug where a value is passed back through the SAME function a second time (e.g. tax/discount/fee
+applied twice) is already correctly LOCATED by the whole-file rewriter (REQ-2) — this is not a single-
+function-regen limitation. But the model's "fix" often over-rewrites the untouched function's own arithmetic
+into an algebraically equivalent form that differs by float rounding, so it fails an exact-equality oracle even
+though the double-application bug is gone (raw-probed across 4 rounds: the model never reaches back for the
+byte-identical original arithmetic). The minimal, always-safe fix never touches the inner function's body:
+unwrap the redundant outer application. That is a mechanical, deterministic repair, so — exactly like REQ-4's
+boundary-mutation repair for a different bug class — it moves into the deterministic execution plane.
+
+#### Acceptance Criteria
+- [x] `double_application_repair_candidates` is pure and deterministic: detects, per function, both the
+      intermediate-variable shape (`v = fn(...)` ... `fn(v, ...)`) and the fully-nested shape
+      (`fn(fn(...), ...)`), yielding one unwrap candidate per occurrence, de-duplicated and stably ordered.
+      Never touches the function's own definition/body
+- [x] `double_application_repair_loop` mirrors `mutation_repair_loop` (REQ-4): applies each candidate via the
+      Runtime's `code.write_file` tool, runs the suite via `shell.exec`, and keeps the first candidate that
+      makes the tests pass
+- [x] On total failure it restores the original file (never leaves a worse file)
+- [x] Wired as the FIRST attempt in the `fix_loop` fallback chain for `.py` bug-fixes the rewriter cannot crack
+      (cheap/structural, tried before boundary-mutation repair); non-degrading — falls through unaffected to
+      REQ-4's boundary-mutation repair if no candidate exists or none passes

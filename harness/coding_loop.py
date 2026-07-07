@@ -11,6 +11,7 @@ else is deterministic: the model decides *what*, the executor and tools decide *
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import re
@@ -562,6 +563,126 @@ def mutation_repair_loop(target: str, test_cmd: str, *, cwd: str | None = None,
 # #EXT-003-REQ-4 End
 
 
+# #EXT-003-REQ-7 Start
+# Deterministic double-application repair fallback. DIAGNOSED (EXT-005 fix_hard_invoice_
+# double_tax, 2026-07-06, gemma-4-e2b): the whole-file rewriter (REQ-2) already correctly
+# LOCATES this multi-function call-chain bug (a value is passed back through the SAME
+# function a second time -- e.g. tax/discount/fee applied twice) -- it is NOT a single-
+# function-regen limitation. But the model's "fix" often over-rewrites the untouched
+# function's own arithmetic into an ALGEBRAICALLY EQUIVALENT form (`subtotal + subtotal *
+# tax_rate` -> `subtotal * (1 + tax_rate)`) that differs by float rounding, so it fails an
+# exact-equality oracle even though the double-application bug is gone (confirmed: raw-
+# probed the model with the exact pytest failure fed back across 4 rounds -- it never
+# reaches back for the byte-identical original arithmetic, it keeps regenerating the same
+# rounding-unstable form). The minimal, ALWAYS-safe fix never touches the inner function's
+# body at all: unwrap the redundant outer application. That is a mechanical, deterministic
+# repair -- the ant, not the boulder -- so it moves into the execution plane exactly like
+# REQ-4's boundary-mutation repair, for a DIFFERENT generic bug class (self-composition
+# call chains), never touching the (already-correct) function body that introduces the
+# instability.
+def double_application_repair_candidates(source: str) -> list[str]:
+    """Pure, deterministic (no model): every "unwrap one redundant self-application" rewrite
+    of ``source``, one occurrence changed per candidate.
+
+    Detects, per function, two shapes of "a function's result is immediately re-passed as
+    the first argument to the SAME function again":
+      (a) via an intermediate variable -- ``v = fn(...)`` followed later by a call
+          ``fn(v, ...)`` -- candidate replaces that outer call with just ``v``
+      (b) fully nested -- ``fn(fn(...), ...)`` -- candidate replaces the outer call with
+          the exact source text of the inner call (dropping the outer wrapper)
+
+    Never touches ``fn``'s own definition/body. Ordered and de-duplicated for
+    reproducibility; returns ``[]`` (never raises) if ``source`` doesn't parse.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    lines = source.splitlines(keepends=True)
+    seen: set[str] = set()
+    out: list[str] = []
+
+    for func in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
+        # var name -> fn name it was directly assigned from (simple `v = fn(...)` only).
+        var_fn: dict[str, str] = {}
+        for node in ast.walk(func):
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Name)):
+                var_fn[node.targets[0].id] = node.value.func.id
+
+        for node in ast.walk(func):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.args):
+                continue
+            fn = node.func.id
+            first = node.args[0]
+            replacement = None
+            if isinstance(first, ast.Name) and var_fn.get(first.id) == fn:
+                replacement = first.id  # v = fn(...); ...; fn(v, ...) -> v
+            elif (isinstance(first, ast.Call) and isinstance(first.func, ast.Name)
+                    and first.func.id == fn):
+                replacement = _span_text(lines, first)  # fn(fn(x, ...), ...) -> fn(x, ...)
+            if replacement is None:
+                continue
+            candidate = _splice_span(lines, node, replacement)
+            if candidate != source and candidate not in seen:
+                seen.add(candidate)
+                out.append(candidate)
+    return out
+
+
+def _span_text(lines: list[str], node: ast.AST) -> str:
+    """The exact source text of ``node`` (1-indexed lineno/col_offset, matching the `ast`
+    module), pulled from ``lines`` (``source.splitlines(keepends=True)``)."""
+    if node.lineno == node.end_lineno:
+        return lines[node.lineno - 1][node.col_offset:node.end_col_offset]
+    parts = [lines[node.lineno - 1][node.col_offset:]]
+    parts.extend(lines[node.lineno:node.end_lineno - 1])
+    parts.append(lines[node.end_lineno - 1][:node.end_col_offset])
+    return "".join(parts)
+
+
+def _splice_span(lines: list[str], node: ast.AST, replacement: str) -> str:
+    """The full source with ``node``'s exact span replaced by ``replacement``."""
+    before = "".join(lines[:node.lineno - 1]) + lines[node.lineno - 1][:node.col_offset]
+    after = lines[node.end_lineno - 1][node.end_col_offset:] + "".join(lines[node.end_lineno:])
+    return before + replacement + after
+
+
+def double_application_repair_loop(target: str, test_cmd: str, *, cwd: str | None = None,
+                                   verbose: bool = False) -> LoopResult:
+    """Deterministic self-composition-call-chain repair (mirrors ``mutation_repair_loop``,
+    REQ-4, for a different bug class): mechanically try each
+    ``double_application_repair_candidates`` rewrite via the write_file TOOL, run the suite
+    via the shell.exec TOOL, and keep the first candidate that passes. No reasoning call —
+    fully reproducible (Tenet 3)."""
+    rt = Runtime()
+    target_path = Path(target)
+    original = target_path.read_text(encoding="utf-8")
+    candidates = double_application_repair_candidates(original)
+
+    def _run_tests() -> int | None:
+        res = rt.apply(create_decision(id=f"t-{uuid.uuid4().hex}", source="orchestrator",
+                       type="shell.exec", payload={"command": test_cmd, "timeout_s": TEST_TIMEOUT_S, **({"cwd": cwd} if cwd else {})}))
+        return res.get("exitCode") if isinstance(res, dict) else None
+
+    for i, cand in enumerate(candidates, 1):
+        rt.apply(create_decision(id=f"dbl-{uuid.uuid4().hex}", source="double-application-repair",
+                 type="code.write_file", payload={"path": str(target), "content": cand}))
+        code = _run_tests()
+        if verbose:
+            _step("double-apply", f"candidate {i}/{len(candidates)} -> exit {code}")
+        if code == 0:
+            return LoopResult(success=True, attempts=i, final_output="double-application repair passed")
+    # No candidate worked: restore the original bug so we never leave a worse file.
+    target_path.write_text(original, encoding="utf-8", newline="\n")
+    return LoopResult(success=False, attempts=len(candidates),
+                      final_output="no double-application repair passed")
+# #EXT-003-REQ-7 End
+
+
 # #EXT-003-REQ-2 Start
 def fix_loop(target: str, instruction: str, test_cmd: str, *,
              max_iters: int = 4, cwd: str | None = None,
@@ -735,6 +856,19 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     # partial edit kept, and single-operator mutations can't fix a fault that spans files.
     if (not keep_partial and str(target).endswith(".py") and original_content
             and "NotImplementedError" not in original_content):
+        # #EXT-003-REQ-7 Start
+        # Tried FIRST (cheap, structural): a self-composition call-chain bug (REQ-7) — a
+        # value re-applied to the SAME function down the chain (e.g. tax/discount applied
+        # twice) — never touches the function's own body, so it can't introduce the
+        # rounding instability the model's own equivalent-rewrite sometimes does. Runs on a
+        # FRESH copy of the original bug; falls through to boundary-mutation unaffected if
+        # it finds no candidate or none passes.
+        target_path.write_text(original_content, encoding="utf-8", newline="\n")  # restore the real bug
+        lr = double_application_repair_loop(target, test_cmd, cwd=cwd, verbose=verbose)
+        if lr.success:
+            _v(print, f"\n  \033[32m[OK] double-application repair solved it\033[0m\n")
+            return lr
+        # #EXT-003-REQ-7 End
         _v(print, "\n  whole-file rewrite failed — trying deterministic boundary-mutation repair...")
         target_path.write_text(original_content, encoding="utf-8", newline="\n")  # restore the real bug
         lr = mutation_repair_loop(target, test_cmd, cwd=cwd, verbose=verbose)

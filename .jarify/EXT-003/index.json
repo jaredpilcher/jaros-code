@@ -1,25 +1,4 @@
 {
-  "REQ-1": [
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 111,
-      "endLine": 376
-    }
-  ],
-  "REQ-4": [
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 498,
-      "endLine": 562
-    }
-  ],
-  "REQ-2": [
-    {
-      "file": "harness/coding_loop.py",
-      "startLine": 565,
-      "endLine": 750
-    }
-  ],
   "REQ-6": [
     {
       "file": "harness/refactor.py",
@@ -30,6 +9,39 @@
       "file": "harness/refactor.py",
       "startLine": 99,
       "endLine": 119
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 112,
+      "endLine": 377
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 499,
+      "endLine": 563
+    }
+  ],
+  "REQ-7": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 566,
+      "endLine": 683
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 859,
+      "endLine": 871
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 686,
+      "endLine": 884
     }
   ]
 }
