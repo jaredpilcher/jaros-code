@@ -55,7 +55,7 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **2429 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+- Full test suite: **2432 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
@@ -153,10 +153,16 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
   independently-verify→cross-invocation discipline against a REAL service. 19/19 tests pass live
   (Docker present), all skip-if-docker-absent (offline-honest). Suite 2410→2429, no regression.
   Qdrant/Cassandra + a live suite task remain named-not-built follow-ups.
-- **[EXT-038 REQ-3/4]** wire the read-only web-research fetch plane into the planner (fetched text
-  as untrusted DATA), and auto-assert `eval_lock()` around the eval runners so the eval-leak
-  hard-off is automatic, not caller-remembered — high · makes #85 actually inform builds + closes
-  the honesty follow-up.
+- **[✅ LANDED half — 26851d7 (EXT-038 REQ-3, 2026-07-07)]** `harness/eval_runner.py`'s shared
+  `run_task_list()` (imported by ~11 eval scripts) now auto-wraps its execution body in
+  `research_guard.eval_lock()` — the eval-leak hard-off is automatic for every current/future eval
+  caller, no longer a per-script discipline to remember. 3/3 new tests pass (load-bearing:
+  research proven locked DURING task execution, released after, and after a task exception). Suite
+  2429→2432, no regression.
+- **[EXT-038 — remaining half]** wire the read-only web-research fetch plane into the PLANNER itself
+  (fetched text as untrusted DATA reaching a build/modify decision) — high · makes #85's fetch
+  capability actually INFORM builds, not just exist standalone. The eval-leak side (above) is done;
+  this is the actual-use wiring, a separate, larger touch on the planner/orchestrator prompt path.
 - **[EXT-041 (new spec)]** repo-comprehension + complex planning for large real repos: accurate
   repo map + plan changes across a real multi-file repo — med · #87, extends `harness/repo_map.py`.
 - **[acceptance-completeness at scale]** widen the false-done probe across MANY creation classes (not
@@ -256,6 +262,20 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ HONESTY: eval-leak auto-lock — EXT-038 REQ-3 (26851d7, 2026-07-07)]** `research_guard.
+  eval_lock()` (REQ-1) was proven safe but never called automatically — closed via ONE choke point:
+  `harness/eval_runner.py`'s `run_task_list()` (the shared execution core ~11 eval scripts import:
+  agentic_eval, build_eval, daily_driver, eval_qwen_mbpp, eval_routed, eval_strategy_easy, humaneval,
+  mbpp, multipl_e, pass1_eval, profile_qwen) now wraps its task-execution body in `with eval_lock():`
+  — every current/future caller of the shared runner gets the eval-leak hard-off automatically, zero
+  per-script changes. 3/3 new offline tests (no live model call, `fix_loop` monkeypatched) prove
+  `research_allowed()` is `False` DURING task execution and `True` again after `run_task_list()`
+  returns — including when a task raises (the lock's own try/finally + the function's existing
+  per-task exception handling both hold). Architect caught a real defect during validation (missing
+  traceability markers on the new test file) and a spec-consistency issue (REQ-3 was authored as
+  "partial" with all acceptance criteria already checked — corrected to "covered", matching REQ-1/
+  REQ-2's convention). Suite 2429→2432, no regression. Remaining EXT-038 half: wiring the fetch
+  capability itself into the planner (separate, larger — moved to NEXT).
 - **[★ CAPABILITY: real-service (Postgres) provisioner — EXT-039 REQ-2 (bc266da, 2026-07-07)]** the
   second real-service rung, alongside Redis, in the SAME `harness/service_provisioner.py`:
   `provision_postgres` brings up `postgres:16-alpine` via Docker with `POSTGRES_HOST_AUTH_METHOD=
