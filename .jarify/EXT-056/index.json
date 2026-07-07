@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/adt_oracle.py",
+      "startLine": 56,
+      "endLine": 309
+    },
+    {
+      "file": "tests/test_ext056_adt_oracle.py",
+      "startLine": 15,
+      "endLine": 272
+    }
+  ]
+}
