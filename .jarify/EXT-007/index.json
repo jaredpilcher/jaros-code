@@ -1,0 +1,43 @@
+{
+  "REQ-3": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 426,
+      "endLine": 436
+    },
+    {
+      "file": "tests/test_ext003_loop.py",
+      "startLine": 24,
+      "endLine": 32
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 88,
+      "endLine": 109
+    },
+    {
+      "file": "harness/coding_loop.py",
+      "startLine": 351,
+      "endLine": 352
+    },
+    {
+      "file": "tests/test_ext007_telemetry.py",
+      "startLine": 1,
+      "endLine": 27
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/honesty.py",
+      "startLine": 1,
+      "endLine": 71
+    },
+    {
+      "file": "tests/test_ext007_honesty.py",
+      "startLine": 1,
+      "endLine": 42
+    }
+  ]
+}

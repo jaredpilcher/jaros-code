@@ -4,10 +4,18 @@ title: Claude-Code-like Operator CLI
 status: partial
 priority: high
 implementation:
-  - file: harness/cli.py
-    ranges:
-      - - 1
-        - 220
+  - harness/cli.py
+  - harness/navigate.py
+  - harness/repo_map.py
+  - harness/plan_eval.py
+  - .jaros-data/agents/navigator_agent.py
+  - .jaros-data/agents/commander_agent.py
+  - .jaros-data/agents/orchestrator_agent.py
+  - .jaros-data/agents/planner_agent.py
+  - tests/test_ext004_cli.py
+  - tests/test_ext004_navigate.py
+  - tests/test_ext004_repomap.py
+  - tests/test_ext004_planner.py
 ---
 
 This spec serves **Tenet 5** of PRIME-001: a familiar, transparent terminal experience

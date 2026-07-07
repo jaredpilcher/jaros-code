@@ -4,10 +4,11 @@ title: Continuous Harness Self-Improvement (the jarify way)
 status: partial
 priority: high
 implementation:
-  - file: harness/eval_runner.py
-    ranges:
-      - - 1
-        - 40
+  - harness/coding_loop.py
+  - harness/honesty.py
+  - tests/test_ext003_loop.py
+  - tests/test_ext007_telemetry.py
+  - tests/test_ext007_honesty.py
 ---
 
 This spec governs HOW jaros-code improves itself toward Claude-Code-on-Opus-4.8: the

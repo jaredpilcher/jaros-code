@@ -1,0 +1,222 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 621,
+      "endLine": 623
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2326,
+      "endLine": 2346
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2414,
+      "endLine": 2480
+    },
+    {
+      "file": "tests/test_ext004_cli.py",
+      "startLine": 17,
+      "endLine": 21
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 624,
+      "endLine": 646
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 730,
+      "endLine": 750
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 752,
+      "endLine": 754
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 756,
+      "endLine": 758
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 794,
+      "endLine": 805
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 807,
+      "endLine": 820
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 822,
+      "endLine": 825
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 827,
+      "endLine": 831
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 833,
+      "endLine": 838
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 840,
+      "endLine": 850
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 852,
+      "endLine": 863
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 865,
+      "endLine": 877
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 879,
+      "endLine": 885
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 915,
+      "endLine": 920
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 949,
+      "endLine": 959
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 961,
+      "endLine": 982
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1495,
+      "endLine": 1505
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1528,
+      "endLine": 1538
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1540,
+      "endLine": 1549
+    },
+    {
+      "file": "harness/navigate.py",
+      "startLine": 1,
+      "endLine": 133
+    },
+    {
+      "file": "harness/repo_map.py",
+      "startLine": 1,
+      "endLine": 68
+    },
+    {
+      "file": ".jaros-data/agents/navigator_agent.py",
+      "startLine": 1,
+      "endLine": 53
+    },
+    {
+      "file": ".jaros-data/agents/commander_agent.py",
+      "startLine": 1,
+      "endLine": 67
+    },
+    {
+      "file": "tests/test_ext004_cli.py",
+      "startLine": 24,
+      "endLine": 54
+    },
+    {
+      "file": "tests/test_ext004_navigate.py",
+      "startLine": 1,
+      "endLine": 55
+    },
+    {
+      "file": "tests/test_ext004_repomap.py",
+      "startLine": 1,
+      "endLine": 27
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1,
+      "endLine": 142
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 2119,
+      "endLine": 2130
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2132,
+      "endLine": 2173
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2176,
+      "endLine": 2254
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2265,
+      "endLine": 2321
+    },
+    {
+      "file": ".jaros-data/agents/orchestrator_agent.py",
+      "startLine": 1,
+      "endLine": 68
+    },
+    {
+      "file": "tests/test_ext004_cli.py",
+      "startLine": 57,
+      "endLine": 94
+    },
+    {
+      "file": "tests/test_ext004_planner.py",
+      "startLine": 35,
+      "endLine": 98
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 1551,
+      "endLine": 1590
+    },
+    {
+      "file": ".jaros-data/agents/planner_agent.py",
+      "startLine": 1,
+      "endLine": 66
+    },
+    {
+      "file": "harness/plan_eval.py",
+      "startLine": 1,
+      "endLine": 71
+    },
+    {
+      "file": "tests/test_ext004_planner.py",
+      "startLine": 1,
+      "endLine": 32
+    }
+  ]
+}
