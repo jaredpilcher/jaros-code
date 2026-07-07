@@ -175,20 +175,32 @@ benchmarks — is itself required work, not optional.
 The wager behind this system — refined by measurement as of 2026-06-28: *small models have
 not been useful for development because their harnesses are thin — but each individual small
 model still has a real, measurable class-ceiling, and the honest move is to MAP that ceiling and
-ROUTE around it, not to deny it.* We no longer assume a single model has no capability ceiling;
+**BUILD THE DETERMINISTIC PROSTHETICS that let the model work PAST it** — routing to a stronger
+roster model only as the SECONDARY lever, once the prosthetic plane is exhausted — not to deny it.*
+We no longer assume a single model has no capability ceiling;
 we **measured** one and recorded it honestly: on the hardest repo-level tasks, sampling at scale
 (pass@k, k=20 at a fair temperature), explicit decomposition, and non-deterministic orchestration
-**all** failed to extract a solution from Gemma 4 2B — the bottleneck there was genuine generation
-capability, not a missing scaffold. Denying that, after probing it, would have violated honest
-measurement (commitment 3).
+**all** failed to extract a solution from Gemma 4 2B. But that is **one FAMILY of levers**
+(sampling / prompting / orchestration around an *unchanged* problem representation) exhausted on
+that instance — it points NOT at a bigger model but at a **deterministic prosthetic not yet built**
+for that class: a tool that makes the specific failure VISIBLE, LOCALIZES it, and FEEDS the concrete
+failure back so the model can reason on it (the plane those levers never touched — the 2B reliably
+fixes a bug the instant it can SEE it). Reporting the negative honestly is required (commitment 3);
+concluding *"the model just can't — wait for a bigger one"* from it is the forbidden drift (owner
+directive 2026-07-07). The measured wall names the **missing prosthetic to build**, never a ceiling
+to accept.
 
 **The no-ceiling principle now lives at the SYSTEM level.** The *multi-model harness* has no
 ceiling, because for any class of problem some Jetson-fitting model — paired with the harness
 adaptation built for it — can reach it, and both the model roster and the per-model adaptations
 grow without bound. So a model failing a class is, in order: **(a)** still a **harness gap for
-THAT model** — did its adaptation decompose, scaffold, retrieve, verify, and iterate enough? this
-remains the primary craft and is exhausted honestly first; and only then **(b)** a signal to
-**route that class to a stronger Jetson-fitting model** whose measured profile covers it. *"No
+THAT model** — did its adaptation decompose, scaffold, retrieve, verify, and iterate enough, and
+**above all, has the missing deterministic PROSTHETIC been built** — the tool that makes the
+specific failure VISIBLE, localizes it, verifies/counts/searches, and hands the model a
+now-tractable judgment (this is the PRIMARY lever for a per-model cap)? this remains the primary
+craft and is exhausted honestly first; and only then **(b)** — as the COMPLEMENTARY, secondary
+lever — a signal to **route that class to a stronger Jetson-fitting model** whose measured profile
+covers it. *"No
 Jetson-fitting model, with any harness adaptation, can reach this class"* is the only forbidden
 conclusion now — and it may be asserted **only when proven by measurement across the roster**,
 never assumed from one model's limit. Escalating to a cloud or paid model stays absolutely
@@ -414,8 +426,10 @@ would violate one, **STOP and flag the conflict** rather than silently resolving
    roster. Before reaching for a reduction or a bigger model, one cheap diagnostic settles
    which is needed: hand a failing instance the single missing fact it got wrong (the real
    contract/type/behavior) and see if it flips — if it flips, the wall is *comprehension* and
-   a deterministic fact-injection grain fixes the class; if not, it is a *generation* wall
-   that only a different-distribution model or a reduction can clear.
+   a deterministic fact-injection grain fixes the class; if not, the FIRST lever is still a
+   deterministic prosthetic — a reduction, or a tool that makes the concrete failure visible,
+   localizes it, and feeds it back — and only once that plane is exhausted does a
+   different-distribution model become the secondary lever.
 
 3. **Reproducible & honest.**
    Every run is hash-chain logged and replayable to byte-identical state with zero
@@ -534,6 +548,17 @@ we approach forever and are never satisfied to have merely neared. **And all of 
 Jaros** — every orchestration decision and every tool effect flows through the Jaros runtime (gate →
 execute → hash-chain log → replay). Running on Jaros is non-negotiable: it is how the two-plane
 discipline is *enforced* rather than merely intended, not an implementation detail.
+
+**The deterministic plane is a PROSTHETIC for the model's reasoning (owner directive, 2026-07-07 — the
+sharpest form of Tenet 1).** A small model has a real, per-model reasoning limit — but a deterministic
+tool does the specific work the model cannot (make a failure VISIBLE, LOCALIZE it, verify, count,
+search, generate tests, check invariants, feed the concrete failure back) and hands the model a narrow,
+now-tractable judgment, so the model's genuine-but-bounded reasoning becomes *sufficient to work PAST
+the cap.* The per-model cap is real; the SYSTEM (model + deterministic prosthetics) has none, because
+for any hard class there is a missing prosthetic to build. Therefore the PRIMARY lever for any
+hard-class failure is **build the missing deterministic prosthetic** — never "the model can't, wait for
+a bigger one" (the forbidden drift), and only secondarily route to a stronger roster model. The mission
+is to find the COMPLETE SET of prosthetics.
 
 **The judge-orchestrator is a key piece of the system's success — and it is only ever as strong as the
 deterministic plane that empowers it.** A 2B has far less reasoning than Opus, so the

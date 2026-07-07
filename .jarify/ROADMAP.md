@@ -52,7 +52,9 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
 ## Scoreboard (brief — detail in `docs/GAP-MAP.md`)
 
 - **Capability scoreboard** (how WELL it solves): external hard bar uncurated SWE-bench-Lite **~13%**
-  (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
+  (the missing-deterministic-prosthetic frontier for the 2–3B roster — each miss names a tool to build,
+  not a ceiling to accept; see the governing frame below); creation/modification parity suites high on
+  curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
 - Full test suite: **2440 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
@@ -222,9 +224,11 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
 
 ## LATER (weeks — the hard bar + the flywheel)
 
-- **[roster growth]** admit a stronger **fast-trainable Jetson-fit base** model — high · the real
-  lever for the SWE-bench ~13% bar (reasoning-bound; LoRA/distill measured scoreboard-null on the
-  current 2–3B base — do NOT re-grind training on this base).
+- **[roster growth]** admit a stronger **fast-trainable Jetson-fit base** model — med · a
+  COMPLEMENTARY, SECONDARY lever for the SWE-bench ~13% bar. The PRIMARY lever is the deterministic
+  PROSTHETIC toolset (EXT-056 + the ranked complete set — build the tool that makes each miss VISIBLE +
+  localized so the current base can reason past it) — exhaust that plane before reaching for a bigger
+  base. LoRA/distill measured scoreboard-null on the current 2–3B base — do NOT re-grind training on it.
 - **[flywheel]** accumulate verified solutions (`record_verified` on the real solve paths, not just
   the daily-driver) toward an eventual distill when a better base lands — med · sovereign data.
 - **[parity instruments — mature the honest scoreboard]** the daily-driver suite (#51, 80+ CLI tasks
