@@ -2437,7 +2437,16 @@ def _try_stream_plain(cli: "JcodeCli", line: str) -> "str | None":
         return None
 
     try:
-        events = solve_streaming(line, llm=cli.llm)
+        # #EXT-057-REQ-2 Start
+        # Pass the REAL orchestration (`_route_plain`) as `solve_fn` so streaming NEVER regresses
+        # tool-routing capability: solve_streaming runs the full deterministic-fastpath->orchestrator
+        # chain (its tool/Decision activity already streams live via the EXT-045 on_event printer)
+        # and yields a working indicator + the final answer, rather than a chatty model-only echo.
+        # `getattr` (not attribute access) so a partial/stub CLI without `_route_plain` degrades to
+        # solve_fn=None (model-direct streaming) rather than raising.
+        _solve_fn = getattr(cli, "_route_plain", None)
+        events = solve_streaming(line, llm=cli.llm, solve_fn=_solve_fn)
+        # #EXT-057-REQ-2 End
     except TypeError:
         try:
             events = solve_streaming(line)

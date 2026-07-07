@@ -1,7 +1,7 @@
 ---
 id: EXT-057
 title: Interactive CLI Rebuild (Claude-Code-grade REPL)
-status: partial
+status: covered
 priority: high
 implementation:
   - file: harness/llamacpp_client.py

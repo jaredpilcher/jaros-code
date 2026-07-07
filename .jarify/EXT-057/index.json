@@ -1,31 +1,41 @@
 {
-  "REQ-1": [
+  "REQ-2": [
     {
-      "file": "harness/llamacpp_client.py",
-      "startLine": 125,
-      "endLine": 223
+      "file": "harness/cli.py",
+      "startLine": 2440,
+      "endLine": 2446
     },
     {
-      "file": "tests/test_ext057_streaming_client.py",
-      "startLine": 15,
-      "endLine": 175
+      "file": "harness/coding_loop.py",
+      "startLine": 888,
+      "endLine": 974
+    },
+    {
+      "file": "harness/stream_bus.py",
+      "startLine": 11,
+      "endLine": 67
+    },
+    {
+      "file": "tests/test_ext057_stream_bus.py",
+      "startLine": 7,
+      "endLine": 97
     }
   ],
   "REQ-3": [
     {
       "file": "harness/cli.py",
       "startLine": 2414,
-      "endLine": 2454
+      "endLine": 2460
     },
     {
       "file": "harness/cli.py",
-      "startLine": 2495,
-      "endLine": 2499
+      "startLine": 2501,
+      "endLine": 2505
     },
     {
       "file": "harness/cli.py",
-      "startLine": 2521,
-      "endLine": 2533
+      "startLine": 2527,
+      "endLine": 2539
     },
     {
       "file": "harness/repl_render.py",
@@ -36,6 +46,18 @@
       "file": "tests/test_ext057_repl_render.py",
       "startLine": 19,
       "endLine": 328
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "harness/llamacpp_client.py",
+      "startLine": 125,
+      "endLine": 223
+    },
+    {
+      "file": "tests/test_ext057_streaming_client.py",
+      "startLine": 15,
+      "endLine": 175
     }
   ],
   "REQ-4": [

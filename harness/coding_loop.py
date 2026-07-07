@@ -883,3 +883,92 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     return LoopResult(success=False, attempts=max_iters, final_output=last_output)
 # #EXT-003-REQ-2 End
 # #EXT-003-REQ-3 End
+
+
+# #EXT-057-REQ-2 Start
+def solve_streaming(request, *, llm=None, solve_fn=None, on_cancel=None, max_tokens=1024):
+    """The interactive solve path as a GENERATOR of stream-bus events (EXT-057 REQ-2) -- the seam
+    the rebuilt REPL (`harness/repl_render.render_stream`) consumes to feel like Claude Code instead
+    of running silently and dumping one block.
+
+    Two modes, chosen by whether the caller passes the real orchestration as ``solve_fn``:
+
+    * ``solve_fn`` given (the REPL passes ``cli._route_plain``): run the FULL orchestration so tool
+      routing/capability is UNCHANGED (its tool/Decision activity already streams live through the
+      EXT-045 ``Runtime.on_event`` printer -- no new side-effect path, Tenet 1). We yield a
+      ``thinking`` indicator so the cursor is never dead during the model's work, then the final
+      response text + ``done``. ``solve_fn`` returns either ``(text, label)`` or a plain string.
+    * no ``solve_fn`` (a pure conversational turn): stream the model's answer token-by-token via
+      TASK-1's ``llm.stream_complete`` -- each delta is an ``assistant_token`` event -- falling back
+      to blocking ``llm.complete`` if streaming is unavailable.
+
+    Honors a cooperative ``on_cancel()`` (EXT-055) between chunks -> a ``cancel`` event. NEVER raises
+    out of the generator: any internal error becomes a final ``assistant_token`` + ``done`` so the
+    REPL always terminates a turn cleanly. Model streaming of the ORCHESTRATOR's own reasoning (vs a
+    conversational turn) is a follow-up (threads ``stream_complete`` into the agent calls)."""
+    import queue as _queue
+    import threading
+    from harness import stream_bus
+
+    def _cancelled():
+        try:
+            return bool(on_cancel and on_cancel())
+        except Exception:
+            return False
+
+    # --- mode A: real orchestration (capability preserved; tool events print via on_event) -------
+    if solve_fn is not None:
+        result = {"text": ""}
+        doneq: "_queue.Queue" = _queue.Queue()
+
+        def _run():
+            try:
+                out = solve_fn(request)
+                result["text"] = out[0] if isinstance(out, tuple) and out else (
+                    "" if out is None else str(out))
+            except Exception as exc:  # noqa: BLE001
+                result["text"] = f"error: {exc}"
+            finally:
+                doneq.put(True)
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+        yield stream_bus.thinking("working")
+        while True:
+            try:
+                doneq.get(timeout=0.2)
+                break
+            except _queue.Empty:
+                if _cancelled():
+                    yield stream_bus.cancel()
+                    return
+        text = result.get("text", "")
+        yield stream_bus.assistant_token(text)
+        yield stream_bus.done(text)
+        return
+
+    # --- mode B: conversational -> stream the model's answer token-by-token ----------------------
+    parts: "list[str]" = []
+    try:
+        from jaros.llm import LlmRequest
+        req = LlmRequest(prompt=str(request), params={"max_tokens": max_tokens})
+        streamer = getattr(llm, "stream_complete", None)
+        if streamer is not None:
+            for delta in streamer(req):
+                if not delta:
+                    continue
+                parts.append(delta)
+                yield stream_bus.assistant_token(delta)
+                if _cancelled():
+                    yield stream_bus.cancel()
+                    yield stream_bus.done("".join(parts))
+                    return
+        if not parts:  # streaming unavailable or empty -> blocking fallback
+            text = llm.complete(req).text if llm is not None else ""
+            parts.append(text)
+            yield stream_bus.assistant_token(text)
+    except Exception as exc:  # noqa: BLE001 -- never raise out of the generator
+        parts.append(f"error: {exc}")
+        yield stream_bus.assistant_token(parts[-1])
+    yield stream_bus.done("".join(parts))
+# #EXT-057-REQ-2 End
