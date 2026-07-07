@@ -105,12 +105,20 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   arity-probe fix (REQ-36/#129), spec-derived property check landed default-off (REQ-37/#130). The modification
   plane is complete + unified with build-recovery. Residual on the hard tasks (kv-store-ttl, priority-jobqueue)
   is the reasoning ceiling, not a mechanism gap — consistent with the mapped frontier.
-- **[★ NEXT lever I own — best-of-k oracle-select on the now-honest bar]** with the acceptance grader honest
-  BOTH ways (#118 deterministic-minimum + #121 behavioral + REQ-28 false-negative fix), best-of-k now selects
-  on a REAL bar. #86 datastore already GENUINELY WORKS via k=5. Make best-of-k the generic reliability lever
-  across creation classes (not just datastore): sample k draws, select the one that passes the honest
-  acceptance, measure the lift per-class on a HELD-OUT tier (Tenet 3). This is the highest impact×tractability
-  capability move that is NOT reasoning-bound — it extracts more from the SAME model by selection. Via Jarify.
+- **[✅ MEASURED NEGATIVE (2026-07-06/07) — best-of-k oracle-select is NET-NEGATIVE, PARKED]** ran the honest
+  test (`.jaros-data/bestofk_oracle_lift.py`, 20 creation classes, k=1 vs k=5, each scored vs the INDEPENDENT
+  oracle, no leak): single-build **17/20** vs best-of-5 **14/20** → **lift -3, 0 rescues, 3 regressions**
+  (priority-jobqueue, rpn-calc, csv-column-aggregator). best-of-k is NOT a generic reliability lever — it
+  actively HURTS. ROOT CAUSE (sharp): best-of-k selects/early-exits on the self-derived acceptance signal,
+  which for the semantic-ordering classes (kv-store-ttl, priority-jobqueue) is BLIND — the deterministic
+  minimum tests usage/smoke/round-trip and the gemma-proposed checks can't reliably test dequeue-order/TTL
+  (that's GAP-2; REQ-37 property-check is default-off for exactly this reason). So best-of-k early-exits on a
+  self-confident-but-ordering-broken draw, AMPLIFYING the blind spot, where plain k=1 sometimes draws a correct
+  build by luck. The 2 apparent false-dones (kv-store-ttl self-done=True oracle 0/3; priority-jobqueue 1/3) are
+  GAP-2 surfacing through selection, not a new bug. STRATEGIC LESSON: you cannot SELECT your way to correctness
+  on a proxy blind to the failure mode — sampling+selection is now exhausted on the CURRENT acceptance signal;
+  the bottleneck is signal QUALITY (reasoning-bound), not the selection mechanism. Moved to PARKED. #86
+  datastore still genuinely works via k=5 (a class where the signal is NOT blind — round-trip is checkable).
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
@@ -222,6 +230,12 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
   base, reasoning-trace data, or a prose-parse solve path. (GAP-MAP GAP-1.)
 - **[governed capstone]** `build_system_governed` decompose→repair — BANKED net-negative (regressed
   coherence 10/11→8/11→0/11 across 3 live attempts). Do NOT restart.
+- **[best-of-k oracle-select]** MEASURED net-negative (-3/20, 0 rescues, 3 regressions; `.jaros-data/
+  bestofk_oracle_lift.py`, 2026-07-07). Selecting on a self-acceptance proxy that's BLIND to semantic-ordering
+  (GAP-2) amplifies the blind spot. REVISIT only if a trustworthy semantic-ordering acceptance signal exists
+  (a better base that writes reliable property tests, or a deterministic ordering-oracle generator). Do NOT
+  wire as a default fallback (net-negative). Keep k=5 ONLY for classes with a checkable-behavior oracle (e.g.
+  datastore round-trip), never globally.
 
 ---
 
