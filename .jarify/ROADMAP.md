@@ -55,8 +55,11 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **2258 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+- Full test suite: **2410 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
+- **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
+  **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
+  19/19=100%). Sole miss: build_hard_lru_cache (reasoning-bound, bookmarked). Grow toward the 80-task mandate.
 
 ---
 
@@ -96,33 +99,18 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   grounded in the ACTUAL built interface; generate writes stricter checks against its own imagined
   interface → more false-negatives (9 vs 5). 7B-REVIEW stays the 7B-acceptance mode; generate stays
   committed-not-preferred. Honest measured negative — acceptance-honesty arc COMPLETE.
-- **[★ ITERATIVE REPLAN-AS-MODIFICATION on build failure (owner seed 2026-07-06) — NEXT big capability lever]**
-  when a build fails acceptance, don't just per-module-repair (today's `_repair_system`, a local patch) —
-  step back and REPLAN: assess where the project ACTUALLY landed vs the spec's target, emit a MODIFICATION
-  PLAN to bridge the gap, apply it via the existing `modify_system` plane, re-check, and ITERATE (2nd/3rd/4th).
-  Unifies the build + modification planes (currently disconnected). GUARDRAILS: convergence-gated (each
-  round must REDUCE failing checks, else stop + keep best-so-far — no infinite replanning, same no-regression
-  floor as the repair loop); NO ORACLE LEAK (replan sees spec + built code + which checks failed, never hidden
-  outputs); MEASURED on the tasks where per-module repair FAILS (kv-store-ttl, priority-jobqueue) — a different
-  extraction mechanism than patching/best-of-k, worth measuring even though the residual is reasoning-bound;
-  honest negative accepted if it hits the ceiling. This is the modification-axis exploration reframed as
-  build-recovery. Via Jarify.
-- **[✅ LANDED d0516b7 (REQ-35, 2026-07-06) — modify_system now ADDS + regenerates]** SHIPPED: `_identify_new_modules`
-  + `_build_new_module` (bounded ≤3, ambiguity-guarded, reuse syntax-gate/repair), wired after `_identify_targets`;
-  regression-gate revert extended to REMOVE added modules; byte-identical when off; NO oracle leak; suite 2384.
-  Completes the modification plane (was regenerate-only) + structurally unblocks replan's add-module half. Capability
-  effect being measured (`.jaros-data/add_modules_gate.py`). Original item ↓ for provenance:
-- **[★ modify_system: ADD new modules, not just regenerate existing (owner 2026-07-06) — completes the
-  modification plane]** MEASURED limitation (surfaced by the REQ-34 replan build): `modify_system`'s
-  `_identify_targets` only offers EXISTING modules to change, so it can REGENERATE a file but never ADD a
-  new one. But a SYSTEM edit is system-level, not file-level — "add a caching layer", "split into
-  service+client", "add the missing entrypoint" all require ADDING modules. Extend modify_system (the
-  GENERAL modification case) to let a modification plan introduce NEW modules (name + responsibility +
-  wiring), reusing build_system's per-module build + syntax-gate + the plan-coherence validators/repairs
-  (validate_plan, entrypoint/import repairs incl REQ-32). Completes the modification capability AND
-  unblocks the "add a missing module" half of the replan-as-modification recovery (above). Same guardrails:
-  regression-gated (REQ-14 already gates modify — never break untouched behavior), test-verified, no oracle
-  leak. Via Jarify.
+- **[✅ LANDED — replan-as-modification + modify_system-ADD + done-convergence + property-check (2026-07-06)]**
+  the owner-seed capability cluster has SHIPPED (see LANDED trail): iterative replan-as-modification on build
+  failure (#127), modify_system now ADDS new modules not just regenerates (REQ-35/#128, d0516b7), done-convergence
+  arity-probe fix (REQ-36/#129), spec-derived property check landed default-off (REQ-37/#130). The modification
+  plane is complete + unified with build-recovery. Residual on the hard tasks (kv-store-ttl, priority-jobqueue)
+  is the reasoning ceiling, not a mechanism gap — consistent with the mapped frontier.
+- **[★ NEXT lever I own — best-of-k oracle-select on the now-honest bar]** with the acceptance grader honest
+  BOTH ways (#118 deterministic-minimum + #121 behavioral + REQ-28 false-negative fix), best-of-k now selects
+  on a REAL bar. #86 datastore already GENUINELY WORKS via k=5. Make best-of-k the generic reliability lever
+  across creation classes (not just datastore): sample k draws, select the one that passes the honest
+  acceptance, measure the lift per-class on a HELD-OUT tier (Tenet 3). This is the highest impact×tractability
+  capability move that is NOT reasoning-bound — it extracts more from the SAME model by selection. Via Jarify.
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
@@ -248,6 +236,27 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: fix-route double-application repair — daily-driver parity 0.958→0.975 (df041e0, 2026-07-06)]**
+  the GROWN discriminating daily-driver instrument (#51, now 29 tasks dev+holdout) surfaced fix_hard_invoice_
+  double_tax as a FAILURE; raw-probe classified it a HARNESS gap not a model limit (the `fix` route's
+  standalone-fn-gen can't reach a bug spanning a 4-function call chain — gemma solves it instantly given the
+  whole file). PLANE-PLACEMENT fix (EXT-003 REQ-7): a deterministic `double_application_repair` in
+  `coding_loop.fix_loop` — pure-AST detection of a value re-applied to the SAME function down the call chain
+  (intermediate-var OR nested form), unwraps the redundant outer application via Jaros Decisions
+  (code.write_file+shell.exec), NEVER touches the inner fn body (so no rounding-instability), restores original
+  on failure (non-degrading), runs FIRST then falls through to boundary-mutation. No model call — fully
+  reproducible (Tenet 3). Suite 2410 green, architect-validated spec-first (added REQ-7 to requirements.md).
+  ★ RE-MEASURED: weighted parity **0.9583→0.975 (27/29→28/29)**, fix **8/9→9/9**, dev split now PERFECT 25/25,
+  no regression. The full loop working end-to-end: discriminating instrument → raw-probe classification →
+  plane-placement fix → commit → re-measure the lift. Sole residual: build_hard_lru_cache (reasoning-bound,
+  bookmarked). — df041e0.
+- **[★ CAPABILITY: owner-seed cluster — replan + modify-ADD + done-convergence + property-check (2026-07-06)]**
+  replan-as-modification on build failure (#127, convergence-gated, no oracle leak); modify_system now ADDS new
+  modules not just regenerates (REQ-35/#128, d0516b7 — bounded ≤3, ambiguity-guarded, regression-gated,
+  byte-identical-when-off); done-convergence arity-probe false-negative fix (REQ-36/#129, sacred-gated);
+  spec-DERIVED behavioral property check PGS-style landed DEFAULT-OFF (REQ-37/#130 ca4b101 — sacred-safe by
+  construction but A/B measured 0 catches + 3 wrongly-demoted → the 2B can't write reliable property tests, a
+  stronger-model lever). Modification plane complete + unified with build-recovery; honest measured negatives banked.
 - **[★ CAPABILITY: hard-tier plan-repair + route-to-qwen negative (2026-07-06)]** hard-tier failure diagnostic (accept 5/8): 1 DETERMINISTIC plan gap + 2 reasoning misses. FIXED the deterministic one — **REQ-32 (cbced82)**: `_repair_plan_entrypoint_multi` extends the entrypoint plan-repair to the MULTI-module case (safely ADDS the intended entrypoint module when modules are fully disconnected; leaves genuinely-ambiguous plans rejected). graph-bfs-shortest-path-cli went from plan-reject (0/2) to **oracle-accept 2/2 on gemma** — a real per-task capability gain, not just plan-unblock. Suite 2315→2322. Honest note: aggregate accept held ~0.85/0.71 (2 runs agree) — a single 20-task run can't detect a +1-task lift (gemma variance ±1-2). ★ ROUTE-TO-QWEN BUILD = NOT a lever (measured): qwen2.5-coder-7b accepted **0/3** hard tasks vs gemma's **2/3** — the 7B builds WORSE (often doesn't ship) in the gemma-co-adapted harness. So hard-build reasoning misses are NOT rescued by a roster swap → the honest path is the model/flywheel lever ([[jaros-code-hardclass-ceiling]]). Owner's 2nd idea also measured: 7B-GENERATE checks (REQ-31 87c5a39) is WORSE than 7B-review — A/B done-rate review 0.55 > generate 0.35 (all 0 false-dones); review's anchoring to Gemma's real-interface checks is a strength. Acceptance-honesty arc COMPLETE.
 - **[★ CAPABILITY: 7B-review of acceptance checks (owner idea #122) — mechanism landed d1ffe06]** the measured cause of the acceptance grader's under-claiming (done-rate 45% vs 85% independent accept) was Gemma writing HALLUCINATED checks for its own build (invented APIs/values). Owner's steer: don't trust-all (false-negatives) or drop-all (false-dones, a reverted attempt) — have the stronger 7B REVIEW+CORRECT the checks from the VISIBLE SPEC only. PROBE VALIDATED it (7B fixed 3/4 hallucinated checks + preserved 1/1 real-bug catch, NO oracle leak). Landed `harness/acceptance_review.py` `review_checks(...)` + injectable `check_reviewer=None` in build_system/best_of_k (default byte-identical; minimum never reviewed; never raises; NO ORACLE LEAK — reviewer sees only spec+code+check). 11 offline tests, suite 2295→2306. EXT-036 REQ-30. ★ LIVE GATE VERDICT (batched gemma→7B→gemma, 20 tasks): done-rate **0.45→0.60**, accept 0.80, **false_done=[] (0 over-claims — SACRED property HELD)**, false-negatives cut **8→4**. So 7B-review WORKS + is honest-safe: it moves done toward accept with ZERO over-claims, though partially (4 residual false-negatives, matching the 3/4 probe). Kept as an OPT-IN / escalation-tier refinement (NOT forced-default) because the ~10min Jetson model-swap per build isn't worth it for a modest calibration gain on every interactive build — the value is in best-of-k selection / a --thorough path. A clean multi-model resolution to the honesty wall, validated by measurement.
 - **[★★ CAPABILITY: #86 datastore GENUINELY WORKS — honest win on a trustworthy bar]** with the grader now honest BOTH ways (#118+#121+REQ-28), the small local Gemma 2B builds a **genuinely working** SQLite notes app from ONE sentence: fresh build `done=true` + `PERSISTS=true` (physical add→list round-trips), 6/6 acceptance checks, $0. **The datastore class is NOT a reasoning ceiling** — a working build is reachable (best-of-k is the lever; this run hit it on attempt 1). En route, REQ-28 (6bf0a85) fixed a grader FALSE-NEGATIVE the win exposed: the per-command probe fed `add` one guessed arg, the 2-arg app correctly printed a usage error, and #121's error-marker mis-read that correct input-validation as a crash — now excused for guessed-arity probes while genuine runtime errors + the round-trip stay strict (dual test; #121's true-positives re-verified intact). Proven deterministically (the exact k=5 winner: 4/5→5/5) AND end-to-end (fresh build 6/6+PERSISTS). Suite 2287→2295. Lesson: a grader wrong in EITHER direction is a Tenet-3 defect; physically verify a built system before claiming done OR not-done.
