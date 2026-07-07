@@ -119,12 +119,36 @@ creation task is likewise a manual follow-up, not part of the offline pytest sui
   small hand-written CLI fixtures in a temp directory — no external service, no live
   `build_system`/gemma run in pytest (that is an explicit, separate manual smoke)
 
-### [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra) — not started
+### [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra) — partial (Redis rung landed, TASK-2)
 
-A later requirement/task: a `ServiceProvisioner` that brings a REAL external datastore service up
-on localhost (or connects to an already-running one), applies resource/connection caps, and tears
-it down cleanly — plugging into the SAME `verify_persistence`-shaped acceptance contract REQ-1
-established for sqlite. This genuinely needs a running service (Postgres/Redis/Qdrant/Cassandra) and
-so cannot be proven by this repo's offline/no-network test discipline the way REQ-1 was; it is named
-here honestly as the next rung, not silently deferred, and is explicitly OUT OF SCOPE for this spec's
-first task.
+A `ServiceProvisioner` that brings a REAL external datastore service up on localhost (or connects to
+an already-running one), applies resource/connection caps, and tears it down cleanly — plugging into
+the SAME `verify_persistence`-shaped acceptance contract REQ-1 established for sqlite.
+
+**LANDED (TASK-2, the Redis rung — `harness/service_provisioner.py`, pure stdlib, no new dependency):**
+- `docker_available()` — never-raise gate (docker CLI present AND daemon answers) consulted by every
+  provision call and every test.
+- `provision_redis(*, image, host_port=0, mem_cap, ready_timeout_s)` — brings a real Redis up via
+  Docker (`--rm`, `--memory` cap, `host_port=0` → Docker-picked free loopback port so parallel runs
+  never collide), probes it ready via a raw-socket RESP `PING`→`PONG`, returns an `ok` `ServiceHandle`;
+  on any failure tears down the partial container and returns an honest `ok=False` — NEVER raises,
+  NEVER leaks a container.
+- `teardown(handle)` — best-effort `docker stop` (`--rm` auto-removes), safe on `None`/failed handle,
+  never raises; every provision site calls it in a `finally`.
+- A tiny RESP-over-raw-`socket` client (`_resp_command`) — pure stdlib, NOT `redis-py` — used for both
+  readiness and the module's OWN independent verification of Redis state.
+- `verify_redis_persistence(root, *, handle, drive_cmds, assertions, python_exe, cross_invocation_cmd,
+  entry_name)` — mirrors `datastore_oracle.verify_persistence` stage-for-stage against the provisioned
+  Redis: clean-state `FLUSHDB` → drive the CLI-under-test (via `harness.secure_exec.run_sandboxed` with
+  `REDIS_HOST`/`REDIS_PORT` injected through `extra_env`) → INDEPENDENTLY verify real Redis state (never
+  stdout) → cross-invocation re-check → `ok=True` only when all hold; NEVER raises. Proven by 10 offline-
+  skipped tests (`tests/test_ext039_service_provisioner.py`), including the two LOAD-BEARING cases: a real
+  Redis-backed CLI passes; a hollow "Saved!"-printing CLI that never writes to Redis is caught.
+
+**Honest platform/egress note:** `run_sandboxed` does not enforce runtime egress today (static-scan only,
+per `harness/secure_exec.py`), which is why the CLI-under-test can reach the provisioned loopback service;
+on a future Linux/netns deployment the provisioned `host:port` must be added to that run's egress allow-list.
+
+**Still NOT built (named, later under REQ-2):** Postgres/Qdrant/Cassandra provisioners (each a different
+wire protocol) and a live DATASTORE creation-suite task that runs inside the suite loop against a
+provisioned service. These remain honest follow-ups.

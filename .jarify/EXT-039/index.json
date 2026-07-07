@@ -15,5 +15,17 @@
       "startLine": 8,
       "endLine": 314
     }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/service_provisioner.py",
+      "startLine": 48,
+      "endLine": 381
+    },
+    {
+      "file": "tests/test_ext039_service_provisioner.py",
+      "startLine": 9,
+      "endLine": 219
+    }
   ]
 }
