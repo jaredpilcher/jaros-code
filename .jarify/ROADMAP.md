@@ -86,14 +86,19 @@ measured feature PRESENCE, not felt QUALITY (a Tenet-3 gap, fixed by EXT-057 REQ
 runs silently then dumps one block; it's banner-sold as command-first. **Rebuild = EXT-057** (4-layer:
 streaming client → event-yielding solve path/stream bus → NL-first REPL render → felt-quality instrument).
 
-- **[EXT-057 REQ-1 · streaming LLM client — ✅ BUILT (awaiting integrated commit), #134]** `stream_complete`
-  streams SSE token deltas; non-streaming `complete()` byte-stable (Tenet 3); 8 offline tests green. Kills
-  the silent-black-box wait — the #1 felt gap. OFF-Jetson (code+tests, no inference).
-- **[EXT-057 REQ-2/3/4 — HIGH, IN FLIGHT (parallel), #135/#136/#137]** stream bus + `solve_streaming`
-  (coding_loop) · NL-first REPL render + live tool cards (cli.py/repl_render) · felt-quality parity
-  dimension (product_parity). Three builders running concurrently, partitioned by file. All OFF-Jetson.
-- **[EXT-057 live-feel verification — NEXT, ON-Jetson batch]** once the layers land, run the REPL live
-  against the Jetson to confirm streamed tokens + live tool cards actually FEEL like Claude Code.
+- **[✅ EXT-057 ALL 4 LAYERS LANDED (641fc39 + 283ecb8), #134-137]** streaming LLM client (REQ-1) +
+  NL-first REPL render with live tool cards (REQ-3) + felt-quality parity dimension (REQ-4) +
+  event-yielding solve path/stream bus wired NON-regressing (REQ-2). 39 EXT-057 tests + 142 cli-suite
+  regression green. Built in parallel (partition-by-file) + integrated. EXT-057 spec `covered`.
+- **[EXT-057 TASK-5 · orchestrator token-streaming — HIGH, NEXT · the remaining big felt win]** today
+  `solve_streaming` streams model tokens for a CONVERSATIONAL turn, and for a WORK request runs the real
+  orchestration with a working indicator + live tool cards (non-regressing) but the model's answer lands
+  at the end. Thread `stream_complete` into the orchestrator's own model calls so the user watches the
+  model THINK live on work-requests too. OFF-Jetson build; the deepest remaining felt gap. (new task)
+- **[EXT-057 live-feel verification — NEXT, ON-Jetson batch]** run the rebuilt REPL live against the
+  Jetson to confirm streamed tokens + live tool cards actually FEEL like Claude Code (pre-registered:
+  does a plain "explain X" stream token-by-token; does "fix foo.py" show live tool cards + a working
+  indicator instead of a silent wait).
 
 ### ★★ CAPABILITY — the frontier I own (the North Star's harder bar)
 
@@ -343,6 +348,16 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ PRODUCT UX: Claude-Code-grade CLI rebuild — EXT-057 (641fc39 + 283ecb8, 2026-07-07)]** the owner
+  found the CLI "awful" (silent, command-only, no live feedback); rebuilt end-to-end in 4 layers, all
+  landed: (REQ-1) streaming LLM client — `llamacpp_client.stream_complete` streams SSE token deltas,
+  killing the silent-black-box wait, non-streaming path byte-stable; (REQ-3) NL-first REPL — talking is
+  the headline, `/` is the escape hatch, `repl_render.render_stream` renders streamed text + tool cards +
+  a working indicator; (REQ-2) `stream_bus` + `coding_loop.solve_streaming` — streams model tokens for
+  conversational turns, runs the REAL orchestration (`solve_fn=_route_plain`) with live tool cards for
+  work-requests (NON-regressing); (REQ-4) a felt-quality parity dimension so the instrument can no longer
+  report 84% while the UX is awful (Tenet-3 gap closed). 39 EXT-057 + 142 cli-suite tests green. Built in
+  parallel off-Jetson (partition-by-file). Remaining felt win (orchestrator token-streaming) → TASK-5.
 - **[★★ CAPABILITY: adt-oracle WIRED into acceptance TASK-2 — EXT-056 REQ-1 (16a214a, 2026-07-07)]** the
   ADT differential oracle now GATES builds: `_minimum_acceptance` conservatively classifies a build
   (`classify_confident` — only when the spec explicitly names the ADT, no false-not-done) and appends a
