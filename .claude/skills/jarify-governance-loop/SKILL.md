@@ -163,13 +163,23 @@ Every change — a compliance fix, a conflict resolution, or the next improvemen
 - Spec + code change in the SAME commit (spec-first; stale specs are defects).
 
 ## Operational guardrails (non-negotiable)
-- READ-ONLY auditing is safe anytime. Any CODE change must be applied at a **SAFE BOUNDARY** — when a
-  long-running job (an eval, a build, a training run) ENDS and before the next STARTS — never mid-run on
-  a shared resource (a single GPU, a shared checkout/worktree). Spec-doc-only changes are safe anytime.
-- NEVER conflict with concurrent work (another builder/session mid-task): don't edit files it is
-  touching; sequence behind it.
-- Where the project runs an improvement-experiment chain, keep at least one experiment running so the
-  loop self-sustains; act on each result (commit/revert) and launch the next.
+- **PARALLEL / OVERLAPPING WORK IS ENCOURAGED FOR VELOCITY (owner directive, 2026-07-07 — supersedes the
+  earlier "sequence behind concurrent work / don't-double-run" rule).** To reach the Prime-Directive
+  end-state as fast as possible, run MANY builders/experiments concurrently. The ONE preserved safety
+  property is **no two concurrent writers touch the SAME file** — partition parallel work by FILE (or use
+  worktree isolation) so builders never collide/clobber. Serial sequencing is no longer required; only
+  same-file collision is forbidden. Reconcile shared artifacts (e.g. a spec's `index.json`, frontmatter
+  `status`) at integration time.
+- **JETSON-UTILIZATION DOCTRINE (owner directive, 2026-07-07):** the Jetson (inference) is the ONE scarce
+  resource. MAXIMIZE off-Jetson work (spec authoring, building deterministic tools, tests, code, graders,
+  measurement harnesses, governance, research) — parallelize it massively ahead of time so the Jetson is
+  never idle waiting on prep; run ON-Jetson experiments (live builds, evals, held-out measurements) in
+  BATCHES at full utilization, each with a pre-registered kill criterion.
+- READ-ONLY auditing is safe anytime. A CODE change is safe as long as no OTHER concurrent writer is in
+  the same file; on a genuinely shared single resource (one GPU mid-run, one shared checkout), still apply
+  at a safe boundary. Spec-doc-only changes are safe anytime.
+- Where the project runs an improvement-experiment chain, keep MULTIPLE experiments/builders running so the
+  loop self-sustains at high throughput; act on each result (commit/revert) and launch the next.
 
 ## Notifications & autonomy
 The loop runs AUTONOMOUSLY — the **default is to ACT per the intent, not to ask.** Auto-steer and
