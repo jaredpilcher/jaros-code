@@ -128,3 +128,72 @@ discipline (Tenet 3): every test skips when Docker is absent, so offline CI NEVE
 
 #### Implements
 - [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra)
+
+### [TASK-3] Postgres rung — provisioner + independent persistence oracle (REQ-2)
+
+Extend REQ-2 to Postgres, the second real-service rung, in the SAME `harness/service_provisioner.py`
+module TASK-2 landed (not a new file — Postgres and Redis share the provision/verify/teardown shape).
+Independent verification uses a minimal, hand-rolled Postgres wire-protocol (v3) client over a raw
+stdlib `socket` — mirroring the Redis RESP client's own-protocol discipline exactly, NOT a
+`docker exec ... psql` shell-out and NOT a new dependency (`psycopg2`/`pg8000`). The container is
+configured with `POSTGRES_HOST_AUTH_METHOD=trust` (safe: an ephemeral, loopback-only, local-dev-only
+container torn down at the end of every test) specifically so the client needs only the STARTUP +
+SIMPLE QUERY message flow, never SCRAM-SHA-256 authentication — de-risked by a live probe (confirmed
+working: startup → `ReadyForQuery` → `Query`/`RowDescription`/`DataRow`/`CommandComplete` parsing
+against a real `postgres:16-alpine` container). Offline-honest (Tenet 3): every new test skips when
+Docker is absent, exactly like TASK-2's tests.
+
+#### Steps
+1. In `harness/service_provisioner.py`, add `provision_postgres(*, image="postgres:16-alpine",
+   host_port=0, mem_cap="256m", db="app", user="app", ready_timeout_s=30.0) -> ServiceHandle` (reuse
+   the existing `ServiceHandle` dataclass, `kind="postgres"`, storing `db`/`user` in `.note` or new
+   optional fields as convenient): if `docker_available()` is False, return an honest `ok=False`
+   handle immediately; else `docker run -d --rm --memory=<mem_cap> -e POSTGRES_DB=<db> -e
+   POSTGRES_USER=<user> -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:<host_port or 0>:5432
+   <image>`, poll readiness via `docker exec <id> pg_isready -U <user> -d <db>` (the image's own
+   bundled readiness tool — used ONLY for the readiness poll, not for queries) until ready or
+   `ready_timeout_s` elapses. On any failure, tear down the partial container and return `ok=False` +
+   a diagnostic note — NEVER raise, NEVER leak a container.
+2. `teardown(handle)` (the EXISTING function from TASK-2) already works unchanged for any
+   `container_id`-bearing handle — reuse it as-is for Postgres handles too (no new teardown function).
+3. Add a tiny stdlib Postgres wire-protocol v3 client, module-private, mirroring the RESP client's
+   naming/shape: `_pg_connect(host, port, user, db, timeout_s) -> socket | None` (sends the
+   StartupMessage, consumes messages until `ReadyForQuery` ('Z') or an error ('E'), returns the
+   connected+authenticated socket or `None` on any failure — never raise) and `_pg_query(sock, sql) ->
+   "list[tuple] | None"` (sends a Simple Query ('Q') message, parses `RowDescription`('T')/`DataRow`
+   ('D')/`CommandComplete`('C') until `ReadyForQuery`('Z'), returns the parsed rows as a list of
+   string tuples, or `None` on an error reply / parse failure — never raise). This is the module's OWN
+   independent query path — never anything the CLI-under-test's own process ran.
+4. Add `verify_postgres_persistence(root, *, handle, drive_cmds, assertions, python_exe,
+   cross_invocation_cmd, entry_name="main.py") -> ServiceResult`, structurally identical to
+   `verify_redis_persistence` (same 4 stages: clean-state → drive → independently verify → cross-
+   invocation) but: (a) clean-state issues `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` via
+   its own `_pg_connect`/`_pg_query` call; (b) drives the CLI-under-test via the EXISTING
+   `_run_cli_env` helper (from TASK-2 — reuse unchanged), injecting the standard libpq env vars
+   `PGHOST=127.0.0.1`, `PGPORT=<port>`, `PGDATABASE=<db>`, `PGUSER=<user>` (no `PGPASSWORD` needed —
+   trust auth) so any Postgres-driver-using CLI picks them up with zero special wiring; (c) each
+   `assertions` entry is either a `callable(query_fn) -> bool` (where `query_fn` opens a fresh
+   `_pg_connect`+`_pg_query` for that one call) or a `(sql, expected_rows)` pair compared against a
+   fresh query's parsed result. Never raises; `ok=True` only when the handle is live, both CLI
+   invocations exit cleanly, and every assertion holds on BOTH checks.
+5. Update the module docstring's "named-but-not-built" section to mark Postgres as landed (mirroring
+   Redis) and Qdrant/Cassandra as the still-open follow-ups; note the `HOST_AUTH_METHOD=trust` choice
+   and why it's safe (ephemeral loopback-only container, torn down every run).
+6. Add `tests/test_ext039_postgres_provisioner.py`, mirroring the Redis test file's structure —
+   EVERY test `@pytest.mark.skipif(not service_provisioner.docker_available(), ...)`. Fixture CLIs
+   are hand-written scripts embedding the SAME minimal wire-protocol logic (startup + simple query,
+   reading `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER` from env, no auth needed) — pure stdlib `socket`,
+   no `psycopg2`. Cover: (a) `provision_postgres` → ready → `teardown` leaves no running container;
+   (b) LOAD-BEARING GOOD: a real Postgres-backed CLI fixture whose data persists across two
+   invocations passes; (c) LOAD-BEARING CATCH: a fake CLI printing "Saved!" but never touching
+   Postgres is rejected; (d) cross-invocation catch for an in-process-only fake; (e) never-raise on
+   malformed `assertions`/`drive_cmds` / missing entrypoint / a container that fails to become ready
+   (an absurdly short `ready_timeout_s` forces this deterministically) — honest `ok=False` each time;
+   (f) `teardown` in a `finally` leaves no leaked container even when verification fails. Use
+   `host_port=0`.
+7. Run `python -m pytest tests/test_ext039_postgres_provisioner.py -v` (foreground, live Docker) first
+   and confirm all pass; then the full `python -m pytest tests/ -q` (foreground) to confirm no
+   regression against the current baseline (2420 passed / 2 skipped). Report both counts honestly.
+
+#### Implements
+- [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra)

@@ -7,6 +7,9 @@ implementation:
   - harness/datastore_oracle.py
   - tests/test_ext039_datastore_oracle.py
   - harness/system_suite.py
+  - harness/service_provisioner.py
+  - tests/test_ext039_service_provisioner.py
+  - tests/test_ext039_postgres_provisioner.py
 ---
 
 **Owner directive (2026-07-04, PRIME-001 real-systems roadmap, `docs/GAP-MAP.md` task #86):** the
@@ -119,7 +122,7 @@ creation task is likewise a manual follow-up, not part of the offline pytest sui
   small hand-written CLI fixtures in a temp directory — no external service, no live
   `build_system`/gemma run in pytest (that is an explicit, separate manual smoke)
 
-### [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra) — partial (Redis rung landed, TASK-2)
+### [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra) — partial (Redis + Postgres rungs landed, TASK-2/TASK-3)
 
 A `ServiceProvisioner` that brings a REAL external datastore service up on localhost (or connects to
 an already-running one), applies resource/connection caps, and tears it down cleanly — plugging into
@@ -149,6 +152,34 @@ the SAME `verify_persistence`-shaped acceptance contract REQ-1 established for s
 per `harness/secure_exec.py`), which is why the CLI-under-test can reach the provisioned loopback service;
 on a future Linux/netns deployment the provisioned `host:port` must be added to that run's egress allow-list.
 
-**Still NOT built (named, later under REQ-2):** Postgres/Qdrant/Cassandra provisioners (each a different
-wire protocol) and a live DATASTORE creation-suite task that runs inside the suite loop against a
-provisioned service. These remain honest follow-ups.
+**LANDED (TASK-3, the Postgres rung — same `harness/service_provisioner.py`, still pure stdlib, no new
+dependency):**
+- `provision_postgres(*, image, host_port=0, mem_cap, db, user, ready_timeout_s)` — brings a real
+  Postgres up via Docker (`--rm`, `--memory` cap, `POSTGRES_HOST_AUTH_METHOD=trust` — safe because the
+  container is ephemeral, loopback-only, and torn down at the end of every run, so the client never
+  needs to implement SCRAM-SHA-256 auth), gated by a DUAL readiness check: the image's own bundled
+  `pg_isready` THEN a real connect via this module's own `_pg_connect` client (added after observing a
+  rare race where `pg_isready` reported ready before the module's own client could reliably connect).
+  On any failure tears down the partial container and returns an honest `ok=False` — NEVER raises,
+  NEVER leaks a container. `ServiceHandle` gained `db`/`user` fields (Postgres-only; `None` for Redis).
+- A minimal, hand-rolled Postgres wire-protocol v3 client (`_pg_connect`/`_pg_read_msg`/`_pg_query`) —
+  pure stdlib `socket`, NOT `psycopg2`/`pg8000`/`asyncpg` — implementing only the STARTUP + SIMPLE QUERY
+  message flow (no SCRAM auth needed under `trust`), mirroring the Redis RESP client's own-protocol
+  discipline: never trusts the CLI-under-test, always opens its own fresh connection per assertion.
+- `verify_postgres_persistence(root, *, handle, drive_cmds, assertions, python_exe, cross_invocation_cmd,
+  entry_name)` — structurally identical to `verify_redis_persistence`'s four stages (clean-state via
+  `DROP SCHEMA public CASCADE`/`CREATE SCHEMA public` → drive the CLI-under-test via the existing
+  `_run_cli_env` helper with `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER` injected → independently verify real
+  Postgres state via a fresh `_pg_connect`/`_pg_query` per assertion, never stdout → cross-invocation
+  re-check) — `ok=True` only when all stages hold; NEVER raises. `_read_mapped_port` and
+  `_fail_and_teardown` (from TASK-2) were generalized to take a `container_port`/`kind` parameter so both
+  services share them; the Redis call sites still pass the Redis port/kind by default and all 10 Redis
+  tests continue to pass unchanged.
+- Proven by 9 offline-skipped tests (`tests/test_ext039_postgres_provisioner.py`), including the two
+  LOAD-BEARING cases: a real Postgres-backed CLI (embedding the same minimal wire-protocol client) passes;
+  a hollow "Saved!"-printing CLI that never opens a socket to Postgres is caught. 19/19 combined with the
+  Redis suite confirms the shared-helper generalization broke nothing.
+
+**Still NOT built (named, later under REQ-2):** Qdrant/Cassandra provisioners (each a different wire
+protocol) and a live DATASTORE creation-suite task that runs inside the suite loop against a provisioned
+service. These remain honest follow-ups.
