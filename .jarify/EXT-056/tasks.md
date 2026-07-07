@@ -45,3 +45,55 @@ alone.
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-2] Wire the ADT oracle into build acceptance (union-safe, conservative, no false-not-done)
+
+Make the oracle actually gate builds by contributing ONE acceptance check into the deterministic
+minimum, composed by UNION so it can only flip `done` True→False (0-false-done preserved by
+construction). The check must be a SELF-CONTAINED script (the checklist runner `_run_check` writes a
+check's `code` to `root/_s2s_acceptance_check.py` and runs it standalone in the built system's dir —
+no harness import is available there). The drift-free design: compute the seeded op sequence +
+expected outputs ONCE in-process (reusing the tested `_seeded_ops` + `_lru_reference`), then bake the
+fixed command-lines + expected values into the emitted script — the reference logic lives once in
+`adt_oracle.py`, the script only drives + compares. Expected values come from the reference model, NOT
+from any hidden test (no leak). Be CONSERVATIVE: emit the check ONLY when the spec EXPLICITLY names the
+ADT (a keyword hit), never on method-token coincidence alone — under-assert rather than risk a
+false-not-done on a non-eviction key-value store that merely has get/put commands.
+
+#### Steps
+1. In `harness/adt_oracle.py`, refactor the sequence-building block inside `verify` into a shared
+   helper `_build_sequence(cls, seed, n, capacity) -> tuple[list[str], list[str]]` returning
+   `(cmd_lines, expected_lines)`; have `verify` call it (keep all 12 existing tests green).
+2. Add `classify_confident(spec, mods) -> str | None` (or a `require_keyword=True` flag on `classify`)
+   that returns a class ONLY when that class got at least one KEYWORD hit (the ×2 signal) — i.e. the
+   spec explicitly names the ADT — so a plain bounded-dict with get/put is NOT classified as `lru`.
+3. Add `acceptance_check(entry, cls, *, seed=1234, capacity=_LRU_CAPACITY) -> dict | None` to
+   `adt_oracle.py`: returns `None` if `cls not in _IMPLEMENTED_CLASSES`; else builds
+   `(cmd_lines, expected_lines)` via `_build_sequence`, and emits a `{"name", "code"}` dict whose
+   `code` is a standalone script that runs `subprocess.run([sys.executable, entry, str(capacity)],
+   input="\n".join(cmd_lines)+"\n", capture_output=True, text=True, timeout=20)`, splits stdout, and
+   `assert`s each line equals the baked-in expected value, reporting the FIRST divergence in the assert
+   message (`f"ADT {cls} divergence at op[{i}]: expected {exp!r}, got {act!r}"`). Name:
+   `f"minimum: {cls} differential-oracle (seeded ops vs textbook reference)"`. Never raises.
+4. In `harness/system_builder.py::_minimum_acceptance`, immediately AFTER the `# #EXT-036-REQ-27`
+   round-trip block (after line ~1150, still inside `if entry:`), add inside `# #EXT-056-REQ-1`
+   markers: classify the build conservatively from `spec` + extracted command tokens + module names
+   (`_extract_command_tokens(spec)` plus `[m.get("name","") for m in mods]`), and if a confident class
+   is returned, append `adt_oracle.acceptance_check(entry, cls)` when non-None. Wrap in try/except so a
+   classification/emit failure NEVER breaks checklist derivation (append nothing on error). Import
+   `adt_oracle` (top-level `from harness import adt_oracle`, or a function-local import if any cycle
+   appears — the regression import check must stay green).
+5. Add `tests/test_ext056_acceptance_wiring.py`: (a) `_minimum_acceptance` for an explicit LRU spec
+   (mentions "LRU"/"least recently used") INCLUDES the adt check; (b) for a non-ADT spec (notes CLI)
+   and for a plain get/put store with NO "lru" keyword, it does NOT (conservative no-op); (c) the
+   emitted `code`, run against a correct OrderedDict LRU fixture, passes; against the `_move_to_head`
+   pointer-bug fixture, fails; (d) UNION-SAFETY: the composed checklist from
+   `_compose_acceptance_checklist` for a non-ADT spec is byte-identical to before (the oracle added
+   nothing) — i.e. the minimum is never made SPARSER, only ever stricter.
+6. Run ONLY the focused files via `timeout 240 python -m pytest tests/test_ext056_adt_oracle.py
+   tests/test_ext056_acceptance_wiring.py -q`, then a fast import-regression check
+   `python -c "import harness.adt_oracle, harness.system_builder, harness.system_suite"`. Do NOT run
+   the full suite. Update `index.json` (jarify-manage-links) to map the new system_builder.py range.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle

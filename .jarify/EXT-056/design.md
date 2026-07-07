@@ -63,24 +63,40 @@ makes **no model call**. Four deterministic stages:
 ```text
 system_builder.build_system
       │
-      ├─ _minimum_acceptance(...)            # harness/system_builder.py:1109
-      │      ├─ usage / per-command / smoke  (REQ-26 deterministic floor)
-      │      ├─ _roundtrip_acceptance_check  (line ~1149)  ── existing
-      │      └─ adt_oracle.verify(...)       ── NEW (REQ-1), appended here
+      ├─ _minimum_acceptance(...)                  # harness/system_builder.py:1115
+      │      ├─ usage / per-command / smoke        (REQ-26 deterministic floor)
+      │      ├─ _roundtrip_acceptance_check         (line ~1162)  ── existing
+      │      └─ adt_oracle.classify_confident(...)  ── NEW (REQ-1/TASK-2), appended here
+      │           └─ if confident: adt_oracle.acceptance_check(entry, cls) -> {"name","code"}
       │
-      └─ _compose_acceptance_checklist(...)  # line 1154
+      └─ _compose_acceptance_checklist(...)  # line ~1187
              de-dup by (name, code) UNION    → strictly-stricter set
              (a new check can only ADD a way to FAIL → done can only go
               True→False; 0-false-done invariant preserved by construction)
 ```
 
-The oracle contributes one extra acceptance check when (and only when) STAGE 1 classifies the build
-as a known ADT. When it returns `applicable=False` (non-ADT, or inconclusive), it adds **nothing** —
-a pure no-op, never a false failure. Feed-back needs **no new wiring**: a failing acceptance check
-already flows through `_system_repair_loop` (the concrete divergence witness becomes the repair
-prompt) and the REQ-34 replan path. This **supersedes REQ-37** (the model-authored property check,
-measured default-off because the 2B can't write those checks) — the reference model is authored
-deterministically by the harness, not by the model.
+**TASK-2 implementation note:** `_minimum_acceptance` derives the checklist at PLAN time, before
+the checklist runner (`_run_check`) executes each check's `code` as its own standalone subprocess
+in the built system's directory (no harness import available there) — so the seam cannot call
+`adt_oracle.verify(root, ...)` directly (no built `root` exists yet, and no harness import would be
+reachable at execution time either). Instead: (1) `classify_confident` — a CONSERVATIVE variant of
+STAGE 1 that additionally requires a spec-keyword hit (never method-token overlap alone), so a
+plain get/put store with no "lru" wording is correctly left un-classified (no false-not-done); (2)
+`acceptance_check(entry, cls)` calls the shared `_build_sequence` helper (STAGES 2+3, factored out
+of `verify` so the reference logic lives in exactly one place) ONCE, in-process, and bakes the fixed
+command lines + reference-computed expected values into a **self-contained** `{"name", "code"}`
+script that drives the built CLI as a subprocess and asserts on the first divergence — the same
+STAGE 4 comparison, just executed later, standalone, by `_run_check` rather than in-process by
+`verify`. `verify` itself (used by direct/interactive callers, see `tests/test_ext056_adt_oracle.py`)
+is unchanged and still available for in-process differential drives.
+
+The oracle contributes one extra acceptance check when (and only when) STAGE 1 (via the conservative
+`classify_confident` gate) classifies the build as a known ADT. When it returns `None` (non-ADT,
+ambiguous, or no keyword hit), it adds **nothing** — a pure no-op, never a false failure. Feed-back
+needs **no new wiring**: a failing acceptance check already flows through `_system_repair_loop` (the
+concrete divergence witness becomes the repair prompt) and the REQ-34 replan path. This **supersedes
+REQ-37** (the model-authored property check, measured default-off because the 2B can't write those
+checks) — the reference model is authored deterministically by the harness, not by the model.
 
 ## The complete set (forward plan — future REQs)
 

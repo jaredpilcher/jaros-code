@@ -6,12 +6,22 @@ priority: high
 implementation:
   - file: harness/adt_oracle.py
     ranges:
-      - - 56
-        - 309
+      - - 63
+        - 419
   - file: tests/test_ext056_adt_oracle.py
     ranges:
       - - 15
         - 272
+  - file: harness/system_builder.py
+    ranges:
+      - - 224
+        - 228
+      - - 1164
+        - 1183
+  - file: tests/test_ext056_acceptance_wiring.py
+    ranges:
+      - - 34
+        - 310
 ---
 
 ### [REQ-1] ADT Differential Oracle
@@ -57,9 +67,10 @@ harness.
       returns the op index, op name + args, expected value, and actual value.
 - [x] `verify` NEVER raises: any internal error (missing CLI, parse failure, timeout) yields an
       inconclusive `AdtResult` that is treated as a no-op, never a build failure.
-- [ ] The oracle contributes one acceptance check into `_minimum_acceptance`, composed by union in
+- [x] The oracle contributes one acceptance check into `_minimum_acceptance`, composed by union in
       `_compose_acceptance_checklist`, so it can only flip `done` True→False (0-false-done preserved).
-      (Deliberately deferred to TASK-2 — see design.md's union-only seam.)
+      (TASK-2: wired via `adt_oracle.classify_confident` + `adt_oracle.acceptance_check`, union-only,
+      never removes/replaces an existing check — see `tests/test_ext056_acceptance_wiring.py`.)
 - [x] An offline test PASSES a correct `OrderedDict`-based LRU fixture and FAILS a fixture with the
       classic `_move_to_head` pointer bug, reporting the localized first divergence.
 - [ ] Held-out validation: develop the classifier + references on `{lru, priority-queue}`, HOLD OUT

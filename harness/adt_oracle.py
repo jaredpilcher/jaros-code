@@ -1,4 +1,4 @@
-"""EXT-056 REQ-1 (TASK-1): the ADT differential oracle core.
+"""EXT-056 REQ-1 (TASK-1 + TASK-2): the ADT differential oracle core, wired into build acceptance.
 
 **The gap this closes (Tenet 1/3):** ``bestofk_generality_measure.py`` / the roadmap evidence
 behind EXT-056 measured best-of-k as net-negative on the creation suite because selection
@@ -37,10 +37,17 @@ Four deterministic stages, pure stdlib, **NO model call anywhere**:
 is always an honest ``_inconclusive`` result (``applicable=False, ok=True``) -- a pure no-op, never a
 fabricated failure and never an uncaught exception.
 
+**TASK-2 additions (this same module):** a shared ``_build_sequence`` helper (the sequence-building
+block `verify` already used, factored out so it has exactly ONE implementation); a CONSERVATIVE
+``classify_confident`` that only returns a class when the spec text itself named the ADT (never on
+method-token overlap alone -- avoids a false-not-done on an ordinary get/put store); and
+``acceptance_check``, which bakes the SAME seeded command lines + reference-model-computed expected
+values into a standalone script for ``harness.system_builder``'s deterministic acceptance minimum
+(composed by UNION -- see ``_minimum_acceptance`` / ``_compose_acceptance_checklist`` -- so it can
+only ever ADD a way to fail, never manufacture a false pass).
+
 **Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** reference models for
-``priority-queue`` / ``ttl-store`` / ``fifo`` / ``ring-buffer``; wiring ``verify`` into
-``harness.system_builder._minimum_acceptance`` (that seam is TASK-2, deliberately left untouched by
-this task so the build suite cannot regress from TASK-1 alone).
+``priority-queue`` / ``ttl-store`` / ``fifo`` / ``ring-buffer``.
 """
 
 from __future__ import annotations
@@ -124,6 +131,30 @@ def _contains(haystack: str, needle: str) -> bool:
         return re.search(rf"\b{re.escape(needle)}\b", haystack) is not None
     except Exception:
         return needle in haystack
+
+
+def classify_confident(spec: "str", mods: "list[str] | None") -> "str | None":
+    """CONSERVATIVE variant of :func:`classify` (TASK-2, REQ-1): returns a class ONLY when that
+    class also scored at least one KEYWORD hit in ``spec`` (the ×2 signal -- i.e. the spec text
+    EXPLICITLY names the ADT), never on method/command-token overlap alone. This is the ×2 signal
+    already present in :func:`classify`'s own scoring table, promoted to a hard gate: a plain
+    bounded key/value store whose spec only says "get" and "put" (with capacity) but never says
+    "lru" / "least recently used" scores on method tokens alone and must NOT be classified here --
+    that overlap is coincidental (many non-LRU stores also expose get/put), not evidence the build
+    actually implements LRU semantics. This is the classifier the ACCEPTANCE-CHECK wiring uses
+    (:func:`acceptance_check` / ``system_builder._minimum_acceptance``): under-assert rather than
+    risk a false-not-done on a build that merely shares command-name tokens with an ADT. Never
+    raises."""
+    try:
+        cls_id = classify(spec, mods)
+        if not cls_id:
+            return None
+        text = (spec or "").lower()
+        if any(_contains(text, kw) for kw in _KEYWORDS.get(cls_id, ())):
+            return cls_id
+        return None
+    except Exception:
+        return None
 
 
 def classify(spec: "str", mods: "list[str] | None") -> "str | None":
@@ -218,6 +249,43 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     return ops
 
 
+def _build_sequence(cls: str, seed: int, n: int,
+                     capacity: int) -> "tuple[list[str], list[str]]":
+    """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
+    :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model at ``capacity``, and
+    returns ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI with,
+    and the reference model's expected output line for each, in the same order. Deterministic
+    (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the ONE place the
+    reference logic lives; both :func:`verify` (in-process differential drive) and
+    :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted script) call it
+    -- never a second, drifting copy of the op-to-command/expected-value mapping. Returns
+    ``([], [])`` for any class this module has no reference model for (never fabricates a
+    sequence). Never raises internally; an unexpected op shape also yields ``([], [])`` rather than
+    a partial/malformed sequence."""
+    if cls not in _IMPLEMENTED_CLASSES:
+        return [], []
+    ops = _seeded_ops(cls, seed, n)
+    if not ops:
+        return [], []
+    reference = _lru_reference(capacity)
+    cmd_lines: "list[str]" = []
+    expected_lines: "list[str]" = []
+    for op, args in ops:
+        if op == "put":
+            key, value = args
+            reference.put(key, value)
+            cmd_lines.append(f"put {key} {value}")
+            expected_lines.append("ok")
+        elif op == "get":
+            (key,) = args
+            value = reference.get(key)
+            cmd_lines.append(f"get {key}")
+            expected_lines.append("none" if value is None else str(value))
+        else:
+            return [], []
+    return cmd_lines, expected_lines
+
+
 # --- STAGE 4: differential drive + first-divergence -------------------------------------------
 
 def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
@@ -261,22 +329,11 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         if not ops:
             return _inconclusive(f"no seeded ops generated for class {cls!r}")
 
-        reference = _lru_reference(_LRU_CAPACITY)
-        cmd_lines: "list[str]" = []
-        expected_lines: "list[str]" = []
-        for op, args in ops:
-            if op == "put":
-                key, value = args
-                reference.put(key, value)
-                cmd_lines.append(f"put {key} {value}")
-                expected_lines.append("ok")
-            elif op == "get":
-                (key,) = args
-                value = reference.get(key)
-                cmd_lines.append(f"get {key}")
-                expected_lines.append("none" if value is None else str(value))
-            else:
-                return _inconclusive(f"unknown op generated by _seeded_ops: {op!r}")
+        # TASK-2: sequence-building now lives in the shared `_build_sequence` helper (reused
+        # verbatim by `acceptance_check` below) -- `verify` only drives + compares.
+        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, _LRU_CAPACITY)
+        if not cmd_lines or len(cmd_lines) != len(ops):
+            return _inconclusive(f"sequence build failed or mismatched for class {cls!r}")
 
         stdin = "\n".join(cmd_lines) + "\n"
         py_exe = sys.executable or "python"
@@ -306,4 +363,57 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         )
     except Exception as exc:  # never raise -- an honest inconclusive result instead
         return _inconclusive(f"verify failed unexpectedly: {exc}")
+
+
+# --- STAGE 5: acceptance-checklist emission (TASK-2) -------------------------------------------
+
+def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
+                      capacity: int = _LRU_CAPACITY) -> "dict | None":
+    """Builds ONE deterministic-minimum acceptance-checklist entry (TASK-2, REQ-1) for
+    ``harness.system_builder``: ``None`` when ``cls`` is not (yet) an implemented class (a clean
+    no-op -- never a fabricated check for an ADT this module has no reference model for). Computes
+    the seeded ``(cmd_lines, expected_lines)`` ONCE, in-process, via :func:`_build_sequence`
+    (reusing the SAME tested reference model + seeded-op generator :func:`verify` uses -- the
+    reference logic lives only in this module, never a second, drifting copy) and bakes those
+    FIXED command lines + reference-computed expected values into a STANDALONE script: the
+    checklist runner (``system_builder._run_check``) writes a check's ``code`` to
+    ``root/_s2s_acceptance_check.py`` and executes it as its own subprocess in the built system's
+    directory, so the emitted script cannot ``import`` this harness module -- it only drives the
+    built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)``) and compares
+    its stdout, line by line, against the baked-in expected values, asserting on the FIRST
+    divergence. NO ORACLE LEAK: every expected value came from the reference model computed here,
+    never from any hidden test. Returns ``{"name", "code"}`` (the shape every other acceptance
+    check in this codebase uses -- see ``system_builder._no_crash_subprocess_check`` /
+    ``_roundtrip_acceptance_check``). Never raises -- any internal error returns ``None`` (adds
+    nothing to the checklist, exactly like the unimplemented-class case)."""
+    try:
+        if not cls or cls not in _IMPLEMENTED_CLASSES:
+            return None
+        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity)
+        if not cmd_lines:
+            return None
+        entry_name = str(entry) if entry else ""
+        if not entry_name:
+            return None
+        code = (
+            "import subprocess, sys\n"
+            f"entry = {entry_name!r}\n"
+            f"capacity = {capacity!r}\n"
+            f"cmd_lines = {cmd_lines!r}\n"
+            f"expected_lines = {expected_lines!r}\n"
+            "result = subprocess.run([sys.executable, entry, str(capacity)],\n"
+            "                        input='\\n'.join(cmd_lines) + '\\n',\n"
+            "                        capture_output=True, text=True, timeout=20)\n"
+            "actual_lines = result.stdout.splitlines()\n"
+            "for i, exp in enumerate(expected_lines):\n"
+            "    act = actual_lines[i] if i < len(actual_lines) else None\n"
+            f'    assert act == exp, f"ADT {cls} divergence at op[{{i}}]: expected {{exp!r}}, '
+            'got {act!r}"\n'
+        )
+        return {
+            "name": f"minimum: {cls} differential-oracle (seeded ops vs textbook reference)",
+            "code": code,
+        }
+    except Exception:
+        return None
 # #EXT-056-REQ-1 End

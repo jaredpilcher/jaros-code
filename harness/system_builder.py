@@ -221,6 +221,12 @@ import dataclasses
 from harness.code_quality import assess_quality
 # #EXT-037-REQ-8 End
 
+# #EXT-056-REQ-1 Start
+# TASK-2: wire the ADT differential oracle (EXT-056/REQ-1) into the deterministic acceptance
+# minimum -- see `_minimum_acceptance` below for the actual conservative classify+append.
+from harness import adt_oracle
+# #EXT-056-REQ-1 End
+
 # #EXT-037-REQ-1 Start
 # TASK-2: root-jail every module write this module performs directly (bypassing the
 # Decision/tool layer entirely -- `build_system`/`modify_system` write files straight to
@@ -1127,7 +1133,14 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
     marker that is itself a usage/argument-validation message (see
     `_no_crash_subprocess_check`'s `allow_usage_validation`) -- correct argument validation
     is no longer mis-graded as a runtime defect. The usage/`--help` check and the
-    arity-aware round-trip check are left strict/unchanged."""
+    arity-aware round-trip check are left strict/unchanged.
+    STRENGTHENED AGAIN (EXT-056/REQ-1, TASK-2): when the spec CONSERVATIVELY, unambiguously
+    names a supported ADT (`adt_oracle.classify_confident` -- a keyword hit is required, never
+    method-token overlap alone), one more BEHAVIORAL check is added: a seeded differential
+    drive of the built CLI against an independently-authored textbook reference model
+    (`adt_oracle.acceptance_check`), catching semantic-ordering bugs (e.g. LRU eviction order)
+    that no no-crash/substring check can see. Classification/emit failures are swallowed
+    (append nothing) so this can never break checklist derivation."""
     if not mods:
         return []
     checks = list(_smoke_checklist(mods))
@@ -1148,6 +1161,26 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
             add_cmd, list_cmd = pair
             checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
         # #EXT-036-REQ-27 End
+        # #EXT-056-REQ-1 Start
+        # TASK-2: the ADT differential-oracle check (EXT-056/REQ-1) -- CONSERVATIVE by
+        # construction: `classify_confident` only returns a class when the SPEC TEXT itself
+        # names the ADT (a keyword hit), never on command-token overlap alone, so a plain
+        # get/put store with no "lru"/"least recently used" wording is left un-classified
+        # (no-op) rather than risk a false-not-done. Wrapped in try/except so a
+        # classification/emit failure NEVER breaks checklist derivation -- on any error,
+        # nothing is appended and the rest of the deterministic minimum is unaffected.
+        try:
+            command_mods = _extract_command_tokens(spec) + [
+                m.get("name", "") for m in mods if isinstance(m, dict)
+            ]
+            adt_cls = adt_oracle.classify_confident(spec, command_mods)
+            if adt_cls:
+                adt_check = adt_oracle.acceptance_check(entry, adt_cls)
+                if adt_check:
+                    checks.append(adt_check)
+        except Exception:
+            pass
+        # #EXT-056-REQ-1 End
     return checks
 
 
