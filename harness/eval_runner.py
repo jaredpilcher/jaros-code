@@ -69,6 +69,7 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
     concurrency so transcripts don't interleave."""
     from harness.coding_loop import fix_loop, reset_tool_usage, tool_usage, wiring_usage  # local: sets env first
     from harness.ollama_client import model_call_stats, reset_model_calls
+    from harness.research_guard import eval_lock  # EXT-038 REQ-3: auto-lock research for every caller
 
     reset_tool_usage()
     reset_model_calls()
@@ -77,75 +78,82 @@ def run_task_list(tasks: list[Task], *, max_iters: int = 3, verbose: bool = Fals
           f"max_iters={max_iters}  workers={workers}")
     print("   " + "-" * 56)
 
-    def _run_one(task: Task) -> dict:
-        with tempfile.TemporaryDirectory(prefix=f"jcode-{task.id}-") as tmp:
-            workdir = Path(tmp)
-            target = setup_task(task, workdir)
-            t0 = time.time()
+    # #EXT-038-REQ-3 Start
+    # Research is locked OFF for the full duration tasks run through this shared execution core, so
+    # the eval-leak guard is automatic for every current/future caller of run_suite()/run_task_list()
+    # -- not a per-script discipline someone has to remember. eval_lock()'s own try/finally (REQ-1)
+    # guarantees the lock releases even if a task raises.
+    with eval_lock():
+        def _run_one(task: Task) -> dict:
+            with tempfile.TemporaryDirectory(prefix=f"jcode-{task.id}-") as tmp:
+                workdir = Path(tmp)
+                target = setup_task(task, workdir)
+                t0 = time.time()
+                try:
+                    res = fix_loop(str(target), task.instruction, task.test_cmd, max_iters=max_iters,
+                                   cwd=str(workdir), verbose=verbose and workers == 1)
+                    solved, attempts = res.success, res.attempts
+                except Exception as exc:  # a single task failure never sinks the suite
+                    solved, attempts = False, max_iters
+                    print(f"    \033[31m{task.id}: runner error: {exc}\033[0m", flush=True)
+                secs = round(time.time() - t0, 1)
+                mark = "\033[32mPASS\033[0m" if solved else "\033[31mFAIL\033[0m"
+                print(f"   {mark}  t{task.tier} {task.id:<18} attempts={attempts}  {secs}s", flush=True)
+                return {"id": task.id, "tier": task.tier, "solved": solved,
+                        "attempts": attempts, "secs": secs}
+
+        if workers > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            # Batched requests run ~workers x slower per-call, so the per-request model timeout must
+            # scale up or long generations (e.g. MBPP whole-file) spuriously time out. Raise it for
+            # the duration of the concurrent run, then restore.
+            base_to = os.environ.get("LLAMACPP_TIMEOUT_S", "90")
+            os.environ["LLAMACPP_TIMEOUT_S"] = str(int(float(base_to) * workers))
             try:
-                res = fix_loop(str(target), task.instruction, task.test_cmd, max_iters=max_iters,
-                               cwd=str(workdir), verbose=verbose and workers == 1)
-                solved, attempts = res.success, res.attempts
-            except Exception as exc:  # a single task failure never sinks the suite
-                solved, attempts = False, max_iters
-                print(f"    \033[31m{task.id}: runner error: {exc}\033[0m", flush=True)
-            secs = round(time.time() - t0, 1)
-            mark = "\033[32mPASS\033[0m" if solved else "\033[31mFAIL\033[0m"
-            print(f"   {mark}  t{task.tier} {task.id:<18} attempts={attempts}  {secs}s", flush=True)
-            return {"id": task.id, "tier": task.tier, "solved": solved,
-                    "attempts": attempts, "secs": secs}
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    per_task = list(ex.map(_run_one, tasks))   # order preserved; each task is isolated
+            finally:
+                os.environ["LLAMACPP_TIMEOUT_S"] = base_to
+        else:
+            per_task = [_run_one(task) for task in tasks]
 
-    if workers > 1:
-        from concurrent.futures import ThreadPoolExecutor
-        # Batched requests run ~workers x slower per-call, so the per-request model timeout must
-        # scale up or long generations (e.g. MBPP whole-file) spuriously time out. Raise it for
-        # the duration of the concurrent run, then restore.
-        base_to = os.environ.get("LLAMACPP_TIMEOUT_S", "90")
-        os.environ["LLAMACPP_TIMEOUT_S"] = str(int(float(base_to) * workers))
-        try:
-            with ThreadPoolExecutor(max_workers=workers) as ex:
-                per_task = list(ex.map(_run_one, tasks))   # order preserved; each task is isolated
-        finally:
-            os.environ["LLAMACPP_TIMEOUT_S"] = base_to
-    else:
-        per_task = [_run_one(task) for task in tasks]
-
-    solved_n = sum(1 for t in per_task if t["solved"])
-    total = len(per_task)
-    per_tier, frontier, too_easy = _tier_stats(per_task)
-    from harness.report import census  # growth census (agents/tools/evals/specs)
-    cen = census()
-    wu, tu = wiring_usage(), tool_usage()
-    tool_fires = sum(tu.values())
-    # Orchestration/wiring quality is a tracked success axis (not just agent/tool COUNT):
-    # Jaros records every agent->tool decision, so the wiring graph is measurable. LEVERAGE
-    # (solved tasks per agent) rising at a flat agent count IS better orchestration; richer
-    # composition shows as more distinct wired edges and tool fires per solved task.
-    orchestration = {
-        "wiringEdges": len(wu),                                              # distinct agent->tool edges fired
-        "toolFires": tool_fires,                                             # total deterministic tool executions
-        "decisionsPerSolved": round(tool_fires / solved_n, 2) if solved_n else 0.0,
-        "leverage": round(solved_n / cen["agents"], 3) if cen.get("agents") else 0.0,  # capability per agent
-    }
-    scorecard = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "suite": suite,
-        "model": MODEL,
-        "census": cen,
-        "maxIters": max_iters,
-        "passRate": round(solved_n / total, 4) if total else 0.0,
-        "solved": solved_n,
-        "total": total,
-        "perTier": per_tier,
-        "frontierTier": frontier,
-        "tooEasy": too_easy,
-        "toolUsage": tu,
-        "wiringUsage": wu,
-        "orchestration": orchestration,
-        "modelCalls": model_call_stats(),
-        "elapsedSec": round(time.time() - started, 1),
-        "perTask": per_task,
-    }
+        solved_n = sum(1 for t in per_task if t["solved"])
+        total = len(per_task)
+        per_tier, frontier, too_easy = _tier_stats(per_task)
+        from harness.report import census  # growth census (agents/tools/evals/specs)
+        cen = census()
+        wu, tu = wiring_usage(), tool_usage()
+        tool_fires = sum(tu.values())
+        # Orchestration/wiring quality is a tracked success axis (not just agent/tool COUNT):
+        # Jaros records every agent->tool decision, so the wiring graph is measurable. LEVERAGE
+        # (solved tasks per agent) rising at a flat agent count IS better orchestration; richer
+        # composition shows as more distinct wired edges and tool fires per solved task.
+        orchestration = {
+            "wiringEdges": len(wu),                                              # distinct agent->tool edges fired
+            "toolFires": tool_fires,                                             # total deterministic tool executions
+            "decisionsPerSolved": round(tool_fires / solved_n, 2) if solved_n else 0.0,
+            "leverage": round(solved_n / cen["agents"], 3) if cen.get("agents") else 0.0,  # capability per agent
+        }
+        scorecard = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "suite": suite,
+            "model": MODEL,
+            "census": cen,
+            "maxIters": max_iters,
+            "passRate": round(solved_n / total, 4) if total else 0.0,
+            "solved": solved_n,
+            "total": total,
+            "perTier": per_tier,
+            "frontierTier": frontier,
+            "tooEasy": too_easy,
+            "toolUsage": tu,
+            "wiringUsage": wu,
+            "orchestration": orchestration,
+            "modelCalls": model_call_stats(),
+            "elapsedSec": round(time.time() - started, 1),
+            "perTask": per_task,
+        }
+    # #EXT-038-REQ-3 End
     _print_scorecard(scorecard)
     _persist(scorecard)
     return scorecard

@@ -116,3 +116,34 @@ is not yet wired into the orchestrator/planner (a separate, later task).
 
 #### Implements
 - [REQ-2] Read-only web-research fetch — the agent researches the live web, gated + guarded
+
+### [TASK-3] Auto-assert `eval_lock()` around the shared eval runner (REQ-3)
+
+Wrap `harness/eval_runner.py`'s `run_task_list()` (the shared execution core roughly a dozen eval
+scripts import from) in `research_guard.eval_lock()` so the eval-leak guard is AUTOMATIC for every
+current and future caller — one choke point, not a dozen call sites a caller has to remember.
+
+#### Steps
+1. In `harness/eval_runner.py`, import `from harness.research_guard import eval_lock` at module
+   scope (alongside the existing imports at the top of the file).
+2. In `run_task_list()`, wrap the existing task-execution body (the `_run_one` definition through the
+   final scorecard assembly/return) in a `with eval_lock():` block — the ENTIRE function body after
+   the `reset_tool_usage()`/`reset_model_calls()`/`started = time.time()` setup lines, so research is
+   locked for the full duration tasks are actually running. Do not change any other logic, the
+   returned dict shape, or `run_suite()` (which just calls `run_task_list()` and needs no separate
+   change).
+3. Add `tests/test_ext038_eval_lock_wiring.py` (offline, no live model call) with a stub `Task` list
+   (1-2 fake tasks) and a way to observe `research_guard.research_allowed()` from WITHIN a running
+   task — either by monkeypatching `harness.coding_loop.fix_loop` (imported inside `run_task_list`)
+   to a stub that records `research_guard.research_allowed()` before returning a fake `LoopResult`,
+   or an equivalent approach that avoids a real model call. Assert: (a) `research_allowed()` is
+   `False` while a task is executing inside `run_task_list()`; (b) `research_allowed()` is `True`
+   again immediately after `run_task_list()` returns; (c) the same holds even when a task raises an
+   exception inside `_run_one` (the lock still releases via `eval_lock()`'s own `try`/`finally` —
+   confirm by forcing one stub task to raise and asserting the lock is still released afterward).
+4. Run `python -m pytest tests/test_ext038_eval_lock_wiring.py tests/test_ext038_research_guard.py -q`
+   first (foreground), then the full `python -m pytest tests/ -q` (foreground) to confirm the whole
+   suite is green with no regression to any existing test (the current baseline before this task).
+
+#### Implements
+- [REQ-3] Auto-assert `eval_lock()` around the eval runners — not caller-remembered

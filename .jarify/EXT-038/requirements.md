@@ -8,6 +8,8 @@ implementation:
   - tests/test_ext038_research_guard.py
   - harness/web_research.py
   - tests/test_ext038_web_research.py
+  - harness/eval_runner.py
+  - tests/test_ext038_eval_lock_wiring.py
 ---
 
 **Owner directive (2026-07-03/04, PRIME-001 intent.md capability (a)):** for Claude-Code parity the
@@ -185,3 +187,53 @@ explicit, separate, later follow-up, not silently deferred here.
 - [x] Pure stdlib (`urllib.request` only) plus reuse of `harness.research_guard` — no new dependency
 - [x] Module is additive/self-contained: NOT yet wired into the orchestrator/planner — that wiring is
   an explicit, separate, later follow-up (named here, not silently deferred)
+
+### [REQ-3] Auto-assert `eval_lock()` around the eval runners — not caller-remembered  (covered)
+
+**The gap this closes (Tenet 3):** REQ-1's `eval_lock()` is a proven, composable, exception-safe
+mechanism, but nothing calls it automatically — a caller running an eval script has to REMEMBER to
+wrap it, which is exactly the kind of trust-based discipline PRIME-001 flags as the eval-leak risk
+("the single biggest honesty attack surface"). If REQ-2's fetch capability is ever wired into the
+planner (a later follow-up), a forgotten `eval_lock()` around ANY eval invocation is a silent leak
+path that could invalidate a held-out benchmark number.
+
+`harness/eval_runner.py` is the SHARED execution core roughly a dozen eval scripts import from
+(`agentic_eval.py`, `build_eval.py`, `daily_driver.py`, `eval_qwen_mbpp.py`, `eval_routed.py`,
+`eval_strategy_easy.py`, `humaneval.py`, `mbpp.py`, `multipl_e.py`, `pass1_eval.py`,
+`profile_qwen.py`) — `run_suite()` calls `run_task_list()`, which is the actual per-task loop every
+one of those scripts ultimately drives. Wrapping `run_task_list()`'s body in `research_guard.
+eval_lock()` makes the lock AUTOMATIC for every current and future caller of the shared runner —
+one choke point, not a dozen call sites to remember (and forget).
+
+- `run_task_list()` in `harness/eval_runner.py` wraps its task-execution body in
+  `research_guard.eval_lock()` — for the DURATION of every eval run through the shared runner,
+  `research_guard.research_allowed()` reports `False` and `assert_research_allowed()` raises,
+  regardless of whether any individual eval script remembered to lock manually.
+- The lock releases automatically the instant `run_task_list()` returns (or raises) — `eval_lock()`'s
+  existing `try`/`finally` discipline (proven in REQ-1) guarantees this; no new teardown logic needed.
+- Byte-identical scorecard behavior otherwise: this is a pure safety wrapper around the existing
+  execution body, no change to task loading, scoring, concurrency, or the returned dict shape.
+- NOT in scope here: wiring REQ-2's fetch capability into the planner/orchestrator (still a separate,
+  later follow-up — REQ-3 only closes the eval-runner side of the gap, not the fetch-call side).
+
+**HONEST STATUS (Tenet 3, TASK-3):** `run_task_list()` now enters `research_guard.eval_lock()` before
+running any task and the lock is released via the function's normal return/exception path (the
+context manager's own `finally` handles this — no new cleanup code was added to `eval_runner.py`
+itself). Proven by a new contract test that calls `run_task_list()` with a stub task list and asserts
+`research_guard.research_allowed()` is `False` from WITHIN the fake task's execution and `True`
+again immediately after `run_task_list()` returns. Full suite green, no regression.
+
+#### Acceptance Criteria
+- [x] `run_task_list()` wraps its task-execution body in `research_guard.eval_lock()`
+- [x] `research_allowed()` is provably `False` while `run_task_list()` is executing tasks (proven by
+  a stub task whose "solve" step checks and records `research_allowed()`) and `True` again once
+  `run_task_list()` returns (success or exception)
+- [x] Every existing caller of `run_suite()`/`run_task_list()` is covered automatically — no per-script
+  changes needed, confirmed by NOT touching any of the dozen importing eval scripts
+- [x] Byte-identical returned scorecard shape/behavior when no research call is ever attempted (a pure
+  safety wrapper, not a behavior change) — proven by re-running the existing eval_runner test suite
+  unchanged and green
+- [x] Proven by a new offline test in `tests/test_ext005_eval_runner.py` (or a new
+  `tests/test_ext038_eval_lock_wiring.py`, whichever fits the existing test layout) — no live model
+  call, a stub/mock task list only
+- [x] Full suite (`python -m pytest tests/ -q`) green, no regression
