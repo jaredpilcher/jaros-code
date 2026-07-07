@@ -52,10 +52,13 @@ def send(message: str, title: str | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    # HTTP headers must be latin-1-encodable; titles often carry em-dashes/unicode from commit
+    # subjects, so sanitize the Title to ASCII (the utf-8 BODY is unaffected) rather than 500 on send.
+    safe_title = (title or "jaros-code").encode("ascii", "replace").decode("ascii")
     req = urllib.request.Request(
         f"{base}/{topic}",
         data=message.encode("utf-8"),
-        headers={"Title": title or "jaros-code", "Priority": "default"},
+        headers={"Title": safe_title, "Priority": "default"},
         method="POST",
     )
     try:
