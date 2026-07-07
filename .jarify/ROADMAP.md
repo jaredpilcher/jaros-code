@@ -143,10 +143,12 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
 - **[best-of-k oracle-select]** a generic reliability lever: sample k build draws, select the one
   that genuinely passes the (now-honest) acceptance — high · motivated by measured gemma per-draw
   unreliability (datastore + coherence); likely a new REQ under EXT-036 or a new spec.
-- **[EXT-039 REQ-2]** real-service provisioner (Postgres/Redis/Qdrant/Cassandra): bring up on
-  localhost, caps, teardown; point `datastore_oracle.verify_persistence` at a real service via the
-  documented `ServiceProvisioner` seam — high · the *heart* of #86 (only the sqlite ACCEPTANCE half
-  landed); must stay offline-testable (skip-if-service/docker-absent, never fail).
+- **[✅ LANDED 1b3395e (EXT-039 REQ-2, 2026-07-07) — Redis rung]** SHIPPED: `harness/service_provisioner.py`
+  — `provision_redis`/`teardown` (Docker, `--rm`, mem-capped, never leaks a container) + a pure-stdlib
+  RESP-over-socket client (no redis-py) + `verify_redis_persistence` mirroring `datastore_oracle`'s
+  clean-state→drive→independently-verify→cross-invocation discipline against a REAL service. 10/10 tests
+  pass live (Docker present on this host), all skip-if-docker-absent (offline-honest). Suite 2420/2 skipped,
+  no regression. Postgres/Qdrant/Cassandra + a live suite task remain named-not-built follow-ups.
 - **[EXT-038 REQ-3/4]** wire the read-only web-research fetch plane into the planner (fetched text
   as untrusted DATA), and auto-assert `eval_lock()` around the eval runners so the eval-leak
   hard-off is automatic, not caller-remembered — high · makes #85 actually inform builds + closes
@@ -250,6 +252,20 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: real-service (Redis) provisioner — EXT-039 REQ-2 (1b3395e, 2026-07-07)]** the next
+  rung above the sqlite-only datastore oracle (REQ-1): `harness/service_provisioner.py` brings a REAL
+  Redis up via Docker (`provision_redis`/`teardown`, `--rm` + mem-cap, Docker-picked loopback port so
+  parallel runs never collide, never leaks a container) and independently verifies persisted state via
+  a pure-stdlib RESP-over-socket client (NOT redis-py) — mirroring `datastore_oracle.verify_persistence`'s
+  clean-state→drive→independently-verify→cross-invocation discipline against a running service instead
+  of a file. Driven through `harness.secure_exec.run_sandboxed` with `REDIS_HOST`/`REDIS_PORT` injected
+  via `extra_env` so the CLI-under-test can reach the service (honest platform note: `run_sandboxed`'s
+  egress gate is static-scan-only today, not runtime-enforced — recorded for a future netns deployment).
+  10/10 tests pass live against a real Redis, ALL skip-if-docker-absent (Tenet 3 offline-honest — never
+  fails, never false-passes without Docker). Load-bearing catch confirmed: a CLI printing "Saved!" but
+  never touching Redis is correctly rejected. Suite 2410→2420, no regression. Postgres/Qdrant/Cassandra
+  provisioners + a live DATASTORE creation-suite task against a provisioned service remain named
+  follow-ups. Recovered from a 7h builder wedge (stopped, built directly) — see build process note.
 - **[★ CAPABILITY: fix-route double-application repair — daily-driver parity 0.958→0.975 (df041e0, 2026-07-06)]**
   the GROWN discriminating daily-driver instrument (#51, now 29 tasks dev+holdout) surfaced fix_hard_invoice_
   double_tax as a FAILURE; raw-probe classified it a HARNESS gap not a model limit (the `fix` route's
