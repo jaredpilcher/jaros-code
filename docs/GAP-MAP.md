@@ -438,8 +438,12 @@ deepseek-r1-distill-qwen-1.5b/7b). The existing deepseek-7b is a REASONER (harne
 manager) — not a coder for the sentence->system task. So this lever needs: download the Qwen2.5-Coder-7B GGUF (~5GB q)
 to the Jetson + a `models.json` catalog entry + serve + test build_system's complex-plan + edge-case completeness on it
 + restore gemma. Authorized roster-growth (Jetson-fit, $0, cloud-forbidden), but a substantial op with serving-desync
-risk — greenlight/timing best from the owner. This is the depth lever on the TRUE parity gap (the reasoning frontier);
-the overnight EXT-036 work is breadth. QUEUED for a careful active-hours execution.
+risk — greenlight/timing best from the owner. This is ONE lever on the TRUE parity gap (a stronger roster
+model is legitimate roster-growth), but per the 2026-07-07 governing frame it is NOT the only or primary
+lever and the residual is NOT a "reasoning frontier"/model cap: the DETERMINISTIC-TOOL plane (fault
+localization, execution-feedback repair, deterministic oracle/test generation, comprehension fact-injection)
+is the harness-engineering frontier and comes FIRST. The overnight EXT-036 work is breadth. QUEUED for a
+careful active-hours execution.
 
 ## ★★ REAL-SYSTEMS FRONTIER — first honest measurement (owner directive 2026-07-03): FastAPI-from-a-prompt
 

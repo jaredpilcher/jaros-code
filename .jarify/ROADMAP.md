@@ -59,7 +59,9 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
-  19/19=100%). Sole miss: build_hard_lru_cache (reasoning-bound, bookmarked). Grow toward the 80-task mandate.
+  19/19=100%). Sole miss: build_hard_lru_cache (a MISSING-DETERMINISTIC-TOOL gap — the pointer-bug in its
+  _move_to_head is invisible without a structural-invariant checker + execution feedback; NOT a model cap).
+  Grow toward the 80-task mandate.
 
 ---
 
@@ -67,13 +69,26 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
 
 ### ★★ CAPABILITY — the frontier I own (the North Star's harder bar)
 
-**Honest capability state (measured this session, 2026-07-05):** the real-systems build class moved
-its blocker from a DETERMINISTIC defect (plan-coherence — FIXED: /buildsystem now ships coherent
-multi-file systems incl a database module, no repair needed) to a **MODEL-REASONING** frontier: the 2B
-writes structurally-plausible but **behaviorally-buggy** implementation code (datastore: fails 3/3 of
-its own acceptance; json-todo: best-of-3 passes only 1/3). **best-of-k at k=3 does NOT rescue it.** This
-matches the mapped hard-class reasoning ceiling. External hard bar: uncurated SWE-bench-Lite ~13%. THIS
-is where jcode is not yet Opus-4.8-class — and closing it is the mission.
+**★★ GOVERNING FRAME (owner re-directive 2026-07-07 — binds this whole section):** there is NO reasoning
+cap for the model coupled with a SUFFICIENT SET OF DETERMINISTIC TOOLS. "Reasoning-bound / model-ceiling /
+wait for a better base / the only lever is a stronger model" is a **FORBIDDEN conclusion.** Every hard-class
+"0" below is a **MISSING-DETERMINISTIC-TOOL gap**, not a model limit. The MEASURED lever-exhaustions recorded
+below (sampling ✗, selection ✗, LoRA ✗) are HONEST DATA and stay (Tenet 3) — but they exhaust only the
+*sampling/prompting/train-the-model* family; they do NOT touch the DETERMINISTIC-TOOL plane (fault
+localization, execution-feedback repair, deterministic test/oracle generation, comprehension fact-injection,
+structured retrieval), which is UNEXPLORED. The mission = find the COMPLETE SET of deterministic tools that
+make each failure VISIBLE + LOCALIZED so the model can reason on it. Reaching for "ceiling" IS the drift.
+See memory [[jaros-code-deterministic-toolset-mission]] + CLAUDE.md Founding Assumption.
+
+**Honest capability state (measured 2026-07-05):** the real-systems build class moved its blocker from a
+DETERMINISTIC defect (plan-coherence — FIXED: /buildsystem now ships coherent multi-file systems incl a
+database module, no repair needed) to a class where the 2B writes structurally-plausible but
+**behaviorally-buggy** implementation code (datastore: fails 3/3 of its own acceptance; json-todo:
+best-of-3 passes only 1/3). **best-of-k at k=3 does NOT rescue it** — but per the governing frame that means
+the ACCEPTANCE SIGNAL is blind and the missing tool is a deterministic behavioral/ordering-oracle generator
++ execution-feedback repair (raw-probes confirm the 2B FIXES bugs it can SEE), NOT that the model is capped.
+External hard bar: uncurated SWE-bench-Lite ~13%. THIS is where jcode is not yet Opus-4.8-class — and
+closing it (by building the missing deterministic tools) is the mission.
 
 - **[#118 acceptance-completeness / done-honesty — HIGH, I DRIVE IT]** make build_system's acceptance
   derivation DETERMINISTIC + COMPLETE (consistent full requirement set per sentence) so `done` is
@@ -104,7 +119,9 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   failure (#127), modify_system now ADDS new modules not just regenerates (REQ-35/#128, d0516b7), done-convergence
   arity-probe fix (REQ-36/#129), spec-derived property check landed default-off (REQ-37/#130). The modification
   plane is complete + unified with build-recovery. Residual on the hard tasks (kv-store-ttl, priority-jobqueue)
-  is the reasoning ceiling, not a mechanism gap — consistent with the mapped frontier.
+  is a MISSING-DETERMINISTIC-TOOL gap, NOT a reasoning ceiling (2026-07-07 governing frame): the
+  self-acceptance signal is BLIND to semantic-ordering (GAP-2), so the model is never shown the failure. The
+  lever = a deterministic ordering/behavioral-oracle generator (make it visible) + execution-feedback repair.
 - **[✅ MEASURED NEGATIVE (2026-07-06/07) — best-of-k oracle-select is NET-NEGATIVE, PARKED]** ran the honest
   test (`.jaros-data/bestofk_oracle_lift.py`, 20 creation classes, k=1 vs k=5, each scored vs the INDEPENDENT
   oracle, no leak): single-build **17/20** vs best-of-5 **14/20** → **lift -3, 0 rescues, 3 regressions**
@@ -116,9 +133,11 @@ is where jcode is not yet Opus-4.8-class — and closing it is the mission.
   self-confident-but-ordering-broken draw, AMPLIFYING the blind spot, where plain k=1 sometimes draws a correct
   build by luck. The 2 apparent false-dones (kv-store-ttl self-done=True oracle 0/3; priority-jobqueue 1/3) are
   GAP-2 surfacing through selection, not a new bug. STRATEGIC LESSON: you cannot SELECT your way to correctness
-  on a proxy blind to the failure mode — sampling+selection is now exhausted on the CURRENT acceptance signal;
-  the bottleneck is signal QUALITY (reasoning-bound), not the selection mechanism. Moved to PARKED. #86
-  datastore still genuinely works via k=5 (a class where the signal is NOT blind — round-trip is checkable).
+  on a proxy BLIND to the failure mode — so the lever is NOT a better model, it is to BUILD THE MISSING
+  DETERMINISTIC TOOL that makes the signal not-blind: a deterministic ordering/behavioral-oracle generator (+
+  execution-feedback repair). best-of-k the MECHANISM is parked as net-negative, but the hard class is NOT
+  parked — the tool is the active build target (2026-07-07 governing frame). #86 datastore still genuinely
+  works via k=5 (a class where the signal is already NOT blind — round-trip is checkable).
 - **[external hard bar — the discriminating number]** drive the **uncurated SWE-bench-Lite** rate up
   from ~13% (fresh instances, WSL/Linux run per [[jaros-code-swebench]]) and a low-noise HumanEval/MBPP
   **pass@1** slice — the unsaturated external bars PRIME-001 says to steer against, not the saturated
@@ -249,9 +268,13 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 - **[#27 non-CLI surfaces]** IDE extensions, desktop/web app, Slack/GitHub-Actions, remote control — DEFERRED
   (recorded not silent, GAP-MAP #27); out of scope for the CLI-product-parity pursuit for now; none block the terminal product.
 
-- **[SWE-bench uncurated ~13%]** MODEL-bound reasoning frontier for the 2–3B roster; harness
-  saturated, selection exhausted, training scoreboard-null. Revisit on: a stronger fast-trainable
-  base, reasoning-trace data, or a prose-parse solve path. (GAP-MAP GAP-1.)
+- **[SWE-bench uncurated ~13%]** NOT a model ceiling (2026-07-07 governing frame). MEASURED-exhausted so far:
+  the sampling/selection family (best-of-N, harness plumbing) and a token-distribution LoRA (scoreboard-null).
+  But those are the SAME family; the DETERMINISTIC-TOOL plane is UNEXPLORED for this class: spectrum/coverage
+  fault-LOCALIZATION (task #40, pending), execution-feedback repair that injects the concrete failing
+  assertion, AST-structured retrieval, and comprehension fact-injection (hand the model the single missing
+  fact, see if it flips — classifies comprehension-gap→deterministic-injection vs a genuine gap). Do NOT
+  "wait for a better base" — build these tools. (GAP-MAP GAP-1; not PARKED as a model limit.)
 - **[governed capstone]** `build_system_governed` decompose→repair — BANKED net-negative (regressed
   coherence 10/11→8/11→0/11 across 3 live attempts). Do NOT restart.
 - **[best-of-k oracle-select]** MEASURED net-negative (-3/20, 0 rescues, 3 regressions; `.jaros-data/
@@ -332,15 +355,18 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
   reproducible (Tenet 3). Suite 2410 green, architect-validated spec-first (added REQ-7 to requirements.md).
   ★ RE-MEASURED: weighted parity **0.9583→0.975 (27/29→28/29)**, fix **8/9→9/9**, dev split now PERFECT 25/25,
   no regression. The full loop working end-to-end: discriminating instrument → raw-probe classification →
-  plane-placement fix → commit → re-measure the lift. Sole residual: build_hard_lru_cache (reasoning-bound,
-  bookmarked). — df041e0.
+  plane-placement fix → commit → re-measure the lift. Sole residual: build_hard_lru_cache (a
+  missing-deterministic-tool gap — structural-invariant checker + execution feedback, NOT a model cap). — df041e0.
 - **[★ CAPABILITY: owner-seed cluster — replan + modify-ADD + done-convergence + property-check (2026-07-06)]**
   replan-as-modification on build failure (#127, convergence-gated, no oracle leak); modify_system now ADDS new
   modules not just regenerates (REQ-35/#128, d0516b7 — bounded ≤3, ambiguity-guarded, regression-gated,
   byte-identical-when-off); done-convergence arity-probe false-negative fix (REQ-36/#129, sacred-gated);
   spec-DERIVED behavioral property check PGS-style landed DEFAULT-OFF (REQ-37/#130 ca4b101 — sacred-safe by
-  construction but A/B measured 0 catches + 3 wrongly-demoted → the 2B can't write reliable property tests, a
-  stronger-model lever). Modification plane complete + unified with build-recovery; honest measured negatives banked.
+  construction but A/B measured 0 catches + 3 wrongly-demoted BECAUSE the 2B was asked to WRITE the property
+  tests. The lesson is NOT "need a stronger model" — it is that check-GENERATION must move to the DETERMINISTIC
+  plane: a template/grammar-driven ordering/behavioral-oracle generator keyed off the visible spec's declared
+  operations, not a 2B-authored test. That deterministic generator is the active next tool). Modification plane
+  complete + unified with build-recovery; honest measured negatives banked.
 - **[★ CAPABILITY: hard-tier plan-repair + route-to-qwen negative (2026-07-06)]** hard-tier failure diagnostic (accept 5/8): 1 DETERMINISTIC plan gap + 2 reasoning misses. FIXED the deterministic one — **REQ-32 (cbced82)**: `_repair_plan_entrypoint_multi` extends the entrypoint plan-repair to the MULTI-module case (safely ADDS the intended entrypoint module when modules are fully disconnected; leaves genuinely-ambiguous plans rejected). graph-bfs-shortest-path-cli went from plan-reject (0/2) to **oracle-accept 2/2 on gemma** — a real per-task capability gain, not just plan-unblock. Suite 2315→2322. Honest note: aggregate accept held ~0.85/0.71 (2 runs agree) — a single 20-task run can't detect a +1-task lift (gemma variance ±1-2). ★ ROUTE-TO-QWEN BUILD = NOT a lever (measured): qwen2.5-coder-7b accepted **0/3** hard tasks vs gemma's **2/3** — the 7B builds WORSE (often doesn't ship) in the gemma-co-adapted harness. So hard-build reasoning misses are NOT rescued by a roster swap → the honest path is the model/flywheel lever ([[jaros-code-hardclass-ceiling]]). Owner's 2nd idea also measured: 7B-GENERATE checks (REQ-31 87c5a39) is WORSE than 7B-review — A/B done-rate review 0.55 > generate 0.35 (all 0 false-dones); review's anchoring to Gemma's real-interface checks is a strength. Acceptance-honesty arc COMPLETE.
 - **[★ CAPABILITY: 7B-review of acceptance checks (owner idea #122) — mechanism landed d1ffe06]** the measured cause of the acceptance grader's under-claiming (done-rate 45% vs 85% independent accept) was Gemma writing HALLUCINATED checks for its own build (invented APIs/values). Owner's steer: don't trust-all (false-negatives) or drop-all (false-dones, a reverted attempt) — have the stronger 7B REVIEW+CORRECT the checks from the VISIBLE SPEC only. PROBE VALIDATED it (7B fixed 3/4 hallucinated checks + preserved 1/1 real-bug catch, NO oracle leak). Landed `harness/acceptance_review.py` `review_checks(...)` + injectable `check_reviewer=None` in build_system/best_of_k (default byte-identical; minimum never reviewed; never raises; NO ORACLE LEAK — reviewer sees only spec+code+check). 11 offline tests, suite 2295→2306. EXT-036 REQ-30. ★ LIVE GATE VERDICT (batched gemma→7B→gemma, 20 tasks): done-rate **0.45→0.60**, accept 0.80, **false_done=[] (0 over-claims — SACRED property HELD)**, false-negatives cut **8→4**. So 7B-review WORKS + is honest-safe: it moves done toward accept with ZERO over-claims, though partially (4 residual false-negatives, matching the 3/4 probe). Kept as an OPT-IN / escalation-tier refinement (NOT forced-default) because the ~10min Jetson model-swap per build isn't worth it for a modest calibration gain on every interactive build — the value is in best-of-k selection / a --thorough path. A clean multi-model resolution to the honesty wall, validated by measurement.
 - **[★★ CAPABILITY: #86 datastore GENUINELY WORKS — honest win on a trustworthy bar]** with the grader now honest BOTH ways (#118+#121+REQ-28), the small local Gemma 2B builds a **genuinely working** SQLite notes app from ONE sentence: fresh build `done=true` + `PERSISTS=true` (physical add→list round-trips), 6/6 acceptance checks, $0. **The datastore class is NOT a reasoning ceiling** — a working build is reachable (best-of-k is the lever; this run hit it on attempt 1). En route, REQ-28 (6bf0a85) fixed a grader FALSE-NEGATIVE the win exposed: the per-command probe fed `add` one guessed arg, the 2-arg app correctly printed a usage error, and #121's error-marker mis-read that correct input-validation as a crash — now excused for guessed-arity probes while genuine runtime errors + the round-trip stay strict (dual test; #121's true-positives re-verified intact). Proven deterministically (the exact k=5 winner: 4/5→5/5) AND end-to-end (fresh build 6/6+PERSISTS). Suite 2287→2295. Lesson: a grader wrong in EITHER direction is a Tenet-3 defect; physically verify a built system before claiming done OR not-done.
