@@ -1,0 +1,58 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/llamacpp_client.py",
+      "startLine": 125,
+      "endLine": 223
+    },
+    {
+      "file": "tests/test_ext057_streaming_client.py",
+      "startLine": 15,
+      "endLine": 175
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/cli.py",
+      "startLine": 2414,
+      "endLine": 2454
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2495,
+      "endLine": 2499
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2521,
+      "endLine": 2533
+    },
+    {
+      "file": "harness/repl_render.py",
+      "startLine": 28,
+      "endLine": 145
+    },
+    {
+      "file": "tests/test_ext057_repl_render.py",
+      "startLine": 19,
+      "endLine": 328
+    }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 456,
+      "endLine": 635
+    },
+    {
+      "file": "harness/product_parity.py",
+      "startLine": 725,
+      "endLine": 743
+    },
+    {
+      "file": "tests/test_ext057_felt_quality.py",
+      "startLine": 8,
+      "endLine": 68
+    }
+  ]
+}

@@ -450,6 +450,191 @@ PARITY_ROWS: "list[ProductParityRow]" = [
 ]
 
 
+# ---------------------------------------------------------------------------------------------
+# Felt-quality / interactivity dimension (EXT-057 REQ-4)
+# ---------------------------------------------------------------------------------------------
+# #EXT-057-REQ-4 Start
+# The Checklist above measures FEATURE PRESENCE row-by-row and reported ~84% as of LAST_SYNCED --
+# but the owner's lived 2026-07-07 verdict on the actual REPL was "awful". That is a Tenet-3 gap:
+# an instrument that can report high while the felt experience is poor is dishonest by omission.
+# This dimension scores HOW A TURN FEELS TO USE (does output stream, is the model visibly doing
+# something, does the product invite natural language, can you steer a running turn) rather than
+# whether a lever exists anywhere in the codebase, and folds into `score_overall()` below so a
+# feature-complete-but-awful build can no longer hide behind the feature-presence percentage
+# alone.
+#
+# Scored HONESTLY against the CURRENT working tree (not aspirational, not the EXT-057 end-state):
+# some EXT-057 sibling tasks (streaming client REQ-1, event-yielding solve path REQ-2, NL-first
+# REPL render REQ-3) may land independently of this task -- re-sync these five sub-scores
+# whenever any of them lands, exactly like PARITY_ROWS' own monthly-re-sync discipline above.
+
+
+@dataclass(frozen=True)
+class FeltQualityRow:
+    """One sub-score of the felt-quality/interactivity dimension.
+
+    Mirrors ``ProductParityRow``'s shape but each row asks "does the USER feel this", not "does a
+    lever exist" -- e.g. a client method that can stream tokens but that nothing interactive ever
+    calls is honestly ``partial`` here even though the underlying code is real and tested.
+    """
+
+    key: str          # stable identifier, e.g. "streams_model_output"
+    label: str         # human-readable name
+    state: str          # one of VALID_STATES
+    meaning: str         # WHAT this sub-score measures (the felt behavior being asked about)
+    measured_as: str      # HOW it is measured -- the concrete, current-code evidence for the state
+
+
+# Transcribed HONESTLY against the working tree as of this commit. Each entry documents the exact
+# evidence for its state so a future re-sync is a visible diff, not a silent inflation (mirrors
+# PARITY_ROWS' own honesty discipline above).
+FELT_QUALITY_ROWS: "list[FeltQualityRow]" = [
+    FeltQualityRow(
+        key="streams_model_output",
+        label="Model output streams token-by-token",
+        state="partial",
+        meaning="Does the user SEE the model's answer appear incrementally (Claude Code's core "
+                "felt trait), instead of staring at a silent prompt until one block lands?",
+        measured_as="`harness/llamacpp_client.py::LlamacppClient.stream_complete()` (EXT-057 "
+                     "REQ-1) is real and unit-tested -- it POSTs `stream: true` and yields token "
+                     "deltas under a hard wall-clock deadline. But no interactive caller consumes "
+                     "it yet: `harness/coding_loop.py` has no `solve_streaming` (REQ-2) and "
+                     "`harness/cli.py`'s `repl()` never calls `stream_complete` -- a user typing a "
+                     "request today still waits for the full response in one block. `complete()`'s "
+                     "`build_payload()` stays `\"stream\": false`, byte-unchanged. Foundation "
+                     "laid, zero felt effect yet -- honestly `partial`, not `works`.",
+    ),
+    FeltQualityRow(
+        key="live_tool_feedback",
+        label="Tool calls narrate themselves live",
+        state="works",
+        meaning="Does the user see a tool start and finish AS IT HAPPENS (a call/result line per "
+                "tool), instead of a silent run followed by a block dump at the end?",
+        measured_as="EXT-045 (already landed, row #24 above): `harness.coding_loop.Runtime`'s "
+                     "`on_event` hook prints a concise `-> call` / `OK result` line to stdout from "
+                     "the SAME seam that hash-chain-logs every accepted Decision, on by default on "
+                     "a live terminal. This is genuinely delivered and test-covered TODAY, "
+                     "independent of the rest of EXT-057 -- honestly `works`.",
+    ),
+    FeltQualityRow(
+        key="natural_language_first",
+        label="Natural language is the front door, not slash-commands",
+        state="partial",
+        meaning="Does the product's OWN presentation (banner, prompt, docs) invite you to just "
+                "talk to it, the way Claude Code does, rather than presenting itself as a "
+                "command shell you must learn first?",
+        measured_as="Plain (non-`/`) input already routes end-to-end through `_route_plain` to "
+                     "the orchestrator -- real, working plumbing. But `repl()`'s own banner "
+                     "literally prints \"slash-command REPL — type /help, /quit to exit\" -- the "
+                     "product SELLS itself as slash-first, the opposite of the felt trait this "
+                     "sub-score asks about. REQ-3's NL-first banner/`repl_render.py` rebuild has "
+                     "not landed. The capability exists but the felt entry point contradicts it -- "
+                     "honestly `partial`.",
+    ),
+    FeltQualityRow(
+        key="working_indicator",
+        label="A working/thinking indicator during silent stretches",
+        state="missing",
+        meaning="When the model is 'thinking' with no token/tool event yet, does the user see ANY "
+                "sign of life (a spinner, an elapsed-time counter, 'thinking...'), or does the "
+                "terminal look hung?",
+        measured_as="No spinner, elapsed-counter, or 'thinking' indicator exists anywhere in "
+                     "`harness/cli.py` today (no such render path at all during a call). A long "
+                     "silent model call looks indistinguishable from a hang. Honestly `missing`.",
+    ),
+    FeltQualityRow(
+        key="interrupt_surfaced",
+        label="A running turn can be interrupted and steered",
+        state="partial",
+        meaning="If a run is taking too long or going the wrong way, can the user actually stop "
+                "it (Ctrl-C) and redirect, instead of being stuck watching it finish?",
+        measured_as="EXT-055 (already landed, row #21 above = `partial` on the Checklist): a "
+                     "cooperative `InterruptController` + REPL SIGINT wiring stops a RUNNING "
+                     "command gracefully and reports what was preserved, but only two loops "
+                     "(`/fixrepo`/`/agent`'s fix flow, BUILD's per-function loop) have a "
+                     "cooperative check point -- `/buildsystem` and other long-running commands "
+                     "have none, and there is no real 'amend the plan' UX beyond typing a fresh "
+                     "instruction. Mirrors the existing row #21 state exactly -- honestly "
+                     "`partial`.",
+    ),
+]
+
+
+def score_felt_quality(rows: "Iterable[FeltQualityRow] | None" = None) -> dict:
+    """Aggregate the felt-quality dimension into a percentage + ranked attack list.
+
+    Same works=1.0/partial=0.5/missing=0.0 weighting and never-raises discipline as `score()`
+    above -- kept as a SEPARATE function (not folded into `score()`'s own signature) so every
+    existing `score()`/`render()` caller and pinned test for the feature-presence Checklist
+    (EXT-041) stays byte-behavior-unchanged; `score_overall()` below is what actually folds the
+    two dimensions together.
+    """
+    try:
+        rows = list(rows) if rows is not None else list(FELT_QUALITY_ROWS)
+    except Exception:
+        rows = []
+
+    n_works = n_partial = n_missing = 0
+    weighted_total = 0.0
+    attack_list = []
+    for row in rows:
+        try:
+            state = getattr(row, "state", "missing")
+            weight = _STATE_WEIGHT.get(state, 0.0)
+            weighted_total += weight
+            if state == "works":
+                n_works += 1
+            elif state == "partial":
+                n_partial += 1
+                attack_list.append(row)
+            else:
+                n_missing += 1
+                attack_list.append(row)
+        except Exception:
+            continue
+
+    n_total = len(rows)
+    pct = round((weighted_total / n_total) * 100, 1) if n_total else 0.0
+
+    return {
+        "pct": pct,
+        "n_total": n_total,
+        "n_works": n_works,
+        "n_partial": n_partial,
+        "n_missing": n_missing,
+        "attack_list": sorted(
+            attack_list,
+            key=lambda r: (0 if getattr(r, "state", "missing") == "missing" else 1,
+                           getattr(r, "key", "")),
+        ),
+    }
+
+
+def score_overall(
+    parity_rows: "Iterable[ProductParityRow] | None" = None,
+    felt_rows: "Iterable[FeltQualityRow] | None" = None,
+) -> dict:
+    """THE aggregate that actually answers "is this product good to use" (EXT-057 REQ-4).
+
+    Equal-weighted blend of feature-presence (`score()`) and felt-quality
+    (`score_felt_quality()`) -- deliberately EQUAL weight, not feature-dominant, so a build that
+    nails every feature checkbox but feels awful to actually use can no longer out-vote the lived
+    experience with sheer row-count (the exact Tenet-3 gap this requirement exists to close: ~84%
+    feature presence reported while the owner's verdict on the lived UX was "awful", 2026-07-07).
+    Callers that want the OLD feature-only number keep using `score()`/`render()`'s existing
+    "aggregate parity" line unchanged; this is the new, honest, felt-inclusive number.
+    """
+    feature = score(parity_rows)
+    felt = score_felt_quality(felt_rows)
+    pct = round((feature["pct"] + felt["pct"]) / 2, 1)
+    return {
+        "pct": pct,
+        "feature": feature,
+        "felt_quality": felt,
+    }
+# #EXT-057-REQ-4 End
+
+
 def score(rows: "Iterable[ProductParityRow] | None" = None) -> dict:
     """Aggregate the checklist into an honest parity percentage + a ranked attack list.
 
@@ -536,6 +721,26 @@ def render(rows: "Iterable[ProductParityRow] | None" = None) -> str:
                     f"  #{getattr(row, 'id', '?')} {getattr(row, 'feature', '(unknown)')} "
                     f"[{getattr(row, 'state', 'missing')}] -> {getattr(row, 'next_lever', '')}"
                 )
+
+        # #EXT-057-REQ-4 Start
+        # Felt-quality/interactivity dimension: surfaced here too so `/parity` can no longer
+        # report a flattering number while the lived UX is poor -- see FELT_QUALITY_ROWS above.
+        felt = score_felt_quality()
+        lines.append("-" * 60)
+        lines.append("Felt-quality / interactivity (EXT-057 REQ-4) -- does it FEEL good to use:")
+        for frow in FELT_QUALITY_ROWS:
+            lines.append(f"  {getattr(frow, 'state', 'missing'):<8} {getattr(frow, 'label', '(unknown)')}")
+        lines.append(
+            f"felt-quality: {felt['pct']}%  "
+            f"(works={felt['n_works']} partial={felt['n_partial']} "
+            f"missing={felt['n_missing']} / {felt['n_total']} sub-scores)"
+        )
+        overall = score_overall(rows)
+        lines.append(
+            f"OVERALL parity (feature + felt, equal-weighted): {overall['pct']}%  "
+            "-- the honest number; a high feature score can no longer mask a poor felt experience"
+        )
+        # #EXT-057-REQ-4 End
         return "\n".join(lines)
     except Exception:
         return "Product-Parity Checklist: (render failed -- see harness/product_parity.py)"

@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+from typing import Iterator
 
 from jaros.llm import LlmRequest, LlmResponse
 
@@ -119,6 +121,106 @@ class DeterministicLlamaCppClient:
             except Exception as exc:  # response/parse error — fail fast, surfaced (Tenet 3)
                 raise RuntimeError(f"llama.cpp complete failed ({self.model} @ {self.host}): {exc}")
         raise RuntimeError(f"llama.cpp unreachable after retries ({self.model} @ {self.host}): {last_exc}")
+
+    # #EXT-057-REQ-1 Start
+    # Sentinel returned by `_parse_sse_line` for a `[DONE]` marker line, distinct from a
+    # real token string and from `None` (a line to skip). Kept on the class so it stays
+    # importable/inspectable without instantiating a client.
+    _SSE_DONE = object()
+
+    @staticmethod
+    def _parse_sse_line(line: str):
+        """Parse ONE decoded SSE line into: a token-delta string, the `_SSE_DONE`
+        sentinel (on a `[DONE]` marker), or `None` (a line to skip — blank/keep-alive,
+        a non-`data:` line, or a malformed `data:` chunk). NEVER raises, so one bad
+        chunk can never crash the whole stream. Pure — unit-testable without a socket.
+        """
+        stripped = line.strip()
+        if not stripped or not stripped.startswith("data:"):
+            return None
+        body = stripped[len("data:"):].strip()
+        if not body:
+            return None
+        if body == "[DONE]":
+            return DeterministicLlamaCppClient._SSE_DONE
+        try:
+            obj = json.loads(body)
+        except Exception:
+            return None
+        try:
+            choice = (obj.get("choices") or [{}])[0]
+            content = None
+            delta = choice.get("delta")
+            if isinstance(delta, dict):
+                content = delta.get("content")
+            if not content:
+                content = choice.get("text")  # some servers stream via choices[0].text
+            if not content:
+                content = obj.get("content")  # llama.cpp's native (non-OpenAI) field
+        except Exception:
+            return None
+        return content or None
+
+    def stream_complete(self, req: LlmRequest) -> "Iterator[str]":
+        """Stream token deltas from `/v1/chat/completions` with `"stream": true`.
+
+        Purely additive — `build_payload(req)` is COPIED (never mutated) before flipping
+        the flag, so `complete()` and the non-streaming payload stay byte-unchanged
+        (Tenet 3). A background daemon reader thread mirrors `_urlopen_hard`'s hard
+        wall-clock discipline: once the deadline passes the thread is ABANDONED (never
+        joined) rather than waited on, so a stalled/half-open connection can NEVER hang
+        the caller — this generator just stops and returns whatever it already yielded.
+        """
+        payload = dict(self.build_payload(req))  # copy: never mutate the shared builder
+        payload["stream"] = True
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.host}/v1/chat/completions",
+            data=data,
+            headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+            method="POST",
+        )
+
+        line_q: "queue.Queue" = queue.Queue()
+        _Q_DONE, _Q_ERROR = object(), object()
+
+        def _reader() -> None:
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    for raw_line in response:
+                        try:
+                            line = raw_line.decode("utf-8", errors="replace") \
+                                if isinstance(raw_line, (bytes, bytearray)) else str(raw_line)
+                        except Exception:
+                            continue
+                        line_q.put(line)
+            except Exception as exc:  # connection drop mid-stream — surfaced, not raised
+                line_q.put((_Q_ERROR, exc))
+            finally:
+                line_q.put(_Q_DONE)
+
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+
+        deadline = time.time() + self.timeout  # hard wall-clock bound on the whole stream
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return  # deadline hit — abandon the daemon reader thread, stop cleanly
+            try:
+                item = line_q.get(timeout=min(remaining, 1.0))
+            except queue.Empty:
+                continue
+            if item is _Q_DONE:
+                return
+            if isinstance(item, tuple) and item and item[0] is _Q_ERROR:
+                return  # connection error mid-stream — stop cleanly, never raise/hang
+            token = self._parse_sse_line(item)
+            if token is self._SSE_DONE:
+                return
+            if token:
+                yield token
+    # #EXT-057-REQ-1 End
 
 
 def health(host: str | None = None, timeout: float = 8.0) -> dict:

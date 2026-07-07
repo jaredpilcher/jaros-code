@@ -2411,6 +2411,49 @@ def _run_command_interruptible(cli: "JcodeCli", line: str) -> str:
 # #EXT-055-REQ-3 End
 
 
+# #EXT-057-REQ-3 Start
+def _try_stream_plain(cli: "JcodeCli", line: str) -> "str | None":
+    """Attempt the NEW natural-language-first streamed path for ONE plain (non-slash) REPL line:
+    lazily look up `coding_loop.solve_streaming` (TASK-2, the event-yielding interactive solve
+    path -- built in PARALLEL and may not exist yet, or may land with a different keyword surface
+    than the SHARED CONTRACT currently documents), call it, and render the returned event
+    generator LIVE via `repl_render.render_stream`.
+
+    Returns the rendered final text on success (possibly ``""``), or ``None`` when streaming
+    isn't available/usable for this line -- signalling the caller MUST fall back to the CURRENT
+    `_run_command_interruptible` + print path instead. This keeps `import harness.cli` working
+    today (before TASK-2 lands) and keeps a plain request from ever being silently dropped just
+    because the streaming integration didn't pan out on a given line (Tenet 3): a missing
+    function (`AttributeError`/`ImportError`), a signature that rejects the kwargs offered
+    (`TypeError`), or any failure once the generator starts running (`Exception` mid-iteration)
+    all degrade to ``None``."""
+    try:
+        from harness import coding_loop
+        solve_streaming = getattr(coding_loop, "solve_streaming", None)
+        if solve_streaming is None:
+            return None
+        from harness.repl_render import render_stream
+    except Exception:
+        return None
+
+    try:
+        events = solve_streaming(line, llm=cli.llm)
+    except TypeError:
+        try:
+            events = solve_streaming(line)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+    try:
+        import sys
+        return render_stream(events, out=sys.stdout)
+    except Exception:
+        return None
+# #EXT-057-REQ-3 End
+
+
 def repl(session_id: str | None = None) -> int:
     """Interactive Claude-Code-like prompt loop.
 
@@ -2420,7 +2463,15 @@ def repl(session_id: str | None = None) -> int:
     NOTE (EXT-045): this signature is DELIBERATELY unchanged (one keyword argument, mirroring
     the EXT-044 backward-compat constraint some tests stub `repl` against) -- tool-event
     streaming is decided INTERNALLY (stdout-is-a-tty, never under JSON since the REPL has no
-    JSON mode) rather than threaded in as a new parameter."""
+    JSON mode) rather than threaded in as a new parameter.
+
+    NOTE (EXT-057): natural language is now the HEADLINE, not the slash-command escape hatch --
+    the banner below invites plain requests; `/`-prefixed lines still dispatch the existing
+    command table, byte-identically, retaining every EXT-04x command, /quit, /clear, resume,
+    statusline, permission prompts, and interrupt. On a live, streaming-capable terminal, a plain
+    (non-slash) line is rendered LIVE (see `_try_stream_plain`/`harness/repl_render.py`); a
+    non-TTY/piped run (`_stream` False) MUST stay on the CURRENT `_run_command_interruptible` +
+    print behavior, byte-stable."""
     # #EXT-045-REQ-1 Start
     from harness.tool_stream import should_stream
     _stream = should_stream("text", _stdout_is_tty())
@@ -2441,7 +2492,11 @@ def repl(session_id: str | None = None) -> int:
     print(f"  session {cli.session.id}"
           + (f" — resumed, {len(cli.session.turns)} turn(s)" if session_id and cli.session.turns else " — new"))
     # #EXT-036-REQ-12 End
-    print("  slash-command REPL — type /help, /quit to exit\n")
+    # #EXT-057-REQ-3 Start
+    # NL-first invite (was "slash-command REPL — type /help, /quit to exit"): talking to it is
+    # now the default, /help is the escape hatch for the command table.
+    print("  Ask me to build, fix, or explain…  /help for commands, /quit to exit\n")
+    # #EXT-057-REQ-3 End
     while True:
         # #EXT-045-REQ-2 Start
         if getattr(cli, "_show_statusline", False):
@@ -2463,6 +2518,19 @@ def repl(session_id: str | None = None) -> int:
         if line.strip() == "/clear":
             print("\033[2J\033[H", end="")
             continue
+        # #EXT-057-REQ-3 Start
+        # Plain (non-slash) input, on a live streaming-capable terminal (`_stream`, EXT-045's
+        # existing TTY-gate -- never re-decided here), gets the NEW live-rendered path; a
+        # `/`-prefixed line ALWAYS takes the existing slash dispatch below, unchanged. Non-TTY
+        # (`_stream` False) or a streaming attempt that comes back `None` (TASK-2 not landed yet,
+        # or it failed) falls straight through to the untouched fallback beneath, so a plain
+        # request is never dropped.
+        stripped = line.strip()
+        if _stream and stripped and not stripped.startswith("/"):
+            rendered = _try_stream_plain(cli, line)
+            if rendered is not None:
+                continue
+        # #EXT-057-REQ-3 End
         # #EXT-036-REQ-8 Start
         # #EXT-055-REQ-3 Start
         # `_run_command_interruptible` wraps `cli.handle(line, interactive=True)` with cooperative
