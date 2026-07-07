@@ -90,6 +90,20 @@ the ACCEPTANCE SIGNAL is blind and the missing tool is a deterministic behaviora
 External hard bar: uncurated SWE-bench-Lite ~13%. THIS is where jcode is not yet Opus-4.8-class — and
 closing it (by building the missing deterministic tools) is the mission.
 
+- **[EXT-056 · adt-differential-oracle — HIGH, IN FLIGHT · the first tool of the complete set]**
+  The first deterministic verification tool that makes the semantic-ordering blind spot VISIBLE +
+  LOCALIZED — the direct execution of the 2026-07-07 governing frame. `harness/adt_oracle.py` (sibling of
+  `datastore_oracle.py`, pure stdlib, never-raises, no model call): classify a build to a canonical ADT
+  {lru,priority-queue,ttl-store,fifo,ring-buffer} → build a textbook reference from the VISIBLE spec →
+  drive seeded boundary-stressing op sequences through reference vs built-CLI in lockstep → report the
+  FIRST DIVERGENCE as a localized witness. Directly targets the sole daily-driver miss (build_hard_lru_cache
+  _move_to_head pointer bug). ✅ **TASK-1 LANDED (cc0bb21, #131):** module + 4 stages + LRU reference +
+  12 offline tests (PASS correct LRU / FAIL the pointer-bug fixture with a localized first-divergence),
+  verified 12/12 green, never-raises + no-leak confirmed. **NOW → TASK-2:** wire ONE union check into
+  `_minimum_acceptance` (union-only ⇒ can only flip done True→False ⇒ 0-false-done preserved by
+  construction), superseding REQ-37. **THEN TASK-3:** held-out proof — develop on {lru,priority}, HOLD OUT
+  {ttl,ring-buffer}, grade with an independent hidden suite, pass@1 temp=0 oracle-in-loop vs baseline
+  (Tenet-3 clean). Research pick #1 of 10 in the deterministic-toolset complete set.
 - **[#118 acceptance-completeness / done-honesty — HIGH, I DRIVE IT]** make build_system's acceptance
   derivation DETERMINISTIC + COMPLETE (consistent full requirement set per sentence) so `done` is
   trustworthy across builds + best-of-k selects on a REAL bar, not a sparse 1-check self-acceptance
@@ -297,6 +311,14 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ CAPABILITY: adt-differential-oracle TASK-1 — EXT-056 REQ-1 (cc0bb21, 2026-07-07)]** the FIRST
+  deterministic tool of the "complete set" (owner directive: no reasoning cap when the model has enough
+  deterministic tools). `harness/adt_oracle.py` — classify→canonical-ADT, textbook reference from the
+  VISIBLE spec, seeded boundary-stressing sequence, lockstep differential drive vs the built CLI, report
+  the FIRST DIVERGENCE as a localized witness. Makes the semantic-ordering blind spot (best-of-k's blind
+  spot; the sole daily-driver miss) VISIBLE + LOCALIZED. Pure stdlib, never-raises, no model call, no oracle
+  leak. 12/12 offline tests green (PASS correct LRU / FAIL the `_move_to_head` pointer-bug fixture). NOT yet
+  wired into acceptance (TASK-2, union-only ⇒ sacred-safe) — so the build suite cannot regress from this.
 - **[★ HONESTY: eval-leak auto-lock — EXT-038 REQ-3 (26851d7, 2026-07-07)]** `research_guard.
   eval_lock()` (REQ-1) was proven safe but never called automatically — closed via ONE choke point:
   `harness/eval_runner.py`'s `run_task_list()` (the shared execution core ~11 eval scripts import:
