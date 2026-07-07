@@ -10,6 +10,9 @@ implementation:
   - tests/test_ext038_web_research.py
   - harness/eval_runner.py
   - tests/test_ext038_eval_lock_wiring.py
+  - harness/system_builder.py
+  - tests/test_ext038_research_context.py
+  - tests/test_ext036_enable_research_wiring.py
 ---
 
 **Owner directive (2026-07-03/04, PRIME-001 intent.md capability (a)):** for Claude-Code parity the
@@ -230,10 +233,73 @@ again immediately after `run_task_list()` returns. Full suite green, no regressi
   `run_task_list()` returns (success or exception)
 - [x] Every existing caller of `run_suite()`/`run_task_list()` is covered automatically — no per-script
   changes needed, confirmed by NOT touching any of the dozen importing eval scripts
-- [x] Byte-identical returned scorecard shape/behavior when no research call is ever attempted (a pure
-  safety wrapper, not a behavior change) — proven by re-running the existing eval_runner test suite
-  unchanged and green
-- [x] Proven by a new offline test in `tests/test_ext005_eval_runner.py` (or a new
-  `tests/test_ext038_eval_lock_wiring.py`, whichever fits the existing test layout) — no live model
-  call, a stub/mock task list only
+
+### [REQ-4] Wire the fetch capability into the PLANNER — research actually informs a build  (covered)
+
+**The gap this closes:** REQ-2 built a genuinely working, guarded fetch capability; REQ-3 made the
+eval-leak side of it safe-by-default. But nothing in the product ever CALLS `web_research.fetch()` —
+the "real-library systems tier" NEXT item (build systems that use real third-party libraries: Flask,
+pandas, SQLAlchemy) needs the planner to see CURRENT library documentation before drawing a plan,
+not just guess from Gemma 4 2B's stale training memory. This requirement makes the fetch capability
+actually inform a build, closing PRIME-001 capability (a) end-to-end for the first time.
+
+**Deterministic-detection design (not a model judgment call):** a small, curated, HAND-WRITTEN table
+(`KNOWN_LIBRARY_DOCS: dict[str, tuple[url, host]]`) maps a handful of well-known library names (the
+same "real-library systems tier" set: `flask`, `pandas`, `requests`, `click`, `sqlalchemy`) to their
+official docs entry-page URL + allow-listed host. `research_context(spec) -> str` does a
+deterministic, case-insensitive WHOLE-WORD scan of the spec sentence for any of these names (never a
+model call, never a guess at an undocumented library) — a match triggers exactly ONE guarded
+`web_research.fetch()` call; no match returns `""` immediately, no fetch attempted.
+
+- `research_context(spec) -> str`: NEVER RAISES. Scans `spec` for a known library name (word-boundary
+  regex, case-insensitive); on no match, returns `""` immediately (no network activity at all). On a
+  match, calls `web_research.fetch(url, allowed_hosts=(host,))`; any outcome OTHER than a clean
+  `ok=True` fetch (a `ResearchDisabledError` during an active eval, an `EgressRefused`, an ordinary
+  network failure) is caught and results in `""` — the caller never sees an exception and the plan
+  proceeds exactly as it does today. On success, returns a short prefix string embedding the ALREADY
+  `wrap_untrusted`-fenced `text_wrapped` (never re-wraps, never strips the fence) — the returned text
+  is still explicitly labeled DATA ONLY, not instructions, when it reaches the plan prompt.
+- `build_system(...)` gains one new keyword parameter: `enable_research: bool = False`. Default
+  `False` leaves `build_system` BYTE-IDENTICAL to before this parameter existed — proven by a
+  dedicated regression test (mirrors the `replan_on_failure`/`spec_properties` convention already
+  established in this function). When `True`, `research_context(spec)` is called ONCE before the PLAN
+  prompt is built; a non-empty result is prepended to `PLAN_PROMPT.format(spec=spec)` (an empty
+  result — no library match, or any fetch failure — changes nothing, PLAN proceeds exactly as when
+  `enable_research=False`).
+- SAFE BY CONSTRUCTION: research can only ADD context to the plan prompt, never alter `validate_plan`,
+  the build/repair/acceptance pipeline, or any other stage. A research failure of any kind degrades to
+  the exact `enable_research=False` behavior for that build — it can never turn a build that would
+  have succeeded into a build that fails just because a fetch didn't work.
+- NOT in scope here: MEASURING whether research-augmented planning actually lifts the real-library
+  build accept-rate. That is an honest, separate follow-up measurement (this task lands the wiring;
+  whether it helps is a question for data, not assumed here) — named, not silently deferred.
+
+**HONEST STATUS (Tenet 3, TASK-4):** `research_context()` lands in `harness/web_research.py` (reusing
+the module the fetch capability already lives in, not a new module) with a 5-library table; the
+`enable_research` parameter is added to `build_system` in `harness/system_builder.py`. Proven by an
+OFFLINE test suite (the module's existing `fetch()` transport monkeypatch pattern reused — no real
+network call in any test): a spec mentioning a known library triggers exactly one fetch call to the
+correct URL; a spec mentioning no known library triggers zero fetch calls; a fetch failure (mocked
+`ok=False`) degrades to `""`, never raises; an active `eval_lock()` during a research-augmented build
+degrades to `""` (research silently skipped, guard-first still holds — never bypassed); and
+`enable_research=False` is proven byte-identical to `build_system`'s pre-existing behavior via a
+regression test that runs the SAME spec through both paths and diffs the plan-prompt sent to the LLM.
+
+#### Acceptance Criteria
+- [x] `research_context(spec) -> str` exists in `harness/web_research.py`, never raises, scans for a
+  known library name via a word-boundary case-insensitive match against a small curated table,
+  returns `""` immediately on no match (zero network activity), and degrades to `""` on ANY fetch
+  outcome other than a clean success (eval-lock active, egress refused, ordinary network failure)
+- [x] A successful fetch's result is embedded via the module's OWN `text_wrapped` (already
+  `wrap_untrusted`-fenced by `fetch()`) — never re-wrapped, never stripped, never returned raw
+- [x] `build_system(..., enable_research: bool = False)` — default `False` is BYTE-IDENTICAL to prior
+  behavior (a dedicated regression test proves this: same spec, same plan prompt sent to the LLM,
+  with and without the new parameter present at its default)
+- [x] `enable_research=True` calls `research_context(spec)` exactly ONCE per build, before the PLAN
+  call; a non-empty result is prepended to the plan prompt, an empty result changes nothing
+- [x] A research failure of any kind (no library match, fetch failure, active eval-lock) never raises
+  out of `build_system` and never turns an otherwise-successful build into a failure
+- [x] Proven by an OFFLINE test suite (transport monkeypatched, mirroring `test_ext038_web_research.py`'s
+  pattern) — no real network access in any test, no live model call needed to prove the wiring (the
+  LLM call itself can be mocked/injected exactly as existing `build_system` tests already do)
 - [x] Full suite (`python -m pytest tests/ -q`) green, no regression

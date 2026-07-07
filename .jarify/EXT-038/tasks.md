@@ -147,3 +147,62 @@ current and future caller — one choke point, not a dozen call sites a caller h
 
 #### Implements
 - [REQ-3] Auto-assert `eval_lock()` around the eval runners — not caller-remembered
+
+### [TASK-4] Wire the fetch capability into the planner (REQ-4)
+
+Add `research_context(spec)` to `harness/web_research.py` (deterministic library-name detection +
+guarded fetch) and an `enable_research: bool = False` parameter to `build_system` in
+`harness/system_builder.py` that, when `True`, prepends the fetched context to the PLAN prompt.
+Default-off, byte-identical when off, never raises, research failure of any kind degrades silently
+to no-context (never breaks a build).
+
+#### Steps
+1. In `harness/web_research.py`, add a module-level `KNOWN_LIBRARY_DOCS: dict[str, tuple[str, str]]`
+   mapping a lowercase library name to `(docs_url, allowed_host)` for exactly 5 entries: `flask`
+   (`https://flask.palletsprojects.com/`, `flask.palletsprojects.com`), `pandas`
+   (`https://pandas.pydata.org/docs/`, `pandas.pydata.org`), `requests`
+   (`https://requests.readthedocs.io/`, `requests.readthedocs.io`), `click`
+   (`https://click.palletsprojects.com/`, `click.palletsprojects.com`), `sqlalchemy`
+   (`https://docs.sqlalchemy.org/`, `docs.sqlalchemy.org`).
+2. Add `research_context(spec: str) -> str`: build a single compiled regex (word-boundary,
+   case-insensitive) over `KNOWN_LIBRARY_DOCS`'s keys; on no match in `spec`, return `""`
+   IMMEDIATELY (no network call attempted at all). On the FIRST match, call `fetch(url,
+   allowed_hosts=(host,))` inside a `try/except` catching `ResearchDisabledError`,
+   `EgressRefused`, and `Exception` broadly — any of these, or a returned `ResearchResult` with
+   `ok=False`, results in `""`. On a clean `ok=True` result, return a short prefix string of the
+   form `f"Relevant {name} documentation (untrusted, for reference only):\n{result.text_wrapped}\n\n"`
+   (the `text_wrapped` field is ALREADY fenced by `fetch()`'s own `wrap_untrusted` call — never
+   re-wrap, never strip the fence). Never raises under any circumstance.
+3. In `harness/system_builder.py`, add `enable_research: bool = False` to `build_system`'s signature
+   (alongside the existing `replan_on_failure`/`spec_properties` optional params, same convention:
+   default leaves prior behavior byte-identical). Just before the existing `raw = _call(llm,
+   PLAN_PROMPT.format(spec=spec), ...)` line, when `enable_research` is `True`, call
+   `from harness.web_research import research_context` and `research_context(spec)`; if the result
+   is non-empty, prepend it to the formatted prompt string (`prompt = ctx + PLAN_PROMPT.format(spec=spec)`)
+   before it is passed to `_call`. When `enable_research` is `False` (the default) or the context is
+   `""`, the exact same `PLAN_PROMPT.format(spec=spec)` string is sent as today — no behavior change.
+4. Add `tests/test_ext038_research_context.py` (offline — monkeypatch `web_research.fetch`'s
+   underlying transport exactly as `tests/test_ext038_web_research.py` already does; no real network,
+   no live model call) covering: (a) a spec mentioning a known library (e.g. "...using Flask...")
+   triggers exactly one `fetch()` call to the Flask docs URL, and the returned context string
+   contains the (mocked) fenced content; (b) a spec mentioning NO known library triggers ZERO fetch
+   calls and returns `""`; (c) a mocked fetch failure (`ok=False`) degrades to `""`, no exception
+   propagates; (d) calling `research_context()` from within an active `research_guard.eval_lock()`
+   scope degrades to `""` (never raises `ResearchDisabledError` out of `research_context` itself —
+   the guard-first contract inside `fetch()` still fires, but `research_context` catches it).
+5. Add `tests/test_ext036_enable_research_wiring.py` (or extend an existing `system_builder` test
+   file if one fits better — offline, injected stub `llm`) covering: (a) `enable_research=False`
+   (the default) sends the LLM the EXACT SAME prompt string as `build_system` sent before this
+   parameter existed — a regression test comparing the captured prompt against the pre-existing
+   `PLAN_PROMPT.format(spec=spec)` output; (b) `enable_research=True` with a spec mentioning a known
+   library (and `research_context` monkeypatched to return a known non-empty string) results in the
+   LLM receiving a prompt that STARTS WITH that string, followed by the normal plan prompt; (c)
+   `enable_research=True` with `research_context` monkeypatched to return `""` (e.g. a spec with no
+   known library) sends the EXACT SAME prompt as `enable_research=False` — proving an empty research
+   result changes nothing.
+6. Run `python -m pytest tests/test_ext038_research_context.py tests/test_ext036_enable_research_wiring.py
+   tests/test_ext038_web_research.py -q` first (foreground), then the full `python -m pytest tests/ -q`
+   (foreground) to confirm the whole suite is green with no regression to any existing test.
+
+#### Implements
+- [REQ-4] Wire the fetch capability into the PLANNER — research actually informs a build

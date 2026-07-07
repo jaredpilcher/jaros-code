@@ -1,14 +1,29 @@
 {
-  "REQ-1": [
+  "REQ-4": [
     {
-      "file": "tests/test_ext038_research_guard.py",
-      "startLine": 25,
-      "endLine": 221
+      "file": "tests/test_ext036_enable_research_wiring.py",
+      "startLine": 17,
+      "endLine": 69
     },
     {
-      "file": "harness/research_guard.py",
-      "startLine": 46,
-      "endLine": 262
+      "file": "tests/test_ext038_research_context.py",
+      "startLine": 17,
+      "endLine": 118
+    },
+    {
+      "file": "harness/web_research.py",
+      "startLine": 268,
+      "endLine": 308
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1970,
+      "endLine": 1972
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2064,
+      "endLine": 2072
     }
   ],
   "REQ-2": [
@@ -19,8 +34,20 @@
     },
     {
       "file": "harness/web_research.py",
-      "startLine": 50,
-      "endLine": 266
+      "startLine": 52,
+      "endLine": 311
+    }
+  ],
+  "REQ-1": [
+    {
+      "file": "tests/test_ext038_research_guard.py",
+      "startLine": 25,
+      "endLine": 221
+    },
+    {
+      "file": "harness/research_guard.py",
+      "startLine": 46,
+      "endLine": 262
     }
   ],
   "REQ-3": [

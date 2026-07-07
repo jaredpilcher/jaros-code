@@ -30,15 +30,17 @@ failure, connection refused, timeout, an HTTP error status, a decode error) is a
 deliberate exception: they raise loudly (``ResearchDisabledError`` / :class:`EgressRefused`) so a
 misuse of the safety contract can never be silently swallowed.
 
-**Honest scope (Tenet 3):** this module is additive and self-contained. It is NOT yet wired into
-the orchestrator/planner -- that wiring is an explicit, separate, later follow-up, not silently
-deferred here. Pure stdlib (``urllib.request`` only) plus reuse of ``harness.research_guard`` -- no
-new dependency (``requests`` etc. are not added).
+**Honest scope (Tenet 3):** this module is additive and self-contained. As of EXT-038 REQ-4,
+:func:`research_context` (below) IS wired into ``harness.system_builder.build_system``'s PLAN
+phase, opt-in via ``enable_research=True`` -- the fetch capability defined here is a real caller's
+mechanism, not dormant. Pure stdlib (``urllib.request`` only) plus reuse of
+``harness.research_guard`` -- no new dependency (``requests`` etc. are not added).
 """
 
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -261,6 +263,49 @@ def fetch(
             truncated=False,
             note=f"fetch failed: {exc}",
         )
+
+
+# #EXT-038-REQ-4 Start
+# TASK-4: wire the fetch capability into an actual caller (the planner). Deterministic detection
+# (never a model judgment) over a small, hand-curated table -- the "real-library systems tier".
+KNOWN_LIBRARY_DOCS: "dict[str, tuple[str, str]]" = {
+    "flask": ("https://flask.palletsprojects.com/", "flask.palletsprojects.com"),
+    "pandas": ("https://pandas.pydata.org/docs/", "pandas.pydata.org"),
+    "requests": ("https://requests.readthedocs.io/", "requests.readthedocs.io"),
+    "click": ("https://click.palletsprojects.com/", "click.palletsprojects.com"),
+    "sqlalchemy": ("https://docs.sqlalchemy.org/", "docs.sqlalchemy.org"),
+}
+
+_LIBRARY_NAME_RE = re.compile(
+    r"\b(" + "|".join(re.escape(name) for name in KNOWN_LIBRARY_DOCS) + r")\b", re.IGNORECASE
+)
+
+
+def research_context(spec: str) -> str:
+    """Deterministic, NEVER-RAISE research augmentation for a PLAN prompt: scan ``spec`` for a
+    known library name (word-boundary, case-insensitive match against :data:`KNOWN_LIBRARY_DOCS`
+    -- never a model guess). On no match, return ``""`` IMMEDIATELY -- zero network activity. On the
+    first match, attempt exactly ONE guarded :func:`fetch` call; ANY outcome other than a clean
+    ``ok=True`` result (an active ``eval_lock()``, an ``EgressRefused``, an ordinary network
+    failure, or any other exception) degrades silently to ``""`` -- the caller can always treat this
+    function as a plain string producer, never as something that can fail a build. A successful
+    fetch's ALREADY-fenced ``text_wrapped`` (via ``research_guard.wrap_untrusted`` inside
+    :func:`fetch`) is embedded verbatim -- never re-wrapped, never stripped."""
+    if not isinstance(spec, str) or not spec:
+        return ""
+    match = _LIBRARY_NAME_RE.search(spec)
+    if not match:
+        return ""
+    name = match.group(1).lower()
+    url, host = KNOWN_LIBRARY_DOCS[name]
+    try:
+        result = fetch(url, allowed_hosts=(host,))
+    except Exception:  # ResearchDisabledError, EgressRefused, or anything else -- silent degrade
+        return ""
+    if not result.ok:
+        return ""
+    return f"Relevant {name} documentation (untrusted, for reference only):\n{result.text_wrapped}\n\n"
+# #EXT-038-REQ-4 End
 
 
 # #EXT-038-REQ-2 End

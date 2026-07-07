@@ -1967,6 +1967,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                   # #EXT-036-REQ-37 Start
                   spec_properties: bool = False,
                   # #EXT-036-REQ-37 End
+                  # #EXT-038-REQ-4 Start
+                  enable_research: bool = False,
+                  # #EXT-038-REQ-4 End
                   ) -> dict:
     """PLAN -> topological BUILD (syntax-gated + repair) -> ASSEMBLE -> ACCEPTANCE.
 
@@ -2017,7 +2020,19 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     acceptance checklist so ``done`` requires it too. SAFE BY CONSTRUCTION: this is purely
     ADDITIVE to the checklist union -- it can only flip a build's ``done`` from True to
     False (catching a genuine semantic/ordering bug the crash-only floor misses), never the
-    reverse, so it cannot manufacture a false-done."""
+    reverse, so it cannot manufacture a false-done.
+
+    ``enable_research`` (EXT-038 REQ-4, task #TASK-4): OPTIONAL, default ``False`` -- a complete
+    no-op, leaving this function BYTE-IDENTICAL to before this parameter existed. When ``True``,
+    ``harness.web_research.research_context(spec)`` is called ONCE before the PLAN prompt is
+    built: a deterministic (never model-judged) scan for a known library name in `spec`, guarded
+    fetch of that library's docs on a match. An empty result (no library match, or ANY fetch
+    failure -- an active eval-lock, egress refusal, network failure) changes nothing; the exact
+    same ``PLAN_PROMPT.format(spec=spec)`` is sent as when this parameter is left at its default.
+    A non-empty result is prepended to that prompt. Research can only ADD context to the plan
+    prompt -- it never touches `validate_plan`, the build/repair/acceptance pipeline, or any other
+    stage, so a research failure of any kind degrades to the `enable_research=False` behavior for
+    that build, never turning an otherwise-successful build into a failure."""
     # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
@@ -2045,8 +2060,18 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
 
     # 1. PLAN (REQ-1)
     _beat("PLAN")  # #EXT-040-REQ-3
+    plan_prompt = PLAN_PROMPT.format(spec=spec)
+    # #EXT-038-REQ-4 Start
+    # TASK-4: an empty research_context() result changes nothing -- byte-identical to the
+    # enable_research=False path below, which never even imports/calls this function.
+    if enable_research:
+        from harness.web_research import research_context
+        ctx = research_context(spec)
+        if ctx:
+            plan_prompt = ctx + plan_prompt
+    # #EXT-038-REQ-4 End
     try:
-        raw = _call(llm, PLAN_PROMPT.format(spec=spec), max_tokens=PLAN_MAX_TOKENS)
+        raw = _call(llm, plan_prompt, max_tokens=PLAN_MAX_TOKENS)
     except Exception as exc:
         return _result(shipped=False, done=False, note=f"planning call failed: {exc}")
     plan = _extract_json(raw, "{", "}")
