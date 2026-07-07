@@ -62,3 +62,69 @@ DATASTORE creation-task tier to `harness/system_suite.py`.
 
 #### Implements
 - [REQ-1] SQLite datastore acceptance oracle — catch the hollow-persistence-done class
+
+### [TASK-2] Real-service (Redis) provisioner + independent persistence oracle (REQ-2)
+
+Build the first REAL-service rung of REQ-2: a `ServiceProvisioner` that brings a real Redis service up
+on localhost via Docker, caps + tears it down cleanly, and an independent Redis persistence oracle that
+plugs into the SAME `verify_persistence`-shaped contract `harness/datastore_oracle.py` (REQ-1) established
+for sqlite — proving a datastore CLI's data REALLY reached the service, never trusting its stdout. Redis
+is the chosen first target (simplest real service; its RESP wire protocol is speakable over a raw stdlib
+socket, so the whole module stays PURE STDLIB — no `redis-py` dependency — matching `datastore_oracle`'s
+no-new-dependency discipline). Postgres/Qdrant/Cassandra remain named-but-later under REQ-2. Honest offline
+discipline (Tenet 3): every test skips when Docker is absent, so offline CI NEVER fails or falsely passes.
+
+#### Steps
+1. Create `harness/service_provisioner.py` (execution-plane only — NO model call anywhere) with:
+   `ServiceHandle` dataclass (`kind: str`, `host: str`, `port: int`, `container_id: str | None`,
+   `ok: bool`, `note: str`) and `ServiceResult` dataclass mirroring `datastore_oracle.DatastoreResult`
+   (`ok: bool`, `rows_checked: int`, `failures: list`, `note: str`).
+2. Implement `docker_available() -> bool`: best-effort, NEVER-RAISE check that the `docker` CLI exists
+   AND its daemon answers (`docker info`/`docker ps` exits 0, short timeout); returns `False` on any
+   error. This is the single gate every test and every provision call consults.
+3. Implement `provision_redis(*, image="redis:7-alpine", host_port=0, mem_cap="128m", ready_timeout_s=20.0)
+   -> ServiceHandle`: if `docker_available()` is False return `ServiceHandle(ok=False, note="docker unavailable")`
+   immediately (never raise); else `docker run -d --rm --memory=<mem_cap> -p <host_port>:6379 <image>`
+   (host_port=0 → let Docker pick a free port, then read it back via `docker port <id> 6379`), poll a raw
+   socket RESP `PING`→`+PONG` until ready or `ready_timeout_s` elapses, and return a populated
+   `ServiceHandle(ok=True, host="127.0.0.1", port=<mapped>, container_id=<id>)`. On any failure (image
+   pull fail, no ready PONG in time) tear down the partial container and return `ok=False` + a diagnostic
+   note — NEVER raise, NEVER leak a container.
+4. Implement `teardown(handle: ServiceHandle) -> None`: `docker stop <container_id>` (best-effort, short
+   timeout, `--rm` auto-removes) — never raise, safe to call on a `None`/failed handle (mirrors
+   `server_oracle._kill_tree`'s teardown discipline). Every provision site MUST call this in a `finally`.
+5. Implement a tiny stdlib RESP-over-socket client (module-private helpers `_resp_command(host, port,
+   *args, timeout_s=...) -> Any` encoding a RESP array request + parsing the reply: `+OK`/`-ERR`/`:int`/
+   `$bulk`/`*array`), used for both readiness `PING` and the independent verification below. No third-party
+   client; NEVER raise (socket/parse errors → an honest sentinel the caller treats as failure).
+6. Implement `verify_redis_persistence(root, *, handle, drive_cmds, assertions, python_exe,
+   entry_name="main.py") -> ServiceResult`, mirroring `datastore_oracle.verify_persistence`'s stages
+   exactly but against the provisioned Redis instead of a `.db` file: (a) clean state — independently
+   `FLUSHDB` via the RESP client; (b) resolve `root/<entry_name>`; (c) drive the FIRST invocation's
+   `drive_cmds` via `harness.system_suite._run_cli`, exposing the service to the CLI-under-test through
+   `REDIS_HOST`/`REDIS_PORT` env vars added to that invocation's environment (documented contract); (d)
+   INDEPENDENTLY evaluate each `assertions` entry against real Redis state via the module's OWN RESP client
+   (a `callable(resp_call)->bool`, or a `(resp_argv_tuple, expected)` pair), never the CLI's stdout;
+   (e) cross-invocation check — a SECOND fresh `_run_cli` read command, then re-evaluate the same
+   assertions against Redis again; return `ServiceResult(ok=True, ...)` ONLY when the handle is ok, both
+   CLI invocations exited cleanly, and every assertion passed on both checks — any other outcome is
+   `ok=False` + a stage-identifying note. Wrap the whole body in `try/except` so it NEVER raises.
+7. Add `tests/test_ext039_service_provisioner.py` — EVERY test decorated
+   `@pytest.mark.skipif(not service_provisioner.docker_available(), reason="docker unavailable")` so the
+   file is a full no-op offline (never fails, never false-passes). With Docker present, cover: (a)
+   `provision_redis`→ready `PING`/`+PONG`→`teardown` leaves no running container (assert via `docker ps`);
+   (b) LOAD-BEARING GOOD: `verify_redis_persistence` returns `ok=True` for a small hand-written Redis-backed
+   CLI fixture (uses raw-socket RESP, reads `REDIS_HOST`/`REDIS_PORT`) whose data really persists to Redis
+   across two invocations; (c) LOAD-BEARING CATCH: `ok=False` for a FAKE CLI fixture that prints `"Saved!"`
+   on `add` but never writes to Redis; (d) cross-invocation catch for an in-process-only fake; (e) never-raise
+   on a missing entrypoint / broken CLI / malformed `assertions`/`drive_cmds` — honest `ok=False`; (f) a
+   `finally`-teardown even when verification fails leaves no leaked container. Use `host_port=0` so parallel
+   runs never collide.
+8. Add a `DATASTORE`/`service` creation-task entry is OUT OF SCOPE here (needs a live service in the suite
+   run loop) — document that as a named follow-up in the module docstring, consistent with REQ-1's seam note.
+9. Run `python -m pytest tests/test_ext039_service_provisioner.py -q` (foreground) — with Docker present it
+   exercises a real Redis; then the full `python -m pytest tests/ -q` (foreground) to confirm no regression
+   (2410 baseline). Report both the with-Docker and the skip counts honestly.
+
+#### Implements
+- [REQ-2] Real-service datastore provisioning (Postgres/Redis/Qdrant/Cassandra)
