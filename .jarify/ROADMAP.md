@@ -98,12 +98,14 @@ closing it (by building the missing deterministic tools) is the mission.
   drive seeded boundary-stressing op sequences through reference vs built-CLI in lockstep → report the
   FIRST DIVERGENCE as a localized witness. Directly targets the sole daily-driver miss (build_hard_lru_cache
   _move_to_head pointer bug). ✅ **TASK-1 LANDED (cc0bb21, #131):** module + 4 stages + LRU reference +
-  12 offline tests (PASS correct LRU / FAIL the pointer-bug fixture with a localized first-divergence),
-  verified 12/12 green, never-raises + no-leak confirmed. **NOW → TASK-2:** wire ONE union check into
-  `_minimum_acceptance` (union-only ⇒ can only flip done True→False ⇒ 0-false-done preserved by
-  construction), superseding REQ-37. **THEN TASK-3:** held-out proof — develop on {lru,priority}, HOLD OUT
-  {ttl,ring-buffer}, grade with an independent hidden suite, pass@1 temp=0 oracle-in-loop vs baseline
-  (Tenet-3 clean). Research pick #1 of 10 in the deterministic-toolset complete set.
+  12 offline tests. ✅ **TASK-2 LANDED (16a214a, #132):** wired into `_minimum_acceptance` union-safe +
+  conservative (`classify_confident` — fires only when the spec explicitly names the ADT ⇒ no
+  false-not-done) + no-leak; 20 ext056 + 59 regression tests green; 0-false-done preserved by
+  construction (only ever `checks.append`). The oracle now GATES builds and its divergence witness flows
+  to `_system_repair_loop` for feedback-repair. Supersedes REQ-37. **NOW → TASK-3:** honest measurement —
+  does oracle-in-loop crack the sole daily-driver miss (build_hard_lru_cache) it was built for? pass@1
+  temp=0 oracle-on vs oracle-off on the LRU build, independently graded (Tenet-3 clean); then extend
+  references to {priority,ttl,ring} for the broader held-out proof. Research pick #1 of 10.
 - **[#118 acceptance-completeness / done-honesty — HIGH, I DRIVE IT]** make build_system's acceptance
   derivation DETERMINISTIC + COMPLETE (consistent full requirement set per sentence) so `done` is
   trustworthy across builds + best-of-k selects on a REAL bar, not a sparse 1-check self-acceptance
@@ -311,6 +313,13 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ CAPABILITY: adt-oracle WIRED into acceptance TASK-2 — EXT-056 REQ-1 (16a214a, 2026-07-07)]** the
+  ADT differential oracle now GATES builds: `_minimum_acceptance` conservatively classifies a build
+  (`classify_confident` — only when the spec explicitly names the ADT, no false-not-done) and appends a
+  self-contained differential-oracle acceptance check, composed by UNION (can only flip done True→False —
+  0-false-done SACRED, preserved by construction). Expected values baked from the in-process reference
+  (no oracle leak). A failing check's first-divergence witness flows to `_system_repair_loop` for
+  feedback-repair. Supersedes REQ-37. 20 ext056 + 59 regression tests green.
 - **[★★ CAPABILITY: adt-differential-oracle TASK-1 — EXT-056 REQ-1 (cc0bb21, 2026-07-07)]** the FIRST
   deterministic tool of the "complete set" (owner directive: no reasoning cap when the model has enough
   deterministic tools). `harness/adt_oracle.py` — classify→canonical-ADT, textbook reference from the
