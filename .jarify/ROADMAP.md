@@ -55,7 +55,7 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   (reasoning-bound for the 2–3B roster); creation/modification parity suites high on curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **2410 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+- Full test suite: **2429 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
@@ -143,12 +143,16 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
 - **[best-of-k oracle-select]** a generic reliability lever: sample k build draws, select the one
   that genuinely passes the (now-honest) acceptance — high · motivated by measured gemma per-draw
   unreliability (datastore + coherence); likely a new REQ under EXT-036 or a new spec.
-- **[✅ LANDED 1b3395e (EXT-039 REQ-2, 2026-07-07) — Redis rung]** SHIPPED: `harness/service_provisioner.py`
-  — `provision_redis`/`teardown` (Docker, `--rm`, mem-capped, never leaks a container) + a pure-stdlib
-  RESP-over-socket client (no redis-py) + `verify_redis_persistence` mirroring `datastore_oracle`'s
-  clean-state→drive→independently-verify→cross-invocation discipline against a REAL service. 10/10 tests
-  pass live (Docker present on this host), all skip-if-docker-absent (offline-honest). Suite 2420/2 skipped,
-  no regression. Postgres/Qdrant/Cassandra + a live suite task remain named-not-built follow-ups.
+- **[✅ LANDED 1b3395e + bc266da (EXT-039 REQ-2, 2026-07-07) — Redis + Postgres rungs]** SHIPPED:
+  `harness/service_provisioner.py` — two real-service rungs sharing one provision/verify/teardown
+  shape. Redis: `provision_redis`/`teardown` (Docker, `--rm`, mem-capped, never leaks) + a pure-stdlib
+  RESP-over-socket client (no redis-py). Postgres: `provision_postgres` (`POSTGRES_HOST_AUTH_METHOD=
+  trust` — safe, ephemeral+loopback+torn-down-every-run — dual pg_isready+real-connect readiness gate
+  after a rare race was observed) + a hand-rolled Postgres wire-protocol v3 client over a raw socket
+  (no psycopg2). Both `verify_*_persistence` mirror `datastore_oracle`'s clean-state→drive→
+  independently-verify→cross-invocation discipline against a REAL service. 19/19 tests pass live
+  (Docker present), all skip-if-docker-absent (offline-honest). Suite 2410→2429, no regression.
+  Qdrant/Cassandra + a live suite task remain named-not-built follow-ups.
 - **[EXT-038 REQ-3/4]** wire the read-only web-research fetch plane into the planner (fetched text
   as untrusted DATA), and auto-assert `eval_lock()` around the eval runners so the eval-leak
   hard-off is automatic, not caller-remembered — high · makes #85 actually inform builds + closes
@@ -252,6 +256,24 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: real-service (Postgres) provisioner — EXT-039 REQ-2 (bc266da, 2026-07-07)]** the
+  second real-service rung, alongside Redis, in the SAME `harness/service_provisioner.py`:
+  `provision_postgres` brings up `postgres:16-alpine` via Docker with `POSTGRES_HOST_AUTH_METHOD=
+  trust` (safe — ephemeral, loopback-only, torn down every run — chosen specifically so the client
+  never needs SCRAM-SHA-256 auth), a dual readiness gate (`pg_isready` THEN a real connect probe via
+  the module's own client, added after a rare race was observed where pg_isready reported ready
+  before the module could genuinely connect). Independent verification is a minimal, hand-rolled
+  Postgres wire-protocol v3 client over a raw stdlib `socket` (startup + simple-query flow only) —
+  NOT `psycopg2`, mirroring the Redis RESP client's own-protocol discipline exactly.
+  `verify_postgres_persistence` is structurally identical to `verify_redis_persistence` (clean-state
+  `DROP SCHEMA public CASCADE`/`CREATE SCHEMA` → drive via the EXISTING sandboxed `_run_cli_env`
+  helper with `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER` injected → independently verify → cross-
+  invocation re-check → never-raise honest `ok=False`+note). 19/19 tests pass live (10 Redis + 9
+  Postgres), zero leaked containers, no new dependency. Suite 2420→2429, no regression. Recovered
+  quickly from a real handshake bug found live (the first connect attempt raced Postgres's own
+  internal startup right after `pg_isready` succeeded — fixed by the dual-gate above, then verified
+  3/3 clean repeats before shipping). Qdrant/Cassandra + a live suite task against a provisioned
+  service remain named follow-ups.
 - **[★ CAPABILITY: real-service (Redis) provisioner — EXT-039 REQ-2 (1b3395e, 2026-07-07)]** the next
   rung above the sqlite-only datastore oracle (REQ-1): `harness/service_provisioner.py` brings a REAL
   Redis up via Docker (`provision_redis`/`teardown`, `--rm` + mem-cap, Docker-picked loopback port so
