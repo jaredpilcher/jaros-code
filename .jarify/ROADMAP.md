@@ -69,6 +69,32 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
 
 ## NOW (in flight — the top of the loop)
 
+**★★ JETSON-UTILIZATION DOCTRINE (owner directive, 2026-07-07 — binds all velocity).** The ONE scarce
+resource is the Jetson (inference). To reach the Prime-Directive end-state as fast as possible: **maximize
+OFF-Jetson work** (spec authoring, building deterministic tools/prosthetics, tests, the CLI rebuild code,
+graders, measurement HARNESSES, governance, research) — parallelize it massively, ahead of time — so the
+Jetson is NEVER idle waiting on prep; then run the ON-Jetson experiments (live build_system, evals,
+SWE-bench, best-of-k, held-out measurements) **in BATCHES at full utilization.** Off-Jetson = many parallel
+builders (partition by FILE, no collisions); on-Jetson = queued experiment batches with pre-registered kill
+criteria. "Lots of experimenting, really fast" = high off-Jetson prep throughput feeding batched Jetson runs.
+
+### ★★ PRODUCT UX — Claude-Code-grade interactive CLI (owner directive 2026-07-07: "it's awful, no feedback while running, rebuild it")
+
+**Ground truth over scoreboard:** the owner USED the CLI and it's awful — the "product-surface ~84%"
+measured feature PRESENCE, not felt QUALITY (a Tenet-3 gap, fixed by EXT-057 REQ-4). Root cause found:
+`llamacpp_client.py:56` hard-codes `"stream": False` → every model call is a silent black box; the REPL
+runs silently then dumps one block; it's banner-sold as command-first. **Rebuild = EXT-057** (4-layer:
+streaming client → event-yielding solve path/stream bus → NL-first REPL render → felt-quality instrument).
+
+- **[EXT-057 REQ-1 · streaming LLM client — ✅ BUILT (awaiting integrated commit), #134]** `stream_complete`
+  streams SSE token deltas; non-streaming `complete()` byte-stable (Tenet 3); 8 offline tests green. Kills
+  the silent-black-box wait — the #1 felt gap. OFF-Jetson (code+tests, no inference).
+- **[EXT-057 REQ-2/3/4 — HIGH, IN FLIGHT (parallel), #135/#136/#137]** stream bus + `solve_streaming`
+  (coding_loop) · NL-first REPL render + live tool cards (cli.py/repl_render) · felt-quality parity
+  dimension (product_parity). Three builders running concurrently, partitioned by file. All OFF-Jetson.
+- **[EXT-057 live-feel verification — NEXT, ON-Jetson batch]** once the layers land, run the REPL live
+  against the Jetson to confirm streamed tokens + live tool cards actually FEEL like Claude Code.
+
 ### ★★ CAPABILITY — the frontier I own (the North Star's harder bar)
 
 **★★ GOVERNING FRAME (owner re-directive 2026-07-07 — binds this whole section):** there is NO reasoning
