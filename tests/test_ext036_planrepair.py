@@ -178,19 +178,22 @@ def test_already_coherent_plan_is_unchanged(tmp_path):
     assert set(result["modules"]) == {"main.py"}
 
 
-def test_multi_module_mismatched_entrypoint_still_rejected(tmp_path):
-    """No silent, possibly-wrong repair for the ambiguous multi-module case -- the plan
-    must still fail coherence validation exactly as before this task."""
+def test_multi_module_wired_dag_mismatched_entrypoint_now_builds(tmp_path):
+    """TASK-47 generalization (MEASURED 2026-07-07 on todo-list-cli): the wired-DAG multi-
+    module shape (cli.py imports calculator.py, entrypoint main.py) is NO LONGER rejected.
+    The multi-module entrypoint repair now ADDS main.py importing the ROOT module (cli.py),
+    so the plan is coherent and the build proceeds to ship -- the exact fix for the
+    todo-list build that was writing 0 files."""
     llm = _CannedLlm(plan=MULTI_MODULE_MISMATCHED_PLAN, module_code=RUNNABLE_MODULE,
                       checklist="[]")
     result = build_system(SPEC, tmp_path / "built", llm=llm)
 
-    assert result["shipped"] is False
-    assert result["done"] is False
-    assert "coherence" in result["note"]
-    assert result["plan_repair"] == ""
-    # never even attempted to build a module
-    assert result["modules"] == {}
+    assert result["shipped"] is True
+    assert "coherence" not in (result.get("note") or "")
+    assert result["plan_repair"] == (
+        "plan-repair: added missing entrypoint module main.py importing roots ['cli.py']")
+    assert set(result["modules"]) == {"calculator.py", "cli.py", "main.py"}
+    assert (tmp_path / "built" / "main.py").is_file()
 
 
 def test_build_system_never_raises_with_edge_case_plans(tmp_path):

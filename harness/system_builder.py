@@ -593,27 +593,30 @@ _ENTRYPOINT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.py$")
 
 
 def _repair_plan_entrypoint_multi(plan: dict) -> "tuple[dict, str | None]":
-    """Deterministic plan-repair (TASK-42, REQ-32): fixes the MEASURED MULTI-module
-    "entrypoint not a listed module" coherence defect (`graph-bfs-shortest-path-cli`,
-    `.jaros-data/hardtier_failure_diag.json`) -- the model plans >=2 logic modules (e.g.
-    `graph_builder.py`, `bfs_solver.py`) but sets `entrypoint` to a DIFFERENT filename
-    (e.g. `main.py`, the sentence's pinned entrypoint convention, see TASK-15) that it
-    never adds as a module -- `validate_plan` correctly rejects the whole plan
-    ("entrypoint not a listed module") and 0 modules build, even though the model
-    clearly needs a CLI wrapper it just never listed.
+    """Deterministic plan-repair (TASK-42/TASK-47, REQ-32): fixes the MEASURED
+    MULTI-module "entrypoint not a listed module" coherence defect
+    (`graph-bfs-shortest-path-cli`, `.jaros-data/hardtier_failure_diag.json`; and the
+    wired-DAG shape `todo-list-cli`) -- the model plans >=2 logic modules (e.g.
+    `graph_builder.py`, `bfs_solver.py`, or `data_manager.py` + `cli_handler.py`) but
+    sets `entrypoint` to a DIFFERENT filename (e.g. `main.py`, the sentence's pinned
+    entrypoint convention, see TASK-15) that it never adds as a module --
+    `validate_plan` correctly rejects the whole plan ("entrypoint not a listed module")
+    and 0 modules build, even though the model clearly needs a CLI wrapper it just
+    never listed.
 
     `_repair_plan_entrypoint` (TASK-19) already fills this gap for a SINGLE listed
     module (rename); that function's own docstring/tests deliberately leave EVERY
     multi-module case untouched ("ambiguous which module should host the entrypoint").
-    This function narrows that gap to the ONE unambiguous multi-module shape: the
-    listed modules import NOTHING from each other at all (a fully disconnected set --
-    no module has already taken on an orchestrator/wiring role). MEASURED LIVE (3/3
-    identical draws for graph-bfs-shortest-path-cli): this is exactly that shape. With
-    no existing module importing any sibling, there is no candidate to guess between --
-    ADDING a brand-new entrypoint module that imports every listed module (mirroring
-    `_repair_plan_dangling_imports`'s additive-only convention) is the least-ambiguous
-    completion: it never renames or removes anything the model planned, it only
-    supplies the CLI wrapper the `entrypoint` field already declared the model wanted.
+    This function fills that gap for ANY ACYCLIC multi-module plan. Because the repair
+    only ever ADDS a brand-new entrypoint module (never renames/chooses an existing
+    one), the "which module hosts the entrypoint" ambiguity never actually applies --
+    the only open question is what the new module should import. The DAG-correct,
+    unambiguous answer is the ROOT modules: those NO other listed module imports
+    (in-degree 0 within the listed set -- the top of the dependency graph, from which
+    every other module is transitively reachable). A fully disconnected set (TASK-42's
+    original, narrower shape -- e.g. `graph-bfs-shortest-path-cli`) has every module as
+    a root, so this reduces EXACTLY to the original behavior there (a strict superset,
+    no regression).
 
     SAFETY (declines to repair -- plan stays rejected exactly as before -- whenever):
       - fewer than 2 modules (the single-module case is `_repair_plan_entrypoint`'s, and
@@ -623,13 +626,12 @@ def _repair_plan_entrypoint_multi(plan: dict) -> "tuple[dict, str | None]":
       - any listed module entry is malformed/unnamed (nothing safe to reason about);
       - `entrypoint` isn't a well-formed `<identifier>.py` filename (ambiguous what to
         add);
-      - ANY listed module already imports another listed module -- that existing wiring
-        relationship makes it genuinely ambiguous which module (if any) should have
-        been the entrypoint, so this function makes NO guess (mirrors
-        `_repair_plan_entrypoint`'s own multi-module conservatism; the pre-existing
-        `test_ext036_planrepair.py::test_multi_module_mismatched_entrypoint_still_rejected`
-        plan -- `cli.py` importing `calculator.py` -- is exactly this ambiguous shape and
-        stays rejected).
+      - the listed modules' import graph is CYCLIC (no module has in-degree 0, so
+        `roots` is empty) -- there is no unambiguous top of the graph to import from,
+        so this function makes NO guess and `validate_plan`'s own cycle check keeps the
+        plan rejected exactly as before (see
+        `tests/test_ext036_planrepair_multi.py::test_cyclic_plan_left_untouched` and
+        similar coverage in `tests/test_ext036_planrepair.py`).
 
     Never raises. Returns ``(plan, note)`` -- ``note`` is ``None`` when no repair was
     made, else a short human-readable description for traceability/honesty."""
@@ -648,20 +650,38 @@ def _repair_plan_entrypoint_multi(plan: dict) -> "tuple[dict, str | None]":
         return plan, None  # already coherent
     if not _ENTRYPOINT_NAME_RE.match(entrypoint):
         return plan, None  # not a sane module filename -- ambiguous, don't guess
+    # TASK-47 (REQ-32 generalization): the ORIGINAL repair fired only when the listed modules
+    # were a FULLY DISCONNECTED set (no module imports a sibling). MEASURED 2026-07-07 that this
+    # left the common wired-DAG shape rejected: the `todo-list-cli` CREATION task plans
+    # `data_manager.py` + `cli_handler.py` where `cli_handler` imports `data_manager` and sets
+    # `entrypoint: "main.py"` -- a perfectly coherent dependency DAG with a pinned entrypoint the
+    # model just never listed. The old "any sibling import -> decline" guard tripped and 0 files
+    # built. Because we ADD a brand-new entrypoint module (never rename/choose an existing one),
+    # the "which module should host the entrypoint" ambiguity never applies -- the only question
+    # is what the new entrypoint should import. The least-ambiguous, DAG-correct answer is the
+    # ROOT modules: those NO other listed module imports (in-degree 0 within the listed set) --
+    # the top of the dependency graph, from which every other module is transitively reachable.
+    # For a fully disconnected set every module is a root, so `roots == names` and this reduces
+    # EXACTLY to the prior behavior (a strict superset -- no regression). The added module is a
+    # pure sink (nothing imports it) so it can never introduce a cycle; a genuinely CYCLIC plan
+    # has no in-degree-0 module -> `roots` is empty -> we decline and `validate_plan`'s own cycle
+    # check keeps it rejected, exactly as before.
+    imported_by_sibling = set()
     for m in mods:
         imports = m.get("imports") if isinstance(m, dict) else None
-        if isinstance(imports, list) and any(i in names for i in imports):
-            # An existing module already wires to a sibling -- genuinely ambiguous which
-            # module (if any) should host the entrypoint. No guess; leave rejected.
-            return plan, None
+        if isinstance(imports, list):
+            imported_by_sibling.update(i for i in imports if i in names)
+    roots = [n for n in names if n not in imported_by_sibling]
+    if not roots:
+        return plan, None  # every module is imported by another (a cycle) -- leave rejected
     new_module = {
         "name": entrypoint,
         "responsibility": "CLI entrypoint wiring the other modules together",
         "exports": [{"name": "main", "signature": "def main():"}],
-        "imports": list(names),
+        "imports": list(roots),
     }
     plan["modules"] = mods + [new_module]
-    return plan, f"plan-repair: added missing entrypoint module {entrypoint} importing {names}"
+    return plan, f"plan-repair: added missing entrypoint module {entrypoint} importing roots {roots}"
 # #EXT-036-REQ-32 End
 
 

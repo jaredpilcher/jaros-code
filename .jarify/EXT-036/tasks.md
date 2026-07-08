@@ -2119,3 +2119,56 @@ false-negative, minimized by the tri-state grading rule below.
 - [REQ-37] A spec-DERIVED behavioral PROPERTY check for build_system acceptance (this task
   introduces AND fully implements REQ-37's offline mechanism; the 20-task trustbar
   measurement gating opt-in->default-on promotion remains open)
+
+### [TASK-47] Generalize the multi-module entrypoint plan-repair to any acyclic wired DAG (REQ-32 generalization, MEASURED 2026-07-07 on `todo-list-cli`)
+
+MEASURED (per-class creation-scoreboard run, 2026-07-07): `todo-list-cli` still builds 0
+files. `_repair_plan_entrypoint_multi` (TASK-42) only fires for a FULLY DISCONNECTED
+module set; the model's plan for this task is a coherent WIRED DAG —
+`data_manager.py` + `cli_handler.py` where `cli_handler` imports `data_manager` — with
+`entrypoint: "main.py"` unlisted. TASK-42's "any sibling import -> decline" guard trips
+on the existing `cli_handler -> data_manager` edge and the whole plan is rejected.
+Because the repair only ever ADDS a brand-new entrypoint module (never renames/chooses an
+existing one), the "which module hosts the entrypoint" ambiguity TASK-42 was guarding
+against never actually applies — the only open question is what the new module should
+import, and the DAG-correct, unambiguous answer is the ROOT modules (in-degree 0 within
+the listed set).
+
+#### Steps
+1. In `harness/system_builder.py::_repair_plan_entrypoint_multi` (`# #EXT-036-REQ-32`
+   block), replace the "decline if any listed module imports a sibling" guard with a
+   root-modules computation: collect every module name that is imported by another
+   listed module (`imported_by_sibling`), then `roots = [n for n in names if n not in
+   imported_by_sibling]`. If `roots` is empty (every module is imported by another — a
+   cycle), decline exactly as before (`validate_plan`'s own cycle check keeps a cyclic
+   plan rejected). Otherwise add the new entrypoint module importing `roots` (not all
+   `names`) and fold `roots` into the returned note ("...importing roots
+   {roots}"). A fully disconnected set has every module as a root, so `roots == names`
+   and behavior reduces EXACTLY to TASK-42 (strict superset, no regression). Update the
+   function's own docstring/SAFETY list to describe the new roots-based condition instead
+   of the old "any sibling import -> decline" one, and drop the stale reference to the
+   now-renamed `test_multi_module_mismatched_entrypoint_still_rejected` test.
+2. Update `tests/test_ext036_planrepair_multi.py`: the graph-bfs disconnected-shape
+   assertion now expects the note phrased "importing roots [...]"; convert the two
+   previously-"left untouched" wired/chain fixtures
+   (`EXISTING_WIRING_AMBIGUOUS_PLAN`/`CHAIN_AMBIGUOUS_PLAN`) into repaired-and-coherent
+   assertions (`validate_plan(repaired) == []`, added module imports exactly the single
+   root); update the module docstring and fixture comments to describe the
+   generalization.
+3. Update `tests/test_ext036_planrepair.py`:
+   `test_multi_module_mismatched_entrypoint_still_rejected` (pinned `cli.py` imports
+   `calculator.py`, entrypoint `main.py`) is now REPAIRED, not rejected — rename it to
+   `test_multi_module_wired_dag_mismatched_entrypoint_now_builds` and assert
+   `shipped=True`, the `plan_repair` note importing root `['cli.py']`, and `main.py`
+   written to disk through the full `build_system` pipeline.
+4. Run `python -m pytest tests/test_ext036_planrepair_multi.py
+   tests/test_ext036_planrepair.py -q` (targeted) then the broader
+   `python -m pytest tests/test_ext036*.py -q` (no regression). Live re-measurement of
+   `todo-list-cli` on the served Jetson model remains open, owned by the parent loop —
+   this task's mechanism is proven OFFLINE only.
+
+#### Implements
+- [REQ-32] Deterministic plan-repair for MULTI-module "entrypoint not a listed module"
+  (this task GENERALIZES REQ-32's TASK-42 mechanism from the fully-disconnected special
+  case to any acyclic wired DAG; a live re-measurement of `todo-list-cli` on the served
+  model remains an open follow-up, owned by the parent)

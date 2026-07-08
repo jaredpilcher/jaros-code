@@ -11,12 +11,19 @@ disconnected pair), and `entrypoint: "main.py"`, a filename never added as a mod
 
 `_repair_plan_entrypoint` (TASK-19, REQ-1) already fixes the analogous SINGLE-module
 case but deliberately leaves EVERY multi-module case untouched ("ambiguous which module
-should host the entrypoint"). `_repair_plan_entrypoint_multi` (this task, REQ-32) fills
-the gap for the ONE unambiguous multi-module shape: a fully disconnected module set (no
-module imports any sibling) -- there is no existing candidate to guess between, so it
-ADDS a new entrypoint module importing every listed module. Any plan where an inter-
-module import ALREADY exists is left untouched (genuinely ambiguous), preserving the
-pre-existing `test_ext036_planrepair.py` conservatism byte-for-byte.
+should host the entrypoint"). `_repair_plan_entrypoint_multi` (REQ-32) fills the gap for
+the multi-module case by ADDING a new entrypoint module (it never renames/chooses an
+existing one, so the "which module hosts the entrypoint" ambiguity never applies).
+
+TASK-47 GENERALIZATION (MEASURED 2026-07-07 on `todo-list-cli`): the original repair only
+fired for a FULLY DISCONNECTED module set; it left wired DAGs rejected, so the common
+`data_manager.py` + `cli_handler.py`-imports-it + `entrypoint: main.py` shape built 0
+files. The repair now fires for ANY acyclic plan: the added entrypoint imports the ROOT
+modules (those NO sibling imports -- in-degree 0), the top of the dependency graph from
+which every module is transitively reachable. A disconnected set has every module as a
+root, so it reduces EXACTLY to the prior behavior (a strict superset). Only a genuinely
+cyclic plan (no in-degree-0 module) is still declined, and `validate_plan`'s cycle check
+keeps it rejected.
 
 OFFLINE -- no live model. Only plan literals + the pure repair/validate functions.
 """
@@ -46,8 +53,9 @@ GRAPH_BFS_SHAPE_PLAN = """{
   "acceptance": "Runs BFS and prints the shortest path length."
 }"""
 
-# The pre-existing PINNED ambiguous shape (test_ext036_planrepair.py) -- cli.py already
-# imports the only other module, an existing wiring relationship -- must stay untouched.
+# A WIRED DAG: cli.py imports the only other module (calculator.py). Root = cli.py. Under
+# TASK-47 this is now REPAIRED (main.py added importing cli.py), not left rejected. This is
+# the `todo-list-cli` shape that was building 0 files before the generalization.
 EXISTING_WIRING_AMBIGUOUS_PLAN = """{
   "modules": [
     {"name": "calculator.py", "responsibility": "does math",
@@ -59,8 +67,8 @@ EXISTING_WIRING_AMBIGUOUS_PLAN = """{
   "acceptance": "python main.py prints hi"
 }"""
 
-# A 3-module chain a -> b -> c, entrypoint mismatched: an existing wiring relationship
-# makes it ambiguous which module (if any) should host the entrypoint.
+# A 3-module chain a <- b <- c (c imports b imports a), entrypoint mismatched. Root = c.py
+# (nothing imports it). Under TASK-47 this is now REPAIRED (main.py added importing c.py).
 CHAIN_AMBIGUOUS_PLAN = """{
   "modules": [
     {"name": "a.py", "responsibility": "leaf",
@@ -69,6 +77,21 @@ CHAIN_AMBIGUOUS_PLAN = """{
      "exports": [{"name": "g", "signature": "def g():"}], "imports": ["a.py"]},
     {"name": "c.py", "responsibility": "top",
      "exports": [{"name": "h", "signature": "def h():"}], "imports": ["b.py"]}
+  ],
+  "entrypoint": "main.py",
+  "acceptance": "x"
+}"""
+
+# A genuinely CYCLIC module graph: a.py imports b.py and b.py imports a.py -- every
+# module has an incoming sibling import, so `roots` is empty (in-degree 0 for nobody).
+# TASK-47's generalization must still decline here (no unambiguous top of the graph to
+# import from) and leave the plan for `validate_plan`'s own "import cycle" check.
+CYCLIC_PLAN = """{
+  "modules": [
+    {"name": "a.py", "responsibility": "x",
+     "exports": [{"name": "f", "signature": "def f():"}], "imports": ["b.py"]},
+    {"name": "b.py", "responsibility": "y",
+     "exports": [{"name": "g", "signature": "def g():"}], "imports": ["a.py"]}
   ],
   "entrypoint": "main.py",
   "acceptance": "x"
@@ -94,9 +117,11 @@ def test_graph_bfs_shape_repaired_and_coherent():
 
     repaired, note = _repair_plan_entrypoint_multi(plan)
 
+    # A fully DISCONNECTED set: every module is a root (in-degree 0), so main.py imports
+    # them all -- identical to the original behavior, now phrased as "importing roots".
     assert note == (
         "plan-repair: added missing entrypoint module main.py "
-        "importing ['graph_builder.py', 'bfs_solver.py']"
+        "importing roots ['graph_builder.py', 'bfs_solver.py']"
     )
     names = [m["name"] for m in repaired["modules"]]
     assert names == ["graph_builder.py", "bfs_solver.py", "main.py"]
@@ -126,31 +151,38 @@ def test_single_module_repair_still_unaffected_by_the_new_function():
     assert validate_plan(fixed) == []
 
 
-def test_existing_wiring_ambiguous_plan_left_untouched_no_regression():
-    """The EXACT plan pinned by test_ext036_planrepair.py's
-    test_multi_module_mismatched_entrypoint_still_rejected must stay untouched by the
-    new function too -- an inter-module import already exists (cli.py imports
-    calculator.py), so it is genuinely ambiguous and must not be guessed."""
+def test_existing_wiring_dag_now_repaired_by_importing_root():
+    """TASK-47 generalization (MEASURED 2026-07-07 on `todo-list-cli`): a wired DAG
+    (cli.py imports calculator.py) with a pinned `main.py` entrypoint is NO LONGER left
+    rejected. Because the repair ADDS a new entrypoint module (it never renames/chooses an
+    existing one), there is no "which module hosts the entrypoint" ambiguity -- the new
+    main.py imports the ROOT modules (those no sibling imports; here cli.py), the top of
+    the dependency DAG. This is the exact shape of the todo-list build that was failing
+    with 0 files written."""
     plan = json.loads(EXISTING_WIRING_AMBIGUOUS_PLAN)
-    before = json.loads(EXISTING_WIRING_AMBIGUOUS_PLAN)
 
     repaired, note = _repair_plan_entrypoint_multi(plan)
 
-    assert note is None
-    assert repaired == before
-    defects = validate_plan(repaired)
-    assert any("entrypoint" in d for d in defects)
+    assert note == "plan-repair: added missing entrypoint module main.py importing roots ['cli.py']"
+    added = repaired["modules"][-1]
+    assert added["name"] == "main.py"
+    assert added["imports"] == ["cli.py"]  # cli.py is the root; calculator.py is imported by it
+    assert validate_plan(repaired) == []
 
 
-def test_chain_ambiguous_plan_left_untouched():
+def test_chain_dag_now_repaired_by_importing_top_root():
+    """A 3-module chain a <- b <- c (c is the top root nothing imports) with a mismatched
+    `main.py` entrypoint is now repaired: main.py imports the single root c.py, from which
+    the rest of the chain is transitively reachable."""
     plan = json.loads(CHAIN_AMBIGUOUS_PLAN)
-    before = json.loads(CHAIN_AMBIGUOUS_PLAN)
 
     repaired, note = _repair_plan_entrypoint_multi(plan)
 
-    assert note is None
-    assert repaired == before
-    assert any("entrypoint" in d for d in validate_plan(repaired))
+    assert note == "plan-repair: added missing entrypoint module main.py importing roots ['c.py']"
+    added = repaired["modules"][-1]
+    assert added["name"] == "main.py"
+    assert added["imports"] == ["c.py"]
+    assert validate_plan(repaired) == []
 
 
 def test_malformed_entrypoint_left_untouched():
@@ -162,6 +194,23 @@ def test_malformed_entrypoint_left_untouched():
     assert note is None
     assert repaired == before
     assert any("entrypoint" in d for d in validate_plan(repaired))
+
+
+def test_cyclic_plan_left_untouched():
+    """TASK-47's roots computation: a genuine a.py<->b.py cycle has NO in-degree-0
+    module (`roots` is empty), so the function declines exactly like the pre-TASK-47
+    "any sibling import" guard did, and `validate_plan` still rejects it -- both for
+    the still-unlisted entrypoint AND the cycle itself."""
+    plan = json.loads(CYCLIC_PLAN)
+    before = json.loads(CYCLIC_PLAN)
+
+    repaired, note = _repair_plan_entrypoint_multi(plan)
+
+    assert note is None
+    assert repaired == before
+    defects = validate_plan(repaired)
+    assert any("entrypoint" in d for d in defects)
+    assert "import cycle" in defects
 
 
 def test_never_raises_on_malformed_plan_shapes():

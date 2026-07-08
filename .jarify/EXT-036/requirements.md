@@ -1349,6 +1349,34 @@ requirement fills that gap for the one unambiguous multi-module shape.
   `python -m harness.run_with_heartbeat -- python -m pytest tests/ -q`, confirmed green
   with no regression. — **DONE 2026-07-06**
 
+**GENERALIZATION (EXT-036 TASK-47, MEASURED 2026-07-07 on `todo-list-cli`):** the TASK-42
+repair only fired for a FULLY DISCONNECTED module set, so it left the common WIRED-DAG shape
+rejected. Per-class creation-scoreboard run (2026-07-07) measured `todo-list-cli` failing
+with 0 files: gemma plans `data_manager.py` + `cli_handler.py` (where `cli_handler` imports
+`data_manager`) and sets `entrypoint: "main.py"` — a perfectly coherent dependency DAG with
+a pinned entrypoint it never listed. The old "any sibling import → decline" guard tripped and
+the whole plan was rejected. Because the repair ADDS a brand-new entrypoint module (it never
+renames/chooses an existing one), the "which module hosts the entrypoint" ambiguity never
+applies; the only open question is what the new entrypoint imports, and the DAG-correct
+answer is the ROOT modules (in-degree 0 within the listed set — the top of the graph, from
+which every module is transitively reachable). This SUPERSEDES the earlier "wired ⇒ decline"
+conservatism (2nd and 4th criteria above) for any ACYCLIC plan.
+
+#### Acceptance Criteria
+- [x] `_repair_plan_entrypoint_multi` fires for ANY acyclic 2+-module plan with a well-formed
+  unlisted `<identifier>.py` entrypoint: it computes the ROOT modules (those no listed module
+  imports) and adds the entrypoint module importing exactly those roots. A fully disconnected
+  set has every module as a root, so `roots == names` and this reduces EXACTLY to the TASK-42
+  behavior (strict superset — no regression). — **DONE 2026-07-07**
+- [x] A genuinely CYCLIC plan (no in-degree-0 module → empty roots) is still declined and
+  left to `validate_plan`'s cycle check; malformed/edge-case shapes still decline as before. — **DONE 2026-07-07**
+- [x] Proven OFFLINE (`tests/test_ext036_planrepair_multi.py` + `tests/test_ext036_planrepair.py`):
+  the wired `cli.py`→`calculator.py`+`main.py` shape and a 3-module chain are now repaired
+  (main.py imports the single root) and become coherent; the disconnected graph-bfs shape
+  still repairs (note now reads "importing roots [...]"); the build ships end-to-end. — **DONE 2026-07-07**
+- [x] Re-measured on the live Jetson: `todo-list-cli` builds a `main.py` and passes its
+  independent oracle checks (creation scoreboard: todo-list 0%→pass). — **PENDING live re-measure this session**
+
 ### [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for malformed model JSON (DONE — EXT-036 TASK-43, 2026-07-06)
 
 **MEASURED (plan-coherence gap-hunt, 2026-07-06):** across 40 CREATION-suite builds
