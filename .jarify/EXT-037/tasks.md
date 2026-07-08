@@ -1045,3 +1045,64 @@ carries its own `runtime` parameter (REQ-12) that simply needs threading through
 
 #### Implements
 - [REQ-13] `intent_loop.py`'s `/build` writes are Jaros-native (Tenet 1)
+
+### [TASK-18] Gate host-repo file deletions through a `code.delete_file` Decision (REQ-14)
+
+Tenet-1 compliance fix, same family as TASK-15/REQ-11 (which gated `_jailed_write`).
+`harness/system_builder.py`'s leaf-repair "adopt" path deletes stale free-form module files via
+`_jailed_delete`, which ALWAYS raw-unlinks regardless of whether a `runtime` is present. This task
+adds the missing `code.delete_file` Jaros tool (the genuine executor + hash-chain-log branch a
+`code.delete_file` Decision needs to validate/execute at all, since `Runtime.apply` dispatches
+generically to whatever tool is registered under `.jaros-data/tools/` for a Decision's `type` — no
+such tool previously existed) and gives `_jailed_delete` the same optional `runtime` parameter and
+structure as `_jailed_write`.
+
+#### Steps
+1. Add `.jaros-data/tools/delete_file_tool.py`, a new Jaros custom tool mirroring
+   `.jaros-data/tools/write_file_tool.py`'s structure exactly: `NAME = "code.delete_file"`;
+   `validate()` requires `payload["path"]` to be a non-empty string and, when `payload.get("root")`
+   is a non-empty string, rejects (via the existing `_pathjail.path_escape_reason` choke point,
+   reused not duplicated) any path that resolves outside `root`; `execute()` reads
+   `payload["path"]`, deletes the file if it exists (`Path(path).unlink()` guarded by
+   `Path(path).is_file()`), and returns `{"tool": self.NAME, "path": path, "applied": True,
+   "existed": existed}` (`existed` = whether the file was present before this call) — a missing
+   file is a silent no-op success (`existed: False`), and the branch never raises (the
+   file-system call is wrapped so an `OSError` degrades to `{"tool": self.NAME, "path": path,
+   "applied": False, "error": str(exc)}` instead of propagating).
+2. In `harness/system_builder.py`, give `_jailed_delete(root, name, runtime=None)` the same
+   `runtime: "object | None" = None` parameter and structure as `_jailed_write` (mirror it
+   precisely): the existing `path_jail(str(root), name)` pre-check (and its `PathEscapeError`
+   handling) stays FIRST and unconditional, preserving the current rejection messages/behavior
+   regardless of `runtime`. On a successful jail resolution, `runtime is None` keeps the existing
+   raw `Path(resolved).unlink()` call (guarded by `is_file()`) byte-for-byte unchanged; a supplied
+   `runtime` instead builds `jaros.core.create_decision(id=f"system-builder-delete-
+   {uuid.uuid4().hex}", source="system_builder", type="code.delete_file", payload={"path":
+   resolved, "root": str(root)})` and applies it via `runtime.apply(decision)` inside a
+   `try`/`except Exception`, returning `None` on success or an honest `f"failed to delete {name}:
+   {exc}"` string on any gate rejection/executor failure — never raises. Update the
+   `# #EXT-058-REQ-3` marker around `_jailed_delete` to also carry `# #EXT-037-REQ-14` for the
+   new runtime-gating lines, mirroring how `_jailed_write` carries both `# #EXT-037-REQ-1` and
+   `# #EXT-037-REQ-11` markers.
+3. Thread `runtime` through the two leaf-repair "adopt" call sites in `build_system` (both already
+   have `runtime` in scope — the nearby `_jailed_write(root, ..., runtime)` calls in the same
+   region already receive it): the stale-free-form-module cleanup
+   (`_jailed_delete(root, n) for n in stale` → `_jailed_delete(root, n, runtime)`) and the
+   fail-safe `main.py` cleanup (`_jailed_delete(root, "main.py")` →
+   `_jailed_delete(root, "main.py", runtime)`).
+4. Add `tests/test_ext037_delete_decision.py` (offline, no live-model calls) covering: a fake
+   recording runtime's `.apply(decision)` is called exactly once with a `code.delete_file`
+   Decision carrying the expected `path`/`root` payload when `_jailed_delete` deletes an existing
+   in-root file, and (when the fake actually performs the unlink) the file is genuinely removed;
+   `runtime=None` raw-deletes an existing file and returns `None`, and a missing file is a silent
+   no-op returning `None` for both `runtime=None` and a runtime-supplied call; a path-jail escape
+   (`_jailed_delete(root, "../evil.py", runtime)`) returns a rejection reason, emits NO Decision
+   (the fake runtime's `.apply` is never called), and deletes nothing; and (using a real
+   `harness.coding_loop.Runtime(root=tmp_path)`) an in-root delete genuinely records a
+   `code.delete_file` Decision on the hash-chain `DecisionLog` and removes the file.
+5. Run `python -m pytest tests/test_ext037_delete_decision.py -q` (and, if it is confirmed
+   offline/no-live-model, the existing EXT-058 leaf-repair test file) to confirm the new tests are
+   green, with no regression to the existing `_jailed_write`/REQ-11 behavior or the EXT-058
+   leaf-repair adopt path.
+
+#### Implements
+- [REQ-14] Gate host-repo file DELETIONS through a `code.delete_file` Decision (Tenet 1)

@@ -50,6 +50,8 @@ implementation:
   - tests/test_ext037_agent_plan_jaros_write.py
   - harness/intent_loop.py
   - tests/test_ext037_build_jaros_write.py
+  - .jaros-data/tools/delete_file_tool.py
+  - tests/test_ext037_delete_decision.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -852,3 +854,66 @@ performs a real-host write — `/rename`/`/move` (REQ-9), `/fixrepo`/`/undo` (RE
   `DecisionLog` for a real host-rooted temp directory; `_run_oracle`/`build_from_intent` are
   confirmed unchanged by signature inspection; `harness/agent_loop.py`'s eval-only `build` action
   is confirmed unchanged by source inspection; and the full suite has no regression
+
+### [REQ-14] Gate host-repo file DELETIONS through a `code.delete_file` Decision (Tenet 1)  (covered)
+
+**Owner directive (2026-07-08) — Tenet-1 compliance fix, same family as REQ-11.** The leaf-repair
+"adopt" path in `harness/system_builder.py` (EXT-058's leaf-adoption cleanup, ~line 2809/2842)
+deletes stale free-form module files via `_jailed_delete`, which ALWAYS raw-unlinks
+(`Path.unlink()`) regardless of whether a `runtime` is present — bypassing the Jaros Decision
+gate + hash-chain that every other product-surface host FS effect goes through. REQ-11 already
+closed this gap for WRITES (`_jailed_write`); this requirement closes the matching gap for
+DELETES, mirroring the exact same idiom: an optional `runtime` parameter that, when supplied,
+performs the delete as a real `code.delete_file` Decision applied through `Runtime.apply` (gate +
+hash-chain log); `runtime=None` (the default) preserves the exact prior raw-unlink behavior
+byte-for-byte, so every existing eval/test/suite caller against a throwaway sandbox directory is
+unaffected.
+
+Unlike `code.write_file`, no `code.delete_file` Jaros tool previously existed — `Runtime.apply`
+dispatches generically to whatever tool is registered under `.jaros-data/tools/` for a Decision's
+`type`, so this requirement also adds that tool (mirroring `write_file_tool.py`'s structure
+exactly: root-jail via the existing `path_escape_reason` choke point, `execute()` performs the
+delete), the genuine "executor branch" that lets a `code.delete_file` Decision validate, execute,
+and hash-chain log exactly like `code.write_file` does.
+
+**HONEST STATUS (Tenet 3, TASK-18):** `_jailed_delete` now mirrors `_jailed_write` exactly, and a
+new `.jaros-data/tools/delete_file_tool.py` custom tool (`NAME = "code.delete_file"`) is registered
+so a `code.delete_file` Decision genuinely validates, executes, and hash-chain logs through
+`Runtime.apply` — proven by a real `harness.coding_loop.Runtime` end to end
+(`tests/test_ext037_delete_decision.py`). **Adaptation note:** the originating task description
+named `harness/coding_loop.py` as the file to add "the executor branch" in; inspection showed that
+file's only `code.write_file`-adjacent branch is a cosmetic verbose-transcript print inside
+`fix_loop` (unrelated to how `code.write_file` Decisions actually validate/execute/hash-chain
+log — that happens via the Jaros custom-tool registry under `.jaros-data/tools/`, exactly where
+`code.write_file` itself is implemented in `write_file_tool.py`). The genuine "executor branch"
+was therefore implemented as the new peer tool `delete_file_tool.py`, the only way a
+`code.delete_file` Decision can actually be dispatched by the generic `Runtime.apply` →
+`executor.apply` → registered-tool pipeline; `harness/coding_loop.py` itself is unmodified by
+this task.
+
+#### Acceptance Criteria
+- [x] A new Jaros custom tool registered as `code.delete_file` (`.jaros-data/tools/
+  delete_file_tool.py`, mirroring `write_file_tool.py`'s `validate()`/`execute()` structure and
+  root-jail via the existing `path_escape_reason` choke point) lets a `code.delete_file` Decision
+  genuinely validate, execute, and hash-chain log through `Runtime.apply` exactly like
+  `code.write_file` does
+- [x] `harness/system_builder.py`'s `_jailed_delete(root, name, runtime=None)` gains the optional
+  `runtime` parameter with the same structure as `_jailed_write`: the local `path_jail` pre-check
+  runs first, unconditionally, preserving the current rejection messages/behavior; on success,
+  `runtime=None` performs the existing raw `Path(resolved).unlink()` (guarded by `is_file()`)
+  byte-for-byte; a supplied `runtime` builds a `code.delete_file` Decision (`payload={"path":
+  resolved, "root": str(root)}`) and applies it via `runtime.apply(...)` inside a
+  `try`/`except Exception`, returning `None` on success or an honest error string on any gate
+  rejection/executor failure — never raises
+- [x] A missing file is a silent no-op success on both the `runtime=None` and `runtime`-supplied
+  paths
+- [x] The two leaf-repair "adopt" call sites in `build_system` (the stale-free-form-module cleanup,
+  and the fail-safe `main.py` cleanup) thread the already-in-scope `runtime` through to
+  `_jailed_delete`
+- [x] `runtime=None` (the default) preserves the exact current raw-delete behavior byte-for-byte —
+  no existing eval/test/suite caller against a throwaway sandbox directory is affected
+- [x] Proven by `tests/test_ext037_delete_decision.py`: a fake/mock runtime records exactly one
+  `code.delete_file` Decision with the expected `path`/`root` payload when deleting an existing
+  in-root file; `runtime=None` raw-deletes an existing file and returns `None`, and a missing file
+  is a silent no-op returning `None`; a path-jail escape (`"../evil.py"`) is rejected with no
+  Decision emitted and nothing deleted, whether or not a runtime is supplied

@@ -298,21 +298,52 @@ def _jailed_write(root: Path, name: str, content: str,
 # verified leaf is adopted, so the shipped `root` contains EXACTLY the leaf (closes the measured
 # false-done where `done=True` was reported while the shipped `root` still ran a stale free-form
 # entrypoint). Never deletes outside `root`; never raises; a missing file is a silent no-op.
-def _jailed_delete(root: Path, name: str) -> "str | None":
+def _jailed_delete(root: Path, name: str,
+                    # #EXT-037-REQ-14 Start
+                    runtime: "object | None" = None,
+                    # #EXT-037-REQ-14 End
+                    ) -> "str | None":
     """Delete module ``name`` under ``root`` iff it stays contained. Returns ``None`` on success
     (including when the file is already absent), or a human rejection reason (NO delete
-    performed) when ``name`` resolves outside ``root``. Never raises."""
+    performed) when ``name`` resolves outside ``root``. Never raises.
+
+    ``runtime`` (EXT-037 REQ-14, Tenet 1): optional -- any object exposing ``.apply(decision)``,
+    e.g. ``harness.coding_loop.Runtime``, mirroring ``_jailed_write``'s (REQ-11) contract exactly.
+    The local ``path_jail`` pre-check above ALWAYS runs first, unconditionally -- this preserves
+    the exact current rejection messages/behavior whether or not a runtime is supplied. Once the
+    target is confirmed in-root, ``runtime=None`` (the default -- used by every existing
+    eval/test/suite caller against a throwaway sandbox directory) performs the delete via the
+    pre-existing raw ``Path.unlink()`` call, byte-for-byte unchanged. A supplied ``runtime``
+    instead performs the delete as a real ``code.delete_file`` Decision applied through it, so it
+    gets the SAME gate + hash-chain log every other Jaros write/delete Decision goes through; a
+    gate rejection or executor failure degrades to an honest error string here, never a crash."""
     try:
         resolved = path_jail(str(root), name)
     except PathEscapeError as exc:
         return str(exc)
+    # #EXT-037-REQ-14 Start
+    if runtime is None:
+        # #EXT-037-REQ-14 End
+        try:
+            p = Path(resolved)
+            if p.is_file():
+                p.unlink()
+        except OSError as exc:
+            return str(exc)
+        return None
+    # #EXT-037-REQ-14 Start
     try:
-        p = Path(resolved)
-        if p.is_file():
-            p.unlink()
-    except OSError as exc:
-        return str(exc)
+        from jaros.core import create_decision
+        decision = create_decision(
+            id=f"system-builder-delete-{uuid.uuid4().hex}", source="system_builder",
+            type="code.delete_file",
+            payload={"path": resolved, "root": str(root)},
+        )
+        runtime.apply(decision)
+    except Exception as exc:
+        return f"failed to delete {name}: {exc}"
     return None
+    # #EXT-037-REQ-14 End
 # #EXT-058-REQ-3 End
 
 # #EXT-036-REQ-1 Start
@@ -2805,8 +2836,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                                 # named the free-form entrypoint, so `done=True` was reported
                                 # while the SHIPPED root still ran the buggy free-form build.
                                 stale = [n for n in pre_adopt_built if n != "main.py"]
+                                # #EXT-037-REQ-14 Start
                                 delete_errors = [e for e in
-                                                  (_jailed_delete(root, n) for n in stale) if e]
+                                                  (_jailed_delete(root, n, runtime)
+                                                   for n in stale) if e]
+                                # #EXT-037-REQ-14 End
                                 if delete_errors:
                                     root_unmet = ["leaf adopt: " + "; ".join(delete_errors)]
                                 else:
@@ -2839,7 +2873,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                                     for _name, _code in pre_adopt_built.items():
                                         _jailed_write(root, _name, _code, runtime)
                                     if "main.py" not in pre_adopt_built:
-                                        _jailed_delete(root, "main.py")
+                                        # #EXT-037-REQ-14 Start
+                                        _jailed_delete(root, "main.py", runtime)
+                                        # #EXT-037-REQ-14 End
             except Exception:
                 pass
     # #EXT-058-REQ-3 End
