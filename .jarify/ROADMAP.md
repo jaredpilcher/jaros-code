@@ -95,10 +95,13 @@ streaming client → event-yielding solve path/stream bus → NL-first REPL rend
   orchestration with a working indicator + live tool cards (non-regressing) but the model's answer lands
   at the end. Thread `stream_complete` into the orchestrator's own model calls so the user watches the
   model THINK live on work-requests too. OFF-Jetson build; the deepest remaining felt gap. (new task)
-- **[EXT-057 live-feel verification — NEXT, ON-Jetson batch]** run the rebuilt REPL live against the
-  Jetson to confirm streamed tokens + live tool cards actually FEEL like Claude Code (pre-registered:
-  does a plain "explain X" stream token-by-token; does "fix foo.py" show live tool cards + a working
-  indicator instead of a silent wait).
+- **[EXT-057 live-feel verification — ON-Jetson, PARTLY DONE 2026-07-07]** ✅ CONVERSATIONAL path PROVEN
+  live on the Jetson (gemma-4-e2b): `stream_complete` streams token-by-token (11 deltas, timestamped) AND
+  the full `solve_streaming`→`stream_bus`→`render_stream` stack streams 27 tokens progressively (1.1s→2.6s)
+  + ends with `done` + renders — all 3 pre-registered checks PASS. The silent-black-box is genuinely fixed
+  on hardware, not just stubs. **Remaining on-Jetson check:** the WORK-REQUEST path ("fix foo.py" via
+  `solve_fn=_route_plain`) shows live tool cards + a working indicator end-to-end (needs a full JcodeCli
+  driven headlessly). Honest note: the pytest suites are off-Jetson stubs (no inference) by design.
 
 ### ★★ CORE-NATIVE (Tenet 1) — migrate the orchestration conductor into Jaros (owner-greenlit 2026-07-07)
 
