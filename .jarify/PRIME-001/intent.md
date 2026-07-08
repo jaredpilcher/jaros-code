@@ -105,6 +105,26 @@ system), then to larger DAGs — the path to the large, real, multi-component sy
 It is the build-level twin of the agent-swarm's "capability comes from composition" (below): the swarm
 composes tiny *agent judgments*; this composes verified *system classes*.
 
+**(h.1) The GRAPH DSL — the explicit interface between JUDGMENT and CONSTRUCTION (owner idea, MEASURED
+go/no-go 2026-07-07).** The DAG of (h) is made an explicit **graph DSL**: nodes are verified leaf-classes,
+edges are typed connectors, and the pipeline splits at a clean seam — **NL→DSL is the reasoning (judgment);
+DSL→system is deterministic construction**; modification is a **declarative graph-diff** (declare the desired
+graph, diff it, apply only the delta). The DSL is a *reduction* (a first-class grain type, below): it moves
+the reasoning onto a compact, grammar-checkable representation so a small model's **judgment** — not its
+from-scratch code-generation — is what's required. This was MEASURED on gemma-4-e2b before adoption (the
+owner's two-gate rule, honest, no oracle leak): **Gate 1** — the small LOCAL model converts NL↔DSL reliably
+(valid 7/7, right-core-block 7/7, stable round-trip 7/7); **Gate 2** — routing a known class to its verified
+leaf (DSL→emit-reference) produces a working system on the exact HARD class (TTL store) where from-scratch
+generation fails, **DSL-path 3/3 vs free-form 0/3**. Direct evidence that **for the compositional class,
+development is more JUDGMENT + PATTERN-MATCHING than reasoning** — precisely the small model's strength.
+**Tenet-2 bound (non-negotiable):** the DSL is emitted by the **SMALL LOCAL model** (Gate 1 proves it can;
+the constrained DSL is what makes it tractable) — a frontier/cloud model is FORBIDDEN in the product,
+permitted only as a temporary, labeled validation scaffold, never shipped. **Honestly scoped:** proven for
+single verified leaves + NL↔DSL fidelity; multi-leaf compositions and broad node-vocabulary coverage are the
+next MEASURED work, and a leaf with irreducible novel logic still needs reasoning (the custom-node escape
+hatch). As it proves out, the DSL becomes a **spec-language alongside Gherkin**, semi-deterministically
+guiding both the model and the harness (spec EXT-058).
+
 **HOW it solves all of the above — the prime-directive method, applied REFLEXIVELY (owner directive,
 2026-07-04).** The product tackles a problem with the SAME disciplined method by which this directive itself is
 pursued — there is ONE method, used both to *build jaros-code* and *by jaros-code to build/modify/solve*:

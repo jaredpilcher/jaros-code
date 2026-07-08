@@ -198,18 +198,21 @@ per-class steering exposed — exactly the deterministic-toolset thesis.
   rate-limited TTL cache). This is the build-level twin of the agent-swarm's composition principle. HIGH ·
   create the spec (intent/design/requirements/tasks) via `jarify-manage-specs` when it becomes NOW; the
   build-level path to the large, real, multi-component systems PRIME-001 demands.
-- **[★★ GRAPH-DSL — GATE 1 PASSED (MEASURED 2026-07-07, owner idea): the small model CAN speak the DSL]**
+- **[★★ GRAPH-DSL — BOTH GATES PASSED, North Star updated (MEASURED 2026-07-07, owner idea) → now a NOW build]**
   the DSL refinement of EXT-058 (a graph language: nodes=verified leaves, edges=connectors; NL→DSL is
-  reasoning, DSL→system is deterministic; modification = declarative graph-diff). Owner-set 2-gate go/no-go
-  before any Prime-Directive change. **GATE 1 (NL↔DSL fidelity on gemma-4-e2b, `.jaros-data/dsl_probe.py`,
-  7 hand-authored cases, no leak): VALID 7/7, CORE-coverage 7/7 (always picks the right core building block),
-  ROUND-TRIP 7/7 (stable representation), exact 3/7 (only over-elaborates with a reasonable extra wrapper
-  node — fixable by a canonical-form normalizer/grammar constraint).** Validates "development is judgment +
-  patterns, not (much) reasoning" for the compositional class. **GATE 2 (NEXT, before PRIME-001 update):
-  DSL→working Python + IS-IT-BETTER-than free-form `build_system` on the same tasks, honestly measured.** Only
-  if Gate 2 also passes do we (owner-greenlit) minimally extend PRIME-001's North Star + design and add the
-  DSL as a spec-language alongside Gherkin. Tenet-2 bound: the SMALL LOCAL model emits the DSL (Gate 1 proves
-  it can); a frontier model is forbidden in the product, allowed only as a temporary labeled scaffold.
+  reasoning/judgment, DSL→system is deterministic; modification = declarative graph-diff). Owner-set 2-gate
+  go/no-go, BOTH PASSED on their sharpest tests, no oracle leak: **GATE 1** (NL↔DSL fidelity, gemma-4-e2b,
+  `.jaros-data/dsl_probe.py`, 7 cases): VALID 7/7, CORE-coverage 7/7, ROUND-TRIP 7/7 (exact 3/7 = harmless
+  over-elaboration). **GATE 2** (`.jaros-data/dsl_gate2.py`): routing a known class to its VERIFIED leaf beats
+  free-form on the hard TTL class — **DSL-path 3/3 vs free-form 0/3** ($0, deterministic, guaranteed-correct
+  for known classes, on a class free-form fails 0/8). Validates "development is judgment + pattern-matching,
+  not (much) reasoning" for the compositional class. **LANDED: PRIME-001 North Star principle (h.1) added
+  (minimal, owner-greenlit) — the graph DSL as the judgment↔construction interface, Tenet-2-bound (small local
+  model emits the DSL; frontier forbidden in-product/scaffold-only), honestly scoped (single leaves + NL↔DSL
+  proven; compositions + coverage next).** NOW/NEXT build: promote the ttl-store leaf template + `dsl_probe.py`
+  DSL machinery into a governed `harness/graph_dsl.py` + leaf-library via Jarify (EXT-058 requirements/tasks),
+  then measure the DSL-path lift across ALL hard classes + first 2-leaf composition + the declarative-diff
+  modification path. The DSL becomes a spec-language alongside Gherkin.
 - **[7B-GENERATE the acceptance checks (owner seed #122b, 2026-07-06) — NEXT, cheap on landed infra]**
   the landed 7B-REVIEW (REQ-30) is bounded by Gemma's proposals — it can only PATCH Gemma's checks, so
   a check Gemma botched too badly to salvage stays broken (likely the 4 residual false-negatives in the
