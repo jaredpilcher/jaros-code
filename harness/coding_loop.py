@@ -470,6 +470,14 @@ class LoopResult:
     success: bool
     attempts: int
     final_output: str
+    # #EXT-036-REQ-38 Start
+    # Hard-tier FIX/EDIT escalation metadata (REQ-38, mirrors build_system_escalating's
+    # `escalated`/`model` dict keys) -- defaulted so every pre-existing LoopResult(...)
+    # construction site (fix_loop, mutation_repair_loop, double_application_repair_loop, ...)
+    # is completely unaffected; only fix_loop_escalating ever sets non-default values.
+    escalated: bool = False
+    model: str = "primary"
+    # #EXT-036-REQ-38 End
 
 
 # --- Claude-Code-like transcript ------------------------------------------
@@ -883,6 +891,85 @@ def fix_loop(target: str, instruction: str, test_cmd: str, *,
     return LoopResult(success=False, attempts=max_iters, final_output=last_output)
 # #EXT-003-REQ-2 End
 # #EXT-003-REQ-3 End
+
+
+# #EXT-036-REQ-38 Start
+# REQ-38: hard-tier escalation for the FIX/EDIT path (gemma-4-e2b -> qwen2.5-coder-7b on repair
+# failure), mirroring `harness.system_builder.build_system_escalating` (REQ-13) for the
+# single-file `fix_loop`. OFFLINE, test-gated. Byte-identical no-op when unconfigured.
+def fix_loop_escalating(target: str, instruction: str, test_cmd: str, *,
+                         max_iters: int = 4, cwd: str | None = None,
+                         editor_agent: str = "rewriter_agent.py", verbose: bool = True,
+                         keep_partial: bool = False,
+                         fallback_llm=None, swap_fn=None,
+                         fallback_model_id: "str | None" = None,
+                         primary_model_id: "str | None" = None) -> LoopResult:
+    """ESCALATE-ONLY-ON-FAILURE wrapper around ``fix_loop`` (REQ-38) -- the FIX/EDIT-path analog
+    of ``harness.system_builder.build_system_escalating`` (REQ-13), same discipline: run gemma's
+    ``fix_loop`` first; a PASSING fix returns AS-IS -- ``fallback_llm``/``swap_fn`` are NEVER
+    invoked, so the common case pays no extra latency. Only when the primary repair loop FAILS
+    to produce a passing fix, and a ``fallback_llm`` is supplied, does it swap to the stronger
+    fallback model (``swap_fn(fallback_model_id)`` when a ``swap_fn`` is given -- the same
+    two-plane serving-swap seam ``build_system_escalating``/``harness.collaborative_solve.
+    _http_swap`` use) and retry the SAME fix via ``fix_loop`` again, returning whichever result
+    PASSES (the fallback's result if it succeeds, else the primary's -- never worse than
+    primary-only). Restores the primary model afterward (``swap_fn(primary_model_id)`` in a
+    ``finally`` block) whenever a swap to the fallback was made and both
+    ``swap_fn``/``primary_model_id`` are available -- the served model is NEVER left on the 7B.
+
+    ``fix_loop`` itself takes no ``llm`` parameter (it builds its own client internally via
+    ``build_llm()``, always pointed at whichever model the shared Jetson endpoint is currently
+    SERVING) -- so unlike ``build_system_escalating``'s ``primary_llm``/``fallback_llm``,
+    ``fallback_llm`` here is purely a CONFIGURED-vs-not sentinel (``None`` = escalation
+    disabled, the default); the actual model change happens via ``swap_fn`` at the serving
+    layer, which is what makes the second ``fix_loop`` call genuinely run the fallback model.
+    ``do NOT hardcode a manager URL here`` -- ``swap_fn`` is always injected by the caller.
+
+    Adds two metadata fields to the returned ``LoopResult`` (present on every path, including
+    primary-only returns, for a consistent shape): ``escalated`` (bool -- whether a fallback
+    attempt was actually made) and ``model`` (``"primary"`` or ``"fallback"`` -- which model's
+    result was returned).
+
+    NEVER raises (mirrors ``build_system_escalating``): a ``swap_fn`` failure or an exception
+    from the fallback ``fix_loop`` call is caught and the PRIMARY result is returned unchanged
+    (with the metadata fields added) -- escalation never leaves the caller worse off than
+    primary-only.
+
+    BYTE-IDENTICAL no-op when unconfigured (``fallback_llm is None``, the default): the primary
+    ``fix_loop`` result is returned with ``escalated=False``/``model="primary"`` added on top --
+    zero behavior change to ``success``/``attempts``/``final_output`` vs calling ``fix_loop``
+    directly.
+    """
+    primary_result = fix_loop(target, instruction, test_cmd, max_iters=max_iters, cwd=cwd,
+                               editor_agent=editor_agent, verbose=verbose,
+                               keep_partial=keep_partial)
+    if primary_result.success:
+        return _dataclass_replace(primary_result, escalated=False, model="primary")
+
+    if fallback_llm is None:
+        return _dataclass_replace(primary_result, escalated=False, model="primary")
+
+    swapped_to_fallback = False
+    try:
+        if swap_fn is not None and fallback_model_id is not None:
+            swap_fn(fallback_model_id)
+            swapped_to_fallback = True
+        fallback_result = fix_loop(target, instruction, test_cmd, max_iters=max_iters, cwd=cwd,
+                                    editor_agent=editor_agent, verbose=verbose,
+                                    keep_partial=keep_partial)
+    except Exception:
+        return _dataclass_replace(primary_result, escalated=False, model="primary")
+    finally:
+        if swapped_to_fallback and swap_fn is not None and primary_model_id is not None:
+            try:
+                swap_fn(primary_model_id)
+            except Exception:
+                pass   # never let a restore failure raise out of the wrapper
+
+    winner = fallback_result if fallback_result.success else primary_result
+    model_tag = "fallback" if winner is fallback_result else "primary"
+    return _dataclass_replace(winner, escalated=True, model=model_tag)
+# #EXT-036-REQ-38 End
 
 
 # #EXT-057-REQ-2 Start

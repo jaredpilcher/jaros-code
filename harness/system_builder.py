@@ -70,13 +70,15 @@ ESCALATE-ONLY-ON-FAILURE core for the hard tier. MEASURED (2026-07-03): on compl
 gemma-4-e2b ships 2/3 (fully-completes 1) while Qwen2.5-Coder-7B ships 3/3 but never fully
 completes and costs ~3x latency — so routing everything to the 7B is a bad trade. The honest
 lever is to run the default (primary) model first and only pay for the stronger fallback when
-the primary actually failed to ship, capturing the marginal coverage without losing the
-primary's done-ness or latency on the common (shipped) case. Two-plane: the model does the
-build; the deterministic wrapper decides WHETHER to escalate, performs the serving swap via an
-injectable ``swap_fn`` (mirrors ``harness.collaborative_solve._http_swap``'s
-``(model_id: str) -> None`` convention), restores the primary model afterward, and picks the
-better of the two results by a fixed rule (shipped > done > module count). Never raises: a
-``swap_fn``/fallback-build failure gracefully falls back to the primary-only result. Live
+the primary actually failed acceptance (2026-07-07, task #142: ``not done``, not merely
+``not shipped`` — a primary that SHIPPED a broken system must still escalate), capturing the
+marginal coverage without losing the primary's done-ness or latency on the common (done) case.
+Two-plane: the model does the build; the deterministic wrapper decides WHETHER to escalate,
+performs the serving swap via an injectable ``swap_fn`` (mirrors
+``harness.collaborative_solve._http_swap``'s ``(model_id: str) -> None`` convention), restores
+the primary model afterward, and picks the better of the two results by a fixed rule
+(done > shipped > fewer unmet requirements). Never raises: a ``swap_fn``/fallback-build failure
+gracefully falls back to the primary-only result. Live
 CLI/Jetson wiring of ``swap_fn`` is an explicit out-of-scope follow-up — this task only builds
 the offline-testable core.
 
@@ -2770,21 +2772,29 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
 
 # #EXT-036-REQ-13 Start
 # TASK-13 (REQ-13): hard-tier ESCALATION core — run the default (primary) model first; only pay
-# for the stronger fallback (measured: Qwen2.5-Coder-7B) when the primary actually failed to ship.
-# OFFLINE, test-gated. Live CLI/Jetson wiring of a real `swap_fn` (e.g.
+# for the stronger fallback (measured: Qwen2.5-Coder-7B) when the primary actually failed to
+# ship. OFFLINE, test-gated. Live CLI/Jetson wiring of a real `swap_fn` (e.g.
 # `harness.collaborative_solve._http_swap(manager_url)`) is an explicit OUT-OF-SCOPE follow-up.
+#
+# 2026-07-07 MEASURED FIX (task #142): a live Jetson hard-tier LRU build shipped a BROKEN system
+# (`shipped=True, done=False` — it failed the deterministic acceptance floor) and escalation did
+# NOT fire, because the trigger only checked `not shipped`. Since the primary almost always
+# ships *something*, the 7B fallback was barely ever invoked. The meaningful success signal is
+# `done` (passed acceptance), not `shipped` — the trigger below now escalates on `not done`, and
+# `_better_result`'s tie-break now ranks `done` above `shipped` to match (done always implies
+# shipped in `build_system`'s own result shape, so this never contradicts a shipped-only result).
 
 def _better_result(fallback: dict, primary: dict) -> dict:
-    """Deterministic tie-break rule (REQ-13): prefer shipped over not-shipped, then done over
-    not-done, then more built modules. The PRIMARY wins an exact tie — the fallback must be
-    STRICTLY better to be worth the extra latency/cost it already paid. Never raises — a
-    malformed dict is treated as the worst possible result."""
+    """Deterministic tie-break rule (REQ-13, amended 2026-07-07): prefer done over not-done,
+    then shipped over not-shipped, then fewer unmet requirements. The PRIMARY wins an exact tie
+    — the fallback must be STRICTLY better to be worth the extra latency/cost it already paid.
+    Never raises — a malformed dict is treated as the worst possible result."""
     def _score(r: dict) -> tuple:
         r = r if isinstance(r, dict) else {}
         return (
-            1 if r.get("shipped") else 0,
             1 if r.get("done") else 0,
-            len(r.get("modules") or {}),
+            1 if r.get("shipped") else 0,
+            -len(r.get("unmet") or []),
         )
     return fallback if _score(fallback) > _score(primary) else primary
 
@@ -2794,14 +2804,17 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
                              primary_model_id: "str | None" = None,
                              runtime: "object | None" = None) -> dict:
     """ESCALATE-ONLY-ON-FAILURE wrapper around ``build_system`` (REQ-13). Runs the default
-    (``primary_llm``) build first; if it ships, returns it AS-IS — ``fallback_llm``/``swap_fn``
-    are NEVER invoked, so the common case pays no extra latency. Only when the primary FAILS to
-    ship, and a ``fallback_llm`` is supplied, does it swap to the stronger fallback model (via
-    ``swap_fn(fallback_model_id)`` when a ``swap_fn`` is given — the two-plane serving swap) and
-    retry with ``build_system(spec, root, llm=fallback_llm)``, returning whichever result is
-    BETTER by ``_better_result``'s deterministic rule (shipped > done > module count). Restores
-    the primary model afterward (``swap_fn(primary_model_id)`` in a ``finally`` block) whenever a
-    swap to the fallback was made and both ``swap_fn``/``primary_model_id`` are available.
+    (``primary_llm``) build first; if it is DONE (passed the deterministic acceptance floor),
+    returns it AS-IS — ``fallback_llm``/``swap_fn`` are NEVER invoked, so the common case pays no
+    extra latency. Only when the primary is NOT done (2026-07-07: this includes a primary that
+    SHIPPED a broken system, not only one that failed to ship at all), and a ``fallback_llm`` is
+    supplied, does it swap to the stronger fallback model (via ``swap_fn(fallback_model_id)``
+    when a ``swap_fn`` is given — the two-plane serving swap) and retry with
+    ``build_system(spec, root, llm=fallback_llm)``, returning whichever result is BETTER by
+    ``_better_result``'s deterministic rule (done > shipped > fewer unmet requirements).
+    Restores the primary model afterward (``swap_fn(primary_model_id)`` in a ``finally`` block)
+    whenever a swap to the fallback was made and both ``swap_fn``/``primary_model_id`` are
+    available.
 
     Adds two metadata keys to every returned dict (including primary-only returns, for a
     consistent shape): ``escalated`` (bool — whether a fallback attempt was actually made) and
@@ -2816,7 +2829,10 @@ def build_system_escalating(spec: str, root: "str | Path", *, primary_llm, fallb
     default) is unchanged from before this parameter existed.
     """
     primary_result = build_system(spec, root, llm=primary_llm, runtime=runtime)
-    if primary_result.get("shipped"):
+    # 2026-07-07 (task #142): escalate on NOT-DONE, not merely not-shipped -- a primary that
+    # SHIPPED a broken system (shipped=True, done=False) must still trigger the fallback; `done`
+    # is the meaningful acceptance signal, `shipped` alone is not.
+    if primary_result.get("done"):
         return {**primary_result, "escalated": False, "model": "primary"}
 
     if fallback_llm is None:

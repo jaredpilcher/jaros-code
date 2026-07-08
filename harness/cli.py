@@ -876,13 +876,35 @@ class JcodeCli:
             return f"refused by safety gate: {exc}"
         return f"$ {d.payload['command']}\nexit={out.get('exitCode')}\n{out.get('stdout','')}{out.get('stderr','')}"
 
+    # #EXT-036-REQ-38 Start
     def cmd_fix(self, arg: str) -> str:
+        """Single-file fix (EXT-003). REQ-38: when hard-tier escalation is CONFIGURED (reusing
+        the SAME registry-driven ``_buildsystem_escalation_config()`` gate REQ-13's
+        ``/buildsystem`` uses -- one source of truth, not a second measured class), a gemma
+        repair FAILURE escalates to the stronger fallback model via ``fix_loop_escalating``
+        before giving up. Byte-identical to before this task when escalation is unconfigured
+        (no registry / no specialist / no manager) -- falls back to plain ``fix_loop``."""
         bits = [b.strip() for b in arg.split("::")]
         if len(bits) < 3:
             return "usage: /fix <file> :: <instruction> :: <test command>"
-        from harness.coding_loop import fix_loop
-        res = fix_loop(bits[0], bits[1], bits[2], max_iters=3, verbose=True)
-        return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)"
+        escalation = _buildsystem_escalation_config()
+        if escalation is not None:
+            manager_url, fallback_model_id, primary_model_id = escalation
+            from harness.coding_loop import fix_loop_escalating
+            from harness.collaborative_solve import _http_swap
+            res = fix_loop_escalating(
+                bits[0], bits[1], bits[2], max_iters=3, verbose=True,
+                fallback_llm=self.llm, swap_fn=_http_swap(manager_url),
+                fallback_model_id=fallback_model_id, primary_model_id=primary_model_id,
+            )
+            model_label = fallback_model_id if res.model == "fallback" else primary_model_id
+            tag = f" via {model_label}" + (" (escalated)" if res.escalated else "")
+        else:
+            from harness.coding_loop import fix_loop
+            res = fix_loop(bits[0], bits[1], bits[2], max_iters=3, verbose=True)
+            tag = ""
+        return f"{'solved' if res.success else 'not solved'} in {res.attempts} attempt(s)" + tag
+    # #EXT-036-REQ-38 End
 
     def cmd_fixrepo(self, arg: str) -> str:
         """Multi-file fix: locate the faulty file (traceback + import graph) and fix it,
