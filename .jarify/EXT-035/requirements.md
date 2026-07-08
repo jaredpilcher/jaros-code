@@ -116,6 +116,19 @@ dep symbol still passes its oracle.
       matching a dep stem). This unlocks genuine multi-component coordination for the (common) qualified form.
       Offline test: a `packer` using `codec.encode(...)` + `dep_exports={"codec":[...]}` → `import codec`
       injected, and idempotent; bare-name form still works. Full suite green.
+- [x] Also wired into `harness/system_builder.py::build_system`'s OWN multi-module BUILD/ASSEMBLE
+      path, not just `build_from_intent`'s externally-supplied `deps` path: MEASURED 2026-07-08 — a
+      clean `build_system` run generated `command_processor.py` starting `class
+      CommandProcessor(DataManager):` with no `from data_manager import DataManager`, so every
+      module generated in the SAME build that references a SIBLING module (not an external `deps`
+      dict) never got its missing import repaired, causing a NameError at import time and every
+      acceptance check to fail. Fix: immediately after the per-module BUILD loop populates `built`
+      and before the ASSEMBLE step, `build_system` derives a sibling `dep_exports` map via
+      `harness.intent_loop._derive_dep_exports(built)` and runs `resolve_imports` over every module
+      against its own siblings (excluding itself); no-op for single-module builds (byte-identical).
+      Offline test (`tests/test_ext035_sibling_import_repair.py`, NO model): the exact MEASURED
+      repro is fixed and imports cleanly, an already-correct sibling import is left byte-unchanged
+      (idempotent), and a name no sibling exports is not invented. Full suite stays green.
 
 ### [REQ-4] Ship-gate heeds module completeness (don't ship an incomplete build)
 

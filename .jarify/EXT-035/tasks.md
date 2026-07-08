@@ -100,3 +100,50 @@ form was missed. Extend it to handle BOTH import forms. Small, surgical extensio
 
 #### Implements
 - [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission (both import forms)
+
+### [TASK-5] Wire resolve_imports into build_system's multi-module BUILD/ASSEMBLE path (REQ-3)
+
+MEASURED REPRO 2026-07-08 (a clean gemma `build_system` run): a 3-module `todo-list-cli` build
+wrote `command_processor.py` starting `class CommandProcessor(DataManager):` with NO
+`from data_manager import DataManager` -> `NameError` at import of `command_processor` ->
+every acceptance check fails rc=1 -> 0/3. `harness/import_wiring.py::resolve_imports`
+(TASK-3/TASK-4) already handles this exact shape (base-class reference is an `ast.Name` Load
+node caught by `_used_names`) — it is wired into `build_from_intent`'s externally-supplied
+`deps` path (TASK-3), but `harness/system_builder.py::build_system` NEVER runs it over its
+OWN multi-module BUILD output, so a module that references a SIBLING module generated in the
+SAME build (not an external `deps` dict) never gets its missing import repaired. This task
+closes that wiring gap — purely mechanical, no oracle/gate change.
+
+#### Steps
+1. `harness/system_builder.py::build_system`: immediately after the per-module BUILD loop
+   (the loop that populates `built: dict[str, str]`) and before the `# 3. ASSEMBLE` step,
+   derive a sibling `dep_exports` map by calling `harness.intent_loop._derive_dep_exports(built)`
+   (reusing the existing AST-derivation helper unchanged — `built`'s `{name.py: code}` shape
+   already matches `_derive_dep_exports`'s expected `deps` input). For each module name in
+   `built`, build its own sibling view (`dep_exports` minus that module's own stem, so a
+   module is never offered an import of itself) and run
+   `built[name] = resolve_imports(built[name], sibling_exports)`, skipping the call when the
+   sibling view is empty (single-module builds stay byte-identical). Tag `# #EXT-035-REQ-3`.
+   Do not touch any other stage (PLAN/ASSEMBLE/SCAN/ACCEPTANCE/REPAIR) or any acceptance
+   oracle (`adt_oracle.py`, `system_suite.py`, `_minimum_acceptance`, `code_quality.py`).
+2. `tests/test_ext035_sibling_import_repair.py` (offline, NO model): reproduce the exact
+   MEASURED case — a `data_manager.py` exporting `DataManager` and a `command_processor.py`
+   string `class CommandProcessor(DataManager):` with no import. Assert (a) the raw
+   unrepaired module genuinely raises `NameError` on compile/exec (proves the repro is real);
+   (b) `resolve_imports` injects `from data_manager import DataManager` and the fixed module
+   then imports/execs cleanly; (c) a canned-llm `build_system(...)` run over the 3-module
+   plan (`data_manager.py`/`command_processor.py`/`main.py`) produces
+   `result["modules"]["command_processor.py"]` with the injected import, the assembled
+   on-disk file matches, and it imports cleanly from `root`; (d) a module that already has
+   the correct sibling import is left byte-unchanged (idempotent) through the full
+   `build_system` path; (e) a name not exported by any sibling is not injected (no spurious
+   import). Tag `# #EXT-035-REQ-3`.
+3. Run `python -m pytest tests/test_ext035_sibling_import_repair.py tests/test_ext035*.py -q`
+   and `tests/test_ext036_system_builder.py -q` (targeted files only — no broad `-k` sweep,
+   per the standing Jetson model-swap caution); report exact counts.
+4. Update the REQ-3 traceability ranges in `.jarify/EXT-035/index.json` to add the new
+   `system_builder.py` range and the new test file, preserving the existing REQ-1/REQ-2/REQ-3
+   entries. Do not touch sibling specs.
+
+#### Implements
+- [REQ-3] Deterministic import-resolver — fix the model's cross-module import-emission (multi-module build_system wiring)

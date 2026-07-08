@@ -11,28 +11,6 @@
       "endLine": 112
     }
   ],
-  "REQ-3": [
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 31,
-      "endLine": 51
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 113,
-      "endLine": 120
-    },
-    {
-      "file": "harness/import_wiring.py",
-      "startLine": 16,
-      "endLine": 134
-    },
-    {
-      "file": "tests/test_ext035_import_wiring.py",
-      "startLine": 7,
-      "endLine": 91
-    }
-  ],
   "REQ-4": [
     {
       "file": "harness/foundry.py",
@@ -75,6 +53,38 @@
       "file": "tests/test_ext035_foundry.py",
       "startLine": 14,
       "endLine": 94
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 31,
+      "endLine": 51
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 113,
+      "endLine": 120
+    },
+    {
+      "file": "harness/import_wiring.py",
+      "startLine": 16,
+      "endLine": 134
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2212,
+      "endLine": 2234
+    },
+    {
+      "file": "tests/test_ext035_sibling_import_repair.py",
+      "startLine": 27,
+      "endLine": 246
+    },
+    {
+      "file": "tests/test_ext035_import_wiring.py",
+      "startLine": 7,
+      "endLine": 91
     }
   ]
 }
