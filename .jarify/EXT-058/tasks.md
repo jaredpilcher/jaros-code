@@ -307,3 +307,33 @@ besides `sql-query-engine`, so no `system_builder.py` change).
 
 #### Implements
 - [REQ-7] Verified json-path-query leaf (json-path-query)
+
+### [TASK-11] Fix json-path leaf crash on missing argv: survive the usage/no-args probe
+
+Detailed: closes a MEASURED bug (on-Jetson, this session) that made the json-path-query leaf
+(TASK-10) never actually get adopted by the existing leaf-repair path even though it passes all 4
+real `json-path-query-cli` checks in isolation. Root cause: `JSON_PATH_LEAF` reads
+`sys.argv[1]` with no guard, so invoking it with NO arguments crashes (rc=1, `IndexError`).
+`build_system`'s derived minimum acceptance includes a "usage/--help runs without crashing" check
+(no args supplied); the crashing leaf fails that check during the adopt re-verify, so the
+leaf-repair block rolled back to the (broken) free-form build every time (`build_path` stayed
+`free-form`, class stayed 0/3). The `sql-mini` leaf does not hit this because it reads stdin, not
+`argv`, so it has no analogous no-args crash. Fix is narrowly scoped to the leaf template only —
+no change to `harness/system_builder.py`'s acceptance/adopt logic.
+
+#### Steps
+1. In `harness/graph_dsl.py`'s `JSON_PATH_LEAF` template, at the top of `main()`, guard the
+   missing-argument case: if `len(sys.argv) < 2`, print `null` and return cleanly (rc=0) before
+   touching `sys.argv[1]` — matching the spec's existing "print `null` on any failure" convention.
+   No other behavior change (a path argument is still required/consumed exactly as before for
+   every real invocation).
+2. Extend `tests/test_ext058_jsonpath_leaf.py`: (a) confirm the emitted leaf STILL passes all 4 of
+   `json-path-query-cli`'s independent checks (byte-identical to TASK-10, unchanged 4/4); (b) NEW —
+   running the emitted `main.py` as a subprocess with no command-line args exits rc=0, prints
+   `null`, and produces no traceback on stderr — the exact usage-probe case that was failing.
+3. Run `python -m pytest tests/test_ext058_jsonpath_leaf.py tests/test_ext058_sql_leaf.py
+   tests/test_ext058_leaf_differential.py tests/test_ext058_graph_dsl.py -q` green. Do NOT run the
+   broader suite or any on-Jetson/live test (host load must stay light).
+
+#### Implements
+- [REQ-7] Verified json-path-query leaf (json-path-query) — the no-args usage-probe robustness bullet

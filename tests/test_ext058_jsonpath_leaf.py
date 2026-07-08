@@ -143,4 +143,45 @@ def test_dsl_to_system_emits_json_path_leaf_and_passes_oracle_end_to_end():
         assert dsl_to_system(g, root) is True
         results = [_run_single_check(c, root, None, PY) for c in task.checks]
     assert all(results)
+
+
+# --- TASK-11 bugfix: the leaf must survive the no-arg usage probe -------------------------------
+#
+# MEASURED (on-Jetson): build_system's derived minimum acceptance runs a "usage/--help runs
+# without crashing" check with NO extra argv. The emitted leaf used `sys.argv[1]` with no guard,
+# so that probe CRASHED (rc=1, IndexError) and the leaf-repair adopt path rolled back to the
+# broken free-form build every time (build_path stayed "free-form", class stayed 0/3) even though
+# the leaf passes all 4 real checks (which always supply a path argument) in isolation.
+
+def test_json_path_leaf_no_args_exits_cleanly():
+    """Running the emitted leaf with NO command-line args must exit rc=0 and print `null` --
+    not crash -- so it survives build_system's usage/--help minimum-acceptance probe."""
+    import subprocess
+
+    with tempfile.TemporaryDirectory(prefix="ext058_jsonpath_noargs_") as tmp:
+        root = Path(tmp)
+        main_py = root / "main.py"
+        main_py.write_text(JSON_PATH_LEAF, encoding="utf-8", newline="\n")
+        proc = subprocess.run(
+            [PY, str(main_py)],
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    assert proc.returncode == 0, f"no-args run must not crash: stderr={proc.stderr!r}"
+    assert proc.stdout.strip() == "null"
+    assert proc.stderr == ""
+
+
+def test_json_path_leaf_template_still_passes_all_checks_with_no_args_guard():
+    """Belt-and-suspenders: re-confirm the no-args guard did not regress the 4 real checks (which
+    always supply a path argument) -- must still be 4/4."""
+    task = _find_task("json-path-query-cli")
+    with tempfile.TemporaryDirectory(prefix="ext058_jsonpath_regress_") as tmp:
+        root = Path(tmp)
+        (root / "main.py").write_text(JSON_PATH_LEAF, encoding="utf-8", newline="\n")
+        results = [_run_single_check(c, root, None, PY) for c in task.checks]
+    assert all(results), f"json-path-query leaf template failed checks: {results}"
+    assert len(results) == 4
 # #EXT-058-REQ-7 End

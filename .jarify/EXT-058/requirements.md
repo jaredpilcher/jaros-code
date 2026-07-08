@@ -146,3 +146,8 @@ passed all 4 of the held-out task's checks before being promoted into the librar
 - [ ] The existing `build_system` leaf-repair adopt path picks up the new leaf via `leaf_for_spec` with
       no change required to `harness/system_builder.py` (a strict superset, byte-identical behavior for
       every other class).
+- [ ] The leaf survives `build_system`'s derived minimum-acceptance "usage/--help runs without
+      crashing" probe: invoked with NO command-line arguments it exits cleanly (rc=0, prints `null`)
+      rather than crashing, so the leaf-repair adopt path re-verify does not roll it back to the
+      free-form build (MEASURED 2026-07-08: a missing no-args guard made the adopt path never fire,
+      class stayed 0/3, despite the leaf passing all 4 real checks in isolation).

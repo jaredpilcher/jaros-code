@@ -275,12 +275,22 @@ def _is_sql_mini_spec(spec: "str | None") -> bool:
 # a missing object key, an out-of-range list index, or a segment applied to a value that is
 # neither an object nor a list all print exactly `null` instead -- never from
 # `json-path-query-cli`'s (or any task's) hidden `checks`.
+#
+# TASK-11 fix: a missing path argument (`python main.py` with no argv) used to CRASH
+# (`IndexError` on `sys.argv[1]`, rc=1) -- this failed build_system's derived minimum
+# acceptance "usage/--help runs without crashing" check during the leaf-repair re-verify,
+# so the leaf was never adopted (rolled back to the broken free-form build every time).
+# Guard the missing-argument case the same way every other miss is handled: print `null`
+# and return cleanly (rc=0), matching the spec's own "print null on any failure" convention.
 JSON_PATH_LEAF = '''\
 import sys
 import json
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("null")
+        return
     path = sys.argv[1].split(".")
     try:
         cur = json.load(sys.stdin)
