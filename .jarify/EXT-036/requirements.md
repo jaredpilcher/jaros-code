@@ -1674,3 +1674,57 @@ byte-identical when escalation is unconfigured; ALWAYS restore gemma serving aft
 - [ ] The served model is ALWAYS restored to gemma-4-e2b after an escalated fix (safety).
 - [ ] Test-gated with a stubbed primary-fails/fallback-succeeds fixture proving the escalation fires
       only on failure and never leaves the caller worse off than gemma-only.
+
+### [REQ-39] Deterministic module-body repair: length-guard / constant-index contradiction (DONE — EXT-036 TASK-49, 2026-07-08)
+
+**MEASURED BUG (repro `.jaros-data/artifacts/kv_diag.log`, `cli.py` section):** the
+`kv-store-ttl` `set` handler gemma writes is `if command == "set": if len(parts) == 3: key =
+parts[1]; value = parts[2]; ttl = int(parts[3]); ...` — but `set <key> <value> <ttl>` splits
+into 4 tokens, so `len(parts) == 3` is always False and every `set` SILENTLY NO-OPS (0/3 Get/
+Delete behavioral checks fail). The guard is internally self-contradictory with its own body:
+it requires `len(parts) == 3` yet indexes `parts[3]`, which needs `len(parts) >= 4`.
+`build_system`'s bounded acceptance-driven repair loop (REQ-5) already fed this failure back
+for 2 rounds live and gemma could not fix it — a deterministic tool is the lever (mirrors
+`harness/import_wiring.py::resolve_imports`, EXT-035 REQ-3 — a pure, AST-only, never-raising,
+purely-additive/corrective repair over generated module code, run right alongside it in
+`build_system`'s assemble path).
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::repair_guard_index_mismatch(code: str) -> str` — a PURE,
+  stdlib-`ast`-only, never-raising function: finds an `If` whose test is a simple length
+  comparison `len(<Name>) OP <int constant>` (either operand order, `OP` in `{==, !=, <, <=,
+  >, >=}`) whose gated (true-branch) body contains a constant-index subscript `<Name>[M]` on
+  the SAME name, and — ONLY when the guard's constant provably, guard-WIDE contradicts that
+  index (every length value admitted by the guard makes `M` unreachable) — repairs the
+  guard's own numeric constant to the MINIMAL value consistent with the body's own worst-case
+  index `M` (e.g. `== M+1`). Changes ONLY that one constant (a targeted text-level splice at
+  the literal's own AST span); the rest of `code` is returned byte-for-byte intact. Returns
+  the input BYTE-IDENTICAL when no provable contradiction is found or on any parse failure —
+  **DONE 2026-07-08**.
+- [x] HONESTY (Tenet 3, conservatism over coverage — a false repair is a real regression):
+  fires ONLY on a PROVABLE, guard-WIDE contradiction. A closed/bounded-above guard (`==`,
+  `<`, `<=`) can be provably wrong for EVERY admitted length; an open-ended guard (`!=`, `>`,
+  `>=`) never can (some admitted length always leaves the index reachable), so those ops are
+  NEVER repaired. NEVER touches: an already-consistent guard; a guard on a DIFFERENT name
+  than the one indexed; a variable/negative/slice index; an index confined to an `else`/
+  sibling branch; a compound/chained boolean guard; or any other ambiguous shape. Never
+  touches any acceptance oracle / `validate_plan` — **DONE 2026-07-08**.
+- [x] Wired into `harness/system_builder.py::build_system`'s BUILD→ASSEMBLE path: applied to
+  every generated module in `built`, in the same spot/pattern as the existing deterministic
+  import-resolver wiring (`#EXT-035-REQ-3`) — purely additive, a no-op for code without this
+  exact defect shape, and does not touch `build_system_escalating`/`build_system_governed`/
+  `build_system_best_of_k`/`modify_system` or any oracle/gate logic — **DONE 2026-07-08**.
+- [x] Proven OFFLINE (`tests/test_ext036_guard_index_repair.py`, no model/network): (a) the
+  EXACT captured buggy `set` handler is repaired to a consistent `len(parts) == 4` guard, the
+  repaired module still compiles, and a real subprocess run of the repaired module (fed a
+  `set`/`get` sequence on stdin) proves `set` NO LONGER no-ops (the ORIGINAL buggy module is
+  independently confirmed, via the same real run, to genuinely no-op first — a regression
+  oracle, not a coincidental pass); (b) 8+ valid/ambiguous fixtures are returned
+  BYTE-IDENTICAL (a correct `len(parts)==4` guard over `parts[3]`, a guard on a different name
+  than the one indexed, `x[-1]`, `x[i]`, `x[1:3]`, no length guard at all, an index confined
+  to an `else` branch, a compound boolean guard, and an open-ended `>`/`>=` guard); (c) `<`/
+  `<=`/`!=` guards and their REVERSED operand forms (`N OP len(seq)`) are handled correctly —
+  genuine `<`/`<=` contradictions are repaired to their own minimal consistent constant,
+  reversed forms are correctly normalized, and `!=` (open-ended) is never touched even when
+  reversed; (d) `repair_guard_index_mismatch` never raises on `None`/empty/syntactically
+  malformed input — **DONE 2026-07-08**.

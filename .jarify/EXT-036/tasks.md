@@ -2252,3 +2252,80 @@ recovery stage — additive, reached only after every existing path has already 
   bracket-recovery stage for the MEASURED "dropped structural closer inside a nested
   container" defect class; additive, reached only after every existing parse path has
   already failed, so every previously-parseable plan is unaffected)
+
+### [TASK-49] Deterministic module-body repair: length-guard / constant-index contradiction (REQ-39)
+
+MEASURED (repro `.jaros-data/artifacts/kv_diag.log`, `cli.py`): the `kv-store-ttl` `set`
+handler gemma writes is `if command == "set": if len(parts) == 3: key = parts[1]; value =
+parts[2]; ttl = int(parts[3]); ...` — but `set <key> <value> <ttl>` splits into 4 tokens, so
+`len(parts) == 3` is always False and every `set` SILENTLY NO-OPS (all 3 Get/Delete
+behavioral checks fail 0/3). The guard is internally self-contradictory with its own body: it
+requires `len(parts) == 3` yet indexes `parts[3]` (needs `len(parts) >= 4`). `build_system`'s
+bounded acceptance-driven repair loop (REQ-5) already fed this failure back for 2 rounds live
+and gemma could not fix it — a deterministic tool is the lever, mirroring
+`harness/import_wiring.py::resolve_imports` (EXT-035 REQ-3): a pure, AST-only, never-raising,
+purely-additive/corrective repair over generated module code, wired at the same spot in
+`build_system`'s assemble path.
+
+#### Steps
+1. In `harness/system_builder.py`, right after `_build_module`/`syntax_ok` (the per-module
+   code-gate section), add a new `# #EXT-036-REQ-39` block implementing
+   `repair_guard_index_mismatch(code: str) -> str`: parse `code` with `ast.parse` (any
+   exception → return `code` unchanged); walk every `ast.If` node; for each whose `test` is a
+   SIMPLE, single (non-chained, non-boolean) comparison `len(<Name>) OP <int constant>`
+   (either operand order — normalize reversed forms by flipping the operator), where `OP` is
+   one of `{==, !=, <, <=, >, >=}`: only the CLOSED/bounded-above ops (`==`, `<`, `<=`) can
+   ever be a PROVABLE, guard-wide contradiction (the guard admits a bounded set of lengths,
+   so every admitted length can fail a fixed index); `!=`/`>`/`>=` are open-ended (some
+   admitted length always leaves the index reachable) and are NEVER repaired. For a
+   closed-op guard on name `seq`, scan the `If`'s own true-branch `body` (recursing into
+   nested control flow — `if`/`for`/`while`/`try` — but NOT into a nested
+   `def`/`class`/`lambda`, a different execution scope) for every `ast.Subscript` on the
+   SAME name `seq` whose index is a non-negative int `ast.Constant` (never a slice/variable/
+   negative index) and take the MAXIMUM such index `M`. If the guard's own bounded cap (the
+   largest length value the guard admits: `N` for `==`/`<=`, `N-1` for `<`) is `<= M` (a
+   provable contradiction — every admitted length is too small for index `M`), compute the
+   MINIMAL replacement constant that fixes it (`M+1` for `==`/`<=`, `M+2` for `<`) and record
+   a text-level edit at that literal's own AST span (`lineno`/`col_offset`/`end_lineno`/
+   `end_col_offset`) — never at any other span. Apply all recorded edits (rightmost-first, by
+   absolute offset, so multiple edits in one module never invalidate each other's positions)
+   and return the result; return `code` UNCHANGED (same object/byte-identical) when no edits
+   were made. Never raises on `None`/empty/malformed input.
+2. In `build_system`, immediately after the existing deterministic import-resolver wiring
+   (the `#EXT-035-REQ-3` block that runs `resolve_imports` over every module in `built`,
+   right before `# 3. ASSEMBLE`), add a new `# #EXT-036-REQ-39` block that calls
+   `built[name] = repair_guard_index_mismatch(built[name])` for every module in `built`.
+   Purely additive: does not touch `build_system_escalating`/`build_system_governed`/
+   `build_system_best_of_k`/`modify_system`, any plan-repair function, any acceptance
+   oracle, or `validate_plan` — a no-op for any module without this exact defect shape.
+3. Tests `tests/test_ext036_guard_index_repair.py` (new, OFFLINE — no model, no network):
+   (a) the EXACT captured buggy `set` handler from `.jaros-data/artifacts/kv_diag.log` is
+   repaired to a consistent `len(parts) == 4` guard; the repaired module still compiles
+   (`py_compile`/`compile()`); a REAL subprocess run of the repaired module (paired with the
+   captured `store.py`), fed a `set foo bar 100` + `get foo` stdin sequence, prints the
+   stored value (not `"none"`) — proving `set` no longer no-ops; a control run of the
+   ORIGINAL (unrepaired) module through the SAME real-subprocess harness independently
+   confirms it genuinely DOES no-op first (a regression oracle, not a coincidental pass).
+   (b) At least 8 valid/ambiguous fixtures are returned BYTE-IDENTICAL: a correct
+   `len(parts)==4` guard over `parts[3]`; a guard on a different name than the one indexed;
+   `x[-1]`; `x[i]`; `x[1:3]`; no length guard at all; an index confined to an `else` branch;
+   a compound boolean guard (`len(x)==3 and flag`); and an open-ended `>`/`>=` guard whose
+   body indexes past the guaranteed minimum. (c) `<`/`<=`/`!=` guards and their REVERSED
+   operand forms (`N OP len(seq)`) are each covered: a genuine `<` contradiction repairs to
+   its own minimal constant, a genuine `<=` contradiction repairs to its own minimal
+   constant, both in REVERSED form too (`N > len(seq)`/`N >= len(seq)`), and a `!=` guard
+   (plain and reversed) is NEVER touched regardless of its body's index. (d)
+   `repair_guard_index_mismatch` never raises on `None`, `""`, or syntactically malformed
+   Python.
+4. Run `python -m pytest tests/test_ext036_guard_index_repair.py -q` and the existing
+   targeted code-repair/import-resolver unit test file(s) (e.g. whichever file already covers
+   `resolve_imports`/`_repair_plan_dangling_imports`/similar deterministic repairs) `-q` only
+   to confirm no regression. Do NOT run the broader `tests/test_ext036*.py` glob, the full
+   `tests/test_ext036_system_builder.py`, or any `-k` sweep in this task (a live-model test
+   elsewhere in that glob triggers a Jetson model-swap that must not run here); the full
+   suite re-run remains the parent/architect's responsibility at integration time.
+
+#### Implements
+- [REQ-39] Deterministic module-body repair: length-guard / constant-index contradiction
+  (the MEASURED kv-store-ttl `set`-handler no-op defect and its general class — a guard
+  self-contradicting its own body's constant-index access on the same sequence)

@@ -937,6 +937,205 @@ def _build_module(spec: str, m: dict, built: dict, llm, *,
 # #EXT-036-REQ-3 End
 
 
+# #EXT-036-REQ-39 Start (TASK-49: deterministic module-body repair for a length-guard /
+# constant-index contradiction)
+# MEASURED (`.jaros-data/artifacts/kv_diag.log`): the kv-store-ttl `set` handler gemma writes
+# is `if command == "set": if len(parts) == 3: key = parts[1]; value = parts[2]; ttl =
+# int(parts[3]); ...` -- but `set <key> <value> <ttl>` splits into 4 tokens, so `len(parts) ==
+# 3` is always False and every `set` SILENTLY NO-OPS. The guard is internally
+# self-contradictory with its own body: it requires `len(parts) == 3` yet indexes `parts[3]`
+# (needs `len(parts) >= 4`). `build_system`'s acceptance-driven repair loop (REQ-5) already
+# fed this failure back for 2 rounds live and gemma could not fix it -- a deterministic tool
+# is the lever, mirroring `harness/import_wiring.py::resolve_imports` (EXT-035 REQ-3): pure,
+# AST-only, never-raising, purely corrective over generated module code.
+#
+# Only a CLOSED (bounded-above) guard op -- `==`, `<`, `<=` -- can ever be a PROVABLE,
+# guard-WIDE contradiction: the set of lengths it admits is bounded above, so EVERY admitted
+# length can be shown too small for a fixed index. An OPEN-ended op -- `!=`, `>`, `>=` --
+# admits an unbounded-above set, so there always EXISTS some admitted length that makes the
+# index safe -- never a guard-wide contradiction. Conservatism over coverage (Tenet 3): those
+# ops are NEVER repaired.
+_LEN_GUARD_CLOSED_OPS = (ast.Eq, ast.Lt, ast.LtE)
+_LEN_GUARD_FLIP_OP = {
+    ast.Eq: ast.Eq, ast.NotEq: ast.NotEq,
+    ast.Lt: ast.Gt, ast.Gt: ast.Lt,
+    ast.LtE: ast.GtE, ast.GtE: ast.LtE,
+}
+
+
+def _len_guard_cap(op_type: type, n: int) -> "int | None":
+    """The MAXIMUM value `len(seq)` can take while satisfying `len(seq) OP n`, for the
+    closed-set ops this function repairs (`None` for anything else)."""
+    if op_type is ast.Eq or op_type is ast.LtE:
+        return n
+    if op_type is ast.Lt:
+        return n - 1
+    return None
+
+
+def _min_len_guard_n(op_type: type, m: int) -> "int | None":
+    """The MINIMAL constant `n` making `len(seq) OP n` consistent with a required index `m`
+    (i.e. the guard's own cap >= m + 1)."""
+    if op_type is ast.Eq or op_type is ast.LtE:
+        return m + 1
+    if op_type is ast.Lt:
+        return m + 2
+    return None
+
+
+def _subscript_const_index(node: ast.Subscript) -> "int | None":
+    """The non-negative int literal index of a subscript, or `None` for anything else (a
+    variable/negative index, a slice, ...)."""
+    idx = node.slice
+    if isinstance(idx, ast.Index):  # py<3.9 compatibility shim
+        idx = idx.value
+    if isinstance(idx, ast.Constant) and isinstance(idx.value, int) and not isinstance(idx.value, bool) and idx.value >= 0:
+        return idx.value
+    return None
+
+
+def _as_len_call_name(expr: ast.expr) -> "str | None":
+    if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id == "len"
+            and len(expr.args) == 1 and not expr.keywords and isinstance(expr.args[0], ast.Name)):
+        return expr.args[0].id
+    return None
+
+
+def _as_int_const(expr: ast.expr) -> "ast.Constant | None":
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, int) and not isinstance(expr.value, bool):
+        return expr
+    return None
+
+
+def _len_guard_test(test: ast.expr) -> "tuple[str, type, ast.Constant, int] | None":
+    """If `test` is a SIMPLE, single (non-chained, non-boolean) `len(<Name>) OP <int
+    constant>` comparison (either operand order), returns ``(seq_name, canonical_op_type,
+    n_constant_node, n_value)`` in the CANONICAL `len(seq) OP n` orientation (a reversed
+    `n OP len(seq)` form has its operator flipped). Anything else (compound/chained/boolop/
+    non-`len`/non-constant/non-Name-argument) -> `None`."""
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1 or len(test.comparators) != 1:
+        return None
+    op = test.ops[0]
+    left, right = test.left, test.comparators[0]
+
+    seq = _as_len_call_name(left)
+    n_node = _as_int_const(right)
+    if seq is not None and n_node is not None:
+        return seq, type(op), n_node, n_node.value
+
+    seq = _as_len_call_name(right)
+    n_node = _as_int_const(left)
+    if seq is not None and n_node is not None:
+        flipped = _LEN_GUARD_FLIP_OP.get(type(op))
+        if flipped is None:
+            return None
+        return seq, flipped, n_node, n_node.value
+    return None
+
+
+def _max_body_index(body: list, seq_name: str) -> "int | None":
+    """The largest constant index `seq_name[M]` reachable anywhere within `body` (recursing
+    into nested control flow, but NOT into a nested function/class/lambda -- a def's own body
+    isn't necessarily executed within this guarded frame). `None` if no such subscript is
+    found."""
+    best: "int | None" = None
+    stack = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+                and node.value.id == seq_name):
+            idx = _subscript_const_index(node)
+            if idx is not None and (best is None or idx > best):
+                best = idx
+        stack.extend(ast.iter_child_nodes(node))
+    return best
+
+
+def _apply_line_col_edits(code: str, edits: list) -> str:
+    """Apply `(start=(lineno, col), end=(lineno, col), text)` edits (AST 1-based-line/
+    0-based-col positions) to `code`, rightmost-first so earlier offsets stay valid."""
+    lines = code.splitlines(keepends=True)
+    line_offsets = [0]
+    for ln in lines:
+        line_offsets.append(line_offsets[-1] + len(ln))
+
+    def _offset(pos: tuple) -> "int | None":
+        lineno, col = pos
+        if lineno is None or col is None or not (1 <= lineno <= len(lines)):
+            return None
+        return line_offsets[lineno - 1] + col
+
+    resolved = []
+    for start, end, text in edits:
+        s, e = _offset(start), _offset(end)
+        if s is None or e is None or e < s:
+            continue
+        resolved.append((s, e, text))
+    resolved.sort(key=lambda t: t[0], reverse=True)
+
+    result = code
+    for s, e, text in resolved:
+        result = result[:s] + text + result[e:]
+    return result
+
+
+def repair_guard_index_mismatch(code: str) -> str:
+    """Deterministic, AST-only, NEVER-RAISING repair (TASK-49, REQ-39) for a MEASURED defect
+    class: a length guard `if len(seq) == N:` (or `!=`/`<`/`<=`/`>`/`>=`, either operand
+    order) whose gated body indexes `seq[M]` with a constant `M` the guard can never actually
+    admit (the kv-store-ttl `set` handler: `if len(parts) == 3:` guards a body that indexes
+    `parts[3]`, needing `len(parts) >= 4` -- every `set` silently no-ops). Repairs ONLY the
+    guard's own numeric constant, to the MINIMAL value consistent with the body's own
+    worst-case index -- nothing else in `code` is touched.
+
+    HONESTY (Tenet 3 -- conservatism over coverage, a false repair is a real regression):
+    fires ONLY on a PROVABLE, guard-WIDE contradiction (every length value satisfying the
+    guard makes the index unreachable) between the guard and a CONSTANT index on the exact
+    SAME sequence name, within the guard's own true branch. Never touches: an
+    already-consistent guard; a guard on a different name than the one indexed; a
+    variable/negative/slice index; an index confined to an `else`/sibling branch; a
+    compound/chained boolean guard; or an open-ended guard (`!=`/`>`/`>=`) that can never be
+    proven to exclude EVERY admissible length (some admissible length always leaves such a
+    guard's index reachable, so it is never touched). Returns the input unchanged,
+    BYTE-IDENTICAL, on any parse failure or when no provable contradiction is found."""
+    try:
+        tree = ast.parse(code or "")
+    except Exception:
+        return code
+
+    edits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        parsed = _len_guard_test(node.test)
+        if parsed is None:
+            continue
+        seq_name, op_type, n_node, n_value = parsed
+        if op_type not in _LEN_GUARD_CLOSED_OPS:
+            continue
+        cap = _len_guard_cap(op_type, n_value)
+        if cap is None:
+            continue
+        max_index = _max_body_index(node.body, seq_name)
+        if max_index is None or cap > max_index:
+            continue  # no contradiction (or nothing found to prove one) -- leave alone
+        new_n = _min_len_guard_n(op_type, max_index)
+        if new_n is None or new_n == n_value:
+            continue
+        start = (getattr(n_node, "lineno", None), getattr(n_node, "col_offset", None))
+        end = (getattr(n_node, "end_lineno", None), getattr(n_node, "end_col_offset", None))
+        if None in start or None in end:
+            continue  # can't safely locate the literal's span -- never guess
+        edits.append((start, end, str(new_n)))
+
+    if not edits:
+        return code
+    return _apply_line_col_edits(code, edits)
+# #EXT-036-REQ-39 End
+
+
 # #EXT-036-REQ-4 Start
 CHECKLIST_PROMPT = (
     "SPEC: {spec}\nThe system will expose this API: {api}\n\n"
@@ -2336,6 +2535,19 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         if _others:
             built[_mod_name] = resolve_imports(built[_mod_name], _others)
     # #EXT-035-REQ-3 End
+
+    # #EXT-036-REQ-39 Start
+    # TASK-49: deterministic guard/index-mismatch repair. MEASURED
+    # (`.jaros-data/artifacts/kv_diag.log`): a generated module can emit a length guard that
+    # is internally self-contradictory with its own body's constant-index access on the same
+    # sequence (e.g. `if len(parts) == 3:` gating a body that indexes `parts[3]`) -- the guard
+    # silently swallows every call, a SILENT NO-OP the model's own acceptance-driven repair
+    # loop (REQ-5) failed to fix live over 2 rounds. Wired in the same spot/pattern as the
+    # import-resolver above -- additive, AST-only, never-raising: a no-op for code without
+    # this exact defect shape.
+    for _mod_name in list(built.keys()):
+        built[_mod_name] = repair_guard_index_mismatch(built[_mod_name])
+    # #EXT-036-REQ-39 End
 
     # 3. ASSEMBLE
     _beat("ASSEMBLE")  # #EXT-040-REQ-3
