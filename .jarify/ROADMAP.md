@@ -472,6 +472,16 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ FRONTIER RATCHET: 4 harder build-from-a-sentence classes — EXT-036 REQ-20/TASK-50 (10316cc, 2026-07-08)]**
+  the creation suite grew 8→12 highly-complex classes: a cross-process SQLite-persistent store, a hand-rolled
+  in-memory SQL query engine, an infix-precedence expression evaluator, and a JSON-path resolver. Each has a
+  contract-precise sentence + an independent black-box oracle proven achievable by a reference impl (no leak).
+  Purpose: the old tier was greening out; this re-opens headroom so the per-class scoreboard can discriminate again.
+- **[★ TENET-1: gated file deletion — EXT-037 REQ-14/TASK-18 (7c7d53c, 2026-07-08)]** the leaf-repair "adopt"
+  path deleted stale free-form modules via raw `Path.unlink()`, bypassing the Decision gate + hash-chain that
+  every write already used. Added a `code.delete_file` Jaros tool (mirrors `write_file_tool.py`) and threaded a
+  `runtime` into `_jailed_delete`; product-path deletions now gate + hash-chain-log + replay. Closes a two-plane
+  gap introduced earlier this session. 18 offline tests; `runtime=None` sandbox behavior byte-unchanged.
 - **[★ CAPABILITY: ADT oracle → 2nd ADT (priority-queue) — EXT-056 TASK-4 (465175c, 2026-07-07)]** the
   differential oracle now covers `{lru, priority-queue}` (heapq + stable insertion-order tie-break,
   authored from the visible contract, no leak). 22 adt-oracle tests (up from 12), `system_builder`
