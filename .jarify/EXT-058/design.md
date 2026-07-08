@@ -74,6 +74,40 @@ Every host write flows through the existing Jaros `code.write_file` Decision pat
 - The composition suite (a new creation-suite tier: two+ already-passing leaves wired into one system) is the
   held-out instrument that proves composition works when the leaves are individually solid.
 
+## Graph-DSL refinement — the DAG as an explicit LANGUAGE (owner idea, 2026-07-07)
+
+The owner sharpened this direction: make the DAG a **graph DSL** — an explicit, parameterized language whose
+NODES are verified leaf-classes and whose EDGES are typed connectors — so the pipeline splits at a clean,
+checkable seam: **NL → DSL** (reasoning) and **DSL → system** (deterministic construction). The DSL is the
+interface; it is where the reasoning is *reduced* to a compact, validatable artifact (this is PRIME-001's
+"reduction is a first-class grain type", taken to the architecture level). Modification becomes a **declarative
+diff**: describe the desired system as a DSL graph, diff it against the current graph, and deterministically apply
+only the delta — far more deterministic than diffing raw code.
+
+**Prior art (researched 2026-07-07 — the shape is validated, the small-model corner is the gap):** LLM→IR/DSL→
+deterministic codegen is an active pattern — LLMLift (UC Berkeley, verified lifting: model emits an IR, verifies,
+rewrites to code), ComplexVCoder (spec → hierarchical JSON graph IR of modules/ports/connectivity → synthesis),
+and Anka (a DSL built for reliable LLM codegen). The reasoning/deterministic split is exactly program **sketching**
+(Solar-Lezama: model writes structure with holes, a deterministic synthesizer fills them). The modification-by-diff
+story is the industrial **Infrastructure-as-Code** pattern (Terraform declare-desired-state → `plan` diff → `apply`
+delta; "drift" = the graph diff). What is genuinely under-explored is this at **whole-complex-system scale with an
+extremely small LOCAL model + a VERIFIED node library** — jaros-code's exact niche.
+
+**Tenet-2 CONSTRAINT (binds this refinement).** The DSL must be emitted by the **small local model**, NOT a frontier
+model — the DSL's whole value is that a constrained graph (grammar-constrained decoding, tiny target vocabulary,
+deterministic node/edge validation) is FAR easier for a 2B to emit correctly than raw code, so it *reduces* the
+reasoning a small model needs. Using a cloud/frontier model as the product's orchestrator is forbidden (Tenet 2) and
+would defeat the thesis. A frontier model may serve ONLY as a temporary, labeled VALIDATION SCAFFOLD to de-risk the
+DSL→system backend in isolation (like gold labels for a grader), then be removed — never in the shipped product.
+
+**Limit of the bet (honest):** "most systems reduce to a DAG of classic problems + connectors" holds for
+composition/glue (pipelines, CRUD, orchestration, wiring — where our measured build failures actually were), but NOT
+for irreducible novel algorithmic/domain logic. The DSL organizes and composes the KNOWN deterministically; a leaf
+with novel logic still needs reasoning — so the DSL needs a **custom-node escape hatch**, and its power scales with
+how rich + verified the node vocabulary is. **First experiment (when greenlit):** a minimal graph DSL over the
+existing verified leaves (5 ADT oracles + CLI classes), grammar-constrain the 2B to emit only valid DSL, build
+deterministically, and measure the compositional-task lift vs. free-form generation.
+
 ## Honesty & safety
 
 - No oracle leak: leaf references and connector contracts derive only from the VISIBLE spec, never hidden tests.
