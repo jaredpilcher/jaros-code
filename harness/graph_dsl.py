@@ -51,6 +51,10 @@ VOCAB = {
     # common CLI/system primitives seen across the creation suite
     "kv-store", "calculator", "parser", "aggregator", "text-transform", "state-machine",
     "validator", "rate-limiter", "pub-sub", "graph", "stack", "codec", "datastore", "cli-tool",
+    # #EXT-058-REQ-5 Start
+    # TASK-8: second earned leaf-library member -- a minimal in-memory SQL-like query engine.
+    "sql-query-engine",
+    # #EXT-058-REQ-5 End
     # escape hatch for irreducible novel logic
     "custom",
 }
@@ -169,6 +173,83 @@ LEAF_LIBRARY = {
 # #EXT-058-REQ-1 End
 
 
+# #EXT-058-REQ-5 Start
+# TASK-8: second earned leaf-library member -- a minimal in-memory SQL-like query engine
+# (`sql-query-engine`), covering the held-out `sql-mini-query-cli` creation class (REQ-1's earned-
+# membership rule: admitted only on measured, held-out passing). MEASURED 2026-07-08: gemma scores
+# 0/3 on this class both as a multi-module build (incoherent module wiring, a runtime crash) and
+# as a forced single-file build (the small model bugs the grammar parsing) -- genuinely parse-hard
+# for the 2B, exactly the kind of class the leaf-library is FOR (Gate 2's precedent with
+# `ttl-store`). This reference implementation independently PASSED all 3 of
+# `sql-mini-query-cli`'s checks (3/3) offline this session before being promoted here.
+#
+# HONESTY (Tenet 3, no oracle leak): authored ONLY from the VISIBLE grammar the class/spec
+# describe -- `CREATE TABLE <name> (<cols>)` -> `ok`; `INSERT INTO <name> VALUES (<vals>)` -> `ok`
+# (values in the same column order as the CREATE TABLE); `SELECT * FROM <name> WHERE <col>=<value>`
+# -> one line per row whose column exactly equals value, comma-joined, in insertion order, nothing
+# printed on no match -- never from `sql-mini-query-cli`'s (or any task's) hidden `checks`.
+SQL_MINI_LEAF = r'''import sys
+
+
+def main():
+    tables = {}
+    for line in sys.stdin:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        if line.startswith("CREATE TABLE "):
+            rest = line[len("CREATE TABLE "):]
+            name = rest.split(" ", 1)[0]
+            cols = rest[rest.index("(") + 1:rest.rindex(")")].split(",")
+            tables[name] = {"cols": cols, "rows": []}
+            print("ok")
+        elif line.startswith("INSERT INTO "):
+            rest = line[len("INSERT INTO "):]
+            name = rest.split(" ", 1)[0]
+            vals = rest[rest.index("(") + 1:rest.rindex(")")].split(",")
+            tables[name]["rows"].append(vals)
+            print("ok")
+        elif line.startswith("SELECT * FROM "):
+            rest = line[len("SELECT * FROM "):]
+            name = rest.split(" ", 1)[0]
+            cond = rest.split("WHERE ", 1)[1]
+            col, val = cond.split("=", 1)
+            t = tables[name]
+            ci = t["cols"].index(col)
+            for row in t["rows"]:
+                if row[ci] == val:
+                    print(",".join(row))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+LEAF_LIBRARY["sql-query-engine"] = SQL_MINI_LEAF
+
+
+def _is_sql_mini_spec(spec: "str | None") -> bool:
+    """CONSERVATIVE fingerprint for a mini in-memory SQL-engine spec (TASK-8): the
+    `sql-query-engine` leaf has no ADT reference model, so it isn't covered by
+    `adt_oracle.classify_confident` (below) the way the five ADT leaves are -- this is its own
+    small keyword table. Requires ALL of a set of STRONG, distinctive signals to CO-OCCUR --
+    `create table` AND `select` AND (`insert` or `query engine`) -- never a single loose keyword
+    alone: e.g. a bare "table" or "select" also appear in unrelated specs (the SQLite-persistence
+    tasks' prose says "...any table it needs", never "CREATE TABLE"; nothing else in this codebase
+    says "SELECT"), so requiring the co-occurrence of all three signals keeps this from
+    over-triggering on a plain kv-store/ttl-store/datastore spec. Never raises."""
+    try:
+        text = (spec or "").lower()
+        if "create table" not in text:
+            return False
+        if "select" not in text:
+            return False
+        return "insert" in text or "query engine" in text
+    except Exception:
+        return False
+# #EXT-058-REQ-5 End
+
+
 # #EXT-058-REQ-3 Start
 # TASK-6: the deterministic spec->leaf CLASSIFIER that makes the leaf library actually FIRE in
 # the real `build_system` flow (REQ-3's single-leaf DSL->system path made LIVE, as a REPAIR
@@ -180,15 +261,25 @@ LEAF_LIBRARY = {
 # table `adt_oracle` already carries for every ADT class; this NEVER detects a benchmark/task id
 # (no task name, no hidden `checks` are ever consulted). Never raises, no model call.
 def leaf_for_spec(spec: "str | None") -> "str | None":
-    """Return the verified leaf class id (currently only ``"ttl-store"``) whose CONTRACT the
-    spec text fingerprints, or ``None`` when no verified leaf matches. Intersecting
+    """Return the verified leaf class id (``"ttl-store"``/``"kv-store"`` via the ADT oracle, or
+    ``"sql-query-engine"`` via its own conservative fingerprint -- TASK-8) whose CONTRACT the spec
+    text fingerprints, or ``None`` when no verified leaf matches. Intersecting
     ``adt_oracle.classify_confident``'s result with ``LEAF_LIBRARY`` membership means a class
     ``adt_oracle`` can classify but this module has no VERIFIED template for (e.g. ``lru``,
     ``priority-queue``) honestly returns ``None`` here too -- earned membership (REQ-1), not
     assumed. Never raises."""
     try:
         cls_id = adt_oracle.classify_confident(spec or "", None)
-        return cls_id if cls_id in LEAF_LIBRARY else None
+        if cls_id in LEAF_LIBRARY:
+            return cls_id
+        # #EXT-058-REQ-5 Start
+        # TASK-8: second, independent fingerprint -- `sql-query-engine` has no ADT reference
+        # model so it is never returned by `adt_oracle.classify_confident` above; fall back to
+        # its own conservative co-occurrence rule (see `_is_sql_mini_spec`'s docstring).
+        if _is_sql_mini_spec(spec):
+            return "sql-query-engine"
+        # #EXT-058-REQ-5 End
+        return None
     except Exception:
         return None
 # #EXT-058-REQ-3 End

@@ -3,47 +3,47 @@
     {
       "file": "harness/system_builder.py",
       "startLine": 295,
-      "endLine": 316
+      "endLine": 347
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2329,
-      "endLine": 2331
+      "startLine": 2360,
+      "endLine": 2362
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2343,
-      "endLine": 2348
+      "startLine": 2374,
+      "endLine": 2379
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2746,
-      "endLine": 2845
+      "startLine": 2777,
+      "endLine": 2881
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2856,
-      "endLine": 2859
+      "startLine": 2892,
+      "endLine": 2895
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2863,
-      "endLine": 2865
+      "startLine": 2899,
+      "endLine": 2901
     },
     {
       "file": "harness/graph_dsl.py",
       "startLine": 43,
-      "endLine": 118
+      "endLine": 122
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 172,
-      "endLine": 194
+      "startLine": 253,
+      "endLine": 285
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 197,
-      "endLine": 227
+      "startLine": 288,
+      "endLine": 318
     },
     {
       "file": "tests/test_ext058_leaf_repair_ships_leaf.py",
@@ -56,11 +56,33 @@
       "endLine": 300
     }
   ],
+  "REQ-5": [
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 54,
+      "endLine": 57
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 176,
+      "endLine": 250
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 275,
+      "endLine": 281
+    },
+    {
+      "file": "tests/test_ext058_sql_leaf.py",
+      "startLine": 33,
+      "endLine": 134
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 121,
-      "endLine": 169
+      "startLine": 125,
+      "endLine": 173
     }
   ]
 }

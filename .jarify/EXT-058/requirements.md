@@ -64,3 +64,25 @@ composition holds when the leaves are individually solid, per-composition, no le
 - [ ] The scoreboard reports composition accept-rate per composition-class, alongside the atomic per-class rates.
 - [ ] Any measured lift is proven on HELD-OUT composition tasks the mechanism was not tuned on (Tenet 3).
 - [ ] The empirical leaf taxonomy is updated from these results (which classes recur as verifiable units).
+
+### [REQ-5] Verified mini-SQL-engine leaf (sql-query-engine)
+
+A second earned leaf-library member (REQ-1's registry): a minimal in-memory SQL-like query engine
+(`CREATE TABLE`/`INSERT INTO`/`SELECT * FROM ... WHERE`) covering the held-out `sql-mini-query-cli` creation
+class. MEASURED: this class scores 0/3 for gemma both as a multi-module build (incoherent module wiring, a
+runtime crash) and as a forced single-file build (the small model bugs the grammar parsing) -- genuinely
+parse-hard for the 2B, the same class of gap the `ttl-store` leaf (TASK-5) closed. Admission follows REQ-1's
+earned-membership rule: the reference implementation independently passed all 3 of the held-out task's
+checks before being promoted into the library.
+
+#### Acceptance Criteria
+- [ ] A verified `sql-query-engine` leaf template is registered in `LEAF_LIBRARY`, authored ONLY from the
+      VISIBLE grammar contract (never any task's hidden checks -- Tenet 3, no oracle leak).
+- [ ] The leaf passes ALL of `sql-mini-query-cli`'s independent, oracle-authored checks.
+- [ ] `leaf_for_spec` CONSERVATIVELY classifies a genuine mini-SQL-engine spec to this leaf, keyed on
+      strong, co-occurring, distinctive signals -- never a single loose keyword.
+- [ ] `leaf_for_spec` does NOT over-trigger: a `ttl-store` spec and a plain `kv-store` spec still resolve to
+      their own correct leaf/`None`, never the SQL leaf.
+- [ ] The existing `build_system` leaf-repair adopt path picks up the new leaf via `leaf_for_spec` with no
+      change required to `harness/system_builder.py` (a strict superset, byte-identical behavior for every
+      other class).

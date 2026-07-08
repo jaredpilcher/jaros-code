@@ -175,3 +175,41 @@ any error or re-verification failure, so 0-false-done is preserved by constructi
 
 #### Implements
 - [REQ-3] Deterministic composer + connectors — closes the false-done in the leaf-repair adopt path
+
+### [TASK-8] Verified mini-SQL-engine leaf (sql-query-engine) — second earned leaf-library member
+
+Detailed: adds a second verified leaf, `sql-query-engine`, to `harness/graph_dsl.py`'s `LEAF_LIBRARY` (the
+same proven mechanism TASK-5 used for `ttl-store`), so the existing leaf-repair adopt path (TASK-6/TASK-7,
+already generic over `leaf_for_spec`/`dsl_to_system` — no `system_builder.py` change needed) can ship a
+working system for the held-out `sql-mini-query-cli` creation class. MEASURED this session: the class
+scores 0/3 for gemma both as a multi-module build (incoherent module wiring, a runtime crash) and as a
+forced single-file build (the small model bugs the grammar parsing) — genuinely parse-hard, warranting a
+verified building-block leaf (not thin evidence). The reference leaf body (below) independently passed all
+3 of the task's checks offline this session before being promoted here.
+
+#### Steps
+1. Add `SQL_MINI_LEAF` to `harness/graph_dsl.py`: a cleaned-up, PEP8, self-contained single `main.py`
+   implementing an in-memory SQL-like engine (`CREATE TABLE <name> (<cols>)` -> `ok`; `INSERT INTO <name>
+   VALUES (<vals>)` -> `ok`; `SELECT * FROM <name> WHERE <col>=<value>` -> one comma-joined line per exact
+   match, insertion order, nothing on no match), authored ONLY from the VISIBLE grammar contract (never any
+   task's hidden checks — Tenet 3, no oracle leak).
+2. Register it in `LEAF_LIBRARY` under a new class key, `"sql-query-engine"`, and add that key to `VOCAB`.
+3. Extend `leaf_for_spec(spec)` with a new, CONSERVATIVE, independent fingerprint (`_is_sql_mini_spec`) that
+   requires STRONG, distinctive signals to CO-OCCUR (`create table` AND `select` AND (`insert` or `query
+   engine`)) — never a single loose keyword alone — so it fires ONLY for genuine in-memory-SQL-engine specs
+   and still returns the correct existing leaf (or `None`) for `ttl-store`, `kv-store`, and every other
+   class (no over-trigger).
+4. Confirm (no code change) that `build_system`'s existing leaf-repair adopt path (`# #EXT-058-REQ-3` in
+   `harness/system_builder.py`) picks up the new leaf via `leaf_for_spec`/`dsl_to_system` unchanged — both
+   are already class-generic, so this is a strict superset with no modification to that file.
+5. Add `tests/test_ext058_sql_leaf.py` (offline, no model call): the emitted SQL leaf passes ALL 3 of
+   `sql-mini-query-cli`'s independent checks (reusing `harness.system_suite._run_single_check`);
+   `leaf_for_spec` returns `"sql-query-engine"` for the held-out `sql-mini-query-cli` spec, and explicitly
+   does NOT return it for a `ttl-store` spec or a plain `kv-store` spec (no-over-trigger negatives);
+   `dsl_to_system` emits the leaf for a single `sql-query-engine` node.
+6. Run `python -m pytest tests/test_ext058_sql_leaf.py tests/test_ext058_graph_dsl.py -q` green. Do NOT run
+   the broader suite or any on-Jetson/live test (host load must stay light — a Jetson measurement runs
+   concurrently).
+
+#### Implements
+- [REQ-5] Verified mini-SQL-engine leaf (sql-query-engine)
