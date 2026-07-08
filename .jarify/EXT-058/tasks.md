@@ -58,3 +58,38 @@ Detailed: add a held-out composition tier to the creation suite and report per-c
 
 #### Implements
 - [REQ-4] Composition suite + honest per-composition measurement
+
+### [TASK-5] Governed graph-DSL machinery + first verified leaf (ttl-store) — port the PROVEN prototype
+
+Detailed: promote the throwaway go/no-go prototype (`.jaros-data/dsl_probe.py` + `.jaros-data/dsl_gate2.py`,
+both gates PASSED 2026-07-07) into a governed harness module. This is the first REAL implementation of the
+graph-DSL (PRIME-001 (h.1)): deterministic DSL parse/validate/signature + a verified leaf-library + a
+deterministic `dsl_to_system` that emits a verified leaf's known-good code for a known-class node. Start
+with the ttl-store leaf (the one Gate 2 proved beats free-form 3/3 vs 0/3 on the hard TTL task). SCOPE: this
+task is the DETERMINISTIC DSL→system half for single-leaf known classes ONLY (NL→DSL and multi-leaf
+composition are later tasks). Honesty: the leaf template is authored from the VISIBLE class contract, never
+the task's checks (no oracle leak) — exactly like the ADT oracle reference models.
+
+#### Steps
+1. Add `harness/graph_dsl.py` porting the prototype's pure-stdlib, never-raises functions: `parse_dsl(text)`
+   (via the existing `system_builder._extract_json`), `validate_dsl(graph)` (nodes have id+known class from a
+   VOCAB, edges reference listed node ids, no unknown class), `signature(graph)` (structural: sorted
+   node-class multiset + class→class edges, ignoring ids/params), and `equiv(g1,g2)`.
+2. Add a `LEAF_LIBRARY` mapping class → a VERIFIED single-file CLI template; seed it with the `ttl-store`
+   template from `.jaros-data/dsl_gate2.py` (`kv-store` with TTL maps to `ttl-store`). Each template is
+   authored from the class contract, NOT from any task's checks.
+3. Add `dsl_to_system(graph, root)` — for a single-node graph whose class is a library leaf, write the
+   verified template to `root/main.py` and return True; return False otherwise (multi-node/unknown-class ->
+   later composer). Route the host write through the Jaros `code.write_file` Decision path (Tenet 1) if a
+   `runtime`/`root` is threaded, else the internal-scratch raw write is acceptable for the eval path (mirror
+   `system_builder`'s existing convention).
+4. Add `tests/test_ext058_graph_dsl.py`: parse/validate/signature/equiv unit tests (incl. unknown-class
+   rejection, id/param-invariance, cycle-empty-roots), the ttl-store template PASSES the `kv-store-ttl-cli`
+   task's independent checks (reuse `system_suite._run_single_check`), and `dsl_to_system` emits for a
+   single ttl-store node and declines a multi-node graph. Offline, no model call.
+5. Run `python -m pytest tests/test_ext058_graph_dsl.py -q` (green) + confirm no regression in the broader
+   `tests/test_ext056*.py` / `tests/test_ext036*.py` slices touched.
+
+#### Implements
+- [REQ-1] Verified leaf-library registry (earned membership) — first governed slice
+- [REQ-3] Deterministic composer + connectors — the single-leaf DSL→system deterministic path

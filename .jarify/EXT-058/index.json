@@ -1,6 +1,23 @@
 {
-  "REQ-1": [],
+  "REQ-1": [
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 120,
+      "endLine": 168
+    }
+  ],
   "REQ-2": [],
-  "REQ-3": [],
+  "REQ-3": [
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 42,
+      "endLine": 117
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 171,
+      "endLine": 201
+    }
+  ],
   "REQ-4": []
 }

@@ -1,7 +1,7 @@
 ---
 id: EXT-058
 title: Compositional build — verified leaf-library composed into complex systems
-status: uncovered
+status: partial
 priority: high
 implementation: []
 ---
