@@ -546,6 +546,25 @@ def test_classify_returns_priority_queue_for_pq_shaped_spec_and_mods():
     assert adt_oracle.classify_confident(spec, mods) == "priority-queue"
 
 
+def test_classify_confident_returns_priority_queue_for_split_phrase_priority_job_queue():
+    # TASK-8 (MEASURED 2026-07-07): the creation-suite `priority-jobqueue-cli` spec says
+    # "an in-memory priority JOB queue" -- a legitimate phrasing the contiguous keyword
+    # "priority queue" missed, so classify_confident returned None, the oracle never fired,
+    # and a wrong priority ordering self-accepted (done=True) uncaught. The looser per-class
+    # spec regex now recognizes "priority <word> queue" -- but ONLY for a class classify already
+    # evidenced via method tokens, so it never invents priority-queue on wording alone.
+    spec = (
+        "Write a single-file Python CLI, an in-memory priority job queue. Read commands from "
+        "stdin: `push <priority> <item>` inserts; `pop` prints the highest-priority item "
+        "(smallest priority value wins); `peek` shows it without removing."
+    )
+    mods = ["push", "pop", "peek"]
+    assert adt_oracle.classify(spec, mods) == "priority-queue"
+    assert adt_oracle.classify_confident(spec, mods) == "priority-queue"
+    # guard: the split-phrase regex must NOT fire without method-token evidence (classify None).
+    assert adt_oracle.classify_confident(spec, []) is None
+
+
 def test_classify_does_not_return_priority_queue_for_non_pq_spec():
     spec = (
         "Write a simple command-line notes app that lets a user add, list, and delete text notes."

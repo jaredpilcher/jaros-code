@@ -77,3 +77,10 @@ harness.
       `{ttl-store, ring-buffer}`, and grade with an independent hidden suite (a different impl than
       the reference); report pass@1 (temp=0) oracle-in-loop vs baseline honestly. (Deferred to
       TASK-3 — needs the priority-queue reference model first.)
+- [x] TASK-8 (MEASURED 2026-07-07): `classify_confident` recognizes the split-phrase phrasing
+      "priority `<word>` queue" (e.g. the creation-suite `priority-jobqueue-cli` spec "an in-memory
+      priority JOB queue") via a per-class spec regex, but ONLY for a class `classify` already
+      evidenced on method tokens — so it broadens RECOGNITION without inventing a class. Closes a
+      measured FALSE-DONE: the build self-accepted (done=True) with a wrong priority ordering the
+      oracle never ran because the contiguous keyword "priority queue" missed the split phrase. Guards
+      hold (fifo/stack specs unaffected; no fire without method evidence). `tests/test_ext056_adt_oracle.py::test_classify_confident_returns_priority_queue_for_split_phrase_priority_job_queue`.

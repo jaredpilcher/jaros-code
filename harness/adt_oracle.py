@@ -179,6 +179,18 @@ _METHOD_TOKENS: "dict[str, tuple[str, ...]]" = {
 }
 
 
+# Per-class LOOSER spec regexes for `classify_confident` (TASK-8, MEASURED 2026-07-07): the plain
+# contiguous-phrase keyword "priority queue" MISSED the spec "an in-memory priority JOB queue" — a
+# legitimate phrasing of a priority queue that a descriptive middle word ("job"/"task"/"work") splits.
+# The build then self-accepted (done=True) with a wrong priority ordering the oracle would have caught.
+# These regexes fire ONLY after `classify` has already returned that class on its full 2-signal table,
+# so they broaden RECOGNITION of a class already evidenced by method tokens, never invent one. General
+# (any "priority <word> queue"), not benchmark-fitted.
+_CONFIDENT_SPEC_RE: "dict[str, object]" = {
+    "priority-queue": re.compile(r"priority(?:\s+\w+){0,2}\s+queue", re.IGNORECASE),
+}
+
+
 def _contains(haystack: str, needle: str) -> bool:
     """Whole-word match for a single token, plain substring match for a multi-word phrase. Never
     raises -- an empty/None haystack or needle is simply "not found"."""
@@ -210,6 +222,11 @@ def classify_confident(spec: "str", mods: "list[str] | None") -> "str | None":
             return None
         text = (spec or "").lower()
         if any(_contains(text, kw) for kw in _KEYWORDS.get(cls_id, ())):
+            return cls_id
+        # TASK-8: looser per-class spec regex (e.g. "priority JOB queue") — only for a class
+        # `classify` already evidenced, so it broadens recognition without inventing a class.
+        rgx = _CONFIDENT_SPEC_RE.get(cls_id)
+        if rgx is not None and rgx.search(spec or ""):
             return cls_id
         return None
     except Exception:
