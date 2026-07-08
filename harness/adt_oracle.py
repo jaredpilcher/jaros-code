@@ -1031,8 +1031,12 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
             "actual_lines = result.stdout.splitlines()\n"
             "for i, exp in enumerate(expected_lines):\n"
             "    act = actual_lines[i] if i < len(actual_lines) else None\n"
-            f'    assert act == exp, f"ADT {cls} divergence at op[{{i}}]: expected {{exp!r}}, '
-            'got {act!r}"\n'
+            # TASK-8 (MEASURED 2026-07-07): include the FAILING INPUT LINE in the witness, not just
+            # the op index -- the symptom "op[0] wrong" left the model guessing which command/handler;
+            # "on input 'set k v 10': expected 'ok' got 'none'" points repair straight at the set
+            # handler (the kv-store-ttl arity-guard bug). Makes the failure LOCALIZED + actionable.
+            f'    assert act == exp, f"ADT {cls} divergence at op[{{i}}] on input {{cmd_lines[i]!r}}: '
+            'expected {exp!r}, got {act!r}"\n'
         )
         return {
             "name": f"minimum: {cls} differential-oracle (seeded ops vs textbook reference)",

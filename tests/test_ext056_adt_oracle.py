@@ -786,6 +786,18 @@ def test_acceptance_check_code_fails_against_buggy_ttl_fixture(tmp_path):
     assert _run_emitted_check(root, check) is False
 
 
+def test_acceptance_check_witness_names_the_failing_input_line():
+    # TASK-8 (MEASURED 2026-07-07): the divergence witness must name the FAILING INPUT LINE, not
+    # just the op index -- "on input 'set k v 10': expected 'ok' got 'none'" points repair straight
+    # at the failing handler (the kv-store-ttl arity-guard bug 2 repair rounds couldn't localize
+    # from the bare op index). Assert the emitted check embeds cmd_lines[i] and still compiles.
+    for cls in ("lru", "priority-queue", "ttl-store", "ring-buffer", "fifo"):
+        check = adt_oracle.acceptance_check("main.py", cls)
+        assert check is not None, cls
+        assert "on input {cmd_lines[i]!r}" in check["code"], cls
+        compile(check["code"], "<emitted>", "exec")
+
+
 # A correct ring-buffer CLI, authored independently of the reference model in
 # `harness/adt_oracle.py` (TASK-6): a manual circular array (head index + size counter) rather than
 # the reference's `collections.deque(maxlen=...)` strategy -- a different implementation approach
