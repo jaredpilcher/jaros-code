@@ -758,20 +758,94 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     return ops
 
 
-def _build_sequence(cls: str, seed: int, n: int,
-                     capacity: int) -> "tuple[list[str], list[str]]":
+# --- Vocabulary-aware driving verbs (TASK-9, REQ-1: MEASURED 2026-07-07 Tenet-3 false-not-done) --
+#
+# BUG (measured): `acceptance_check` drove EVERY built CLI with a single HARD-CODED command
+# vocabulary per ADT (e.g. priority-queue always drove `push`/`pop`/`peek`), but a build's spec may
+# legitimately declare SYNONYMS (e.g. "enqueue"/"dequeue"). `classify_confident` still fires on the
+# spec text naming the ADT, so the oracle drove a CORRECTLY-implemented enqueue/dequeue CLI with
+# push/pop -- the CLI doesn't recognize the command -- a false divergence -- `done=False` on a
+# correct build. Fix: `_resolve_verbs` scans the VISIBLE spec text (never any hidden test -- Tenet
+# 3, no leak) for which synonym of each canonical driving verb the spec actually uses, and
+# `_build_sequence`/`acceptance_check` bake THOSE command words into the emitted drive script
+# instead of always the canonical ones. SAFETY: when the spec is unavailable/ambiguous (no synonym
+# hit for a verb), that verb's CANONICAL word is used -- byte-identical to the pre-fix behavior --
+# so this can only ever ADD a correctly-recognized vocabulary, never change behavior for a spec that
+# doesn't declare a synonym.
+_ADT_VERB_SYNONYMS: "dict[str, dict[str, tuple[str, ...]]]" = {
+    "lru": {
+        "put": ("put", "set", "insert", "store"),
+        "get": ("get", "fetch", "read", "lookup"),
+    },
+    "priority-queue": {
+        "push": ("push", "enqueue", "add", "insert"),
+        "pop": ("pop", "dequeue", "remove", "poll"),
+        "peek": ("peek", "top", "front", "min"),
+    },
+    "ttl-store": {
+        "set": ("set", "put", "store"),
+        "get": ("get", "fetch", "read"),
+        "tick": ("tick",),
+    },
+    "fifo": {
+        "enqueue": ("enqueue", "push", "add", "insert"),
+        "dequeue": ("dequeue", "pop", "remove", "poll"),
+        "peek": ("peek", "top", "front"),
+    },
+    "ring-buffer": {
+        "push": ("push", "enqueue", "add", "insert"),
+        "pop": ("pop", "dequeue", "remove", "poll"),
+        "peek": ("peek", "top", "front"),
+    },
+}
+
+
+def _resolve_verbs(cls: str, spec: "str | None") -> "dict[str, str]":
+    """For each canonical driving verb of ``cls`` (per :data:`_ADT_VERB_SYNONYMS`), pick the ONE
+    synonym the spec text actually uses (whole-word match via :func:`_contains`), defaulting to the
+    canonical verb when ``spec`` is unavailable or names no synonym for it -- SAFETY: this never
+    changes the emitted command word for a spec that doesn't declare a synonym, so it can only ever
+    ADD correct recognition, never regress an already-passing build. Reads ONLY the visible ``spec``
+    text -- never a hidden test (Tenet 3, no oracle leak). When more than one synonym for the same
+    verb appears in the spec, the FIRST one listed in ``_ADT_VERB_SYNONYMS`` (a fixed, deterministic
+    order) wins. Never raises -- any internal error falls back to the all-canonical mapping."""
+    table = _ADT_VERB_SYNONYMS.get(cls)
+    if not table:
+        return {}
+    try:
+        text = (spec or "").lower()
+        resolved: "dict[str, str]" = {}
+        for canonical, synonyms in table.items():
+            chosen = canonical
+            if text:
+                for syn in synonyms:
+                    if syn != canonical and _contains(text, syn):
+                        chosen = syn
+                        break
+            resolved[canonical] = chosen
+        return resolved
+    except Exception:
+        return {c: c for c in table}
+
+
+def _build_sequence(cls: str, seed: int, n: int, capacity: int,
+                     verbs: "dict[str, str] | None" = None) -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
     :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` and
     ``ring-buffer`` -- TASK-6 -- both use ``capacity``; ``priority-queue`` -- TASK-4 --,
     ``ttl-store`` -- TASK-5 --, and ``fifo`` -- TASK-7 -- all ignore it, their reference
     queue/store is unbounded), and returns
     ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI with, and the
-    reference model's expected output line for each, in the same order.
-    Deterministic (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the
-    ONE place the reference logic lives; both :func:`verify` (in-process differential drive) and
-    :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted script) call it
-    -- never a second, drifting copy of the op-to-command/expected-value mapping. Returns
-    ``([], [])`` for any class this module has no reference model for (never fabricates a
+    reference model's expected output line for each, in the same order. ``verbs`` (TASK-9,
+    optional, keyword-only) is the ``{canonical_verb: chosen_word}`` mapping from
+    :func:`_resolve_verbs` -- when omitted (``None``, the default -- every pre-existing caller,
+    including :func:`verify`, is unaffected) each canonical verb is used literally, byte-identical
+    to the pre-TASK-9 behavior.
+    Deterministic (same ``cls``/``seed``/``n``/``capacity``/``verbs`` -> byte-identical output).
+    This is the ONE place the reference logic lives; both :func:`verify` (in-process differential
+    drive) and :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted
+    script) call it -- never a second, drifting copy of the op-to-command/expected-value mapping.
+    Returns ``([], [])`` for any class this module has no reference model for (never fabricates a
     sequence). Never raises internally; an unexpected op shape also yields ``([], [])`` rather than
     a partial/malformed sequence."""
     if cls not in _IMPLEMENTED_CLASSES:
@@ -779,6 +853,11 @@ def _build_sequence(cls: str, seed: int, n: int,
     ops = _seeded_ops(cls, seed, n)
     if not ops:
         return [], []
+    verbs = verbs or {}
+
+    def _word(canonical: str) -> str:
+        return verbs.get(canonical, canonical)
+
     cmd_lines: "list[str]" = []
     expected_lines: "list[str]" = []
     if cls == "priority-queue":
@@ -787,15 +866,15 @@ def _build_sequence(cls: str, seed: int, n: int,
             if op == "push":
                 priority, item = args
                 pq_reference.push(priority, item)
-                cmd_lines.append(f"push {priority} {item}")
+                cmd_lines.append(f"{_word('push')} {priority} {item}")
                 expected_lines.append("ok")
             elif op == "pop":
                 value = pq_reference.pop()
-                cmd_lines.append("pop")
+                cmd_lines.append(_word("pop"))
                 expected_lines.append("none" if value is None else str(value))
             elif op == "peek":
                 value = pq_reference.peek()
-                cmd_lines.append("peek")
+                cmd_lines.append(_word("peek"))
                 expected_lines.append("none" if value is None else str(value))
             else:
                 return [], []
@@ -806,16 +885,16 @@ def _build_sequence(cls: str, seed: int, n: int,
             if op == "set":
                 key, value, ttl = args
                 ttl_reference.set(key, value, ttl)
-                cmd_lines.append(f"set {key} {value} {ttl}")
+                cmd_lines.append(f"{_word('set')} {key} {value} {ttl}")
                 expected_lines.append("ok")
             elif op == "get":
                 (key,) = args
                 value = ttl_reference.get(key)
-                cmd_lines.append(f"get {key}")
+                cmd_lines.append(f"{_word('get')} {key}")
                 expected_lines.append("none" if value is None else str(value))
             elif op == "tick":
                 ttl_reference.tick()
-                cmd_lines.append("tick")
+                cmd_lines.append(_word("tick"))
                 expected_lines.append("ok")
             else:
                 return [], []
@@ -826,15 +905,15 @@ def _build_sequence(cls: str, seed: int, n: int,
             if op == "push":
                 (item,) = args
                 ring_reference.push(item)
-                cmd_lines.append(f"push {item}")
+                cmd_lines.append(f"{_word('push')} {item}")
                 expected_lines.append("ok")
             elif op == "pop":
                 value = ring_reference.pop()
-                cmd_lines.append("pop")
+                cmd_lines.append(_word("pop"))
                 expected_lines.append("none" if value is None else str(value))
             elif op == "peek":
                 value = ring_reference.peek()
-                cmd_lines.append("peek")
+                cmd_lines.append(_word("peek"))
                 expected_lines.append("none" if value is None else str(value))
             else:
                 return [], []
@@ -845,15 +924,15 @@ def _build_sequence(cls: str, seed: int, n: int,
             if op == "enqueue":
                 (item,) = args
                 fifo_reference.enqueue(item)
-                cmd_lines.append(f"enqueue {item}")
+                cmd_lines.append(f"{_word('enqueue')} {item}")
                 expected_lines.append("ok")
             elif op == "dequeue":
                 value = fifo_reference.dequeue()
-                cmd_lines.append("dequeue")
+                cmd_lines.append(_word("dequeue"))
                 expected_lines.append("none" if value is None else str(value))
             elif op == "peek":
                 value = fifo_reference.peek()
-                cmd_lines.append("peek")
+                cmd_lines.append(_word("peek"))
                 expected_lines.append("none" if value is None else str(value))
             else:
                 return [], []
@@ -863,12 +942,12 @@ def _build_sequence(cls: str, seed: int, n: int,
         if op == "put":
             key, value = args
             reference.put(key, value)
-            cmd_lines.append(f"put {key} {value}")
+            cmd_lines.append(f"{_word('put')} {key} {value}")
             expected_lines.append("ok")
         elif op == "get":
             (key,) = args
             value = reference.get(key)
-            cmd_lines.append(f"get {key}")
+            cmd_lines.append(f"{_word('get')} {key}")
             expected_lines.append("none" if value is None else str(value))
         else:
             return [], []
@@ -984,7 +1063,8 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
 # --- STAGE 5: acceptance-checklist emission (TASK-2) -------------------------------------------
 
 def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
-                      capacity: int = _LRU_CAPACITY) -> "dict | None":
+                      capacity: int = _LRU_CAPACITY,
+                      spec: "str | None" = None) -> "dict | None":
     """Builds ONE deterministic-minimum acceptance-checklist entry (TASK-2, REQ-1) for
     ``harness.system_builder``: ``None`` when ``cls`` is not (yet) an implemented class (a clean
     no-op -- never a fabricated check for an ADT this module has no reference model for). Computes
@@ -1004,11 +1084,18 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     ``{"name", "code"}`` (the shape every other acceptance check in this codebase uses -- see
     ``system_builder._no_crash_subprocess_check`` / ``_roundtrip_acceptance_check``). Never raises
     -- any internal error returns ``None`` (adds nothing to the checklist, exactly like the
-    unimplemented-class case)."""
+    unimplemented-class case).
+    TASK-9 (REQ-1, MEASURED 2026-07-07 vocabulary false-not-done): ``spec`` (optional, keyword-only,
+    default ``None`` -- every pre-existing caller is unaffected) is the VISIBLE spec text; when
+    given, :func:`_resolve_verbs` picks the synonym of each canonical driving verb the spec
+    actually declares (e.g. ``enqueue``/``dequeue`` instead of ``push``/``pop``) and those words are
+    baked into the emitted drive script instead of the hard-coded canonical ones. When ``spec`` is
+    omitted/empty/names no synonym, the canonical vocabulary is used -- byte-identical to before."""
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
             return None
-        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity)
+        verbs = _resolve_verbs(cls, spec)
+        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity, verbs=verbs)
         if not cmd_lines:
             return None
         entry_name = str(entry) if entry else ""

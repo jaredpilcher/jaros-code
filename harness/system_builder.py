@@ -1197,7 +1197,12 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
             ]
             adt_cls = adt_oracle.classify_confident(spec, command_mods)
             if adt_cls:
-                adt_check = adt_oracle.acceptance_check(entry, adt_cls)
+                # TASK-9: thread the visible spec text through so the drive uses whatever
+                # synonym vocabulary (e.g. enqueue/dequeue) the spec actually declares, instead
+                # of always the hard-coded canonical verbs (push/pop) -- see
+                # `adt_oracle._resolve_verbs`. Falls back to the canonical vocabulary when the
+                # spec names no synonym, so this is purely additive.
+                adt_check = adt_oracle.acceptance_check(entry, adt_cls, spec=spec)
                 if adt_check:
                     checks.append(adt_check)
         except Exception:

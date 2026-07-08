@@ -84,3 +84,28 @@ harness.
       measured FALSE-DONE: the build self-accepted (done=True) with a wrong priority ordering the
       oracle never ran because the contiguous keyword "priority queue" missed the split phrase. Guards
       hold (fifo/stack specs unaffected; no fire without method evidence). `tests/test_ext056_adt_oracle.py::test_classify_confident_returns_priority_queue_for_split_phrase_priority_job_queue`.
+- [x] TASK-9 (MEASURED 2026-07-07): the emitted drive is VOCABULARY-AWARE — `acceptance_check(entry,
+      cls, *, spec=None)` (threaded from `_minimum_acceptance`, which already has `spec`) resolves,
+      per canonical driving verb, the SYNONYM the VISIBLE spec text actually declares (e.g.
+      `enqueue`/`dequeue` instead of the hard-coded `push`/`pop`) via `_resolve_verbs` +
+      `_ADT_VERB_SYNONYMS`, and bakes those words into the drive instead of always the canonical
+      ones. SAFETY: an absent/ambiguous spec falls back to the exact pre-fix canonical vocabulary
+      (proved byte-identical by
+      `test_acceptance_check_falls_back_to_canonical_vocabulary_without_a_spec`) — purely additive,
+      never a behavior change for a build whose spec names no synonym. Closes one genuine class of
+      false-not-done (a correct synonym-vocabulary CLI driven with the wrong hard-coded verbs is now
+      driven correctly; a wrong one using the same synonyms is still caught —
+      `test_acceptance_check_is_vocabulary_aware_enqueue_dequeue_synonym`). **KNOWN OPEN GAP,
+      MEASURED same session:** `tests/test_ext036_property_check.py`'s 6 `priority-queue` tests
+      (fixtures `WRONG_PQ_CLI`/`CORRECT_PQ_CLI`) remain red — root-caused NOT to vocabulary
+      (confirmed: with the fix, `_resolve_verbs` correctly resolves `push→enqueue`/`pop→dequeue` for
+      that spec) but to a DIFFERENT, deeper mismatch: those fixtures use the ARGV-per-command,
+      disk-persisted-state CLI convention (`python main.py enqueue 2 low`, one subprocess per
+      command — the SAME convention `_no_crash_subprocess_check`/`_roundtrip_acceptance_check` drive
+      elsewhere in `_minimum_acceptance`), while `acceptance_check`'s drive always spawns ONE process
+      with `argv=[]` and feeds the WHOLE op sequence as stdin lines (the single-process stdin-REPL
+      convention TASK-1's LRU beachhead used). A CLI following the argv-per-command convention never
+      reads stdin at all, so it fails at op[0] regardless of verb. This is a genuine, separate
+      Tenet-3 false-not-done class (an oracle-assumed CLI invocation convention that is not the only
+      legitimate one this codebase's own builds use) — tracked as a follow-up requirement, NOT forced
+      green here per explicit instruction to stop rather than paper over a different-cause failure.

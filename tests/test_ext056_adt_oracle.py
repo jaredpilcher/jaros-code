@@ -1244,4 +1244,169 @@ def test_acceptance_check_code_fails_against_buggy_fifo_fixture(tmp_path):
     check = adt_oracle.acceptance_check("main.py", "fifo")
     assert check is not None
     assert _run_emitted_check(root, check) is False
+
+
+# --- TASK-9 (REQ-1, MEASURED 2026-07-07): vocabulary-aware drive --------------------------------
+#
+# Tenet-3 false-not-done this task fixes: a build (and its spec) may legitimately use SYNONYM
+# command names (`enqueue`/`dequeue`) instead of the oracle's canonical `push`/`pop`.
+# `classify_confident` still fires (the spec names "priority queue"), so BEFORE this fix
+# `acceptance_check` always drove `push`/`pop`/`peek` regardless -- a CORRECT enqueue/dequeue CLI
+# failed every op at index 0 ("command not recognized"), a false divergence. `spec=` now resolves
+# the ACTUAL verbs the spec declares (`adt_oracle._resolve_verbs`) and bakes those into the drive.
+
+_PQ_ENQUEUE_DEQUEUE_SPEC = (
+    "A priority queue command-line program. The command enqueue takes a priority and an item and "
+    "adds it to the queue. The command dequeue removes and prints the item with the highest "
+    "priority first. The command peek shows the same item without removing it."
+)
+
+_GOOD_PQ_CLI_ENQUEUE_DEQUEUE = '''\
+import heapq
+import sys
+
+
+class PriorityQueue:
+    def __init__(self):
+        self.heap = []
+        self.counter = 0
+
+    def push(self, priority, item):
+        heapq.heappush(self.heap, (priority, self.counter, item))
+        self.counter += 1
+
+    def pop(self):
+        if not self.heap:
+            return None
+        _, _, item = heapq.heappop(self.heap)
+        return item
+
+    def peek(self):
+        if not self.heap:
+            return None
+        _, _, item = self.heap[0]
+        return item
+
+
+def main():
+    pq = PriorityQueue()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "enqueue":
+            priority, item = int(parts[1]), parts[2]
+            pq.push(priority, item)
+            print("ok")
+        elif cmd == "dequeue":
+            value = pq.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = pq.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The SAME LIFO-among-ties tie-break bug as `_BUGGY_PQ_CLI`, but authored with the spec's
+# `enqueue`/`dequeue` vocabulary -- proves the vocabulary fix does NOT loosen the check itself: a
+# wrong build using the SAME synonym vocabulary is still caught.
+_BUGGY_PQ_CLI_ENQUEUE_DEQUEUE = '''\
+import sys
+
+
+class BuggyPriorityQueue:
+    def __init__(self):
+        self.items = []  # list of (priority, insertion_index, item)
+        self.counter = 0
+
+    def push(self, priority, item):
+        self.items.append((priority, self.counter, item))
+        self.counter += 1
+
+    def _select_index(self):
+        # BUG: ties are broken by the LARGEST insertion index (most-recently-pushed wins)
+        # instead of the smallest (stable FIFO-among-ties) -- silently inverts tie-break order.
+        best_idx = None
+        for i, (priority, counter, _item) in enumerate(self.items):
+            if best_idx is None:
+                best_idx = i
+                continue
+            b_priority, b_counter, _b_item = self.items[best_idx]
+            if priority < b_priority or (priority == b_priority and counter > b_counter):
+                best_idx = i
+        return best_idx
+
+    def pop(self):
+        if not self.items:
+            return None
+        idx = self._select_index()
+        _, _, item = self.items.pop(idx)
+        return item
+
+    def peek(self):
+        if not self.items:
+            return None
+        idx = self._select_index()
+        return self.items[idx][2]
+
+
+def main():
+    pq = BuggyPriorityQueue()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "enqueue":
+            priority, item = int(parts[1]), parts[2]
+            pq.push(priority, item)
+            print("ok")
+        elif cmd == "dequeue":
+            value = pq.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = pq.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def test_acceptance_check_is_vocabulary_aware_enqueue_dequeue_synonym(tmp_path):
+    """TASK-9 (REQ-1, MEASURED 2026-07-07): the emitted drive uses the SYNONYM vocabulary the
+    spec declares (``enqueue``/``dequeue``), not always the hard-coded canonical ``push``/``pop``
+    -- a CORRECT enqueue/dequeue-driven CLI now PASSES (closes the measured false-not-done), and a
+    WRONG one (same LIFO-among-ties tie-break bug as ``_BUGGY_PQ_CLI``, same enqueue/dequeue
+    vocabulary) is still correctly caught -- the fix is purely additive, never a laundered pass."""
+    good_root = _write_cli(tmp_path, _GOOD_PQ_CLI_ENQUEUE_DEQUEUE, name="good_main.py")
+    good_check = adt_oracle.acceptance_check(
+        "good_main.py", "priority-queue", spec=_PQ_ENQUEUE_DEQUEUE_SPEC)
+    assert good_check is not None
+    assert "enqueue" in good_check["code"] and "push " not in good_check["code"]
+    assert _run_emitted_check(good_root, good_check) is True
+
+    buggy_root = _write_cli(tmp_path, _BUGGY_PQ_CLI_ENQUEUE_DEQUEUE, name="buggy_main.py")
+    buggy_check = adt_oracle.acceptance_check(
+        "buggy_main.py", "priority-queue", spec=_PQ_ENQUEUE_DEQUEUE_SPEC)
+    assert buggy_check is not None
+    assert _run_emitted_check(buggy_root, buggy_check) is False
+
+
+def test_acceptance_check_falls_back_to_canonical_vocabulary_without_a_spec(tmp_path):
+    """SAFETY (TASK-9): omitting ``spec`` (or a spec that names no synonym) must emit the exact
+    same canonical ``push``/``pop``/``peek`` vocabulary as before this fix -- never a behavior
+    change for a build that doesn't declare a synonym."""
+    no_spec_check = adt_oracle.acceptance_check("main.py", "priority-queue")
+    ambiguous_spec_check = adt_oracle.acceptance_check(
+        "main.py", "priority-queue", spec="a priority queue with no declared verbs")
+    assert no_spec_check["code"] == ambiguous_spec_check["code"]
+    assert "push 2 item0" in no_spec_check["code"]
 # #EXT-056-REQ-1 End

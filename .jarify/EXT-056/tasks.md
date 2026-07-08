@@ -180,6 +180,46 @@ Single-file, off-Jetson. `adt_oracle.py` is committed (5412d2f) — no concurren
 #### Implements
 - [REQ-1] ADT Differential Oracle
 
+### [TASK-9] Vocabulary-aware ADT drive — fix a MEASURED Tenet-3 false-not-done
+
+`acceptance_check` drove EVERY built CLI with a single HARD-CODED command vocabulary per ADT (e.g.
+priority-queue always drove `push`/`pop`/`peek`), but a build's spec may legitimately declare
+SYNONYMS (e.g. `enqueue`/`dequeue`). `classify_confident` still fires (the spec names the ADT), so
+the oracle drove a CORRECTLY-implemented enqueue/dequeue CLI with push/pop — a false divergence —
+`done=False` on a correct build. Fix deterministically, from the VISIBLE spec text only (no oracle
+leak), and only ever ADD correct recognition (never change behavior for a spec that names no
+synonym).
+
+#### Steps
+1. In `harness/adt_oracle.py`, add `_ADT_VERB_SYNONYMS` (a per-ADT `{canonical_verb: (synonyms...)}`
+   table) and `_resolve_verbs(cls, spec) -> dict[str, str]`, which scans the spec text (whole-word,
+   via the existing `_contains` helper) for the synonym each canonical verb should use, defaulting
+   to the canonical verb when the spec is absent/ambiguous. Never raises.
+2. Extend `_build_sequence(cls, seed, n, capacity, verbs=None)` with an optional keyword-only
+   `verbs` mapping; when given, each emitted command word is looked up in `verbs` (falling back to
+   the canonical word), so `verify` (which never passes `verbs`) is byte-identical to before.
+3. Extend `acceptance_check(entry, cls, *, seed=1234, capacity=..., spec=None)` with an optional
+   keyword-only `spec`; resolve `verbs = _resolve_verbs(cls, spec)` and pass it to
+   `_build_sequence`. Thread `spec` from `system_builder._minimum_acceptance` (which already has
+   it) into the `adt_oracle.acceptance_check(...)` call.
+4. Add tests to `tests/test_ext056_adt_oracle.py`: a correct enqueue/dequeue priority-queue CLI
+   PASSES `acceptance_check(..., spec=<enqueue/dequeue spec>)`, and the same tie-break bug authored
+   with the same enqueue/dequeue vocabulary still FAILS it (proves the fix doesn't loosen the
+   check). A SAFETY test proves an absent/ambiguous spec emits byte-identical code to before.
+5. Run `python -m pytest tests/test_ext056_adt_oracle.py tests/test_ext056_acceptance_wiring.py -q`
+   (must stay green, no regressions) and `python -c "import harness.adt_oracle, harness.system_builder"`.
+   Update `.jarify/EXT-056/index.json`.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle
+
+**Note (landed 2026-07-07):** this closes the VOCABULARY class of false-not-done. A DIFFERENT,
+deeper false-not-done was measured in the same session and deliberately left OPEN (not forced
+green) — see `requirements.md`'s TASK-9 acceptance-criteria note: `tests/test_ext036_property_check.py`'s
+6 `priority-queue` tests use an ARGV-per-command, disk-persisted-state CLI convention that
+`acceptance_check`'s single-process stdin-REPL drive cannot recognize at all, independent of
+vocabulary. Tracked as a follow-up (dual-convention-aware drive, or convention detection).
+
 ### [TASK-7] FIFO-queue reference model — complete ALL 5 SUPPORTED_CLASSES
 
 Add the `fifo` reference model to `harness/adt_oracle.py` — the last unimplemented member of
