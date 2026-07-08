@@ -506,7 +506,7 @@ loop does at the meta level — exposed as a first-class user capability.
   exit_code 0 and a failing one records the real non-zero exit code, a hanging command is guarded by a short
   timeout without raising, the CLI commands work end-to-end, and slash-command dispatch/output is unaffected.
 
-### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15; grown to 12 tasks/classes, TASK-17; grown to 20 tasks / 17 classes incl. a highly-complex tier via `HARDER_SLICE` + `ALL_CREATION_TASKS`, TASK-24, 2026-07-04)
+### [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence→system CREATION classes  (PARTIAL — framework + first slice, EXT-036 TASK-14; sentences made contract-precise, TASK-15; grown to 12 tasks/classes, TASK-17; grown to 20 tasks / 17 classes incl. a highly-complex tier via `HARDER_SLICE` + `ALL_CREATION_TASKS`, TASK-24, 2026-07-04; grown to 24 tasks / 21 classes with 4 more real-system highly-complex classes, TASK-50, 2026-07-08)
 
 To honestly know whether jaros-code is *"really really good at building complex systems from a sentence"* we need a
 broad, DIVERSE, HELD-OUT benchmark of CREATION tasks spanning many classes × difficulty tiers — not the three sentences
@@ -527,9 +527,17 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   csv-column-aggregator, traffic-light-sequencer, lru-cache [highly-complex], matrix-transpose) + exposes
   `ALL_CREATION_TASKS = FIRST_SLICE + HARDER_SLICE`, growing coverage to 20 tasks / 17 classes and introducing the
   highly-complex tier** — each self-verified via a reference impl through the independent oracle (a no-op scores
-  0/8, so no contract is trivially satisfiable, Tenet 3); the remaining broader classes (REST/HTTP service, plugin
-  system, auth/permission, workflow engine, simulation/game-loop, and the many-module highly-complex tier) remain
-  open growth.
+  0/8, so no contract is trivially satisfiable, Tenet 3). **TASK-50 (2026-07-08, MEASURED: the toy-CLI tier is
+  ~92% mastered — no longer discriminates) adds 4 MORE `HARDER_SLICE` classes, all `"highly-complex"`, drawn from
+  the real-systems frontier (real persistence/parsing/state, not just harder toy logic): `sqlite-persistent-kv-cli`
+  (genuine cross-process SQLite persistence — a `set` in one process must be `get`-able in a completely separate
+  later process), `sql-mini-query-cli` (an in-memory `CREATE TABLE`/`INSERT INTO`/`SELECT ... WHERE` engine),
+  `infix-expr-eval-cli` (an INFIX expression evaluator with real operator precedence + parentheses, harder than
+  the suite's existing RPN calculator), and `json-path-query-cli` (a dotted/indexed JSON-path resolver) — growing
+  coverage to 24 tasks / 21 classes; each self-verified via its own reference impl through the independent oracle
+  (a no-op scores 0 on all four, Tenet 3, `tests/test_ext036_harder_creation_classes.py`)**; the remaining broader
+  classes (REST/HTTP service, plugin system, auth/permission, workflow engine, simulation/game-loop, and the
+  many-module highly-complex tier) remain open growth.
 - [x] Each task = one sentence + a deterministic, automated executable-acceptance check (done / not-done), stored so it
   is never leaked into the solving prompt (held-out; Tenet 3) — **DONE 2026-07-03** (`harness/system_suite.py`,
   TASK-14): each `CreationTask`'s `checks` are BLACK-BOX CLI checks (`(argv, stdin, expected_substring)`, run as a

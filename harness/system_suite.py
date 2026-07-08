@@ -610,6 +610,128 @@ HARDER_SLICE: "list[CreationTask]" = [
             ([], "1 2\n7 8\n", "7\n8"),
         ],
     ),
+
+    # --- TASK-50 GROWTH (2026-07-08, owner directive): +4 more "highly-complex" classes drawn
+    # from the real-systems frontier (PRIME-001's reframe: build REAL systems -- real
+    # persistence, real parsing, real state -- not just harder toy logic). The toy-CLI tier is
+    # ~92% mastered (all 20 ALL_CREATION_TASKS classes buildable), so it no longer discriminates;
+    # these ratchet the difficulty frontier. Same contract-precise convention proven by
+    # TASK-15/17/24 (single main.py entrypoint, exact argv/stdin invocation, exact stdout format
+    # including the trailing newline, `if __name__ == "__main__":` required, deterministic checks
+    # with no wall-clock dependence).
+
+    CreationTask(
+        name="sqlite-persistent-kv-cli", cls="datastore", tier="highly-complex",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a key-value store "
+            "backed by a SQLite database file named store.db in the current directory (use the "
+            "standard library sqlite3 module; create the database file and any table it needs "
+            "the first time it is run, and do not delete or recreate it on later runs). Running "
+            "it as `python main.py set <key> <value>` (exactly three command-line arguments: "
+            "the literal word set, then key, then value) stores value under key in "
+            "store.db, OVERWRITING any existing value already stored for that key, and prints "
+            "ONLY `ok` followed by a newline, to standard output. Running it as `python main.py "
+            "get <key>` prints the value currently stored under key if present, or prints "
+            "`none` if the key has never been set (or was never set in any prior run), followed "
+            "by a newline, to standard output (nothing else). Every key set in one run of the "
+            "program MUST still be retrievable via `get` in a COMPLETELY SEPARATE, later run of "
+            "the program -- values must be persisted to the store.db file on disk, not just "
+            "kept in memory for the current process. The file must contain an `if __name__ == "
+            "\"__main__\":` block that runs this."
+        ),
+        checks=[
+            (["set", "a", "1"], None, "ok"),
+            (["get", "a"], None, "1"),
+            (["set", "a", "2"], None, "ok"),
+            (["get", "a"], None, "2"),
+            (["get", "b"], None, "none"),
+        ],
+    ),
+    CreationTask(
+        name="sql-mini-query-cli", cls="query-engine", tier="highly-complex",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a minimal "
+            "in-memory SQL-like query engine (implement the parsing/storage yourself -- do NOT "
+            "use the sqlite3 module or any database library). Running it as `python main.py` "
+            "(no command-line arguments), it reads commands from standard input, one command "
+            "per line, until standard input is exhausted (EOF); after processing each command "
+            "it immediately prints that command's output, to standard output, in the SAME "
+            "order the commands were read. Supported commands, each exactly one line: `CREATE "
+            "TABLE <name> (<col1>,<col2>,...)` creates an empty table with the given "
+            "comma-separated column names (no spaces around the commas) and prints `ok`; "
+            "`INSERT INTO <name> VALUES (<v1>,<v2>,...)` appends one row of comma-separated "
+            "values, in the SAME column order as the table's CREATE TABLE, and prints `ok`; "
+            "`SELECT * FROM <name> WHERE <col>=<value>` prints one line per row currently in "
+            "the table whose given column exactly equals the given value (exact string match), "
+            "in the order those rows were inserted, each formatted as that row's "
+            "comma-separated values in column order followed by a newline -- if no row "
+            "matches, it prints NOTHING for that command. Assume table names, column names, "
+            "and values never contain spaces or commas, and every command refers to a table "
+            "that was already created. The file must contain an `if __name__ == \"__main__\":` "
+            "block that runs this."
+        ),
+        checks=[
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "SELECT * FROM users WHERE id=1\n", "1,alice"),
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "INSERT INTO users VALUES (2,alice)\nSELECT * FROM users WHERE name=alice\n",
+             "1,alice\n2,alice"),
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "SELECT * FROM users WHERE id=99\nINSERT INTO users VALUES (2,bob)\n"
+                 "SELECT * FROM users WHERE id=2\n", "ok\nok\nok\n2,bob"),
+        ],
+    ),
+    CreationTask(
+        name="infix-expr-eval-cli", cls="expr-evaluator", tier="highly-complex",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, an arithmetic "
+            "expression evaluator for INFIX notation with standard operator precedence and "
+            "parentheses. Running it as `python main.py` (no command-line arguments), it reads "
+            "ONE line from standard input: an arithmetic expression containing non-negative "
+            "integers, the operators +, -, *, / , and parentheses ( and ), where every token "
+            "(a number, an operator, or a parenthesis) is separated from its neighbors by "
+            "exactly one space (for example `2 + 3 * ( 4 - 1 )`). It evaluates the expression "
+            "using standard operator precedence (* and / bind tighter than + and -), "
+            "left-to-right evaluation for operators of equal precedence, and parentheses "
+            "overriding precedence, using integer division truncated toward zero for /. It "
+            "prints ONLY the final integer result, followed by a newline, to standard output "
+            "(nothing else). You may assume the expression is always well-formed and fully "
+            "parenthesis-balanced. The file must contain an `if __name__ == \"__main__\":` "
+            "block that runs this."
+        ),
+        checks=[
+            ([], "2 + 3 * 4\n", "14"),
+            ([], "( 2 + 3 ) * 4\n", "20"),
+            ([], "2 + 3 * ( 4 - 1 )\n", "11"),
+            ([], "10 - 2 - 3\n", "5"),
+        ],
+    ),
+    CreationTask(
+        name="json-path-query-cli", cls="config-query", tier="highly-complex",
+        sentence=(
+            "Write a single-file Python CLI program in a file named main.py, a nested-JSON "
+            "config query tool (use the standard library json module to parse). Running it as "
+            "`python main.py <path>` (exactly one command-line argument, a DOTTED path like "
+            "`a.b.c`, where each dot-separated segment is either a JSON object key, or, when "
+            "the current value is a JSON array, a non-negative integer index into that array), "
+            "it reads the ENTIRE standard input as one JSON document and resolves `<path>` "
+            "against it by walking each dotted segment in order starting from the document's "
+            "top-level value. If the path fully resolves to a value, print that value's "
+            "JSON-encoded form (via `json.dumps`, with no extra whitespace) followed by a "
+            "newline, to standard output. If the input is not valid JSON at all, or ANY "
+            "segment along the path is missing (an object key that does not exist, an array "
+            "index out of range, or a segment applied to a value that is neither an object nor "
+            "an array), print exactly `null` followed by a newline instead. Print nothing "
+            "else. The file must contain an `if __name__ == \"__main__\":` block that runs "
+            "this."
+        ),
+        checks=[
+            (["a.b"], '{"a": {"b": 42}}\n', "42"),
+            (["a.0.b"], '{"a": [{"b": "x"}, {"b": "y"}]}\n', '"x"'),
+            (["a.c"], '{"a": {"b": 1}}\n', "null"),
+            (["a.b.c"], '{"a": {"b": 1}}\n', "null"),
+        ],
+    ),
 ]
 
 ALL_CREATION_TASKS: "list[CreationTask]" = FIRST_SLICE + HARDER_SLICE

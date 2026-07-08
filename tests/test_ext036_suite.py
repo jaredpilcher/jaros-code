@@ -578,7 +578,7 @@ _HARDER_SLICE_REFERENCE_CODE = {
 
 
 def test_harder_slice_registry_shape():
-    assert len(HARDER_SLICE) == 8
+    assert len(HARDER_SLICE) == 12
     names = [t.name for t in HARDER_SLICE]
     assert len(names) == len(set(names))   # unique names, and distinct from FIRST_SLICE
     assert set(names).isdisjoint({t.name for t in FIRST_SLICE})
@@ -663,14 +663,26 @@ def test_run_cli_timeout_kills_hanging_entrypoint_no_orphan(tmp_path):
 
 
 def test_harder_slice_tasks_are_internally_coherent():
-    """TENET-3 coherence: every HARDER_SLICE task's ``checks`` are satisfied by a
-    straightforward correct reference implementation of its OWN stated contract, run through
-    the REAL ``run_creation_suite`` oracle -- proving each new task's contract is genuinely
-    SATISFIABLE (not accidentally unsatisfiable) and its checks are actually determined by the
-    stated sentence, not trivially-always-true."""
-    assert set(_HARDER_SLICE_REFERENCE_CODE) == {t.name for t in HARDER_SLICE}
+    """TENET-3 coherence: every ORIGINAL (TASK-24) HARDER_SLICE task's ``checks`` are satisfied
+    by a straightforward correct reference implementation of its OWN stated contract, run
+    through the REAL ``run_creation_suite`` oracle -- proving each new task's contract is
+    genuinely SATISFIABLE (not accidentally unsatisfiable) and its checks are actually
+    determined by the stated sentence, not trivially-always-true.
+
+    Scoped to the ORIGINAL 8 task names (mirroring how
+    ``test_grown_suite_tasks_are_internally_coherent`` above excludes FIRST_SLICE's original 6
+    by name): TASK-50's +4 real-system classes get their OWN dedicated coherence proof in
+    ``tests/test_ext036_harder_creation_classes.py`` rather than duplicating reference
+    implementations into this dict."""
+    assert set(_HARDER_SLICE_REFERENCE_CODE) == {
+        t.name for t in HARDER_SLICE
+        if t.name not in {"sqlite-persistent-kv-cli", "sql-mini-query-cli",
+                           "infix-expr-eval-cli", "json-path-query-cli"}
+    }
     for task in HARDER_SLICE:
-        code = _HARDER_SLICE_REFERENCE_CODE[task.name]
+        code = _HARDER_SLICE_REFERENCE_CODE.get(task.name)
+        if code is None:
+            continue
         result = run_creation_suite(_reference_build_fn(code), tasks=[task])
         rec = result["results"][0]
         assert rec["accepted"] is True, f"{task.name}: {rec}"

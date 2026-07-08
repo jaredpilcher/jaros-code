@@ -133,6 +133,57 @@ structured retrieval), which is UNEXPLORED. The mission = find the COMPLETE SET 
 make each failure VISIBLE + LOCALIZED so the model can reason on it. Reaching for "ceiling" IS the drift.
 See memory [[jaros-code-deterministic-toolset-mission]] + CLAUDE.md Founding Assumption.
 
+**★★★ POST-FIX CREATION SCOREBOARD (TRUSTWORTHY, serialized, verified-gemma, ALL 6 session fixes in — 2026-07-08
+13:08, the current honest number):** 20 tasks × 3 samples, run ALONE: **55/60 (92%) | any-pass 20/20 | reliable 15/20**
+— UP from the 80%/18/14 morning baseline, with **ZERO regressions** on the 11 previously-passing classes. ★ NO 0/3
+CLASS REMAINS: every class is now buildable (todo-list 0→2/3, kv-store-ttl 0→3/3). **12 of 17 classes at 100%**
+(cli-tool, cache/lru highly-complex, codec, graph, kv-store, matrix, parser, pub-sub, rate-limiter, stack,
+state-machine, validator). Remaining sub-100% are CAPABLE-not-reliable (2/3 = per-draw variance, not weak):
+calculator, data-aggregation, job-queue, text-transform, todo-list. NEXT STEER per the core loop's "all pass → hunt
+harder": the genuinely-weak (0/3) frontier is cleared; the next tier is (a) reliability of the 2/3 capable classes
+(variance reduction) and/or (b) RATCHET DIFFICULTY — add harder creation classes the suite will trip on. Session
+landed 6 deterministic fixes (import-wiring 93153b2, plan-parse recovery 2190faf, guard-index 05f6dca, convention-aware
+ttl oracle 3c399a7, canonical-verb priority 713ac5d, leaf-repair ship-clean false-DONE fix 2840645) + caught/fixed a
+self-introduced false-done via honest measurement.
+
+**★★ CLEAN CREATION BASELINE (TRUSTWORTHY, serialized, verified-gemma — 2026-07-08, morning baseline, superseded by the post-fix scoreboard above):**
+20 tasks × 3 samples, run ALONE (no concurrent pytest): **48/60 (80%) | 18/20 buildable | 14/20 reliably built
+(all-pass)**. HONEST per-class: **11 classes at 100%** (cli-tool, cache/lru **highly-complex** 3/3, codec, graph,
+matrix, parser, pub-sub, rate-limiter, stack, state-machine, validator), job-queue & text-transform 2/3 (capable),
+calculator & data-aggregation 1/3 (capable, hard), and **only TWO genuinely weak: kv-store-ttl 0/3 + todo-list 0/3.**
+CRITICAL METHODOLOGY CORRECTION: a FIRST run the same night measured only 38% — CONTAMINATED, because a parallel
+builder+architect pytest sweep starved the measurement's own HTTP calls (host-CPU) so ~8 classes fast-failed at ~37s
+(FALSE 0/3); the clean re-run flipped them all UP. Contention roughly HALVED apparent capability. **Lesson banked:
+serialize measurements — never run a heavy pytest during a Jetson baseline** (see GAPS + memory). Steering now: the two
+weak creation classes are the focus — kv-store-ttl and todo-list. **★ todo-list GREENED 0/3 → 3/3 (measured
+2026-07-08, landed `2190faf`):** root cause was gemma's planner emitting malformed JSON (dropped an internal `}` from a
+class body embedded in the plan) → 0 files. A workflow-designed, adversarially-verified deterministic recovery
+(`_recover_missing_braces`, additive final stage in `_extract_json`, zero-regression by construction) makes it parse →
+real build → 3/3 checks. A deterministic tool converting a "reasoning-bound" 0/3 into a reliable pass — the
+deterministic-toolset thesis. **★ kv-store-ttl NOW COVERED HONESTLY (measured 2026-07-08)** via a chain of deterministic fixes: guard-index
+repair (05f6dca) fixes gemma's off-by-one `set` guard; two ADT-oracle honesty fixes (convention-aware ttl drive
+3c399a7 + canonical-verb priority 713ac5d) stop the oracle false-rejecting a correct real-seconds ttl-store; and the
+leaf-repair false-DONE fix (2840645) makes adopt ship EXACTLY the verified leaf (delete stale free-form files +
+repoint entrypoint + re-verify against the shipped root). RESULT: kv-store-ttl reports **done=True AND independent
+task-checks 3/3, ALIGNED** — via the correctly-shipped verified ttl leaf (the leaf-library building block covers what
+the 2B can't reliably free-form). ★ HONESTY EVENT: the oracle fixes momentarily ACTIVATED a latent leaf-repair
+false-DONE (done=True while the buggy free-form shipped) — caught THIS session by measuring `done` AND the independent
+checks together, root-caused, and fixed (2840645); a dishonest done is worse than an honest failure. Both creation
+weak classes now covered: todo-list (gemma free-form + plan-parse recovery, 3/3) and kv-store-ttl (verified leaf).
+Everything else is solid or capable. NOTE gemma's FREE-FORM kv-store-ttl is still ~1/3 (per-draw variance); the class
+is covered by the leaf-repair prosthetic, honestly shipped. (The verified ttl leaf now fires in build_system as an
+honest repair candidate — 4bef9b9 — but can't win until the tick-convention is reconciled.)
+
+**★ ESCALATION A/B on the 2 weak classes (2026-07-08, clean, gemma restored+verified after):** does the qwen-7b
+escalation model crack what the 2B fails? **todo-list: qwen-7b = 3/3 checks PASS (real build) → the multi-model SYSTEM
+COVERS it via routing** (2B 0/3 → route to 7B). **kv-store-ttl: qwen-7b = 0/3, same 0-files malformed-plan fast-fail
+→ resists even the 7B**, pointing at a SHARED deterministic plan-parse blocker (the todo-list malformed-plan-JSON root
+cause) that a plan-format fix could unblock on BOTH models — not purely a reasoning limit. STEER: todo-list is
+system-level solved (escalate); kv-store-ttl is the deeper frontier whose next lever is the deterministic plan-format
+fix (schema: short interface stubs, not full code embedded in JSON), THEN re-measure both models. Also two GENERAL
+build-path wins landed this session: the honest leaf-repair candidate (4bef9b9) + the import-resolver now running over
+build_system's own multi-module output injecting missing sibling imports (93153b2).
+
 **★ Honest capability state (RE-MEASURED per-class 2026-07-07 — the owner's per-class loop):** ran BOTH
 suites per-class on the Jetson. **Creation ~80% raw → really ~85% honest** (16-17/20): the 4 "weak"
 classes were mostly measurement/oracle artifacts, not model incapability — (a) CSV-aggregator actually

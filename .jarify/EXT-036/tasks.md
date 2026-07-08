@@ -2329,3 +2329,64 @@ purely-additive/corrective repair over generated module code, wired at the same 
 - [REQ-39] Deterministic module-body repair: length-guard / constant-index contradiction
   (the MEASURED kv-store-ttl `set`-handler no-op defect and its general class — a guard
   self-contradicting its own body's constant-index access on the same sequence)
+
+### [TASK-50] Ratchet the creation-suite frontier — 4 real-system HARDER_SLICE classes (REQ-20)
+
+MEASURED (docs/GAP-MAP.md, 2026-07-08): the toy-CLI tier is now ~92% mastered (all 20
+`ALL_CREATION_TASKS` classes buildable), so it no longer DISCRIMINATES — it stopped being an
+honest frontier instrument (PRIME-001 difficulty ratchet). TASK-24 already pushed `HARDER_SLICE`
+into a `"highly-complex"` tier with `lru-cache-cli`; this task adds 4 MORE `"highly-complex"`
+classes drawn from the real-systems frontier (PRIME-001's reframe: build REAL systems — real
+persistence, real parsing, real state — not just harder toy logic), so the tier has enough mass
+to be a genuine next rung rather than one lone task.
+
+#### Steps
+1. In `harness/system_suite.py`, inside the existing `HARDER_SLICE` list (append after the
+   current 8 entries, keeping them byte-for-byte unchanged), add 4 new contract-precise
+   `CreationTask`s, all tier `"highly-complex"`, each requiring materially more logic/state than
+   the existing tier: `sqlite-persistent-kv-cli` (a real `sqlite3`-backed key-value store whose
+   `set`/`get` values must survive a completely separate later process invocation against the
+   same `store.db` — genuine cross-process persistence, not in-memory state); `sql-mini-query-cli`
+   (an in-memory `CREATE TABLE` / `INSERT INTO ... VALUES` / `SELECT * FROM ... WHERE` engine —
+   real multi-command state + filtering, not a database library); `infix-expr-eval-cli` (an
+   arithmetic expression evaluator for INFIX notation with standard operator precedence,
+   left-to-right associativity, and parentheses — a real recursive/shunting-yard-style parser,
+   harder than the suite's existing RPN calculator); `json-path-query-cli` (parses a JSON document
+   from stdin via the standard `json` module and resolves a dotted/indexed path against it,
+   printing `null` on any missing key/out-of-range index/invalid JSON). Each sentence pins the
+   `main.py` entrypoint, the exact invocation (argv and/or a precise stdin protocol), and the
+   exact stdout format — the same contract-precise convention TASK-15/17/24 proved — and each gets
+   3+ deterministic checks (no wall-clock dependence) covering the core behavior plus at least one
+   edge case (missing key, no-match `WHERE`, left-to-right subtraction associativity, a path
+   segment past a scalar). Do NOT modify `run_creation_suite`/`_run_cli`/`_resolve_entry`/
+   `_run_single_check`, `FIRST_SLICE`, or the existing 8 `HARDER_SLICE` tasks.
+2. Update `tests/test_ext036_suite.py` minimally so it stays consistent with the grown list: bump
+   `test_harder_slice_registry_shape`'s expected `len(HARDER_SLICE)` to 12; in
+   `test_harder_slice_tasks_are_internally_coherent`, scope the `_HARDER_SLICE_REFERENCE_CODE` set
+   -equality assertion to the ORIGINAL 8 task names only (mirroring how
+   `test_grown_suite_tasks_are_internally_coherent` already excludes `FIRST_SLICE`'s original 6 by
+   name) and change its loop to `.get()` + `continue` so it skips tasks without a reference entry
+   in that dict — no new reference implementations duplicated into that file.
+3. Add a NEW offline test file `tests/test_ext036_harder_creation_classes.py` (no live model, no
+   network) that (a) asserts STRUCTURE for each of the 4 new tasks: non-empty `sentence`, `"main.py"`
+   pinned in the sentence, `len(checks) >= 3`, and every check is either callable or a well-formed
+   3-tuple; (b) writes a hand-written, genuinely-correct reference implementation for EACH of the 4
+   new tasks and runs it through the real `run_creation_suite` oracle, asserting `accepted=True` and
+   `n_checks_passed == n_checks` — proving every new check is satisfiable by (and thus actually
+   determined by) its stated contract, not trivially-always-true or accidentally unsatisfiable
+   (Tenet 3, no oracle leak — checks are independent black-box CLI checks derived only from the
+   sentence, never from the reference implementation's internals).
+4. Run ONLY `python -m pytest tests/test_ext036_harder_creation_classes.py -q` and
+   `python -c "from harness.system_suite import FIRST_SLICE, HARDER_SLICE; print(len(FIRST_SLICE), len(HARDER_SLICE))"`
+   — do NOT run `tests/test_ext036_system_builder.py`, a broad `test_ext036*`/`test_ext056*` glob,
+   or any `-k` sweep (triggers a live Jetson model-swap); confirm the Jetson still serves the
+   expected default model afterward. Update `.jarify/EXT-036/index.json`'s `REQ-20` range to the
+   grown file's `#EXT-036-REQ-20` markers.
+
+#### Implements
+- [REQ-20] Parity instrument: a broad, DIVERSE, held-out suite of sentence->system CREATION
+  classes (grows `HARDER_SLICE` from 8 to 12 — a genuine highly-complex tier of real-system
+  classes: cross-process SQLite persistence, an in-memory SQL-ish query engine, an infix
+  expression parser with precedence, and a JSON-path resolver — pushing the suite's difficulty
+  frontier past the now-~92%-mastered toy-CLI tier; live gemma-vs-escalating measurement against
+  the grown suite remains an open follow-up)
