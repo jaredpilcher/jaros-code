@@ -100,6 +100,23 @@ streaming client → event-yielding solve path/stream bus → NL-first REPL rend
   does a plain "explain X" stream token-by-token; does "fix foo.py" show live tool cards + a working
   indicator instead of a silent wait).
 
+### ★★ CORE-NATIVE (Tenet 1) — migrate the orchestration conductor into Jaros (owner-greenlit 2026-07-07)
+
+**The last standing core-native gap.** Every HOST SIDE EFFECT already flows through a Jaros Decision
+(`Runtime.apply` → `validate_decision` gate → executor → `record_decision` hash-chain → replay) — verified
+intact this session. But the ORCHESTRATION CONDUCTOR itself — `cli._route_plain`'s chain (multistep→agent /
+subagent-delegation / deterministic-intent / orchestrator) — is still **imperative Python control flow**, not
+a Jaros Decision flow. So the "which grain next" SEQUENCING is not hash-chain logged or byte-replayable the way
+side effects are. This is task #25 and the one real gap named in memory [[jaros-code-jaros-native-audit]].
+
+- **[core-native · route_plain conductor → Jaros Decisions — HIGH, NOW · owner-greenlit]** make each routing
+  choice in `_route_plain` (and the orchestrator's next-grain selection) an **inert `Decision`** the clerk/gate
+  executes, so the conductor's sequencing is logged + replayable exactly like every tool effect — completing
+  Tenet 1 end-to-end (reasoning emits inert Decisions; the deterministic plane runs them). New spec (or extend
+  the multi-model-native #25 spec) via `jarify-manage-specs`; slice small (start with the deterministic-intent
+  + multistep branches as Decisions, keep behavior byte-identical + suite green), builder→architect. Off-Jetson.
+  Converges on PRIME-001 Tenet 1: "everything the harness DOES is a deterministic tool the clerk runs."
+
 ### ★★ CAPABILITY — the frontier I own (the North Star's harder bar)
 
 **★★ GOVERNING FRAME (owner re-directive 2026-07-07 — binds this whole section):** there is NO reasoning
