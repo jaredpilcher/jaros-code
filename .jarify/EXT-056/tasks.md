@@ -241,3 +241,63 @@ Closes REQ-1's open "fifo reference model" acceptance criterion. Single-file, of
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-10] Convention-aware ttl-store drive — fix a MEASURED Tenet-3 false-not-done (real-seconds vs virtual-clock tick)
+
+MEASURED FALSE-NOT-DONE (2026-07-08): `acceptance_check`'s `ttl-store` branch unconditionally drives
+the virtual-clock `tick` convention (TASK-5), but the `kv-store-ttl-cli` spec in
+`harness/system_suite.py` is REAL-SECONDS TTL (`set <key> <value> <ttl_seconds>`, no `tick` command
+at all) — so even a CORRECT real-seconds ttl-store CLI is false-rejected by the oracle
+(`done=False`). Fix: make the ttl-store branch CONVENTION-AWARE from the visible spec text — a
+tick-worded spec keeps the existing virtual-clock drive completely unchanged; a real-seconds-worded
+spec (and ONLY that case) gets a new, separate real-wall-clock drive. This touches
+ACCEPTANCE-ORACLE code (Tenet-3-critical): the fix must never turn a genuinely-broken ttl CLI into a
+pass, and must never regress the tick-based convention or any other ADT class.
+
+#### Steps
+1. In `harness/adt_oracle.py`, add `_ttl_convention(spec: str | None) -> str`: returns `"tick"` when
+   the spec text names a `tick`/`ticks`/`ticking` command (virtual-clock — the pre-existing,
+   already-proven default), `"real"` when the spec names `second`/`seconds`/`ttl_seconds` wording
+   AND no `tick` wording, and `"tick"` (the safe, backward-compatible default) for an
+   absent/empty/ambiguous spec. Never raises.
+2. Add real-seconds constants (`_TTL_REAL_SHORT_TTL_S`, `_TTL_REAL_LONG_TTL_S`,
+   `_TTL_REAL_SLEEP_S`, `_TTL_REAL_READ_TIMEOUT_S` — small values, e.g. 1s/10s/1.5s/20s) and
+   `_ttl_store_real_seconds_check(entry, *, verbs=None) -> dict | None`: emits a STANDALONE script
+   (same `{"name", "code"}` shape every other `acceptance_check` emission uses) that spawns the
+   built CLI as ONE persistent, unbuffered (`python -u`) subprocess and drives it interactively
+   (write one command line, flush, read one response line via a background-thread-fed queue with a
+   per-line timeout so a hung/silent CLI fails promptly rather than hanging): `set` a short-TTL key
+   and a long-TTL key, confirm both present immediately, a REAL `time.sleep` just past the short
+   TTL, then confirm the short-TTL key now reads `none` while the long-TTL key is still present.
+   Uses `verbs.get("set"/"get", canonical)` so TASK-9's vocabulary-aware resolution still applies.
+   Never raises internally (an empty `entry` returns `None`); a divergence at runtime is an
+   `assert` in the emitted script naming the failing input line, mirroring the existing witness
+   style.
+3. In `acceptance_check`, immediately before the shared `_build_sequence` call, branch: when
+   `cls == "ttl-store"` and `_ttl_convention(spec) == "real"`, resolve `verbs = _resolve_verbs(cls,
+   spec)` and `return _ttl_store_real_seconds_check(entry, verbs=verbs)` instead of falling through
+   to the existing seeded/tick-based path. Every other class, and every ttl-store call whose
+   convention resolves to `"tick"` (including every pre-existing caller that passes no `spec` at
+   all), falls through to the EXISTING code completely unchanged — byte-identical.
+4. Add tests to `tests/test_ext056_adt_oracle.py`: (a) `_ttl_convention` returns `"real"` for the
+   actual `kv-store-ttl-cli` sentence (or an equivalent real-seconds spec) and `"tick"` for the
+   existing tick-worded ttl spec and for `None`/empty; (b) a correct, independently-authored
+   real-seconds ttl-store CLI fixture (real `time.time()`-based expiry, no `tick` command) PASSES
+   `acceptance_check("main.py", "ttl-store", spec=<real-seconds spec>)` when run the same way
+   `_run_emitted_check` drives every other emitted check; (c) a BUGGY real-seconds fixture (e.g.
+   never expires / ignores ttl) STILL FAILS it — the critical anti-false-done proof; (d) the
+   EXISTING tick-based tests (`_GOOD_TTL_CLI`/`_BUGGY_TTL_CLI`, `verify()`, and
+   `acceptance_check("main.py", "ttl-store")` with no `spec`) are re-asserted unchanged/still green,
+   proving byte-identical fallback; (e) a quick regression check that `acceptance_check` for `lru`,
+   `priority-queue`, `fifo`, and `ring-buffer` is untouched (same emitted `code` shape/behavior as
+   before this task).
+5. Run ONLY `python -m pytest tests/test_ext056_adt_oracle.py tests/test_ext056_acceptance_wiring.py
+   -q` (must stay green, no regressions — `test_ext056_acceptance_wiring.py`'s union-only
+   0-false-done wiring in `system_builder._minimum_acceptance`/`_compose_acceptance_checklist` is
+   unchanged by this task, since only `adt_oracle.py`'s ttl-store branch of `acceptance_check`
+   moves) and `python -c "import harness.adt_oracle, harness.system_builder, harness.system_suite"`.
+   Do NOT run the broader `test_ext036*`/`test_ext056*` sweep or any `-k` sweep (triggers a live
+   Jetson model-swap). Update `.jarify/EXT-056/index.json` for the extended range.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle

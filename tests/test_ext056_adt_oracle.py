@@ -1409,4 +1409,312 @@ def test_acceptance_check_falls_back_to_canonical_vocabulary_without_a_spec(tmp_
         "main.py", "priority-queue", spec="a priority queue with no declared verbs")
     assert no_spec_check["code"] == ambiguous_spec_check["code"]
     assert "push 2 item0" in no_spec_check["code"]
+
+
+# --- ttl-store CONVENTION-AWARE drive (TASK-10, REQ-1: MEASURED 2026-07-08 real-seconds vs -------
+# virtual-clock false-not-done) --------------------------------------------------------------------
+#
+# These spec fixtures are deliberately SYNONYM-NEUTRAL (never say "store"/"read"/"put"/"insert" as
+# ordinary prose) so they isolate the CONVENTION fix (TASK-10, this task) from TASK-9's SEPARATE,
+# PRE-EXISTING verb-synonym resolution (`_resolve_verbs`). A test below
+# (`test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec`) proves --
+# using the LITERAL, unmodified `kv-store-ttl-cli` sentence from `harness/system_suite.py` -- that
+# `_resolve_verbs` ALSO picks the wrong verb for that exact production spec (independent of, and
+# NOT introduced by, this task's fix; it even mis-resolves `lru`'s own verb against a spec that has
+# nothing to do with LRU). That is a genuine, separate Tenet-3-relevant gap, deliberately NOT
+# force-fixed here per the strict-scope instruction for this ACCEPTANCE-ORACLE task.
+_REAL_SECONDS_TTL_SPEC = (
+    "Write a single-file Python CLI program in a file named main.py, an in-memory ttl cache. "
+    "Running it as `python main.py` (no command-line arguments), it reads commands from "
+    "standard input, one per line, until end of input. Commands: `set <key> <value> "
+    "<ttl_seconds>` -> `ok`; `get <key>` -> the value or `none`. A key expires ttl_seconds "
+    "real seconds after it was set, using ordinary wall-clock time."
+)
+
+# A pure CONVENTION signal with NO command-name words at all (no "set"/"get"/"put"/etc.), so it
+# cannot perturb ANY class's `_resolve_verbs` output -- used ONLY by the cross-class proof below.
+_SIGNAL_ONLY_REAL_SECONDS_SPEC = (
+    "This build's ttl values are measured in real seconds, with no manual step advancement."
+)
+
+# A tick-worded spec that ALSO avoids any synonym collision (unlike this file's pre-existing
+# `_GOOD_TTL_CLI` tests, which never pass `spec=` to `acceptance_check` at all) -- used to prove
+# the tick convention still resolves correctly when a spec IS supplied.
+_TICK_TTL_SPEC = (
+    "Build a ttl cache with a virtual clock. A `set <key> <value> <ttl>` command returns `ok`. "
+    "A `get <key>` command returns the value or `none`. A `tick` command advances the clock by "
+    "one tick, and ttl values are expressed as tick counts, not real time."
+)
+
+# The LITERAL, unmodified `kv-store-ttl-cli` sentence (harness/system_suite.py) -- used only by
+# `test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec` below to prove
+# and document the SEPARATE, pre-existing `_resolve_verbs` gap on the real production text.
+_LITERAL_KV_STORE_TTL_CLI_SPEC = (
+    "Write a single-file Python CLI program in a file named main.py, an in-memory "
+    "key-value store with TTL (time-to-live) expiry. Running it as `python main.py` "
+    "(no command-line arguments), it reads commands from standard input, one command "
+    "per line, until standard input is exhausted (EOF); after processing each command "
+    "it immediately prints that command's output line, followed by a newline, to "
+    "standard output, in the SAME order the commands were read. Supported commands: "
+    "`set <key> <value> <ttl_seconds>` stores value under key with an integer TTL in "
+    "seconds and prints `ok` (a ttl of 0 means the key is treated as already expired "
+    "and is immediately unavailable to any later `get`); `get <key>` prints the stored "
+    "value if present and not expired, or prints `none` if the key is absent or "
+    "expired; `delete <key>` removes the key if present and prints `ok` (print `ok` "
+    "even if the key was already absent). The file must contain an `if __name__ == "
+    "\"__main__\":` block that runs this."
+)
+
+# A correct real-seconds ttl-store CLI, authored independently of the reference model: uses
+# `time.time()` real wall-clock expiry (NO virtual-clock `tick` command at all -- this CLI would
+# never even recognize a `tick` line, which is exactly why the pre-TASK-10 oracle false-rejected a
+# build like this one).
+_GOOD_TTL_REAL_CLI = '''\
+import sys
+import time
+
+
+class RealTtlStore:
+    def __init__(self):
+        self.data = {}
+
+    def set(self, key, value, ttl_seconds):
+        expiry = time.time() + float(ttl_seconds)
+        self.data[key] = (value, expiry)
+
+    def get(self, key):
+        if key not in self.data:
+            return None
+        value, expiry = self.data[key]
+        if time.time() < expiry:
+            return value
+        return None
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+def main():
+    store = RealTtlStore()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "set":
+            key, value, ttl = parts[1], parts[2], float(parts[3])
+            store.set(key, value, ttl)
+            print("ok")
+        elif cmd == "get":
+            key = parts[1]
+            value = store.get(key)
+            print("none" if value is None else value)
+        elif cmd == "delete":
+            key = parts[1]
+            store.delete(key)
+            print("ok")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The critical anti-false-done fixture: a real-seconds ttl-store that accepts and stores the ttl
+# argument but NEVER ENFORCES it -- every key lives forever. Authored independently, the same
+# dict-based strategy but with the expiry check simply omitted (a realistic bug class: the ttl
+# value is round-tripped through the CLI's usage/argument-count checks -- which is why the OLDER,
+# non-ADT acceptance checks in this codebase never caught it -- but never actually consulted at
+# `get` time).
+_BUGGY_TTL_REAL_NEVER_EXPIRES_CLI = '''\
+import sys
+import time
+
+
+class NeverExpiresTtlStore:
+    def __init__(self):
+        self.data = {}
+
+    def set(self, key, value, ttl_seconds):
+        # BUG: ttl_seconds is accepted (and even stored) but never actually enforced at `get`
+        # time -- every key silently lives forever.
+        self.data[key] = value
+
+    def get(self, key):
+        return self.data.get(key)
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+def main():
+    store = NeverExpiresTtlStore()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "set":
+            key, value, ttl = parts[1], parts[2], float(parts[3])
+            store.set(key, value, ttl)
+            print("ok")
+        elif cmd == "get":
+            key = parts[1]
+            value = store.get(key)
+            print("none" if value is None else value)
+        elif cmd == "delete":
+            key = parts[1]
+            store.delete(key)
+            print("ok")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def test_ttl_convention_detects_real_seconds_and_tick_from_visible_spec_text():
+    # a real-seconds-worded spec (no "tick" anywhere, explicit "seconds"/"ttl_seconds") must
+    # resolve to "real" -- proven both with the synonym-neutral test spec AND the LITERAL,
+    # unmodified kv-store-ttl-cli sentence this task's fix exists to un-false-reject.
+    assert adt_oracle._ttl_convention(_REAL_SECONDS_TTL_SPEC) == "real"
+    assert adt_oracle._ttl_convention(_LITERAL_KV_STORE_TTL_CLI_SPEC) == "real"
+
+    # the existing tick-worded spec (used by every pre-TASK-10 ttl-store test in this file) must
+    # keep resolving to "tick", including its plural "ticks" wording.
+    tick_spec = (
+        "Build a key-value store with time-to-live (TTL) semantics. set(key, value, ttl) stores "
+        "a value that will expire after ttl ticks have passed. get(key) returns the value if it "
+        "has not expired, else none."
+    )
+    assert adt_oracle._ttl_convention(tick_spec) == "tick"
+    assert adt_oracle._ttl_convention(_TICK_TTL_SPEC) == "tick"
+
+    # absent/empty/ambiguous specs are the SAFE default -- byte-identical to pre-TASK-10.
+    assert adt_oracle._ttl_convention(None) == "tick"
+    assert adt_oracle._ttl_convention("") == "tick"
+    assert adt_oracle._ttl_convention("a plain command-line notes app") == "tick"
+
+    # a spec that names BOTH "tick" and "seconds" stays on the safe, already-proven tick path.
+    assert adt_oracle._ttl_convention("advances by ticks measured in seconds") == "tick"
+
+
+def test_acceptance_check_passes_correct_real_seconds_ttl_fixture(tmp_path):
+    """HONESTY PROOF (1): a CORRECT real-seconds ttl-store CLI (previously false-rejected by the
+    unconditional virtual-clock `tick` drive) now PASSES the oracle when driven with a
+    real-seconds spec."""
+    root = _write_cli(tmp_path, _GOOD_TTL_REAL_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ttl-store", spec=_REAL_SECONDS_TTL_SPEC)
+    assert check is not None
+    assert "ttl-store" in check["name"] and "real-seconds" in check["name"]
+    assert "tick" not in check["code"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_fails_buggy_never_expires_real_seconds_ttl_fixture(tmp_path):
+    """HONESTY PROOF (2, the CRITICAL anti-false-done proof): a BUGGY real-seconds ttl-store that
+    never enforces its ttl (every key lives forever) STILL FAILS the oracle -- the fix never
+    passes a behaviorally-wrong build."""
+    root = _write_cli(tmp_path, _BUGGY_TTL_REAL_NEVER_EXPIRES_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ttl-store", spec=_REAL_SECONDS_TTL_SPEC)
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
+
+
+def test_acceptance_check_ttl_store_tick_convention_unchanged_by_real_seconds_fix(tmp_path):
+    """HONESTY PROOF (3): the pre-existing virtual-clock `tick` drive is COMPLETELY UNCHANGED --
+    proven both with NO spec (the pre-TASK-10 default every existing caller uses) and with an
+    explicit tick-worded spec: the correct tick fixture still passes and the buggy off-by-one
+    tick fixture still fails, exactly as before this task."""
+    good_root = _write_cli(tmp_path, _GOOD_TTL_CLI, name="good_tick_main.py")
+    buggy_root = _write_cli(tmp_path, _BUGGY_TTL_CLI, name="buggy_tick_main.py")
+
+    for spec in (None, _TICK_TTL_SPEC):
+        good_check = adt_oracle.acceptance_check("good_tick_main.py", "ttl-store", spec=spec)
+        assert good_check is not None
+        assert "real-seconds" not in good_check["name"]
+        assert _run_emitted_check(good_root, good_check) is True
+
+        buggy_check = adt_oracle.acceptance_check("buggy_tick_main.py", "ttl-store", spec=spec)
+        assert buggy_check is not None
+        assert _run_emitted_check(buggy_root, buggy_check) is False
+
+    # byte-identical to the pre-TASK-10 emission: omitting `spec` and passing the tick-worded
+    # spec produce the EXACT SAME emitted code (both resolve to the "tick" convention).
+    assert (adt_oracle.acceptance_check("good_tick_main.py", "ttl-store")
+            == adt_oracle.acceptance_check("good_tick_main.py", "ttl-store", spec=_TICK_TTL_SPEC))
+
+
+def test_verify_ttl_store_unaffected_by_real_seconds_fix(tmp_path):
+    """`verify()` never accepted a `spec` argument at all and is completely untouched by this
+    task -- the existing in-process virtual-clock differential drive still passes/fails exactly
+    as before."""
+    good_root = _write_cli(tmp_path, _GOOD_TTL_CLI, name="verify_good.py")
+    result = adt_oracle.verify(good_root, "verify_good.py", "ttl-store")
+    assert result.ok is True
+
+    buggy_root = _write_cli(tmp_path, _BUGGY_TTL_CLI, name="verify_buggy.py")
+    result = adt_oracle.verify(buggy_root, "verify_buggy.py", "ttl-store")
+    assert result.ok is False
+
+
+def test_acceptance_check_other_adt_classes_unaffected_by_ttl_convention_fix(tmp_path):
+    """HONESTY PROOF (4): the new convention branch is gated on `cls == "ttl-store"` -- every
+    OTHER ADT class's drive is untouched, proven by reusing each class's own existing
+    correct/buggy fixtures and confirming they still pass/fail exactly as before, even when
+    passed a spec that resolves ttl-store's OWN convention to "real" (proving the branch truly
+    can't leak into another class's drive). Uses the SIGNAL-ONLY spec (no command-name words)
+    so the proof isolates JUST this task's `cls == "ttl-store"` gate, not TASK-9's separate
+    verb-synonym resolution (see the `test_known_gap_...` test below for that orthogonal,
+    pre-existing quirk)."""
+    fixtures = {
+        "lru": (_GOOD_LRU_CLI, _BUGGY_LRU_CLI),
+        "priority-queue": (_GOOD_PQ_CLI, _BUGGY_PQ_CLI),
+        "fifo": (_GOOD_FIFO_CLI, _BUGGY_FIFO_CLI),
+        "ring-buffer": (_GOOD_RING_CLI, _BUGGY_RING_CLI),
+    }
+    assert adt_oracle._ttl_convention(_SIGNAL_ONLY_REAL_SECONDS_SPEC) == "real"
+    for cls, (good_src, buggy_src) in fixtures.items():
+        slug = cls.replace("-", "_")
+        good_name, buggy_name = f"good_{slug}.py", f"buggy_{slug}.py"
+        good_root = _write_cli(tmp_path, good_src, name=good_name)
+        buggy_root = _write_cli(tmp_path, buggy_src, name=buggy_name)
+
+        # the emitted code is BYTE-IDENTICAL whether or not this "resolves to real for
+        # ttl-store" spec is supplied -- direct proof the new branch never fires for this class.
+        without_spec = adt_oracle.acceptance_check(good_name, cls)
+        with_spec = adt_oracle.acceptance_check(
+            good_name, cls, spec=_SIGNAL_ONLY_REAL_SECONDS_SPEC)
+        assert without_spec is not None and with_spec is not None, cls
+        assert without_spec == with_spec, cls
+
+        good_check = adt_oracle.acceptance_check(
+            good_name, cls, spec=_SIGNAL_ONLY_REAL_SECONDS_SPEC)
+        assert _run_emitted_check(good_root, good_check) is True, cls
+
+        buggy_check = adt_oracle.acceptance_check(
+            buggy_name, cls, spec=_SIGNAL_ONLY_REAL_SECONDS_SPEC)
+        assert _run_emitted_check(buggy_root, buggy_check) is False, cls
+
+
+def test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec():
+    """KNOWN OPEN GAP (discovered, NOT introduced, by this task -- documented rather than fixed,
+    to stay strictly within this task's scope): `_resolve_verbs` (TASK-9) picks the FIRST
+    synonym it finds ANYWHERE in the spec text for each canonical verb, without checking whether
+    the canonical word is ALSO literally present -- so the LITERAL, unmodified
+    `kv-store-ttl-cli` sentence (which explicitly names `set`/`get` as its own command verbs)
+    still resolves to `store`/`read`, because the surrounding PROSE ("key-value store", "reads
+    commands") incidentally contains those words too. This is a SEPARATE, pre-existing
+    vocabulary-priority issue -- it also mis-resolves OTHER classes (e.g. `lru`'s `put` resolves
+    to `set` against this exact spec, even though the spec has nothing to do with LRU) -- so it
+    predates and is independent of this task's tick-vs-real convention fix (proven above with a
+    synonym-neutral real-seconds spec, which correctly resolves to canonical `set`/`get`). This
+    test PINS the current, known behavior as a regression marker for a future follow-up task; it
+    is not this task's job to change `_resolve_verbs`'s matching priority."""
+    assert adt_oracle._ttl_convention(_LITERAL_KV_STORE_TTL_CLI_SPEC) == "real"
+    ttl_verbs = adt_oracle._resolve_verbs("ttl-store", _LITERAL_KV_STORE_TTL_CLI_SPEC)
+    assert ttl_verbs["set"] == "store" and ttl_verbs["get"] == "read"
+    lru_verbs = adt_oracle._resolve_verbs("lru", _LITERAL_KV_STORE_TTL_CLI_SPEC)
+    assert lru_verbs["put"] == "set"
 # #EXT-056-REQ-1 End

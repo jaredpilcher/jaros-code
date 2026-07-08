@@ -109,3 +109,37 @@ harness.
       Tenet-3 false-not-done class (an oracle-assumed CLI invocation convention that is not the only
       legitimate one this codebase's own builds use) — tracked as a follow-up requirement, NOT forced
       green here per explicit instruction to stop rather than paper over a different-cause failure.
+- [x] TASK-10 (REQ-1, MEASURED 2026-07-08): the `ttl-store` branch of `acceptance_check` was
+      unconditionally driving a virtual-clock `tick` convention (TASK-5), but the `kv-store-ttl-cli`
+      spec (`harness/system_suite.py`) is REAL-SECONDS TTL (`set <key> <value> <ttl_seconds>`, no
+      `tick` command at all) — so even a CORRECT real-seconds ttl-store CLI was false-rejected
+      (`done=False`). Fix: `_ttl_convention(spec)` reads ONLY the visible spec text to tell a
+      `tick`-worded spec from a `second`/`seconds`/`ttl_seconds`-worded one, defaulting to `"tick"`
+      (byte-identical to before) for an absent/empty/ambiguous spec. Only when the convention
+      resolves to `"real"` does `acceptance_check` route to a NEW, separate drive
+      (`_ttl_store_real_seconds_check`) that spawns the built CLI as one persistent, unbuffered
+      subprocess and probes REAL wall-clock expiry (a short-real-ttl key expires after an actual
+      `time.sleep` just past it; a long-real-ttl key set at the same time does not) — the
+      pre-existing virtual-clock `tick` drive, and every other ADT class, are unchanged. Proven with
+      offline fixtures: a correct real-seconds ttl-store CLI now PASSES
+      (`test_acceptance_check_passes_correct_real_seconds_ttl_fixture`); a buggy real-seconds
+      ttl-store that never enforces its ttl STILL FAILS
+      (`test_acceptance_check_fails_buggy_never_expires_real_seconds_ttl_fixture` — the critical
+      anti-false-done proof); the tick convention (`verify()` and `acceptance_check` with no spec or
+      a tick-worded spec) is byte-identical to before
+      (`test_acceptance_check_ttl_store_tick_convention_unchanged_by_real_seconds_fix`,
+      `test_verify_ttl_store_unaffected_by_real_seconds_fix`); and the other 4 ADT classes are
+      untouched (`test_acceptance_check_other_adt_classes_unaffected_by_ttl_convention_fix`).
+      **KNOWN OPEN GAP, MEASURED same session (discovered, not introduced, by this task):**
+      `_resolve_verbs` (TASK-9) picks the first synonym found ANYWHERE in the spec text for each
+      canonical verb without checking whether the canonical word is ALSO literally present, so the
+      LITERAL, unmodified `kv-store-ttl-cli` sentence (which explicitly names `set`/`get`) still
+      resolves to `store`/`read` because the surrounding prose ("key-value store", "reads commands")
+      incidentally contains those words too — a SEPARATE, pre-existing vocabulary-priority issue
+      that also mis-resolves OTHER classes (e.g. `lru`'s `put`→`set` against this same spec) and is
+      independent of this task's convention fix (proven clean in isolation with a synonym-neutral
+      real-seconds spec). Documented, not fixed, per the strict-scope instruction for this
+      ACCEPTANCE-ORACLE task — see
+      `test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec`. Tracked as
+      a follow-up requirement (give the canonical word priority when it is itself present in the
+      spec, before falling back to a synonym).

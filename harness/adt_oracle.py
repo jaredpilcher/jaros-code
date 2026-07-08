@@ -106,6 +106,22 @@ LRU/ring-buffer's ``<capacity>`` argv, since a plain FIFO queue is unbounded): i
 ``dequeue`` -> the oldest item (FIFO order), removing it, or ``none`` on empty; ``peek`` -> the same
 oldest item WITHOUT removing it, or ``none`` on empty. The LRU/priority-queue/ttl-store/ring-buffer
 reference/drive paths are completely unchanged by this addition.
+
+**TASK-10 additions (this same module, MEASURED 2026-07-08 Tenet-3 false-not-done):** the
+``ttl-store`` branch of ``acceptance_check`` is now CONVENTION-AWARE. TASK-5's virtual-clock
+``tick`` drive was unconditionally applied to every ``ttl-store`` build, but the
+``kv-store-ttl-cli`` spec in ``harness/system_suite.py`` is REAL-SECONDS TTL
+(``set <key> <value> <ttl_seconds>``, no ``tick`` command at all) -- so a CORRECT real-seconds
+ttl-store CLI was driven with a command it doesn't recognize and false-rejected
+(``done=False`` on a genuinely correct build). ``_ttl_convention(spec)`` reads ONLY the visible
+spec text (never a hidden test -- Tenet 3, no leak) to tell a ``tick``-worded spec from a
+``second``/``seconds``/``ttl_seconds``-worded one, defaulting to ``"tick"`` (byte-identical to
+before) for an absent/empty/ambiguous spec. Only when the convention resolves to ``"real"`` does
+``acceptance_check`` route to the new ``_ttl_store_real_seconds_check`` -- a SEPARATE drive that
+spawns the built CLI as one persistent, unbuffered subprocess and probes REAL wall-clock expiry
+(a short-real-ttl key expires after an actual ``time.sleep`` just past it; a long-real-ttl key set
+at the same time does not). The pre-existing virtual-clock ``tick`` drive, and every other ADT
+class, are completely unchanged.
 """
 
 from __future__ import annotations
@@ -1060,6 +1076,142 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         return _inconclusive(f"verify failed unexpectedly: {exc}")
 
 
+# --- ttl-store CONVENTION detection + real-seconds drive (TASK-10, REQ-1: MEASURED 2026-07-08 ----
+# Tenet-3 false-not-done) --------------------------------------------------------------------------
+#
+# BUG (measured): `acceptance_check`'s `ttl-store` branch unconditionally drove the VIRTUAL-CLOCK
+# `tick` convention (TASK-5), but the `kv-store-ttl-cli` spec in `harness/system_suite.py` is
+# REAL-SECONDS TTL (`set <key> <value> <ttl_seconds>`, no `tick` command at all) -- so even a
+# CORRECT real-seconds ttl-store CLI was driven with a `tick` command it doesn't recognize, and the
+# oracle false-rejected it (`done=False` on a genuinely correct build). Fix: `_ttl_convention` reads
+# ONLY the VISIBLE spec text (never a hidden test -- Tenet 3, no leak) to tell which convention a
+# ttl-store build declares, and `acceptance_check` routes to a SEPARATE real-wall-clock drive
+# (`_ttl_store_real_seconds_check`) only for that convention. SAFETY: when the spec is
+# absent/empty/ambiguous (names neither "tick" nor "second(s)"/"ttl_seconds"), the convention
+# resolves to `"tick"` -- byte-identical to the pre-TASK-10 behavior -- so this can only ever ADD
+# correct recognition of the real-seconds convention, never change behavior for a spec that doesn't
+# declare one. Every OTHER ADT class (`lru`, `priority-queue`, `fifo`, `ring-buffer`) never reaches
+# this branch at all and is completely untouched.
+
+_TTL_TICK_RE = re.compile(r"\btick(?:s|ing)?\b", re.IGNORECASE)
+_TTL_SECONDS_RE = re.compile(r"\bsecond(?:s)?\b|ttl_seconds", re.IGNORECASE)
+
+# Real-seconds drive constants: a SMALL real ttl + a real sleep just past it, so the probe stays
+# deterministic-enough while keeping the added wall-time small (~1.5s total, per the honesty-review
+# instruction to keep this minimal). `_TTL_REAL_LONG_TTL_S` is far enough past the sleep that a
+# correct build's long-lived key is never at risk of a false expiry from timing jitter alone.
+_TTL_REAL_SHORT_TTL_S = 1
+_TTL_REAL_LONG_TTL_S = 10
+_TTL_REAL_SLEEP_S = 1.5
+_TTL_REAL_READ_TIMEOUT_S = 20   # per-response-line read guard -- a hung/silent CLI fails PROMPTLY,
+                                # never by falling through to the outer 120s acceptance-cmd timeout
+
+
+def _ttl_convention(spec: "str | None") -> str:
+    """Detects which ttl-store CONVENTION ``spec`` (the VISIBLE build spec text) declares (TASK-10,
+    REQ-1): ``"tick"`` when the spec names an explicit virtual-clock ``tick``/``ticks``/``ticking``
+    command (the pre-existing, already-proven TASK-5 convention), or ``"real"`` when the spec names
+    ``second``/``seconds``/``ttl_seconds`` wording AND no ``tick`` wording (e.g. the
+    ``kv-store-ttl-cli`` spec's "an integer TTL in seconds" / "``ttl_seconds``" phrasing). A
+    ``tick`` hit always wins over a ``seconds`` hit (checked first) so a spec that happens to
+    mention both stays on the safe, already-proven virtual-clock path. An absent, empty, or fully
+    AMBIGUOUS spec (names neither) also resolves to ``"tick"`` -- the pre-existing default -- so
+    every caller that doesn't pass a real-seconds-worded spec (including every pre-TASK-10 caller)
+    is completely unaffected. Never raises -- any internal error also resolves to the safe
+    ``"tick"`` default."""
+    try:
+        text = spec or ""
+        if not text:
+            return "tick"
+        if _TTL_TICK_RE.search(text):
+            return "tick"
+        if _TTL_SECONDS_RE.search(text):
+            return "real"
+        return "tick"
+    except Exception:
+        return "tick"
+
+
+def _ttl_store_real_seconds_check(entry: "str",
+                                   *, verbs: "dict[str, str] | None" = None) -> "dict | None":
+    """Emits the REAL-SECONDS ttl-store acceptance check (TASK-10, REQ-1): unlike every other
+    emitted check in this module (a single batch ``subprocess.run`` that feeds the ENTIRE seeded op
+    sequence as one stdin blob), this drives the built CLI as ONE persistent, line-unbuffered
+    (``python -u``) subprocess and probes it INTERACTIVELY -- write one command, flush, read one
+    response line -- with an ACTUAL ``time.sleep`` inserted between the pre-expiry and post-expiry
+    probes, because the real-seconds convention has no virtual-clock ``tick`` command a batch drive
+    could use to advance time instead. Probes exactly what the visible spec promises: a ``set``
+    with a SHORT real ttl is present immediately after ``set`` and reads as expired (``none``) once
+    real time has been carried past that ttl by the sleep, while a SECOND key set with a much
+    LONGER ttl stays present across the SAME sleep -- proving the check isn't merely "everything
+    now expires" (a never-expire, always-expire, or off-by-one-boundary bug is still caught either
+    way). Reads (per-line, via a background thread + a bounded-timeout queue) so a hung/silent CLI
+    fails PROMPTLY rather than hanging the whole check. ``verbs`` (optional) is the
+    ``{canonical_verb: chosen_word}`` mapping from :func:`_resolve_verbs` -- when omitted, the
+    canonical ``set``/``get`` words are used (TASK-9's vocabulary-aware resolution still applies to
+    this drive). Returns ``None`` when ``entry`` is empty. Never raises."""
+    try:
+        entry_name = str(entry) if entry else ""
+        if not entry_name:
+            return None
+        verbs = verbs or {}
+        set_word = verbs.get("set", "set")
+        get_word = verbs.get("get", "get")
+        code = (
+            "import subprocess, sys, time, threading, queue\n\n"
+            f"entry = {entry_name!r}\n"
+            f"set_word = {set_word!r}\n"
+            f"get_word = {get_word!r}\n"
+            f"short_ttl = {_TTL_REAL_SHORT_TTL_S!r}\n"
+            f"long_ttl = {_TTL_REAL_LONG_TTL_S!r}\n"
+            f"sleep_s = {_TTL_REAL_SLEEP_S!r}\n"
+            f"read_timeout_s = {_TTL_REAL_READ_TIMEOUT_S!r}\n\n"
+            "proc = subprocess.Popen([sys.executable, '-u', entry], stdin=subprocess.PIPE,\n"
+            "                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,\n"
+            "                        text=True, bufsize=1)\n"
+            "outq = queue.Queue()\n\n"
+            "def _pump():\n"
+            "    for line in proc.stdout:\n"
+            "        outq.put(line)\n\n"
+            "threading.Thread(target=_pump, daemon=True).start()\n\n"
+            "def _send(cmd):\n"
+            "    proc.stdin.write(cmd + '\\n')\n"
+            "    proc.stdin.flush()\n"
+            "    try:\n"
+            "        line = outq.get(timeout=read_timeout_s)\n"
+            "    except queue.Empty:\n"
+            "        line = ''\n"
+            "    return line.rstrip('\\n')\n\n"
+            "def _check(i, cmd, exp):\n"
+            "    act = _send(cmd)\n"
+            "    assert act == exp, ('ADT ttl-store (real-seconds) divergence at op[%d] on input "
+            "%r: expected %r, got %r' % (i, cmd, exp, act))\n\n"
+            "try:\n"
+            "    _check(0, '%s rs-short v-short %d' % (set_word, short_ttl), 'ok')\n"
+            "    _check(1, '%s rs-long v-long %d' % (set_word, long_ttl), 'ok')\n"
+            "    _check(2, '%s rs-short' % get_word, 'v-short')\n"
+            "    _check(3, '%s rs-long' % get_word, 'v-long')\n"
+            "    time.sleep(sleep_s)\n"
+            "    _check(4, '%s rs-short' % get_word, 'none')\n"
+            "    _check(5, '%s rs-long' % get_word, 'v-long')\n"
+            "finally:\n"
+            "    try:\n"
+            "        proc.stdin.close()\n"
+            "    except Exception:\n"
+            "        pass\n"
+            "    try:\n"
+            "        proc.wait(timeout=5)\n"
+            "    except Exception:\n"
+            "        proc.kill()\n"
+        )
+        return {
+            "name": "minimum: ttl-store differential-oracle (real-seconds expiry probe)",
+            "code": code,
+        }
+    except Exception:
+        return None
+
+
 # --- STAGE 5: acceptance-checklist emission (TASK-2) -------------------------------------------
 
 def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
@@ -1090,11 +1242,26 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     given, :func:`_resolve_verbs` picks the synonym of each canonical driving verb the spec
     actually declares (e.g. ``enqueue``/``dequeue`` instead of ``push``/``pop``) and those words are
     baked into the emitted drive script instead of the hard-coded canonical ones. When ``spec`` is
-    omitted/empty/names no synonym, the canonical vocabulary is used -- byte-identical to before."""
+    omitted/empty/names no synonym, the canonical vocabulary is used -- byte-identical to before.
+    TASK-10 (REQ-1, MEASURED 2026-07-08 real-seconds-vs-tick false-not-done): for ``cls ==
+    "ttl-store"``, ``spec`` is ALSO consulted by :func:`_ttl_convention` to tell the pre-existing
+    virtual-clock ``tick`` convention from a REAL-SECONDS convention (no ``tick`` command at all --
+    e.g. the ``kv-store-ttl-cli`` spec's ``ttl_seconds`` wording); only when the convention resolves
+    to ``"real"`` does this function return :func:`_ttl_store_real_seconds_check`'s emission
+    instead of the batch seeded-sequence drive below. An absent/tick-worded/ambiguous ``spec``
+    (every pre-TASK-10 caller) is unaffected -- the code below is untouched."""
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
             return None
         verbs = _resolve_verbs(cls, spec)
+        # TASK-10 (REQ-1, MEASURED 2026-07-08): ttl-store is CONVENTION-AWARE -- a real-seconds
+        # spec (no `tick` command, e.g. `kv-store-ttl-cli`'s "ttl_seconds" wording) routes to a
+        # SEPARATE real-wall-clock drive instead of the virtual-clock `tick` sequence below, which
+        # that convention has no equivalent for and would always false-reject (the MEASURED
+        # false-not-done this closes). Every other class, and every ttl-store call whose spec is
+        # absent/tick-worded/ambiguous, falls straight through to the EXISTING code UNCHANGED.
+        if cls == "ttl-store" and _ttl_convention(spec) == "real":
+            return _ttl_store_real_seconds_check(entry, verbs=verbs)
         cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity, verbs=verbs)
         if not cmd_lines:
             return None
