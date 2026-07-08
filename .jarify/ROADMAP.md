@@ -83,10 +83,15 @@ per-class pass/fail table is the metric (not one blended number).
   RELIABLY GREEN: verified leaf (e536971) + leaf-as-differential-oracle (7082191) that fires the leaf even
   when build_system false-dones the broken free-form build. Honest arc: 0/3 free-form → 1/3 (leaf alone,
   blocked by the false-done) → **3/3 on-hardware, all 3 samples adopt the leaf**, no leak. high · e536971+7082191
-- **[json-path + sqlite weak classes — NEXT, needs diagnosis]** json-path 0/3 (repair-loop slow/timeouts),
-  sqlite 1/3 (unreliable). Diagnose root cause on a free Jetson (probe tooling ready) → pick leaf vs latency
-  vs reliability lever. Do NOT assume a leaf before diagnosis (the mini-SQL first-guess "needs a leaf" was
-  wrong until the 0-files/crash/parse chain was traced). med
+- **[EXT-058 · green json-path — ✅ DONE, on-Jetson 3/3]** json-path-query (parse stdin JSON, resolve a
+  dotted path) was 0/3 (gemma writes a crashing resolver). Greened via a verified json-path leaf (cc4c2d4)
+  + a usage-probe hardening fix (ce07ab1 — the leaf crashed on no-args, failing build_system's usage check
+  so leaf-repair rolled it back; caught by on-hardware measurement, not the isolated test). On-Jetson 3/3,
+  all samples adopt the leaf, no leak. high · cc4c2d4+ce07ab1
+- **[sqlite-persistent-kv — NEXT, the last weak create class]** currently 1/3 (capable but unreliable — gemma
+  CAN build a working cross-process SQLite store but not every time; some timeouts). Different from mini-SQL/
+  json-path (which were 0/3). Diagnose whether the misses are false-done/timeout/wrong → pick lever (a verified
+  leaf would make it reliable, but confirm it's warranted first). med
 - **[modify suite — measuring; ratchet if it saturates]** modify tracking ~100% through the easy/medium/hard
   single-file tier; if the multifile tier also passes, ratchet the modify suite with harder classes (mirror
   the create ratchet). med
@@ -494,6 +499,10 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: json-path creation class GREENED 0/3→3/3 — EXT-058 (cc4c2d4 + ce07ab1, 2026-07-08)]** a
+  stdin-JSON dotted-path query tool gemma can't build (writes a crashing resolver). Greened via a verified
+  json-path leaf + a usage-probe hardening fix (the leaf crashed on no-args, so build_system's usage check
+  rolled it back — caught on-hardware, not by the isolated test). On-Jetson 3/3, all adopt the leaf, no leak.
 - **[★ CAPABILITY: mini-SQL creation class GREENED 0/3→3/3 — EXT-058 (e536971 + 7082191, 2026-07-08)]** a
   hand-rolled stdin SQL query engine, built-from-a-sentence, that gemma genuinely can't do (0/3 free-form,
   both single- AND multi-module). Greened via a verified mini-SQL LEAF plus a **leaf-as-differential-oracle**:
