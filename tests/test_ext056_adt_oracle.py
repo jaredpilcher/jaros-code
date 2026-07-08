@@ -8,6 +8,8 @@ actually catches the classic `_move_to_head` pointer bug with a localized first-
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 from harness import adt_oracle
@@ -152,11 +154,157 @@ if __name__ == "__main__":
 '''
 
 
+# A correct heapq-based priority-queue CLI, authored independently of the reference model in
+# `harness/adt_oracle.py` (TASK-4): push/pop/peek with a monotonic insertion counter for stable
+# tie-break ordering, driven with NO extra argv (the priority-queue CLI convention -- unlike LRU's
+# `<capacity>` argv).
+_GOOD_PQ_CLI = '''\
+import heapq
+import sys
+
+
+class PriorityQueue:
+    def __init__(self):
+        self.heap = []
+        self.counter = 0
+
+    def push(self, priority, item):
+        heapq.heappush(self.heap, (priority, self.counter, item))
+        self.counter += 1
+
+    def pop(self):
+        if not self.heap:
+            return None
+        _, _, item = heapq.heappop(self.heap)
+        return item
+
+    def peek(self):
+        if not self.heap:
+            return None
+        _, _, item = self.heap[0]
+        return item
+
+
+def main():
+    pq = PriorityQueue()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "push":
+            priority, item = int(parts[1]), parts[2]
+            pq.push(priority, item)
+            print("ok")
+        elif cmd == "pop":
+            value = pq.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = pq.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The classic tie-break bug: among EQUAL priorities, this stub prefers the MOST-recently-pushed
+# item (LIFO-among-ties) instead of the correct stable FIFO-among-ties ordering. Authored
+# independently of the reference model (a different implementation strategy -- a flat list scanned
+# on every pop/peek, not a heap), matching this task's acceptance criterion for a held-out-style
+# differential check.
+_BUGGY_PQ_CLI = '''\
+import sys
+
+
+class BuggyPriorityQueue:
+    def __init__(self):
+        self.items = []  # list of (priority, insertion_index, item)
+        self.counter = 0
+
+    def push(self, priority, item):
+        self.items.append((priority, self.counter, item))
+        self.counter += 1
+
+    def _select_index(self):
+        # BUG: ties are broken by the LARGEST insertion index (most-recently-pushed wins)
+        # instead of the smallest (stable FIFO-among-ties) -- silently inverts tie-break order.
+        best_idx = None
+        for i, (priority, counter, _item) in enumerate(self.items):
+            if best_idx is None:
+                best_idx = i
+                continue
+            b_priority, b_counter, _b_item = self.items[best_idx]
+            if priority < b_priority or (priority == b_priority and counter > b_counter):
+                best_idx = i
+        return best_idx
+
+    def pop(self):
+        if not self.items:
+            return None
+        idx = self._select_index()
+        _, _, item = self.items.pop(idx)
+        return item
+
+    def peek(self):
+        if not self.items:
+            return None
+        idx = self._select_index()
+        return self.items[idx][2]
+
+
+def main():
+    pq = BuggyPriorityQueue()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "push":
+            priority, item = int(parts[1]), parts[2]
+            pq.push(priority, item)
+            print("ok")
+        elif cmd == "pop":
+            value = pq.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = pq.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
 def _write_cli(tmp_path: Path, source: str, name: str = "main.py") -> Path:
     root = tmp_path / name.replace(".py", "_root")
     root.mkdir(parents=True, exist_ok=True)
     (root / name).write_text(source, encoding="utf-8")
     return root
+
+
+def _run_emitted_check(root: Path, check: dict) -> bool:
+    """Runs an :func:`adt_oracle.acceptance_check` emission the SAME way
+    ``system_builder._run_check`` drives it in production: write ``check["code"]`` to a standalone
+    script inside ``root`` and execute it as its OWN subprocess (no import of this harness module
+    is available there, proving the emitted script is truly self-contained). Returns True iff the
+    subprocess exits 0 (the script's own ``assert`` on the first divergence is what fails it)."""
+    script = root / "_test_acceptance_check.py"
+    script.write_text(check["code"], encoding="utf-8", newline="\n")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)], cwd=str(root),
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0
+    finally:
+        try:
+            script.unlink()
+        except OSError:
+            pass
 
 
 # --- (a) classify -------------------------------------------------------------------------------
@@ -201,9 +349,11 @@ def test_seeded_ops_differs_across_different_seeds():
 
 
 def test_seeded_ops_empty_for_unimplemented_class():
-    # priority-queue etc. are classified but TASK-1 only builds the lru reference model; an
-    # unimplemented class must yield an empty (never fabricated) sequence.
-    assert adt_oracle._seeded_ops("priority-queue", 1234, 24) == []
+    # ttl-store/fifo/ring-buffer are classified but this module has not yet built their reference
+    # models; an unimplemented class must yield an empty (never fabricated) sequence.
+    # (priority-queue became a SECOND implemented class in TASK-4 -- see the
+    # "priority-queue (TASK-4)" section further down in this same file for its coverage.)
+    assert adt_oracle._seeded_ops("ttl-store", 1234, 24) == []
 
 
 # --- (c)/(d) verify: differential drive + first-divergence ---------------------------------------
@@ -269,4 +419,114 @@ def test_verify_inconclusive_for_crashing_cli_never_raises(tmp_path):
     # the built CLI) -- either way, verify must not raise and must return a well-formed AdtResult.
     assert isinstance(result, adt_oracle.AdtResult)
     assert result.ok in (True, False)
+
+
+# --- priority-queue (TASK-4): classify, reference ordering, verify PASS/FAIL --------------------
+
+def test_classify_returns_priority_queue_for_pq_shaped_spec_and_mods():
+    spec = (
+        "Build a priority queue backed by a min-heap. push(priority, item) inserts an item at "
+        "the given priority. pop() removes and returns the item with the highest priority "
+        "(the numerically smallest priority value wins); peek() returns the same item without "
+        "removing it."
+    )
+    mods = ["push", "pop", "peek", "priority"]
+    assert adt_oracle.classify(spec, mods) == "priority-queue"
+    assert adt_oracle.classify_confident(spec, mods) == "priority-queue"
+
+
+def test_classify_does_not_return_priority_queue_for_non_pq_spec():
+    spec = (
+        "Write a simple command-line notes app that lets a user add, list, and delete text notes."
+    )
+    mods = ["add", "list", "delete", "main"]
+    assert adt_oracle.classify(spec, mods) != "priority-queue"
+    assert adt_oracle.classify_confident(spec, mods) != "priority-queue"
+
+
+def test_classify_confident_does_not_return_priority_queue_on_method_token_overlap_alone():
+    # a plain task queue that only ever says "push"/"pop"/"peek" (no "priority queue"/"min-heap"/
+    # "max-heap" wording) must NOT be classified -- the conservative gate requires the spec text
+    # itself to name the ADT, never method-token coincidence alone.
+    spec = "Build a simple stack CLI: push(item) and pop() and peek() on top of a list."
+    mods = ["push", "pop", "peek"]
+    assert adt_oracle.classify_confident(spec, mods) is None
+
+
+def test_pq_seeded_ops_deterministic_across_same_seed():
+    # unlike `lru` (whose sequence length is exactly `n`), the pq sequence guarantees the
+    # mandatory drain-to-empty + trailing pop/peek boundary probes (see `_pq_seeded_ops`'s
+    # docstring), so its length can exceed `n` -- what must hold is BYTE-IDENTICAL determinism
+    # across two calls with the same seed, not an exact length.
+    first = adt_oracle._seeded_ops("priority-queue", 1234, 24)
+    second = adt_oracle._seeded_ops("priority-queue", 1234, 24)
+    assert first == second
+    assert len(first) >= 24
+
+
+def test_priority_queue_reference_pops_priority_then_insertion_order_including_ties():
+    ref = adt_oracle._priority_queue_reference()
+    ref.push(5, "low-priority-first-in")
+    ref.push(1, "high-priority-a")
+    ref.push(1, "high-priority-b")  # tie with the item above -- must come out AFTER it (FIFO)
+    ref.push(3, "mid-priority")
+
+    assert ref.peek() == "high-priority-a"
+    assert ref.pop() == "high-priority-a"
+    assert ref.peek() == "high-priority-b"
+    assert ref.pop() == "high-priority-b"
+    assert ref.pop() == "mid-priority"
+    assert ref.pop() == "low-priority-first-in"
+    assert ref.pop() is None
+    assert ref.peek() is None
+
+
+def test_verify_passes_correct_heapq_pq_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_PQ_CLI)
+    result = adt_oracle.verify(root, "main.py", "priority-queue")
+    assert result.applicable is True
+    assert result.cls == "priority-queue"
+    assert result.ok is True
+    assert result.first_divergence is None
+
+
+def test_verify_fails_buggy_tie_break_pq_fixture_with_localized_divergence(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_PQ_CLI)
+    result = adt_oracle.verify(root, "main.py", "priority-queue")
+    assert result.applicable is True
+    assert result.cls == "priority-queue"
+    assert result.ok is False
+    assert result.first_divergence is not None
+    divergence = result.first_divergence
+    assert set(divergence.keys()) == {"index", "op", "args", "expected", "actual"}
+    assert isinstance(divergence["index"], int) and divergence["index"] >= 0
+    # the deliberate tie-break stress block (three same-priority pushes then an immediate peek)
+    # is always the FIRST thing `_pq_seeded_ops` generates, so a broken tie-break must surface
+    # right there -- the diverging op is that peek, not some later random-mixing op.
+    assert divergence["op"] == "peek"
+    assert divergence["expected"] != divergence["actual"]
+
+
+def test_verify_never_raises_on_missing_root_or_entry_for_priority_queue(tmp_path):
+    missing_root = tmp_path / "does-not-exist-pq"
+    result = adt_oracle.verify(missing_root, "main.py", "priority-queue")
+    assert result.applicable is False
+    assert result.ok is True
+
+
+# --- priority-queue acceptance_check: same emitted-script drive, no import of this module ------
+
+def test_acceptance_check_code_passes_against_correct_pq_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_PQ_CLI)
+    check = adt_oracle.acceptance_check("main.py", "priority-queue")
+    assert check is not None
+    assert "priority-queue" in check["name"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_code_fails_against_buggy_pq_fixture(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_PQ_CLI)
+    check = adt_oracle.acceptance_check("main.py", "priority-queue")
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
 # #EXT-056-REQ-1 End

@@ -97,3 +97,31 @@ false-not-done on a non-eviction key-value store that merely has get/put command
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-4] Priority-queue reference model — extend the ADT oracle to a 2nd ADT (unblock held-out proof)
+
+Add the `priority-queue` reference model + seeded ops to `harness/adt_oracle.py`, mirroring the LRU
+implementation, so the oracle checks a 2nd ADT and REQ-1's held-out validation can develop on
+`{lru, priority-queue}` and HOLD OUT `{ttl-store, ring-buffer}`. Single-file, off-Jetson.
+
+#### Steps
+1. In `harness/adt_oracle.py` (inside the existing `# #EXT-056-REQ-1` region), add `priority-queue` to
+   `_IMPLEMENTED_CLASSES` and implement `_priority_queue_reference(...)` using `heapq` + an insertion
+   counter for stable tie-break ordering (a textbook min-heap PQ, authored ONLY from the visible PQ
+   contract — push/pop-min/peek — never from a hidden test; Tenet 3, no leak).
+2. Extend `_build_sequence`/`_seeded_ops` to generate a boundary-stressing PQ op sequence (pushes with
+   varied priorities incl. ties, pops, peeks, empty-pop) under the fixed-PRNG seed (byte-replayable).
+3. Extend `acceptance_check`/`verify` to drive the PQ CLI convention (mirror the LRU stdin/line
+   protocol; pick the convention already used by any PQ task in `system_suite.py` if present, else the
+   natural `push <priority> <item>` / `pop` / `peek` line protocol) and compare lockstep to the
+   reference, reporting first-divergence. `verify` still NEVER raises; non-PQ builds unaffected.
+4. Add tests to `tests/test_ext056_adt_oracle.py` (or a new `tests/test_ext056_priority_queue.py`):
+   classify returns `"priority-queue"` for a PQ-shaped spec; `_priority_queue_reference` pops in
+   priority-then-insertion order (incl. ties); `verify` PASSES a correct heapq PQ fixture and FAILS a
+   fixture with a tie-break/ordering bug, naming the first divergence.
+5. Run ONLY the focused adt-oracle test files via `timeout 240 python -m pytest tests/test_ext056_adt_oracle.py -q`
+   (+ the new PQ test file if separate), then `python -c "import harness.adt_oracle, harness.system_builder"`.
+   Do NOT run the full suite. Update `.jarify/EXT-056/index.json` for the extended REQ-1 range.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle

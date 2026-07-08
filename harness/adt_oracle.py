@@ -46,12 +46,26 @@ values into a standalone script for ``harness.system_builder``'s deterministic a
 (composed by UNION -- see ``_minimum_acceptance`` / ``_compose_acceptance_checklist`` -- so it can
 only ever ADD a way to fail, never manufacture a false pass).
 
+**TASK-4 additions (this same module):** a second reference model, ``_priority_queue_reference``
+(``heapq`` + a monotonic insertion counter for stable tie-break), plus a ``priority-queue``-specific
+seeded-op generator wired into the existing ``_seeded_ops`` / ``_build_sequence`` dispatch and the
+existing ``verify`` / ``acceptance_check`` drive paths -- so the oracle now checks a SECOND ADT
+class (unblocking held-out validation on ``{lru, priority-queue}`` while ``{ttl-store,
+ring-buffer}`` stay held out). The driving CLI convention for ``priority-queue`` (authored ONLY
+from the visible push/pop/peek contract, never a hidden test): invoked as ``python <entry>`` (no
+extra argv, unlike LRU's ``<capacity>``), then one command per stdin line -- ``push <priority>
+<item>`` -> ``ok``; ``pop`` -> the highest-priority item (numerically SMALLEST priority value wins,
+ties broken by insertion order / stable FIFO-among-ties) or ``none`` on empty; ``peek`` -> the same
+value ``pop`` would return, without removing it, or ``none`` on empty. The LRU reference/drive path
+is completely unchanged by this addition.
+
 **Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** reference models for
-``priority-queue`` / ``ttl-store`` / ``fifo`` / ``ring-buffer``.
+``ttl-store`` / ``fifo`` / ``ring-buffer``.
 """
 
 from __future__ import annotations
 
+import heapq
 import random
 import re
 import sys
@@ -67,11 +81,12 @@ from harness.system_suite import _run_cli
 
 SUPPORTED_CLASSES = ("lru", "priority-queue", "ttl-store", "fifo", "ring-buffer")
 
-# Classes TASK-1 actually built a reference model + seeded-op generator + CLI convention for.
-# The remaining ids in SUPPORTED_CLASSES are recognized by `classify` (so a build can be correctly
-# fingerprinted) but `verify` honestly reports them as inconclusive until a later task adds their
-# reference model -- never a fabricated pass/fail for a class this module cannot yet check.
-_IMPLEMENTED_CLASSES = ("lru",)
+# Classes this module has actually built a reference model + seeded-op generator + CLI convention
+# for: "lru" (TASK-1) and "priority-queue" (TASK-4). The remaining ids in SUPPORTED_CLASSES are
+# recognized by `classify` (so a build can be correctly fingerprinted) but `verify` honestly
+# reports them as inconclusive until a later task adds their reference model -- never a fabricated
+# pass/fail for a class this module cannot yet check.
+_IMPLEMENTED_CLASSES = ("lru", "priority-queue")
 
 
 @dataclass
@@ -219,10 +234,115 @@ def _lru_reference(capacity: int) -> _LruReferenceModel:
     return _LruReferenceModel(capacity)
 
 
+# --- STAGE 2b: reference model (priority-queue -- TASK-4's 2nd implemented ADT) ---------------
+
+class _PriorityQueueReferenceModel:
+    """A ``heapq``-backed textbook priority-queue reference, authored ONLY from the visible
+    push/pop/peek contract (never from any hidden test): ``push(priority, item)`` inserts ``item``
+    at the given ``priority``; ``pop()`` removes and returns the item with the numerically
+    SMALLEST ``priority`` value (the convention used throughout this module: a SMALLER priority
+    number is a HIGHER priority -- e.g. "priority 1" outranks "priority 5", the same convention
+    Python's own ``heapq`` and most task-scheduler textbooks use), breaking ties between EQUAL
+    priorities by INSERTION order (stable FIFO-among-ties) via a monotonic counter that only ever
+    increases; ``peek()`` returns the same value ``pop()`` would return, without removing it. Both
+    ``pop()`` and ``peek()`` return ``None`` on an empty queue."""
+
+    def __init__(self):
+        self._heap: "list[tuple[Any, int, Any]]" = []
+        self._counter = 0
+
+    def push(self, priority: Any, item: Any) -> None:
+        heapq.heappush(self._heap, (priority, self._counter, item))
+        self._counter += 1
+
+    def pop(self) -> Any:
+        if not self._heap:
+            return None
+        _, _, item = heapq.heappop(self._heap)
+        return item
+
+    def peek(self) -> Any:
+        if not self._heap:
+            return None
+        _, _, item = self._heap[0]
+        return item
+
+
+def _priority_queue_reference() -> _PriorityQueueReferenceModel:
+    """Factory for a fresh :class:`_PriorityQueueReferenceModel`."""
+    return _PriorityQueueReferenceModel()
+
+
 # --- STAGE 3: seeded, boundary-stressing op sequence ------------------------------------------
 
 _LRU_CAPACITY = 3
 _LRU_KEYS = ("a", "b", "c", "d", "e")  # more keys than capacity -> guarantees eviction pressure
+
+# TASK-4: priority-queue seed constants. `_PQ_TIE_PRIORITY` seeds a deliberate tie-break block;
+# `_PQ_PRIORITY_POOL` deliberately repeats values so ties keep recurring throughout the random
+# mixing phase, not just up front.
+_PQ_TIE_PRIORITY = 2
+_PQ_PRIORITY_POOL = (1, 2, 2, 3, 4, 4, 5)
+_PQ_ITEM_PREFIX = "item"
+
+
+def _pq_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
+    """Deterministic, boundary-stressing op sequence for ``priority-queue`` (TASK-4), generated
+    with ``random.Random(seed)`` (NEVER the global RNG) so the same ``seed`` always reproduces the
+    byte-identical sequence. Stresses three boundaries: (1) TIE-BREAK ordering -- three ``push``es
+    at the SAME priority up front, immediately followed by a ``peek`` and a ``pop``, so a broken
+    stable-FIFO-among-ties implementation is caught before any later random mixing could mask it;
+    (2) varied priorities (including further ties drawn from ``_PQ_PRIORITY_POOL``) mixed with
+    ``push``/``pop``/``peek`` at random; (3) the EMPTY-queue boundary -- the sequence always ends
+    by draining the queue completely and then issuing one more ``pop`` and one more ``peek``
+    against the now-empty queue (both must yield ``None``)."""
+    rng = random.Random(seed)
+    ops: "list[tuple[str, tuple]]" = []
+    size = 0
+    item_idx = 0
+
+    def _push(priority: int) -> None:
+        nonlocal item_idx, size
+        item = f"{_PQ_ITEM_PREFIX}{item_idx}"
+        item_idx += 1
+        size += 1
+        ops.append(("push", (priority, item)))
+
+    def _pop() -> None:
+        nonlocal size
+        if size > 0:
+            size -= 1
+        ops.append(("pop", ()))
+
+    def _peek() -> None:
+        ops.append(("peek", ()))
+
+    # (1) deliberate tie-break stress up front: three same-priority pushes in a fixed order, then
+    # an immediate peek + pop -- both must surface the FIRST-inserted tied item, proving stable
+    # FIFO-among-ties ordering before any random mixing below could mask a broken tie-break.
+    for _ in range(3):
+        _push(_PQ_TIE_PRIORITY)
+    _peek()
+    _pop()
+
+    # (2) random mixed push/pop/peek stress across varied (and further tied) priorities.
+    remaining = max(0, n - len(ops) - 2)
+    for _ in range(remaining):
+        roll = rng.random()
+        if roll < 0.5 or size == 0:
+            _push(rng.choice(_PQ_PRIORITY_POOL))
+        elif roll < 0.8:
+            _pop()
+        else:
+            _peek()
+
+    # (3) guaranteed empty-boundary stress: drain whatever remains, then probe pop+peek on empty.
+    while size > 0:
+        _pop()
+    _pop()
+    _peek()
+
+    return ops
 
 
 def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
@@ -231,10 +351,14 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     first fills the cache to exactly ``_LRU_CAPACITY`` (so early ops are never vacuous misses), then
     mixes ``put``/``get`` across a key pool larger than capacity to stress capacity eviction,
     re-access reordering (a ``get`` protects a key from the next eviction), repeated keys, and
-    misses (a ``get`` on an absent/evicted key). Returns ``[]`` for any class TASK-1 has not yet
-    built a reference model for (no fabricated sequence for an unimplemented class)."""
+    misses (a ``get`` on an absent/evicted key). For ``priority-queue`` (TASK-4): delegates to
+    :func:`_pq_seeded_ops` (tie-break, varied-priority mixing, and empty-boundary stress -- see its
+    docstring). Returns ``[]`` for any class this module has not yet built a reference model for
+    (no fabricated sequence for an unimplemented class)."""
     if cls not in _IMPLEMENTED_CLASSES:
         return []
+    if cls == "priority-queue":
+        return _pq_seeded_ops(seed, n)
     rng = random.Random(seed)
     keys = list(_LRU_KEYS)
     ops: "list[tuple[str, tuple]]" = []
@@ -252,11 +376,12 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
 def _build_sequence(cls: str, seed: int, n: int,
                      capacity: int) -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
-    :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model at ``capacity``, and
-    returns ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI with,
-    and the reference model's expected output line for each, in the same order. Deterministic
-    (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the ONE place the
-    reference logic lives; both :func:`verify` (in-process differential drive) and
+    :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` uses
+    ``capacity``; ``priority-queue`` -- TASK-4 -- ignores it, the reference queue is unbounded),
+    and returns ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI
+    with, and the reference model's expected output line for each, in the same order.
+    Deterministic (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the
+    ONE place the reference logic lives; both :func:`verify` (in-process differential drive) and
     :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted script) call it
     -- never a second, drifting copy of the op-to-command/expected-value mapping. Returns
     ``([], [])`` for any class this module has no reference model for (never fabricates a
@@ -267,9 +392,28 @@ def _build_sequence(cls: str, seed: int, n: int,
     ops = _seeded_ops(cls, seed, n)
     if not ops:
         return [], []
-    reference = _lru_reference(capacity)
     cmd_lines: "list[str]" = []
     expected_lines: "list[str]" = []
+    if cls == "priority-queue":
+        pq_reference = _priority_queue_reference()
+        for op, args in ops:
+            if op == "push":
+                priority, item = args
+                pq_reference.push(priority, item)
+                cmd_lines.append(f"push {priority} {item}")
+                expected_lines.append("ok")
+            elif op == "pop":
+                value = pq_reference.pop()
+                cmd_lines.append("pop")
+                expected_lines.append("none" if value is None else str(value))
+            elif op == "peek":
+                value = pq_reference.peek()
+                cmd_lines.append("peek")
+                expected_lines.append("none" if value is None else str(value))
+            else:
+                return [], []
+        return cmd_lines, expected_lines
+    reference = _lru_reference(capacity)
     for op, args in ops:
         if op == "put":
             key, value = args
@@ -304,11 +448,14 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
     (``harness/system_suite.py``'s ``lru-cache-cli`` HARDER_SLICE task): invoked as
     ``python <entry> <capacity>``, then one command per stdin line (``put <key> <value>`` ->
     ``ok``; ``get <key>`` -> the value or ``none``), one output line per command in the same order.
+    TASK-4 adds the ``priority-queue`` convention: invoked as ``python <entry>`` (no extra argv),
+    then one command per stdin line (``push <priority> <item>`` -> ``ok``; ``pop`` -> the
+    highest-priority item or ``none`` on empty; ``peek`` -> the same without removing it).
     """
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
             return _inconclusive(
-                f"class {cls!r} is not yet implemented by this task (TASK-1 covers: "
+                f"class {cls!r} is not yet implemented by this task (implemented: "
                 f"{_IMPLEMENTED_CLASSES!r}) -- no-op, not a failure"
             )
         try:
@@ -329,15 +476,22 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         if not ops:
             return _inconclusive(f"no seeded ops generated for class {cls!r}")
 
+        # TASK-4: the LRU class drives `python <entry> <capacity>`; priority-queue (no capacity
+        # concept) drives `python <entry>` with no extra argv. `capacity` is only ever consumed by
+        # the lru branch of `_build_sequence` -- passing it through unused for priority-queue is
+        # harmless, but the CLI argv must NOT include it for that class.
+        capacity = _LRU_CAPACITY if cls == "lru" else 0
+        cli_args = [str(_LRU_CAPACITY)] if cls == "lru" else []
+
         # TASK-2: sequence-building now lives in the shared `_build_sequence` helper (reused
         # verbatim by `acceptance_check` below) -- `verify` only drives + compares.
-        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, _LRU_CAPACITY)
+        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity)
         if not cmd_lines or len(cmd_lines) != len(ops):
             return _inconclusive(f"sequence build failed or mismatched for class {cls!r}")
 
         stdin = "\n".join(cmd_lines) + "\n"
         py_exe = sys.executable or "python"
-        cli_ok, out = _run_cli(py_exe, entry_path, [str(_LRU_CAPACITY)], stdin, root_path, timeout)
+        cli_ok, out = _run_cli(py_exe, entry_path, cli_args, stdin, root_path, timeout)
         actual_lines = out.splitlines()
 
         for idx, (op_args, expected) in enumerate(zip(ops, expected_lines)):
@@ -379,13 +533,15 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     checklist runner (``system_builder._run_check``) writes a check's ``code`` to
     ``root/_s2s_acceptance_check.py`` and executes it as its own subprocess in the built system's
     directory, so the emitted script cannot ``import`` this harness module -- it only drives the
-    built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)``) and compares
-    its stdout, line by line, against the baked-in expected values, asserting on the FIRST
-    divergence. NO ORACLE LEAK: every expected value came from the reference model computed here,
-    never from any hidden test. Returns ``{"name", "code"}`` (the shape every other acceptance
-    check in this codebase uses -- see ``system_builder._no_crash_subprocess_check`` /
-    ``_roundtrip_acceptance_check``). Never raises -- any internal error returns ``None`` (adds
-    nothing to the checklist, exactly like the unimplemented-class case)."""
+    built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)`` for ``lru``;
+    ``subprocess.run([sys.executable, entry], input=...)`` -- no ``capacity`` argv -- for TASK-4's
+    ``priority-queue``) and compares its stdout, line by line, against the baked-in expected
+    values, asserting on the FIRST divergence. NO ORACLE LEAK: every expected value came from the
+    reference model computed here, never from any hidden test. Returns ``{"name", "code"}`` (the
+    shape every other acceptance check in this codebase uses -- see
+    ``system_builder._no_crash_subprocess_check`` / ``_roundtrip_acceptance_check``). Never raises
+    -- any internal error returns ``None`` (adds nothing to the checklist, exactly like the
+    unimplemented-class case)."""
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
             return None
@@ -395,13 +551,16 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
         entry_name = str(entry) if entry else ""
         if not entry_name:
             return None
+        # TASK-4: priority-queue has no capacity argv (unlike lru) -- keep the lru argv line
+        # byte-identical to before, only branch the argv expression itself.
+        argv_src = "[sys.executable, entry, str(capacity)]" if cls == "lru" else "[sys.executable, entry]"
         code = (
             "import subprocess, sys\n"
             f"entry = {entry_name!r}\n"
             f"capacity = {capacity!r}\n"
             f"cmd_lines = {cmd_lines!r}\n"
             f"expected_lines = {expected_lines!r}\n"
-            "result = subprocess.run([sys.executable, entry, str(capacity)],\n"
+            f"result = subprocess.run({argv_src},\n"
             "                        input='\\n'.join(cmd_lines) + '\\n',\n"
             "                        capture_output=True, text=True, timeout=20)\n"
             "actual_lines = result.stdout.splitlines()\n"
