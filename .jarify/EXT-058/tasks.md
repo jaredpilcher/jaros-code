@@ -93,3 +93,40 @@ the task's checks (no oracle leak) — exactly like the ADT oracle reference mod
 #### Implements
 - [REQ-1] Verified leaf-library registry (earned membership) — first governed slice
 - [REQ-3] Deterministic composer + connectors — the single-leaf DSL→system deterministic path
+
+### [TASK-6] Wire the verified leaf as a deterministic REPAIR candidate into `build_system`
+
+Detailed: make the verified ttl-store leaf (TASK-5, `harness/graph_dsl.py`) actually FIRE in the real build
+flow so the reconfirmed weak `kv-store-ttl` class (free-form 0/3 on the trustworthy baseline) can pass.
+This is the single-leaf DSL→system path made live — NOT composition (still gated later). It is ADDITIVE and
+HONEST by construction: the leaf template only fires AFTER a free-form build FAILS acceptance, and it must
+pass the SAME independent `_minimum_acceptance` checks as any free-form build to win — so it competes on the
+real gate (0-false-done preserved; the template can never make a broken build report done). The spec→leaf
+classification must be GENERIC (a ttl-store contract fingerprint, e.g. reuse `adt_oracle`'s `ttl-store`
+signals on the spec text), never benchmark-item detection.
+
+#### Steps
+1. Add a deterministic `harness/graph_dsl.py` helper `leaf_for_spec(spec) -> str | None` that returns a
+   verified leaf class id (currently only `ttl-store`) when the VISIBLE spec text fingerprints that class's
+   contract (reuse `adt_oracle` classification signals on the spec; never match on any hidden test/benchmark
+   id), else `None`. Never raises, no model call.
+2. In `harness/system_builder.py` `build_system`, AFTER the existing free-form build + `_minimum_acceptance`
+   (and after the existing iterative replan-repair) — ONLY when the build is still not `done` — call
+   `leaf_for_spec(spec)`; if it returns a library leaf, emit that leaf's verified template via
+   `graph_dsl.dsl_to_system` (single-node graph) into a fresh candidate dir, re-run `_minimum_acceptance`
+   on it, and adopt the leaf result ONLY if it now passes (done=True). Route the write through the same
+   gated `code.write_file` path `build_system` already uses (Tenet 1). Record on the result which path won
+   (`build_path: "free-form" | "leaf:ttl-store"`) for honest reporting.
+3. Keep it a strict superset: a spec with no matching leaf, or a free-form build that already passed, is
+   byte-identical to today (the leaf branch is unreachable). No behavior change for non-leaf builds.
+4. Add `tests/test_ext058_leaf_repair.py` (offline, no model call): (a) `leaf_for_spec` returns `ttl-store`
+   for the kv-store-ttl contract text and `None` for a sum-cli/todo spec; (b) a stubbed `llm` that emits a
+   BROKEN ttl build drives `build_system` down the leaf-repair branch and the final result is `done=True`
+   with `build_path == "leaf:ttl-store"` and passes the kv-store-ttl checks; (c) a stubbed `llm` whose
+   free-form build already passes never enters the leaf branch (`build_path == "free-form"`).
+5. Run `python -m pytest tests/test_ext058_leaf_repair.py tests/test_ext058_graph_dsl.py -q` green, then the
+   `tests/test_ext036*.py` + `tests/test_ext056*.py` regression slices green (no regression on the critical
+   build path). Do NOT run any on-Jetson build (the live A/B is queued separately, after the baseline).
+
+#### Implements
+- [REQ-3] Deterministic composer + connectors — the single-leaf DSL→system path made LIVE in `build_system`

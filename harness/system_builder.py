@@ -1999,7 +1999,11 @@ def _replan_as_modification(spec: str, root: Path, built: dict[str, str], checks
 
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
-            repairs=None, plan_repair: str = "", security=None, quality=None) -> dict:
+            repairs=None, plan_repair: str = "", security=None, quality=None,
+            # #EXT-058-REQ-3 Start
+            build_path: str = "free-form",
+            # #EXT-058-REQ-3 End
+            ) -> dict:
     # #EXT-037-REQ-7 Start
     # TASK-10: `security` is an additive, backward-compatible field (default None) -- only
     # populated when the REQ-7 scan gate actually refuses a build; every other call site is
@@ -2010,9 +2014,16 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
     # only, populated on the relevant build_system return paths once modules exist and the
     # security scan has passed; omitting it (every pre-existing caller/test) leaves the
     # returned dict byte-compatible with before this task.
+    # #EXT-058-REQ-3 Start
+    # TASK-6: `build_path` is likewise additive/backward-compatible (default "free-form") --
+    # honest for every pre-existing return path (the leaf-repair branch never ran on any of
+    # them); only the single return path in `build_system` where a leaf candidate actually
+    # WON overrides it to "leaf:<class>".
+    # #EXT-058-REQ-3 End
     return {"modules": modules or {}, "shipped": shipped, "done": done,
             "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or [],
-            "plan_repair": plan_repair, "security": security, "quality": quality}
+            "plan_repair": plan_repair, "security": security, "quality": quality,
+            "build_path": build_path}
     # #EXT-037-REQ-8 End
 
 
@@ -2092,7 +2103,18 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     A non-empty result is prepended to that prompt. Research can only ADD context to the plan
     prompt -- it never touches `validate_plan`, the build/repair/acceptance pipeline, or any other
     stage, so a research failure of any kind degrades to the `enable_research=False` behavior for
-    that build, never turning an otherwise-successful build into a failure."""
+    that build, never turning an otherwise-successful build into a failure.
+
+    Leaf-repair (EXT-058 REQ-3, task #TASK-6): ALWAYS ON, no parameter -- a strict superset of
+    every prior stage. Only tried once every stage above still leaves the build NOT DONE:
+    ``harness.graph_dsl.leaf_for_spec(spec)`` fingerprints the visible spec text against the
+    verified leaf-library's earned members (REQ-1); on a match, that leaf's template is emitted
+    into a throwaway candidate directory and re-graded by the SAME deterministic
+    `_minimum_acceptance` floor a free-form build must pass. It is adopted -- written into
+    `root` through the same gated write path (Tenet 1), `done` flipped True -- ONLY when it
+    genuinely passes; the returned dict's `build_path` records which path won
+    (`"free-form"` or `"leaf:<class>"`). A spec with no matching leaf, or a free-form build that
+    already passed, never reaches this stage at all -- byte-identical to before this task."""
     # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
@@ -2358,6 +2380,55 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
             replan_note = (f" (replan-as-modification: {replan_rounds} round(s), "
                             f"unmet {pre_replan_unmet_count}->{len(unmet)})")
     # #EXT-036-REQ-34 End
+    # #EXT-058-REQ-3 Start
+    # TASK-6: deterministic REPAIR candidate -- the verified leaf-library's single-leaf
+    # DSL->system path (TASK-5, `harness.graph_dsl`) made LIVE. ONLY tried when the free-form
+    # build (plus every repair stage above: targeted per-check repair, and the optional
+    # replan-as-modification loop) STILL has an unmet check -- so a spec with no matching leaf,
+    # or a free-form build that already passed, never reaches this block at all (byte-identical
+    # to before this task, `unmet` empty short-circuits the `if unmet:` guard immediately).
+    #
+    # ADDITIVE + HONEST by construction: `leaf_for_spec` returns a class only when the VISIBLE
+    # spec text fingerprints that leaf's contract (reusing `adt_oracle`'s conservative,
+    # spec-keyword-gated classifier -- never a benchmark/task id, see `graph_dsl.leaf_for_spec`).
+    # The candidate is emitted into a FRESH throwaway directory (never touching `root` until it
+    # proves itself) and graded by the SAME deterministic `_minimum_acceptance` floor a
+    # free-form build must pass. It is adopted -- written into `root` through the SAME gated
+    # `_jailed_write`/`code.write_file` chokepoint `build_system` already uses (Tenet 1),
+    # `unmet` cleared, `done` flipped True -- ONLY when it actually passes every one of those
+    # checks. It can NEVER flip a broken build to done: any exception, a declined
+    # `dsl_to_system` (multi-node/unknown-class), an empty checklist, or a still-unmet check
+    # leaves `unmet`/`built` completely untouched.
+    build_path = "free-form"
+    if unmet:
+        from harness import graph_dsl
+        leaf_cls = graph_dsl.leaf_for_spec(spec)
+        if leaf_cls:
+            _beat("LEAF-REPAIR")  # #EXT-040-REQ-3
+            try:
+                leaf_graph = {"nodes": [{"id": "leaf", "class": leaf_cls, "params": {}}],
+                               "edges": []}
+                with tempfile.TemporaryDirectory(prefix="ext058_leaf_") as _cand_dir:
+                    cand_root = Path(_cand_dir)
+                    if graph_dsl.dsl_to_system(leaf_graph, cand_root):
+                        leaf_mods = [{"name": "main.py"}]
+                        leaf_checks = _minimum_acceptance(spec, leaf_mods, plan=None)
+                        leaf_unmet = [c.get("name", "?") for c in leaf_checks
+                                      if not _run_check(cand_root, c)]
+                        if leaf_checks and not leaf_unmet:
+                            leaf_code = (cand_root / "main.py").read_text(encoding="utf-8")
+                            escape = _jailed_write(root, "main.py", leaf_code, runtime)
+                            if escape is None:
+                                built = {"main.py": leaf_code}
+                                unmet = []
+                                build_path = f"leaf:{leaf_cls}"
+                                # quality is ADVISORY (never gates `done`); recompute so it
+                                # honestly reflects the adopted leaf module, not the stale
+                                # free-form modules it replaced.
+                                quality = dataclasses.asdict(assess_quality(built))
+            except Exception:
+                pass
+    # #EXT-058-REQ-3 End
     # #EXT-036-REQ-4 Start
     done = not unmet
     _beat("DONE" if done else "NOT-DONE")  # #EXT-040-REQ-3
@@ -2368,9 +2439,17 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # #EXT-036-REQ-34 Start
     note += replan_note
     # #EXT-036-REQ-34 End
+    # #EXT-058-REQ-3 Start
+    if build_path != "free-form":
+        note += f" (build_path={build_path})"
+    # #EXT-058-REQ-3 End
     # #EXT-037-REQ-8 Start
     return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note,
-                    repairs=repairs, plan_repair=plan_repair, quality=quality)
+                    repairs=repairs, plan_repair=plan_repair, quality=quality,
+                    # #EXT-058-REQ-3 Start
+                    build_path=build_path,
+                    # #EXT-058-REQ-3 End
+                    )
     # #EXT-037-REQ-8 End
 # #EXT-036-REQ-4 End
 
