@@ -766,4 +766,243 @@ def test_acceptance_check_code_fails_against_buggy_ttl_fixture(tmp_path):
     check = adt_oracle.acceptance_check("main.py", "ttl-store")
     assert check is not None
     assert _run_emitted_check(root, check) is False
+
+
+# A correct ring-buffer CLI, authored independently of the reference model in
+# `harness/adt_oracle.py` (TASK-6): a manual circular array (head index + size counter) rather than
+# the reference's `collections.deque(maxlen=...)` strategy -- a different implementation approach
+# that must still agree on every observable, matching this task's acceptance criterion for a
+# held-out-style differential check. Driven with a `<capacity>` argv (like LRU, unlike
+# priority-queue/ttl-store).
+_GOOD_RING_CLI = '''\
+import sys
+
+
+class RingBuffer:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.buf = [None] * capacity
+        self.head = 0
+        self.size = 0
+
+    def push(self, item):
+        tail = (self.head + self.size) % self.capacity
+        self.buf[tail] = item
+        if self.size < self.capacity:
+            self.size += 1
+        else:
+            # at capacity: this push overwrites the oldest slot (which is exactly `tail` here,
+            # since tail wraps back onto head once size == capacity) -- advance head past it.
+            self.head = (self.head + 1) % self.capacity
+
+    def pop(self):
+        if self.size == 0:
+            return None
+        item = self.buf[self.head]
+        self.head = (self.head + 1) % self.capacity
+        self.size -= 1
+        return item
+
+    def peek(self):
+        if self.size == 0:
+            return None
+        return self.buf[self.head]
+
+
+def main():
+    capacity = int(sys.argv[1])
+    rb = RingBuffer(capacity)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "push":
+            item = parts[1]
+            rb.push(item)
+            print("ok")
+        elif cmd == "pop":
+            value = rb.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = rb.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The classic wrong-wrap-order bug: at capacity, this stub overwrites the NEWEST slot (the item
+# just added) instead of evicting the OLDEST -- the true oldest item is never evicted at all, it
+# just sits there forever while the most-recent slot keeps getting clobbered on every subsequent
+# push. Authored independently of the reference model (a plain list, not a circular array),
+# matching this task's acceptance criterion for a localized, held-out-style differential check.
+_BUGGY_RING_CLI = '''\
+import sys
+
+
+class BuggyRingBuffer:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.items = []
+
+    def push(self, item):
+        if len(self.items) < self.capacity:
+            self.items.append(item)
+        else:
+            # BUG: overwrites the NEWEST item (the last slot) instead of evicting the OLDEST (the
+            # first slot) -- the true oldest item is never evicted, it just sits there forever.
+            self.items[-1] = item
+
+    def pop(self):
+        if not self.items:
+            return None
+        return self.items.pop(0)
+
+    def peek(self):
+        if not self.items:
+            return None
+        return self.items[0]
+
+
+def main():
+    capacity = int(sys.argv[1])
+    rb = BuggyRingBuffer(capacity)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "push":
+            item = parts[1]
+            rb.push(item)
+            print("ok")
+        elif cmd == "pop":
+            value = rb.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = rb.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# --- ring-buffer (TASK-6): classify, reference wrap-around, verify PASS/FAIL --------------------
+
+def test_classify_returns_ring_buffer_for_ring_buffer_shaped_spec_and_mods():
+    spec = (
+        "Build a fixed-capacity ring buffer (circular buffer). push(item) appends item to the "
+        "buffer; once the buffer is full, the next push overwrites the oldest item. pop() removes "
+        "and returns the oldest item, or none if empty. peek() returns the oldest item without "
+        "removing it."
+    )
+    mods = ["push", "pop", "peek", "ring"]
+    assert adt_oracle.classify(spec, mods) == "ring-buffer"
+    assert adt_oracle.classify_confident(spec, mods) == "ring-buffer"
+
+
+def test_classify_does_not_return_ring_buffer_for_non_ring_spec():
+    spec = (
+        "Write a simple command-line notes app that lets a user add, list, and delete text notes."
+    )
+    mods = ["add", "list", "delete", "main"]
+    assert adt_oracle.classify(spec, mods) != "ring-buffer"
+    assert adt_oracle.classify_confident(spec, mods) != "ring-buffer"
+
+
+def test_classify_confident_does_not_return_ring_buffer_on_method_token_overlap_alone():
+    # a plain stack that only ever says "push"/"pop" (no "ring buffer"/"circular buffer" wording)
+    # must NOT be classified -- the conservative gate requires the spec text itself to name the
+    # ADT, never method-token coincidence alone (push/pop/overwrite/ring tokens are shared with an
+    # ordinary stack or queue).
+    spec = "Build a simple stack CLI: push(item) adds to the top, pop() removes the top item."
+    mods = ["push", "pop"]
+    assert adt_oracle.classify_confident(spec, mods) is None
+
+
+def test_ring_buffer_seeded_ops_deterministic_across_same_seed():
+    # like priority-queue/ttl-store (and unlike plain `lru`), the ring-buffer sequence has a fixed
+    # boundary prelude ahead of the random mixing phase (see `_ring_buffer_seeded_ops`'s
+    # docstring), so its length can exceed `n` -- what must hold is BYTE-IDENTICAL determinism
+    # across two calls with the same seed, not an exact length.
+    first = adt_oracle._seeded_ops("ring-buffer", 1234, 24)
+    second = adt_oracle._seeded_ops("ring-buffer", 1234, 24)
+    assert first == second
+    assert len(first) >= 24
+
+
+def test_ring_buffer_reference_wrap_around_overwrites_oldest_correctly():
+    ref = adt_oracle._ring_buffer_reference(3)
+    ref.push("r0")
+    ref.push("r1")
+    ref.push("r2")
+    assert ref.peek() == "r0"  # buffer full; oldest is r0
+
+    # one more push at capacity must overwrite the OLDEST item (r0), never r1/r2.
+    ref.push("r3")
+    assert ref.peek() == "r1"  # r0 is gone; r1 is now the oldest
+
+    assert ref.pop() == "r1"
+    assert ref.pop() == "r2"
+    assert ref.pop() == "r3"
+    assert ref.pop() is None   # drain-past-empty
+    assert ref.peek() is None  # peek on empty
+
+
+def test_verify_passes_correct_ring_buffer_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_RING_CLI)
+    result = adt_oracle.verify(root, "main.py", "ring-buffer")
+    assert result.applicable is True
+    assert result.cls == "ring-buffer"
+    assert result.ok is True
+    assert result.first_divergence is None
+
+
+def test_verify_fails_buggy_wrong_wrap_order_ring_fixture_with_localized_divergence(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_RING_CLI)
+    result = adt_oracle.verify(root, "main.py", "ring-buffer")
+    assert result.applicable is True
+    assert result.cls == "ring-buffer"
+    assert result.ok is False
+    assert result.first_divergence is not None
+    divergence = result.first_divergence
+    assert set(divergence.keys()) == {"index", "op", "args", "expected", "actual"}
+    assert isinstance(divergence["index"], int) and divergence["index"] >= 0
+    # the wrap-around boundary probe (a peek immediately following the capacity-triggering push)
+    # is always near the START of `_ring_buffer_seeded_ops`'s fixed prelude, so a wrong-wrap-order
+    # bug must surface right there -- the diverging op is that peek, not some later random-mixing
+    # op.
+    assert divergence["op"] == "peek"
+    assert divergence["expected"] == "r1"
+    assert divergence["actual"] == "r0"
+
+
+def test_verify_never_raises_on_missing_root_or_entry_for_ring_buffer(tmp_path):
+    missing_root = tmp_path / "does-not-exist-ring"
+    result = adt_oracle.verify(missing_root, "main.py", "ring-buffer")
+    assert result.applicable is False
+    assert result.ok is True
+
+
+# --- ring-buffer acceptance_check: same emitted-script drive, no import of this module ----------
+
+def test_acceptance_check_code_passes_against_correct_ring_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_RING_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ring-buffer")
+    assert check is not None
+    assert "ring-buffer" in check["name"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_code_fails_against_buggy_ring_fixture(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_RING_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ring-buffer")
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
 # #EXT-056-REQ-1 End

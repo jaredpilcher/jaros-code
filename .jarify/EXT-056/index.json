@@ -1,9 +1,14 @@
 {
   "REQ-1": [
     {
-      "file": "harness/adt_oracle.py",
-      "startLine": 94,
-      "endLine": 727
+      "file": "tests/test_ext056_adt_oracle.py",
+      "startLine": 17,
+      "endLine": 1008
+    },
+    {
+      "file": "tests/test_ext056_acceptance_wiring.py",
+      "startLine": 34,
+      "endLine": 310
     },
     {
       "file": "harness/system_builder.py",
@@ -16,14 +21,9 @@
       "endLine": 1183
     },
     {
-      "file": "tests/test_ext056_adt_oracle.py",
-      "startLine": 17,
-      "endLine": 769
-    },
-    {
-      "file": "tests/test_ext056_acceptance_wiring.py",
-      "startLine": 34,
-      "endLine": 310
+      "file": "harness/adt_oracle.py",
+      "startLine": 109,
+      "endLine": 888
     }
   ]
 }

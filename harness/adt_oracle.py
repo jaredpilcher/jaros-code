@@ -76,8 +76,23 @@ immediate-expiry boundary -- no special-casing needed since ``now < now + 0`` is
 ``ok`` (advances the virtual clock by exactly one step -- the ONLY way ``now`` ever advances). The
 LRU and priority-queue reference/drive paths are completely unchanged by this addition.
 
-**Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** reference models for
-``fifo`` / ``ring-buffer``.
+**TASK-6 additions (this same module):** a FOURTH reference model, ``_ring_buffer_reference`` -- a
+``collections.deque(maxlen=capacity)``-backed textbook fixed-capacity circular buffer, authored
+ONLY from the visible push/pop/peek contract (never a hidden test): ``push(item)`` appends ``item``;
+once the buffer holds ``capacity`` items, the NEXT ``push`` OVERWRITES the single OLDEST item
+(wrap-around) -- exactly what ``deque(maxlen=...).append`` already does, so this reference needed no
+extra bookkeeping to get wrap-around right. Wired into the existing ``_seeded_ops`` /
+``_build_sequence`` dispatch and the existing ``verify`` / ``acceptance_check`` drive paths -- the
+oracle now checks a FOURTH ADT class, completing the 4 canonical ADTs this module set out to cover.
+The driving CLI convention for ``ring-buffer`` (authored ONLY from the visible push/pop/peek
+contract, mirroring LRU's ``<capacity>`` argv convention rather than priority-queue/ttl-store's
+no-argv convention, since a ring buffer -- like LRU -- is inherently capacity-bounded): invoked as
+``python <entry> <capacity>``, then one command per stdin line -- ``push <item>`` -> ``ok``; ``pop``
+-> the oldest item (FIFO order), removing it, or ``none`` on empty; ``peek`` -> the same oldest item
+WITHOUT removing it, or ``none`` on empty. The LRU/priority-queue/ttl-store reference/drive paths are
+completely unchanged by this addition.
+
+**Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** a reference model for ``fifo``.
 """
 
 from __future__ import annotations
@@ -86,7 +101,7 @@ import heapq
 import random
 import re
 import sys
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -99,11 +114,11 @@ from harness.system_suite import _run_cli
 SUPPORTED_CLASSES = ("lru", "priority-queue", "ttl-store", "fifo", "ring-buffer")
 
 # Classes this module has actually built a reference model + seeded-op generator + CLI convention
-# for: "lru" (TASK-1), "priority-queue" (TASK-4), and "ttl-store" (TASK-5). The remaining ids in
-# SUPPORTED_CLASSES are recognized by `classify` (so a build can be correctly fingerprinted) but
-# `verify` honestly reports them as inconclusive until a later task adds their reference model --
-# never a fabricated pass/fail for a class this module cannot yet check.
-_IMPLEMENTED_CLASSES = ("lru", "priority-queue", "ttl-store")
+# for: "lru" (TASK-1), "priority-queue" (TASK-4), "ttl-store" (TASK-5), and "ring-buffer" (TASK-6).
+# The remaining id in SUPPORTED_CLASSES ("fifo") is recognized by `classify` (so a build can be
+# correctly fingerprinted) but `verify` honestly reports it as inconclusive until a later task adds
+# its reference model -- never a fabricated pass/fail for a class this module cannot yet check.
+_IMPLEMENTED_CLASSES = ("lru", "priority-queue", "ttl-store", "ring-buffer")
 
 
 @dataclass
@@ -328,6 +343,42 @@ def _ttl_store_reference() -> _TtlStoreReferenceModel:
     return _TtlStoreReferenceModel()
 
 
+# --- STAGE 2d: reference model (ring-buffer -- TASK-6's 4th implemented ADT) -------------------
+
+class _RingBufferReferenceModel:
+    """A ``collections.deque(maxlen=capacity)``-backed textbook fixed-capacity circular-buffer
+    reference, authored ONLY from the visible push/pop/peek contract (never a hidden test):
+    ``push(item)`` appends ``item`` to the buffer; once the buffer already holds ``capacity``
+    items, the NEXT ``push`` OVERWRITES the single OLDEST item (wrap-around) -- this is exactly
+    ``deque(maxlen=...).append``'s own built-in behavior (appending past ``maxlen`` silently drops
+    the item at the OPPOSITE end), so this reference needed no extra bookkeeping to get wrap-around
+    right; ``pop()`` removes and returns the OLDEST item (FIFO order, ``popleft``), or ``None`` on
+    an empty buffer; ``peek()`` returns the same oldest item WITHOUT removing it, or ``None`` on an
+    empty buffer."""
+
+    def __init__(self, capacity: int):
+        self.capacity = max(1, int(capacity))
+        self._data: "deque[Any]" = deque(maxlen=self.capacity)
+
+    def push(self, item: Any) -> None:
+        self._data.append(item)
+
+    def pop(self) -> Any:
+        if not self._data:
+            return None
+        return self._data.popleft()
+
+    def peek(self) -> Any:
+        if not self._data:
+            return None
+        return self._data[0]
+
+
+def _ring_buffer_reference(capacity: int) -> _RingBufferReferenceModel:
+    """Factory for a fresh :class:`_RingBufferReferenceModel` at the given ``capacity``."""
+    return _RingBufferReferenceModel(capacity)
+
+
 # --- STAGE 3: seeded, boundary-stressing op sequence ------------------------------------------
 
 _LRU_CAPACITY = 3
@@ -346,6 +397,14 @@ _PQ_ITEM_PREFIX = "item"
 # throughout the sequence, not just in the fixed prelude.
 _TTL_KEY_POOL = ("a", "b", "c", "d", "e")
 _TTL_TTL_POOL = (0, 1, 1, 2, 3, 5)
+
+# TASK-6: ring-buffer seed constants. `_RING_CAPACITY` reuses `_LRU_CAPACITY`'s value -- ring-buffer
+# shares LRU's capacity-bounded `<capacity>`-argv CLI convention (unlike priority-queue/ttl-store,
+# which take no extra argv), so `acceptance_check`'s single `capacity` default parameter (not
+# per-class) stays correct for both without any extra plumbing. `_RING_ITEM_PREFIX` names the
+# synthetic items `push`ed during the seeded sequence.
+_RING_CAPACITY = _LRU_CAPACITY
+_RING_ITEM_PREFIX = "r"
 
 
 def _pq_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
@@ -464,6 +523,74 @@ def _ttl_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
     return ops
 
 
+def _ring_buffer_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
+    """Deterministic, boundary-stressing op sequence for ``ring-buffer`` (TASK-6), generated with
+    ``random.Random(seed)`` (NEVER the global RNG) so the same ``seed`` always reproduces the
+    byte-identical sequence. Stresses four boundaries in a fixed prelude before any random mixing
+    (so a broken implementation is caught before later ops could mask it): (1) FILL-TO-CAPACITY --
+    exactly ``_RING_CAPACITY`` pushes, followed by a ``peek`` that must surface the very FIRST item
+    pushed (the oldest); (2) WRAP-AROUND -- one more push while already at capacity, which must
+    OVERWRITE the single oldest item, followed by a ``peek`` that must now surface the SECOND item
+    pushed (not the first, which was just evicted, and not a stale/duplicated value) -- this is the
+    single most load-bearing probe in the whole sequence, since a "wrong-wrap-order" bug (evicting
+    the newest instead of the oldest, or not evicting at all) manifests as exactly this peek
+    returning the wrong item; (3) DRAIN -- pop every remaining item in FIFO order; (4)
+    DRAIN-PAST-EMPTY -- one more ``pop`` and one more ``peek`` against the now-empty buffer, both of
+    which must yield ``None``. The remainder mixes random ``push``/``pop``/``peek`` ops, so
+    wrap-around pressure keeps recurring throughout the sequence, not just in the fixed prelude."""
+    rng = random.Random(seed)
+    ops: "list[tuple[str, tuple]]" = []
+    item_idx = 0
+    size = 0  # tracks current occupancy; a push at capacity does NOT grow it further (wrap-around)
+
+    def _push() -> None:
+        nonlocal item_idx, size
+        item = f"{_RING_ITEM_PREFIX}{item_idx}"
+        item_idx += 1
+        ops.append(("push", (item,)))
+        size = min(_RING_CAPACITY, size + 1)
+
+    def _pop() -> None:
+        nonlocal size
+        if size > 0:
+            size -= 1
+        ops.append(("pop", ()))
+
+    def _peek() -> None:
+        ops.append(("peek", ()))
+
+    # (1) fill exactly to capacity, then peek -- must surface the FIRST item pushed (the oldest).
+    for _ in range(_RING_CAPACITY):
+        _push()
+    _peek()
+
+    # (2) wrap-around: one more push while already at capacity must OVERWRITE the oldest item; the
+    # follow-up peek must now surface the SECOND item pushed, never the (just-evicted) first.
+    _push()
+    _peek()
+
+    # (3) drain everything that remains, in FIFO order.
+    while size > 0:
+        _pop()
+
+    # (4) drain-past-empty boundary: pop + peek on an empty buffer must both yield none.
+    _pop()
+    _peek()
+
+    # (5) random interleaved push/pop/peek mixing, so wrap-around pressure keeps recurring.
+    remaining = max(0, n - len(ops))
+    for _ in range(remaining):
+        roll = rng.random()
+        if roll < 0.55 or size == 0:
+            _push()
+        elif roll < 0.8:
+            _pop()
+        else:
+            _peek()
+
+    return ops
+
+
 def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     """Deterministic op sequence for ``cls``, generated with ``random.Random(seed)`` (NEVER the
     global RNG) so the same ``seed`` always reproduces the byte-identical sequence. For ``lru``:
@@ -474,7 +601,9 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     :func:`_pq_seeded_ops` (tie-break, varied-priority mixing, and empty-boundary stress -- see its
     docstring). For ``ttl-store`` (TASK-5): delegates to :func:`_ttl_seeded_ops` (immediate-expiry,
     exact-tick-expiry, and overwrite-resets-ttl boundary stress, driven by an explicit VIRTUAL
-    ``tick`` op -- never wall-clock -- see its docstring). Returns ``[]`` for any class this module
+    ``tick`` op -- never wall-clock -- see its docstring). For ``ring-buffer`` (TASK-6): delegates to
+    :func:`_ring_buffer_seeded_ops` (fill-to-capacity, wrap-around-overwrites-the-oldest, drain, and
+    drain-past-empty boundary stress -- see its docstring). Returns ``[]`` for any class this module
     has not yet built a reference model for (no fabricated sequence for an unimplemented class)."""
     if cls not in _IMPLEMENTED_CLASSES:
         return []
@@ -482,6 +611,8 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
         return _pq_seeded_ops(seed, n)
     if cls == "ttl-store":
         return _ttl_seeded_ops(seed, n)
+    if cls == "ring-buffer":
+        return _ring_buffer_seeded_ops(seed, n)
     rng = random.Random(seed)
     keys = list(_LRU_KEYS)
     ops: "list[tuple[str, tuple]]" = []
@@ -499,11 +630,11 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
 def _build_sequence(cls: str, seed: int, n: int,
                      capacity: int) -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
-    :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` uses
-    ``capacity``; ``priority-queue`` -- TASK-4 -- and ``ttl-store`` -- TASK-5 -- both ignore it, the
-    reference queue/store is unbounded), and returns ``(cmd_lines, expected_lines)`` -- the exact
-    stdin command lines to drive a CLI with, and the reference model's expected output line for
-    each, in the same order.
+    :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` and
+    ``ring-buffer`` -- TASK-6 -- both use ``capacity``; ``priority-queue`` -- TASK-4 -- and
+    ``ttl-store`` -- TASK-5 -- ignore it, the reference queue/store is unbounded), and returns
+    ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI with, and the
+    reference model's expected output line for each, in the same order.
     Deterministic (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the
     ONE place the reference logic lives; both :func:`verify` (in-process differential drive) and
     :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted script) call it
@@ -557,6 +688,25 @@ def _build_sequence(cls: str, seed: int, n: int,
             else:
                 return [], []
         return cmd_lines, expected_lines
+    if cls == "ring-buffer":
+        ring_reference = _ring_buffer_reference(capacity)
+        for op, args in ops:
+            if op == "push":
+                (item,) = args
+                ring_reference.push(item)
+                cmd_lines.append(f"push {item}")
+                expected_lines.append("ok")
+            elif op == "pop":
+                value = ring_reference.pop()
+                cmd_lines.append("pop")
+                expected_lines.append("none" if value is None else str(value))
+            elif op == "peek":
+                value = ring_reference.peek()
+                cmd_lines.append("peek")
+                expected_lines.append("none" if value is None else str(value))
+            else:
+                return [], []
+        return cmd_lines, expected_lines
     reference = _lru_reference(capacity)
     for op, args in ops:
         if op == "put":
@@ -598,7 +748,12 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
     adds the ``ttl-store`` convention: invoked as ``python <entry>`` (no extra argv), then one
     command per stdin line (``set <key> <value> <ttl>`` -> ``ok``; ``get <key>`` -> the value if
     live else ``none``; ``tick`` -> ``ok``, advancing the VIRTUAL clock by exactly one step --
-    NEVER wall-clock).
+    NEVER wall-clock). TASK-6 adds the ``ring-buffer`` convention, mirroring LRU's capacity-bounded
+    argv (unlike priority-queue/ttl-store's no-argv convention): invoked as
+    ``python <entry> <capacity>``, then one command per stdin line (``push <item>`` -> ``ok``, and at
+    capacity OVERWRITES the single oldest item; ``pop`` -> the oldest item, FIFO order, removing it,
+    or ``none`` on empty; ``peek`` -> the same oldest item without removing it, or ``none`` on
+    empty).
     """
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
@@ -624,13 +779,16 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         if not ops:
             return _inconclusive(f"no seeded ops generated for class {cls!r}")
 
-        # TASK-4/TASK-5: the LRU class drives `python <entry> <capacity>`; priority-queue and
+        # TASK-4/TASK-5/TASK-6: the LRU and ring-buffer classes both drive
+        # `python <entry> <capacity>` (both are inherently capacity-bounded); priority-queue and
         # ttl-store (neither has a capacity concept) drive `python <entry>` with no extra argv.
-        # `capacity` is only ever consumed by the lru branch of `_build_sequence` -- passing it
-        # through unused for the other classes is harmless, but the CLI argv must NOT include it
-        # for them.
-        capacity = _LRU_CAPACITY if cls == "lru" else 0
-        cli_args = [str(_LRU_CAPACITY)] if cls == "lru" else []
+        # `capacity` is only ever consumed by the lru/ring-buffer branches of `_build_sequence` --
+        # passing it through unused for the other classes is harmless, but the CLI argv must NOT
+        # include it for them.
+        capacity = (_LRU_CAPACITY if cls == "lru"
+                    else _RING_CAPACITY if cls == "ring-buffer" else 0)
+        cli_args = ([str(_LRU_CAPACITY)] if cls == "lru"
+                    else [str(_RING_CAPACITY)] if cls == "ring-buffer" else [])
 
         # TASK-2: sequence-building now lives in the shared `_build_sequence` helper (reused
         # verbatim by `acceptance_check` below) -- `verify` only drives + compares.
@@ -682,7 +840,8 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     checklist runner (``system_builder._run_check``) writes a check's ``code`` to
     ``root/_s2s_acceptance_check.py`` and executes it as its own subprocess in the built system's
     directory, so the emitted script cannot ``import`` this harness module -- it only drives the
-    built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)`` for ``lru``;
+    built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)`` for ``lru`` and
+    TASK-6's ``ring-buffer`` -- both inherently capacity-bounded;
     ``subprocess.run([sys.executable, entry], input=...)`` -- no ``capacity`` argv -- for TASK-4's
     ``priority-queue`` and TASK-5's ``ttl-store``) and compares its stdout, line by line, against
     the baked-in expected values, asserting on the FIRST divergence. NO ORACLE LEAK: every expected
@@ -700,9 +859,11 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
         entry_name = str(entry) if entry else ""
         if not entry_name:
             return None
-        # TASK-4/TASK-5: priority-queue and ttl-store have no capacity argv (unlike lru) -- keep
-        # the lru argv line byte-identical to before, only branch the argv expression itself.
-        argv_src = "[sys.executable, entry, str(capacity)]" if cls == "lru" else "[sys.executable, entry]"
+        # TASK-4/TASK-5/TASK-6: priority-queue and ttl-store have no capacity argv (unlike lru and
+        # TASK-6's ring-buffer, both inherently capacity-bounded) -- keep the lru argv line
+        # byte-identical to before, only branch the argv expression itself.
+        argv_src = ("[sys.executable, entry, str(capacity)]" if cls in ("lru", "ring-buffer")
+                    else "[sys.executable, entry]")
         code = (
             "import subprocess, sys\n"
             f"entry = {entry_name!r}\n"
