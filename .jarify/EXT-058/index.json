@@ -1,6 +1,36 @@
 {
   "REQ-3": [
     {
+      "file": "harness/system_builder.py",
+      "startLine": 295,
+      "endLine": 316
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2329,
+      "endLine": 2331
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2343,
+      "endLine": 2348
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2746,
+      "endLine": 2845
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2856,
+      "endLine": 2859
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2863,
+      "endLine": 2865
+    },
+    {
       "file": "harness/graph_dsl.py",
       "startLine": 43,
       "endLine": 118
@@ -16,34 +46,14 @@
       "endLine": 227
     },
     {
-      "file": "harness/system_builder.py",
-      "startLine": 2003,
-      "endLine": 2005
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2017,
-      "endLine": 2022
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2383,
-      "endLine": 2431
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2442,
-      "endLine": 2445
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2449,
-      "endLine": 2451
+      "file": "tests/test_ext058_leaf_repair_ships_leaf.py",
+      "startLine": 48,
+      "endLine": 227
     },
     {
       "file": "tests/test_ext058_leaf_repair.py",
-      "startLine": 54,
-      "endLine": 333
+      "startLine": 48,
+      "endLine": 300
     }
   ],
   "REQ-1": [

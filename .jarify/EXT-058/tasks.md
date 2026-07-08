@@ -130,3 +130,48 @@ signals on the spec text), never benchmark-item detection.
 
 #### Implements
 - [REQ-3] Deterministic composer + connectors — the single-leaf DSL→system path made LIVE in `build_system`
+
+### [TASK-7] Fix leaf-repair false-done: ship EXACTLY the leaf, not the stale free-form files
+
+Detailed: closes a MEASURED Tenet-3 false-done in the TASK-6 leaf-repair adopt block. When leaf-repair
+adopts a verified leaf, it currently writes `main.py` (the leaf) into `root` and flips `done=True`, but
+leaves the free-form build's OTHER already-written files (e.g. `cli.py`, `store.py`, `data_manager.py`) on
+disk in `root`, and leaves the returned `plan` as the free-form plan (whose `entrypoint` names a free-form
+module, not `main.py`). Acceptance was validated against a clean temp dir holding only the leaf, so
+`done=True` — but the SHIPPED `root` still runs the buggy free-form entrypoint via the free-form `plan`.
+The leaf itself is correct in isolation; the adopt step just failed to make the shipped artifact match what
+was graded. Fix makes `root` contain exactly the leaf, points `plan` at it, and re-grades on `root` itself
+(not a throwaway dir) before committing — with a fail-safe rollback to the untouched free-form result on
+any error or re-verification failure, so 0-false-done is preserved by construction.
+
+#### Steps
+1. In `harness/system_builder.py`'s leaf-repair adopt block (`# #EXT-058-REQ-3`, inside `build_system`,
+   currently ~lines 2742-2764), after `_jailed_write(root, "main.py", leaf_code, runtime)` succeeds, remove
+   every pre-existing free-form `.py` module file from `root` except `main.py` (the module names come from
+   the pre-adopt `built` dict) via a jailed delete (add a `_jailed_delete(root, name)` helper mirroring
+   `_jailed_write`'s `path_jail` discipline — never deletes outside `root`, never raises).
+2. Replace the returned `plan` with a minimal leaf plan `{"entrypoint": "main.py", "modules": [{"name":
+   "main.py"}]}` once the leaf is adopted, so downstream entrypoint resolution (`_minimum_entry_filename`,
+   `system_suite._resolve_entry`) and any later task/acceptance run against `root` use the leaf, not the
+   stale free-form entrypoint.
+3. Belt-and-suspenders: after making `root` the leaf (main.py written, stale files removed), re-run the SAME
+   `leaf_checks` (`_run_check`) against `root` itself — not just the throwaway `cand_root` — before
+   committing. If they still pass, commit `built`/`unmet`/`plan`/`build_path`/`quality` to the leaf result
+   (byte-identical set of assignments as today, just gated on the stronger re-verification). If they do NOT
+   pass, or the jailed delete reports any error, roll back: rewrite every pre-adopt free-form module's exact
+   original content back into `root` (delete the leaf's `main.py` too if the free-form build never had one),
+   and leave `built`/`plan`/`unmet`/`done` exactly as the free-form result (no adopt) — the existing outer
+   `try/except Exception: pass` continues to guard any unexpected exception the same way.
+4. Add `tests/test_ext058_leaf_repair_ships_leaf.py` (offline, stubbed `llm`, no model call): (a) a stubbed
+   free-form build that writes multiple buggy modules (e.g. `cli.py` + `store.py`) and fails acceptance, then
+   leaf-adopts — assert `root` on disk contains ONLY `main.py`, the returned `plan["entrypoint"] ==
+   "main.py"`, the independent checks re-run against the shipped `root` PASS, and `done=True`; (b) the
+   fail-safe case: force the belt-and-suspenders re-verification against `root` to fail (e.g. monkeypatch/stub
+   so the leaf's checks pass in `cand_root` but not in `root`) and assert the free-form files remain on disk,
+   `built`/`plan` are unchanged, and `done=False`.
+5. Run `python -m pytest tests/test_ext058_leaf_repair.py tests/test_ext058_graph_dsl.py
+   tests/test_ext058_leaf_repair_ships_leaf.py -q` green. Do NOT run `tests/test_ext036_system_builder.py`,
+   broad `test_ext036*`/`test_ext056*` globs, or any `-k` sweep (triggers a live Jetson model-swap).
+
+#### Implements
+- [REQ-3] Deterministic composer + connectors — closes the false-done in the leaf-repair adopt path

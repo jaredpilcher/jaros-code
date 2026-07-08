@@ -292,6 +292,29 @@ def _jailed_write(root: Path, name: str, content: str,
     # #EXT-037-REQ-11 End
 # #EXT-037-REQ-1 End
 
+# #EXT-058-REQ-3 Start
+# TASK-7: jailed DELETE, mirroring `_jailed_write`'s `path_jail` discipline exactly -- used by
+# the leaf-repair adopt path (below) to strip STALE free-form module files from `root` once a
+# verified leaf is adopted, so the shipped `root` contains EXACTLY the leaf (closes the measured
+# false-done where `done=True` was reported while the shipped `root` still ran a stale free-form
+# entrypoint). Never deletes outside `root`; never raises; a missing file is a silent no-op.
+def _jailed_delete(root: Path, name: str) -> "str | None":
+    """Delete module ``name`` under ``root`` iff it stays contained. Returns ``None`` on success
+    (including when the file is already absent), or a human rejection reason (NO delete
+    performed) when ``name`` resolves outside ``root``. Never raises."""
+    try:
+        resolved = path_jail(str(root), name)
+    except PathEscapeError as exc:
+        return str(exc)
+    try:
+        p = Path(resolved)
+        if p.is_file():
+            p.unlink()
+    except OSError as exc:
+        return str(exc)
+    return None
+# #EXT-058-REQ-3 End
+
 # #EXT-036-REQ-1 Start
 PLAN_PROMPT = """You are a software architect. Turn this one-sentence spec into a concrete build PLAN for a small Python system.
 
@@ -2739,6 +2762,15 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # checks. It can NEVER flip a broken build to done: any exception, a declined
     # `dsl_to_system` (multi-node/unknown-class), an empty checklist, or a still-unmet check
     # leaves `unmet`/`built` completely untouched.
+    #
+    # TASK-7 (measured false-done fix): the initial write above puts `main.py` in `root`, but
+    # `root` may still hold the free-form build's OTHER module files, and the outer `plan` is
+    # still the free-form plan -- so a naive adopt at that point would report `done=True` while
+    # the SHIPPED `root` still ran the buggy free-form entrypoint. The adopt block below (once
+    # `escape is None`) additionally strips every stale free-form module from `root`, points
+    # `plan` at the leaf, and RE-VERIFIES on `root` itself before committing -- with a
+    # byte-for-byte rollback to the free-form result if that re-verification (or the delete)
+    # fails, so `root`/`built`/`plan`/`done` are only ever mutated together, atomically.
     build_path = "free-form"
     if unmet:
         from harness import graph_dsl
@@ -2757,15 +2789,57 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                                       if not _run_check(cand_root, c)]
                         if leaf_checks and not leaf_unmet:
                             leaf_code = (cand_root / "main.py").read_text(encoding="utf-8")
+                            # TASK-7: snapshot the free-form root's EXACT module set before any
+                            # mutation -- a failed adopt (fail-safe below) restores it
+                            # byte-for-byte, so `root`/`built`/`plan`/`done` stay truly
+                            # UNCHANGED on failure (Tenet 3: no half-swapped root, no false
+                            # done).
+                            pre_adopt_built = dict(built)
                             escape = _jailed_write(root, "main.py", leaf_code, runtime)
                             if escape is None:
-                                built = {"main.py": leaf_code}
-                                unmet = []
-                                build_path = f"leaf:{leaf_cls}"
-                                # quality is ADVISORY (never gates `done`); recompute so it
-                                # honestly reflects the adopted leaf module, not the stale
-                                # free-form modules it replaced.
-                                quality = dataclasses.asdict(assess_quality(built))
+                                # TASK-7: make ROOT contain EXACTLY the leaf -- strip every
+                                # OTHER free-form module the free-form build wrote, so no stale
+                                # file/entrypoint can be picked up downstream. This closes the
+                                # MEASURED false-done: previously `root` kept the free-form
+                                # files (e.g. cli.py/store.py) and the returned `plan` still
+                                # named the free-form entrypoint, so `done=True` was reported
+                                # while the SHIPPED root still ran the buggy free-form build.
+                                stale = [n for n in pre_adopt_built if n != "main.py"]
+                                delete_errors = [e for e in
+                                                  (_jailed_delete(root, n) for n in stale) if e]
+                                if delete_errors:
+                                    root_unmet = ["leaf adopt: " + "; ".join(delete_errors)]
+                                else:
+                                    # Belt-and-suspenders: re-run the SAME leaf checks against
+                                    # ROOT ITSELF -- what actually ships -- not just the
+                                    # throwaway cand_root, so `done=True` always reflects the
+                                    # shipped artifact (grade the adopt on what ships).
+                                    root_unmet = [c.get("name", "?") for c in leaf_checks
+                                                  if not _run_check(root, c)]
+                                if not root_unmet:
+                                    built = {"main.py": leaf_code}
+                                    unmet = []
+                                    build_path = f"leaf:{leaf_cls}"
+                                    # The leaf ships ALONE -- the entrypoint IS main.py, never
+                                    # the stale free-form plan's entrypoint (the other half of
+                                    # the measured false-done: a downstream entrypoint
+                                    # resolution that still trusted the free-form `plan`).
+                                    plan = {"entrypoint": "main.py",
+                                            "modules": [{"name": "main.py"}]}
+                                    # quality is ADVISORY (never gates `done`); recompute so it
+                                    # honestly reflects the adopted leaf module, not the stale
+                                    # free-form modules it replaced.
+                                    quality = dataclasses.asdict(assess_quality(built))
+                                else:
+                                    # FAIL SAFE: restore root to the EXACT pre-adopt free-form
+                                    # state -- never ship a half-swapped root, never adopt a
+                                    # leaf that doesn't pass on what actually ships.
+                                    # `built`/`plan`/`unmet`/`done` are left as the free-form
+                                    # result, byte-identical to before this leaf attempt.
+                                    for _name, _code in pre_adopt_built.items():
+                                        _jailed_write(root, _name, _code, runtime)
+                                    if "main.py" not in pre_adopt_built:
+                                        _jailed_delete(root, "main.py")
             except Exception:
                 pass
     # #EXT-058-REQ-3 End

@@ -10,27 +10,21 @@ Covers TASK-6 step 4's three required cases:
       expires) drives ``build_system`` down the leaf-repair branch, and the final result is
       ``done=True`` with ``build_path == "leaf:ttl-store"``, passing the REAL, independent
       ``kv-store-ttl-cli`` task oracle (``harness.system_suite``, reusing ``_run_single_check`` --
-      no reimplemented grading logic).
-  (d) the mirror honesty check: it can NEVER flip a broken build to done for a leaf that hasn't
-      actually earned the win -- see the "MEASURED GAP" note below.
+      no reimplemented grading logic), against the SHIPPED root (EXT-058/TASK-7).
+  (d) the mirror honesty check: it can NEVER flip a broken build to done for a candidate leaf that
+      does NOT actually pass the real acceptance floor.
   (c) a stubbed ``llm`` whose free-form build ALREADY passes never enters the leaf branch at all
       (``build_path == "free-form"``, byte-identical to before this task).
 
-**MEASURED GAP (honestly disclosed, out of TASK-6's scope to fix):** the REAL, currently-shipped
-``graph_dsl.TTL_STORE_LEAF`` (TASK-5) is authored against ``kv-store-ttl-cli``'s REAL-time-seconds
-TTL contract and does not implement the ``tick`` command ``adt_oracle``'s ttl-store differential
-oracle (wired into ``_minimum_acceptance`` since EXT-056/TASK-2) unconditionally drives (a
-DIFFERENT, virtual-clock ttl-store convention). So today, the SHIPPED leaf cannot yet win this
-competition -- test (d) below proves this is handled HONESTLY (the branch tries the leaf and
-correctly does NOT adopt it, `build_path` stays `"free-form"`, never a false-done). Test (b)
-proves TASK-6's OWN wiring (leaf_for_spec -> dsl_to_system -> re-run _minimum_acceptance -> adopt
-only on a real pass) is correct by substituting, via ``monkeypatch``, a small FIXTURE template
-into ``graph_dsl.LEAF_LIBRARY["ttl-store"]`` that implements BOTH conventions (the REAL
-``dsl_to_system``/``leaf_for_spec``/``_minimum_acceptance``/``build_system`` code all still run
-unmodified -- only the leaf-library's DATA is substituted, standing in for "a leaf that has
-actually earned full membership by passing the real floor", per REQ-1's earned-membership rule).
-``harness/graph_dsl.py`` itself is never modified by this file. This gap is reported to the
-task's supervisor for a possible TASK-5 follow-up; it is not this task's to fix.
+**Formerly a MEASURED GAP, now CLOSED (EXT-056/TASK-10, 2026-07-08):** the REAL, shipped
+``graph_dsl.TTL_STORE_LEAF`` (TASK-5) is a real-time-seconds (``time.time()``) implementation, and
+``adt_oracle``'s ttl-store differential oracle now DETECTS which convention a spec declares
+(``_ttl_convention``) and drives the matching real-seconds probe for a spec worded like
+``LEAF_REPAIR_SPEC``/``kv-store-ttl-cli`` (no ``tick`` wording) -- so the REAL, unmodified leaf now
+genuinely EARNS admission; test (b) below exercises it directly, no monkeypatch/stand-in needed.
+Test (d) instead proves the mirror honesty case with a deliberately still-broken CANDIDATE (the
+SAME free-form bug, substituted into ``graph_dsl.LEAF_LIBRARY`` via ``monkeypatch`` so
+``harness/graph_dsl.py`` itself is never modified by this file) -- it is correctly NOT adopted.
 
 Entirely offline and deterministic: no `llm`/model call anywhere in this file (every `llm` is a
 canned stub), no on-Jetson build.
@@ -112,50 +106,6 @@ if __name__ == "__main__":
     main()
 '''
 
-# A FIXTURE leaf template (test-local only -- `harness/graph_dsl.py` is never modified) that
-# implements BOTH conventions at once: `set`/`get`/`delete` (satisfying `kv-store-ttl-cli`'s own
-# black-box oracle) via a VIRTUAL clock that only advances on an explicit `tick` command
-# (satisfying `adt_oracle`'s ttl-store differential-oracle convention too -- it is functionally
-# identical to `adt_oracle._TtlStoreReferenceModel`, so it agrees with it by construction). Stands
-# in, via `monkeypatch`, for "a leaf that has earned full membership" (REQ-1) -- proving TASK-6's
-# OWN wiring (real `leaf_for_spec`/`dsl_to_system`/`_minimum_acceptance`/`build_system`) adopts a
-# genuinely-passing leaf candidate correctly, independent of the separate, currently-unearned
-# `TTL_STORE_LEAF` (see the module docstring's "MEASURED GAP").
-_FULLY_COMPLIANT_TTL_FIXTURE = '''\
-import sys
-
-
-def main():
-    store = {}
-    now = 0
-    for line in sys.stdin:
-        parts = line.split()
-        if not parts:
-            continue
-        cmd = parts[0]
-        if cmd == "set" and len(parts) == 4:
-            key, value, ttl = parts[1], parts[2], int(parts[3])
-            store[key] = (value, now + max(0, ttl))
-            print("ok")
-        elif cmd == "get" and len(parts) == 2:
-            entry = store.get(parts[1])
-            if entry is not None and now < entry[1]:
-                print(entry[0])
-            else:
-                print("none")
-        elif cmd == "delete" and len(parts) == 2:
-            store.pop(parts[1], None)
-            print("ok")
-        elif cmd == "tick":
-            now += 1
-            print("ok")
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-
 class _Resp:
     def __init__(self, text: str) -> None:
         self.text = text
@@ -219,10 +169,15 @@ def test_leaf_for_spec_never_raises_on_malformed_input():
 
 # --- (b) a BROKEN ttl free-form build is rescued by a genuinely-earned leaf candidate -----------
 
-def test_leaf_repair_adopts_a_genuinely_passing_leaf_candidate(monkeypatch):
-    monkeypatch.setitem(graph_dsl.LEAF_LIBRARY, "ttl-store", _FULLY_COMPLIANT_TTL_FIXTURE)
-    monkeypatch.setitem(graph_dsl.LEAF_LIBRARY, "kv-store", _FULLY_COMPLIANT_TTL_FIXTURE)
-
+def test_leaf_repair_adopts_a_genuinely_passing_leaf_candidate():
+    """The REAL, unmodified ``graph_dsl.LEAF_LIBRARY["ttl-store"]`` (TASK-5's ``TTL_STORE_LEAF``,
+    a real-seconds ``time.time()``-based implementation) now genuinely EARNS admission against
+    ``LEAF_REPAIR_SPEC``'s real-seconds convention (EXT-056/TASK-10's ``_ttl_convention`` fix) --
+    no monkeypatch/stand-in needed. Proves the leaf-repair branch adopts a genuinely-passing
+    candidate AND ships EXACTLY the leaf (EXT-058/TASK-7): ``root`` on disk holds only
+    ``main.py``, the returned ``plan``'s entrypoint is ``main.py``, and the independent
+    ``kv-store-ttl-cli`` task oracle passes against the SHIPPED ``root`` -- no false-done."""
+    expected_leaf_code = graph_dsl.LEAF_LIBRARY["ttl-store"]
     llm = _LeafRepairLlm(_BROKEN_TTL_CLI)
     with tempfile.TemporaryDirectory(prefix="ext058_leafrepair_") as tmp:
         root = Path(tmp) / "built"
@@ -232,24 +187,35 @@ def test_leaf_repair_adopts_a_genuinely_passing_leaf_candidate(monkeypatch):
         assert result["unmet"] == []
         assert result.get("build_path") == "leaf:ttl-store"
         # the adopted module is the leaf candidate, not the broken free-form one
-        assert result["modules"]["main.py"] == _FULLY_COMPLIANT_TTL_FIXTURE
-        assert (root / "main.py").read_text(encoding="utf-8") == _FULLY_COMPLIANT_TTL_FIXTURE
+        assert result["modules"] == {"main.py": expected_leaf_code}
+
+        # (TASK-7) root SHIPS EXACTLY the leaf -- no stale free-form file lingers -- and the
+        # returned plan's entrypoint points at it.
+        assert sorted(p.name for p in root.glob("*.py")) == ["main.py"]
+        assert (root / "main.py").read_text(encoding="utf-8") == expected_leaf_code
+        assert result["plan"]["entrypoint"] == "main.py"
 
         # passes the REAL, independent kv-store-ttl-cli task oracle too (no reimplemented
-        # grading logic -- reuses system_suite's own black-box checks).
+        # grading logic -- reuses system_suite's own black-box checks), against the SHIPPED root.
         task = _kv_store_ttl_task()
         results = [_run_single_check(c, root, result.get("plan"), PY) for c in task.checks]
         assert all(results), results
 
 
-# --- (d) honesty mirror: it can NEVER flip a broken build to done for an UNEARNED leaf ----------
+# --- (d) honesty mirror: it can NEVER flip a broken build to done for a genuinely FAILING leaf --
 
-def test_leaf_repair_never_falsely_adopts_the_currently_unearned_real_ttl_store_leaf():
-    """The REAL, unmodified `graph_dsl.TTL_STORE_LEAF` (TASK-5) does not yet implement the `tick`
-    command `adt_oracle`'s differential-oracle convention drives (see module docstring's MEASURED
-    GAP) -- so it does not yet pass the full `_minimum_acceptance` floor. This proves the
-    leaf-repair branch stays HONEST about that: it tries the real leaf and correctly declines to
-    adopt it, never fabricating `done=True`."""
+def test_leaf_repair_never_falsely_adopts_a_genuinely_failing_leaf_candidate(monkeypatch):
+    """Mirror honesty check (REQ-3): even when a spec fingerprints a verified leaf class, a
+    CANDIDATE that does not actually pass the real acceptance floor is NEVER adopted. Stands in,
+    via ``monkeypatch``, for "a leaf whose template never earned / regressed" -- substituting the
+    SAME broken body as the free-form build's own bug (ttl silently ignored) into
+    ``graph_dsl.LEAF_LIBRARY`` (``harness/graph_dsl.py`` itself is never modified by this file),
+    so the candidate genuinely fails the real-seconds ttl-store oracle in its own throwaway
+    ``cand_root`` and is correctly declined -- ``build_path`` stays ``"free-form"``, never a
+    fabricated ``done=True``."""
+    monkeypatch.setitem(graph_dsl.LEAF_LIBRARY, "ttl-store", _BROKEN_TTL_CLI)
+    monkeypatch.setitem(graph_dsl.LEAF_LIBRARY, "kv-store", _BROKEN_TTL_CLI)
+
     llm = _LeafRepairLlm(_BROKEN_TTL_CLI)
     with tempfile.TemporaryDirectory(prefix="ext058_leafrepair_honest_") as tmp:
         root = Path(tmp) / "built"
@@ -264,13 +230,14 @@ def test_leaf_repair_never_falsely_adopts_the_currently_unearned_real_ttl_store_
 
 def test_leaf_repair_branch_unreachable_for_an_already_passing_free_form_build():
     # The free-form build must pass the FULL `_minimum_acceptance` floor (including the ADT
-    # differential-oracle check) on the FIRST attempt so `unmet` is already empty and the
-    # leaf-repair `if unmet:` guard never even calls `leaf_for_spec`. A plain real-seconds ttl
-    # implementation would trip the SAME measured tick-support gap the module docstring names,
-    # so `_FULLY_COMPLIANT_TTL_FIXTURE`'s dual-convention body is used here instead (it is a
-    # free-form MODEL OUTPUT in this test, never touching `graph_dsl.LEAF_LIBRARY` -- no
-    # monkeypatch needed for this case).
-    llm = _LeafRepairLlm(_FULLY_COMPLIANT_TTL_FIXTURE)
+    # differential-oracle's real-seconds ttl-store probe, EXT-056/TASK-10) on the FIRST attempt
+    # so `unmet` is already empty and the leaf-repair `if unmet:` guard never even calls
+    # `leaf_for_spec`. Reuses the REAL, correct `graph_dsl.LEAF_LIBRARY["ttl-store"]` template as
+    # the free-form MODEL OUTPUT here (a real-seconds-correct implementation, matching
+    # LEAF_REPAIR_SPEC's own convention) -- it is a free-form MODEL OUTPUT in this test, never
+    # touching `graph_dsl.LEAF_LIBRARY` itself, no monkeypatch needed for this case.
+    free_form_code = graph_dsl.LEAF_LIBRARY["ttl-store"]
+    llm = _LeafRepairLlm(free_form_code)
     with tempfile.TemporaryDirectory(prefix="ext058_leafrepair_passing_") as tmp:
         root = Path(tmp) / "built"
         result = build_system(LEAF_REPAIR_SPEC, root, llm=llm)
@@ -280,7 +247,7 @@ def test_leaf_repair_branch_unreachable_for_an_already_passing_free_form_build()
         assert result.get("build_path") == "free-form"
         # trailing-newline-insensitive: `_build_module`'s fence-stripping doesn't guarantee an
         # exact trailing newline is preserved, unrelated to this test's actual concern.
-        assert result["modules"]["main.py"].strip() == _FULLY_COMPLIANT_TTL_FIXTURE.strip()
+        assert result["modules"]["main.py"].strip() == free_form_code.strip()
 
 
 def test_leaf_repair_branch_unreachable_for_a_non_leaf_spec():
