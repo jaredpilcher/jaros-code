@@ -79,15 +79,10 @@ per-class pass/fail table is the metric (not one blended number).
 - **[EXT-036 · create frontier ratchet — DONE, measured]** added 4 harder create classes; gemma splits them
   cleanly: infix-eval 3/3 solid, sqlite-store 1/3 shaky, mini-SQL 0/3 + json-path 0/3 failing. The ratchet
   re-opened headroom so the scoreboard discriminates again. high · 10316cc
-- **[EXT-058 · green mini-SQL — high, BLOCKED by a false-done, NOT green yet]** mini-SQL is genuinely
-  parse-hard (0/3 free-form both multi-module AND single-file). Landed a verified mini-SQL leaf (e536971,
-  passes 3/3 in isolation) — BUT on-Jetson confirmation found the leaf NEVER FIRES: build_system consistently
-  false-dones (`done=True`, independent oracle 0/3) on the broken free-form build, and leaf-repair only
-  triggers on `not done`. Root: sql-query-engine is a stdin-protocol class the DETERMINISTIC acceptance
-  (minimum + ADT oracle) doesn't cover, so `done` rides on non-deterministic model-proposed checks that
-  sometimes pass a broken build. **FIX = leaf-as-differential-oracle:** when a verified leaf matches the spec,
-  drive the free-form build AND the leaf on the same seeded input sequence and adopt the leaf on divergence,
-  even if `done=True`. Closes the false-done for every leaf-covered class deterministically. high · next
+- **[EXT-058 · green mini-SQL — ✅ DONE, on-Jetson 3/3]** mini-SQL (a hand-rolled stdin SQL engine) is now
+  RELIABLY GREEN: verified leaf (e536971) + leaf-as-differential-oracle (7082191) that fires the leaf even
+  when build_system false-dones the broken free-form build. Honest arc: 0/3 free-form → 1/3 (leaf alone,
+  blocked by the false-done) → **3/3 on-hardware, all 3 samples adopt the leaf**, no leak. high · e536971+7082191
 - **[json-path + sqlite weak classes — NEXT, needs diagnosis]** json-path 0/3 (repair-loop slow/timeouts),
   sqlite 1/3 (unreliable). Diagnose root cause on a free Jetson (probe tooling ready) → pick leaf vs latency
   vs reliability lever. Do NOT assume a leaf before diagnosis (the mini-SQL first-guess "needs a leaf" was
@@ -499,6 +494,18 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: mini-SQL creation class GREENED 0/3→3/3 — EXT-058 (e536971 + 7082191, 2026-07-08)]** a
+  hand-rolled stdin SQL query engine, built-from-a-sentence, that gemma genuinely can't do (0/3 free-form,
+  both single- AND multi-module). Greened via a verified mini-SQL LEAF plus a **leaf-as-differential-oracle**:
+  the verified leaf drives the free-form build on a seeded input and adopts the leaf on divergence EVEN when
+  build_system false-dones the broken build. On-Jetson 3/3, all samples adopt the leaf, no oracle leak
+  (proven by a poison-sys.modules test). Also fixed a real Tenet-3 false-done this exposed.
+- **[★ INSTRUMENT: modify-suite difficulty ratchet — EXT-036 REQ-21/TASK-51 (1243e46, 2026-07-08)]** modify
+  measured 44/45 (98%, saturated incl. multi-file), so added a HARDER_SLICE of 4 highly-complex modification
+  classes (add modulo to an infix calc, column-projection to the SQL engine, negative indices to json-path,
+  a cross-file mode subcommand) — each proven achievable by a reference modification, no leak.
+- **[★ TENET-1: gated file deletion — EXT-037 REQ-14/TASK-18 (7c7d53c, 2026-07-08)]** leaf-repair deletions
+  now flow through a `code.delete_file` Decision (gate + hash-chain), closing a raw-unlink two-plane gap.
 - **[★ FRONTIER RATCHET: 4 harder build-from-a-sentence classes — EXT-036 REQ-20/TASK-50 (10316cc, 2026-07-08)]**
   the creation suite grew 8→12 highly-complex classes: a cross-process SQLite-persistent store, a hand-rolled
   in-memory SQL query engine, an infix-precedence expression evaluator, and a JSON-path resolver. Each has a
