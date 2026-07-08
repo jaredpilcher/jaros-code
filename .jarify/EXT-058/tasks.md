@@ -337,3 +337,58 @@ no change to `harness/system_builder.py`'s acceptance/adopt logic.
 
 #### Implements
 - [REQ-7] Verified json-path-query leaf (json-path-query) — the no-args usage-probe robustness bullet
+
+### [TASK-12] Verified SQLite-persistent-kv leaf (sqlite-kv) — fourth earned leaf-library member
+
+Detailed: adds a fourth verified leaf, `sqlite-kv`, to `harness/graph_dsl.py`'s `LEAF_LIBRARY` (the
+same proven mechanism TASK-5/TASK-8/TASK-10 used), so the existing leaf-repair adopt path
+(TASK-6/TASK-7, already generic over `leaf_for_spec`/`dsl_to_system` — no `system_builder.py`
+change needed) can ship a reliably-working system for the held-out `sqlite-persistent-kv-cli`
+creation class. MEASURED this session: the class scores 1/3 for gemma — capable but UNRELIABLE
+(sometimes a working store, sometimes a crashing one) — and, like `json-path-query-cli`, it
+correctly reports `done=False` on the crashing builds (no false-done measured), so the existing
+`not done -> adopt leaf` trigger alone is sufficient; no seeded-driver/differential-oracle
+extension (REQ-6) is needed for this leaf, and no `seeded_driver_input` entry is registered (the
+registry's existing default-`None` behavior for any unregistered class is the correct, simpler
+choice here, exactly TASK-10's decision).
+
+#### Steps
+1. Add `SQLITE_KV_LEAF` to `harness/graph_dsl.py`: a cleaned-up, self-contained single `main.py`
+   backed by a SQLite database file `store.db` (standard library `sqlite3` module), implementing
+   `set <key> <value>` (exactly 3 argv) -> stores/overwrites the value and prints `ok`, and
+   `get <key>` (exactly 2 argv) -> prints the stored value or `none`, with values persisted across
+   completely separate process runs; guards the no-args/wrong-arity usage-probe case (an empty or
+   unrecognized argv exits cleanly, rc=0, no crash) so the leaf survives `build_system`'s derived
+   minimum-acceptance "usage/--help runs without crashing" probe from the start (the same class of
+   gap TASK-11 fixed after-the-fact for the JSON-path leaf) — authored ONLY from the VISIBLE spec
+   contract, never any task's hidden checks (Tenet 3, no oracle leak).
+2. Register it in `LEAF_LIBRARY` under a new class key, `"sqlite-kv"`, and add that key to `VOCAB`.
+3. Add `_is_sqlite_kv_spec(spec)` — a new, CONSERVATIVE, independent fingerprint requiring STRONG,
+   distinctive signals to CO-OCCUR (mentions `sqlite` AND a key-value signal AND a persistence
+   signal) — never a single loose keyword — so it fires ONLY for genuine sqlite-persistent-kv
+   specs and still returns the correct existing leaf (or `None`) for `kv-store-ttl-cli` (says
+   `key-value` but never `sqlite`), `sql-mini-query-cli` (mentions `sqlite3` only to forbid it,
+   never `key-value`/`persist`), `json-path-query-cli`, `notes-sqlite-cli` (says `sqlite`/`persist`
+   but is a notes app, never `key-value`), and every other class (no over-trigger). Extend
+   `leaf_for_spec` to try this fingerprint as a fallback (after the existing ADT + sql-mini +
+   json-path checks).
+4. Confirm (no code change) that `build_system`'s existing leaf-repair adopt path picks up the new
+   leaf via `leaf_for_spec`/`dsl_to_system` unchanged — both are already class-generic, so this is
+   a strict superset with no modification to `harness/system_builder.py`.
+5. Add `tests/test_ext058_sqlite_leaf.py` (offline, no model call): the emitted `SQLITE_KV_LEAF`
+   passes ALL 5 of `sqlite-persistent-kv-cli`'s independent checks (reusing
+   `harness.system_suite._run_single_check`, run against ONE shared root so the cross-process
+   `store.db` persistence the checks exercise is genuinely exercised); running the emitted leaf
+   with NO args exits rc=0 with no traceback (the usage-probe case); `leaf_for_spec` returns
+   `"sqlite-kv"` for the held-out `sqlite-persistent-kv-cli` spec, and explicitly does NOT return
+   it for a `kv-store-ttl-cli` spec, a `sql-mini-query-cli` spec, or a `json-path-query-cli` spec
+   (no-over-trigger negatives, asserted explicitly), plus a sweep of all 24 suite specs confirming
+   only `sqlite-persistent-kv-cli` maps to the new leaf; `dsl_to_system` emits the leaf for a
+   single `sqlite-kv` node.
+6. Run `python -m pytest tests/test_ext058_sqlite_leaf.py tests/test_ext058_sql_leaf.py
+   tests/test_ext058_jsonpath_leaf.py tests/test_ext058_leaf_differential.py
+   tests/test_ext058_graph_dsl.py -q` green. Do NOT run the broader suite or any on-Jetson/live
+   test.
+
+#### Implements
+- [REQ-8] Verified SQLite-persistent-kv leaf (sqlite-kv)

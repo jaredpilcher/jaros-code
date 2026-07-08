@@ -1,5 +1,59 @@
 {
+  "REQ-5": [
+    {
+      "file": "tests/test_ext058_sql_leaf.py",
+      "startLine": 33,
+      "endLine": 134
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 54,
+      "endLine": 57
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 184,
+      "endLine": 258
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 455,
+      "endLine": 461
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "tests/test_ext058_sqlite_leaf.py",
+      "startLine": 45,
+      "endLine": 224
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 62,
+      "endLine": 65
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 357,
+      "endLine": 428
+    },
+    {
+      "file": "harness/graph_dsl.py",
+      "startLine": 471,
+      "endLine": 479
+    }
+  ],
   "REQ-3": [
+    {
+      "file": "tests/test_ext058_leaf_repair_ships_leaf.py",
+      "startLine": 48,
+      "endLine": 227
+    },
+    {
+      "file": "tests/test_ext058_leaf_repair.py",
+      "startLine": 48,
+      "endLine": 300
+    },
     {
       "file": "harness/system_builder.py",
       "startLine": 295,
@@ -33,30 +87,25 @@
     {
       "file": "harness/graph_dsl.py",
       "startLine": 43,
-      "endLine": 126
+      "endLine": 130
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 353,
-      "endLine": 395
+      "startLine": 431,
+      "endLine": 483
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 398,
-      "endLine": 428
-    },
-    {
-      "file": "tests/test_ext058_leaf_repair_ships_leaf.py",
-      "startLine": 48,
-      "endLine": 227
-    },
-    {
-      "file": "tests/test_ext058_leaf_repair.py",
-      "startLine": 48,
-      "endLine": 300
+      "startLine": 486,
+      "endLine": 516
     }
   ],
   "REQ-6": [
+    {
+      "file": "tests/test_ext058_leaf_differential.py",
+      "startLine": 55,
+      "endLine": 260
+    },
     {
       "file": "harness/system_builder.py",
       "startLine": 2357,
@@ -69,38 +118,16 @@
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 431,
-      "endLine": 489
-    },
-    {
-      "file": "tests/test_ext058_leaf_differential.py",
-      "startLine": 55,
-      "endLine": 260
-    }
-  ],
-  "REQ-5": [
-    {
-      "file": "harness/graph_dsl.py",
-      "startLine": 54,
-      "endLine": 57
-    },
-    {
-      "file": "harness/graph_dsl.py",
-      "startLine": 180,
-      "endLine": 254
-    },
-    {
-      "file": "harness/graph_dsl.py",
-      "startLine": 376,
-      "endLine": 382
-    },
-    {
-      "file": "tests/test_ext058_sql_leaf.py",
-      "startLine": 33,
-      "endLine": 134
+      "startLine": 519,
+      "endLine": 577
     }
   ],
   "REQ-7": [
+    {
+      "file": "tests/test_ext058_jsonpath_leaf.py",
+      "startLine": 33,
+      "endLine": 187
+    },
     {
       "file": "harness/graph_dsl.py",
       "startLine": 58,
@@ -108,30 +135,25 @@
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 257,
-      "endLine": 350
+      "startLine": 261,
+      "endLine": 354
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 383,
-      "endLine": 391
+      "startLine": 462,
+      "endLine": 470
     },
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 463,
-      "endLine": 474
-    },
-    {
-      "file": "tests/test_ext058_jsonpath_leaf.py",
-      "startLine": 33,
-      "endLine": 187
+      "startLine": 551,
+      "endLine": 562
     }
   ],
   "REQ-1": [
     {
       "file": "harness/graph_dsl.py",
-      "startLine": 129,
-      "endLine": 177
+      "startLine": 133,
+      "endLine": 181
     }
   ]
 }

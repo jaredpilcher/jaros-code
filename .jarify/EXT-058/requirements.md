@@ -151,3 +151,39 @@ passed all 4 of the held-out task's checks before being promoted into the librar
       rather than crashing, so the leaf-repair adopt path re-verify does not roll it back to the
       free-form build (MEASURED 2026-07-08: a missing no-args guard made the adopt path never fire,
       class stayed 0/3, despite the leaf passing all 4 real checks in isolation).
+
+### [REQ-8] Verified SQLite-persistent-kv leaf (sqlite-kv)
+
+A fourth earned leaf-library member (REQ-1's registry): a persistent key-value store CLI backed by
+a SQLite database file (`set <key> <value>` / `get <key>`, values must survive across separate
+process runs via the standard library `sqlite3` module) covering the held-out
+`sqlite-persistent-kv-cli` creation class. MEASURED (on-Jetson, this session): this class scores
+1/3 for gemma — capable but UNRELIABLE (gemma sometimes builds a working store, sometimes a
+crashing one). Unlike `sql-mini-query-cli` this class correctly reports `done=False` on the
+crashing builds (no false-done measured for it), so the EXISTING `not done -> adopt leaf` trigger
+(REQ-3) is sufficient on its own — no differential-oracle extension (REQ-6) is required for this
+leaf, the same situation `json-path-query` (REQ-7) was in. Admission follows REQ-1's
+earned-membership rule: the reference implementation independently passed all 5 of the held-out
+task's checks before being promoted into the library.
+
+#### Acceptance Criteria
+- [ ] A verified `sqlite-kv` leaf template is registered in `LEAF_LIBRARY`, authored ONLY from the
+      VISIBLE spec contract (a SQLite-backed `store.db` file, `set`/`get` commands via argv,
+      cross-run persistence via the standard library `sqlite3` module) -- never any task's hidden
+      `checks` (Tenet 3, no oracle leak).
+- [ ] The leaf passes ALL 5 of `sqlite-persistent-kv-cli`'s independent, oracle-authored checks,
+      including the cross-process persistence checks (separate subprocess invocations against the
+      same `store.db`).
+- [ ] `leaf_for_spec` CONSERVATIVELY classifies a genuine sqlite-persistent-kv spec to this leaf,
+      keyed on strong, co-occurring, distinctive signals (`sqlite` + a key-value signal + a
+      persistence signal) -- never a single loose keyword.
+- [ ] `leaf_for_spec` does NOT over-trigger: a `kv-store-ttl-cli` spec, a `sql-mini-query-cli` spec
+      (which mentions `sqlite3` only to forbid it), a `json-path-query-cli` spec, and every other
+      class in the suite still resolve to their own correct leaf/`None`, never the SQLite-kv leaf.
+- [ ] The leaf survives `build_system`'s derived minimum-acceptance "usage/--help runs without
+      crashing" probe: invoked with NO command-line arguments (or with wrong arity) it exits
+      cleanly (rc=0) rather than crashing, so the leaf-repair adopt path re-verify does not roll it
+      back to the free-form build (the same class of gap TASK-11 fixed for the json-path leaf).
+- [ ] The existing `build_system` leaf-repair adopt path picks up the new leaf via `leaf_for_spec`
+      with no change required to `harness/system_builder.py` (a strict superset, byte-identical
+      behavior for every other class).

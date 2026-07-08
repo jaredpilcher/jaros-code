@@ -59,6 +59,10 @@ VOCAB = {
     # TASK-10: third earned leaf-library member -- a nested-JSON dotted-path query tool.
     "json-path-query",
     # #EXT-058-REQ-7 End
+    # #EXT-058-REQ-8 Start
+    # TASK-12: fourth earned leaf-library member -- a SQLite-backed persistent key-value store.
+    "sqlite-kv",
+    # #EXT-058-REQ-8 End
     # escape hatch for irreducible novel logic
     "custom",
 }
@@ -350,6 +354,80 @@ def _is_json_path_spec(spec: "str | None") -> bool:
 # #EXT-058-REQ-7 End
 
 
+# #EXT-058-REQ-8 Start
+# TASK-12: fourth earned leaf-library member -- a persistent SQLite-backed key-value store
+# (`sqlite-kv`), covering the held-out `sqlite-persistent-kv-cli` creation class (REQ-1's earned-
+# membership rule: admitted only on measured, held-out passing). MEASURED (on-Jetson, this
+# session): gemma scores 1/3 on this class -- capable but UNRELIABLE (sometimes builds a working
+# store, sometimes a crashing one) -- and, unlike `sql-mini-query-cli`, this class correctly
+# reports `done=False` on the crashing builds (no false-done measured for it), so the pre-existing
+# `not done -> adopt leaf` trigger (REQ-3) is sufficient on its own -- no seeded-driver/
+# differential-oracle extension (REQ-6) is needed for this leaf. This reference implementation
+# independently PASSED all 5 of `sqlite-persistent-kv-cli`'s checks (5/5) offline this session
+# before being promoted here.
+#
+# HONESTY (Tenet 3, no oracle leak): authored ONLY from the VISIBLE spec contract -- a single-file
+# `main.py`, backed by a SQLite database file named `store.db` in the current directory via the
+# standard library `sqlite3` module, creating the database file and its table the first time it
+# runs and never deleting/recreating it on later runs; `python main.py set <key> <value>` (exactly
+# three argv) stores/overwrites `value` under `key` and prints ONLY `ok`; `python main.py get
+# <key>` prints the stored value if present, or `none` otherwise; every key set in one run MUST
+# still be retrievable via `get` in a completely separate, later run (persisted to disk, not kept
+# only in memory) -- never from `sqlite-persistent-kv-cli`'s (or any task's) hidden `checks`. Also
+# guards the no-args/wrong-arity usage-probe case (an empty `args` list returns immediately,
+# printing nothing and exiting rc=0) so the leaf survives `build_system`'s derived minimum
+# acceptance "usage/--help runs without crashing" probe, the same class of gap TASK-11 fixed for
+# the JSON-path leaf.
+SQLITE_KV_LEAF = '''\
+import sys
+import sqlite3
+
+
+def main():
+    conn = sqlite3.connect("store.db")
+    conn.execute("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)")
+    args = sys.argv[1:]
+    if not args:
+        return
+    if args[0] == "set" and len(args) == 3:
+        conn.execute("INSERT OR REPLACE INTO kv VALUES (?, ?)", (args[1], args[2]))
+        conn.commit()
+        print("ok")
+    elif args[0] == "get" and len(args) == 2:
+        row = conn.execute("SELECT v FROM kv WHERE k = ?", (args[1],)).fetchone()
+        print(row[0] if row else "none")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+LEAF_LIBRARY["sqlite-kv"] = SQLITE_KV_LEAF
+
+
+def _is_sqlite_kv_spec(spec: "str | None") -> bool:
+    """CONSERVATIVE fingerprint for a SQLite-backed persistent key-value-store spec (TASK-12):
+    like `sql-query-engine`/`json-path-query`, this leaf has no ADT reference model, so it isn't
+    covered by `adt_oracle.classify_confident` -- this is its own small keyword table. Requires
+    ALL of a set of STRONG, distinctive signals to CO-OCCUR -- mentions `sqlite` AND a key-value
+    signal AND a persistence signal -- never a single loose keyword alone: e.g. `sql-mini-query-cli`
+    also mentions `sqlite3` (it explicitly forbids using it), but never says `key-value` or
+    `persist`; `notes-sqlite-cli` mentions `sqlite`/`persist` but is a notes app (`add`/`list`/
+    `count`), never `key-value`; `kv-store-ttl-cli` says `key-value` but never `sqlite`. Requiring
+    the co-occurrence of all three signals keeps this from over-triggering on any of them. Never
+    raises."""
+    try:
+        text = (spec or "").lower()
+        if "sqlite" not in text:
+            return False
+        if "key-value" not in text:
+            return False
+        return "persist" in text
+    except Exception:
+        return False
+# #EXT-058-REQ-8 End
+
+
 # #EXT-058-REQ-3 Start
 # TASK-6: the deterministic spec->leaf CLASSIFIER that makes the leaf library actually FIRE in
 # the real `build_system` flow (REQ-3's single-leaf DSL->system path made LIVE, as a REPAIR
@@ -362,9 +440,10 @@ def _is_json_path_spec(spec: "str | None") -> bool:
 # (no task name, no hidden `checks` are ever consulted). Never raises, no model call.
 def leaf_for_spec(spec: "str | None") -> "str | None":
     """Return the verified leaf class id (``"ttl-store"``/``"kv-store"`` via the ADT oracle,
-    ``"sql-query-engine"`` via its own conservative fingerprint -- TASK-8, or
-    ``"json-path-query"`` via its own conservative fingerprint -- TASK-10) whose CONTRACT the
-    spec text fingerprints, or ``None`` when no verified leaf matches. Intersecting
+    ``"sql-query-engine"`` via its own conservative fingerprint -- TASK-8, ``"json-path-query"``
+    via its own conservative fingerprint -- TASK-10, or ``"sqlite-kv"`` via its own conservative
+    fingerprint -- TASK-12) whose CONTRACT the spec text fingerprints, or ``None`` when no
+    verified leaf matches. Intersecting
     ``adt_oracle.classify_confident``'s result with ``LEAF_LIBRARY`` membership means a class
     ``adt_oracle`` can classify but this module has no VERIFIED template for (e.g. ``lru``,
     ``priority-queue``) honestly returns ``None`` here too -- earned membership (REQ-1), not
@@ -389,6 +468,15 @@ def leaf_for_spec(spec: "str | None") -> "str | None":
         if _is_json_path_spec(spec):
             return "json-path-query"
         # #EXT-058-REQ-7 End
+        # #EXT-058-REQ-8 Start
+        # TASK-12: fourth, independent fingerprint -- `sqlite-kv` also has no ADT reference
+        # model, so it is never returned by `adt_oracle.classify_confident` above; fall back to
+        # its own conservative co-occurrence rule (see `_is_sqlite_kv_spec`'s docstring), tried
+        # AFTER the sql-mini/json-path fingerprints so all three remain mutually exclusive in
+        # practice (none of their distinctive signals overlap).
+        if _is_sqlite_kv_spec(spec):
+            return "sqlite-kv"
+        # #EXT-058-REQ-8 End
         return None
     except Exception:
         return None
