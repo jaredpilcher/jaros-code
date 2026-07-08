@@ -92,7 +92,20 @@ no-argv convention, since a ring buffer -- like LRU -- is inherently capacity-bo
 WITHOUT removing it, or ``none`` on empty. The LRU/priority-queue/ttl-store reference/drive paths are
 completely unchanged by this addition.
 
-**Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** a reference model for ``fifo``.
+**TASK-7 additions (this same module):** a FIFTH and FINAL reference model, ``_fifo_reference`` --
+a ``collections.deque``-backed textbook FIFO queue, authored ONLY from the visible
+enqueue/dequeue/peek contract (never a hidden test): ``enqueue(item)`` appends ``item`` to the back
+of the queue; ``dequeue()`` removes and returns the OLDEST item (the front, ``popleft``), or
+``None`` on an empty queue; ``peek()`` returns the same oldest item WITHOUT removing it, or ``None``
+on an empty queue. Wired into the existing ``_seeded_ops`` / ``_build_sequence`` dispatch and the
+existing ``verify`` / ``acceptance_check`` drive paths -- the oracle now checks ALL FIVE
+``SUPPORTED_CLASSES``. The driving CLI convention for ``fifo`` (authored ONLY from the visible
+enqueue/dequeue/peek contract, mirroring priority-queue/ttl-store's no-argv convention rather than
+LRU/ring-buffer's ``<capacity>`` argv, since a plain FIFO queue is unbounded): invoked as
+``python <entry>`` (no extra argv), then one command per stdin line -- ``enqueue <item>`` -> ``ok``;
+``dequeue`` -> the oldest item (FIFO order), removing it, or ``none`` on empty; ``peek`` -> the same
+oldest item WITHOUT removing it, or ``none`` on empty. The LRU/priority-queue/ttl-store/ring-buffer
+reference/drive paths are completely unchanged by this addition.
 """
 
 from __future__ import annotations
@@ -114,11 +127,10 @@ from harness.system_suite import _run_cli
 SUPPORTED_CLASSES = ("lru", "priority-queue", "ttl-store", "fifo", "ring-buffer")
 
 # Classes this module has actually built a reference model + seeded-op generator + CLI convention
-# for: "lru" (TASK-1), "priority-queue" (TASK-4), "ttl-store" (TASK-5), and "ring-buffer" (TASK-6).
-# The remaining id in SUPPORTED_CLASSES ("fifo") is recognized by `classify` (so a build can be
-# correctly fingerprinted) but `verify` honestly reports it as inconclusive until a later task adds
-# its reference model -- never a fabricated pass/fail for a class this module cannot yet check.
-_IMPLEMENTED_CLASSES = ("lru", "priority-queue", "ttl-store", "ring-buffer")
+# for: "lru" (TASK-1), "priority-queue" (TASK-4), "ttl-store" (TASK-5), "ring-buffer" (TASK-6), and
+# "fifo" (TASK-7) -- ALL FIVE ids in SUPPORTED_CLASSES are now implemented; every class `classify`
+# can name, `verify`/`acceptance_check` can also actually check.
+_IMPLEMENTED_CLASSES = ("lru", "priority-queue", "ttl-store", "ring-buffer", "fifo")
 
 
 @dataclass
@@ -379,6 +391,38 @@ def _ring_buffer_reference(capacity: int) -> _RingBufferReferenceModel:
     return _RingBufferReferenceModel(capacity)
 
 
+# --- STAGE 2e: reference model (fifo -- TASK-7's 5th and FINAL implemented ADT) ----------------
+
+class _FifoReferenceModel:
+    """A ``collections.deque``-backed textbook FIFO-queue reference, authored ONLY from the visible
+    enqueue/dequeue/peek contract (never a hidden test): ``enqueue(item)`` appends ``item`` to the
+    BACK of the queue; ``dequeue()`` removes and returns the OLDEST item (the front, ``popleft`` --
+    strict first-in-first-out order), or ``None`` on an empty queue; ``peek()`` returns the same
+    oldest item WITHOUT removing it, or ``None`` on an empty queue. Unlike ``ring-buffer`` this queue
+    is UNBOUNDED -- no capacity, and no overwrite-on-full behavior."""
+
+    def __init__(self):
+        self._data: "deque[Any]" = deque()
+
+    def enqueue(self, item: Any) -> None:
+        self._data.append(item)
+
+    def dequeue(self) -> Any:
+        if not self._data:
+            return None
+        return self._data.popleft()
+
+    def peek(self) -> Any:
+        if not self._data:
+            return None
+        return self._data[0]
+
+
+def _fifo_reference() -> _FifoReferenceModel:
+    """Factory for a fresh :class:`_FifoReferenceModel`."""
+    return _FifoReferenceModel()
+
+
 # --- STAGE 3: seeded, boundary-stressing op sequence ------------------------------------------
 
 _LRU_CAPACITY = 3
@@ -405,6 +449,12 @@ _TTL_TTL_POOL = (0, 1, 1, 2, 3, 5)
 # synthetic items `push`ed during the seeded sequence.
 _RING_CAPACITY = _LRU_CAPACITY
 _RING_ITEM_PREFIX = "r"
+
+# TASK-7: fifo seed constants. `_FIFO_FILL` sizes the fixed fill-then-peek prelude (deliberately
+# small -- a plain FIFO queue is unbounded, so there is no capacity boundary to stress, only strict
+# arrival order). `_FIFO_ITEM_PREFIX` names the synthetic items `enqueue`d during the sequence.
+_FIFO_FILL = 3
+_FIFO_ITEM_PREFIX = "f"
 
 
 def _pq_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
@@ -591,6 +641,66 @@ def _ring_buffer_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
     return ops
 
 
+def _fifo_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
+    """Deterministic op sequence for ``fifo`` (TASK-7), generated with ``random.Random(seed)``
+    (NEVER the global RNG) so the same ``seed`` always reproduces the byte-identical sequence.
+    Stresses three boundaries in a fixed prelude before any random mixing (so a broken
+    implementation -- e.g. a LIFO/stack bug -- is caught before later ops could mask it): (1) FILL
+    -- ``_FIFO_FILL`` ``enqueue``s, followed by a ``peek`` that must surface the very FIRST item
+    enqueued (the oldest) -- this is the single most load-bearing probe, since a LIFO-instead-of-FIFO
+    bug manifests as exactly this peek returning the LAST item instead; (2) DRAIN -- ``dequeue``
+    every remaining item, which must come out in the SAME order they were enqueued; (3)
+    DRAIN-PAST-EMPTY -- one more ``dequeue`` and one more ``peek`` against the now-empty queue, both
+    of which must yield ``None``. The remainder mixes random ``enqueue``/``dequeue``/``peek`` ops, so
+    ordering pressure keeps recurring throughout the sequence, not just in the fixed prelude."""
+    rng = random.Random(seed)
+    ops: "list[tuple[str, tuple]]" = []
+    item_idx = 0
+    size = 0
+
+    def _enqueue() -> None:
+        nonlocal item_idx, size
+        item = f"{_FIFO_ITEM_PREFIX}{item_idx}"
+        item_idx += 1
+        size += 1
+        ops.append(("enqueue", (item,)))
+
+    def _dequeue() -> None:
+        nonlocal size
+        if size > 0:
+            size -= 1
+        ops.append(("dequeue", ()))
+
+    def _peek() -> None:
+        ops.append(("peek", ()))
+
+    # (1) fill, then peek -- must surface the FIRST item enqueued (the oldest), never the last.
+    for _ in range(_FIFO_FILL):
+        _enqueue()
+    _peek()
+
+    # (2) drain everything that remains, in strict FIFO (arrival) order.
+    while size > 0:
+        _dequeue()
+
+    # (3) drain-past-empty boundary: dequeue + peek on an empty queue must both yield none.
+    _dequeue()
+    _peek()
+
+    # (4) random interleaved enqueue/dequeue/peek mixing, so ordering pressure keeps recurring.
+    remaining = max(0, n - len(ops))
+    for _ in range(remaining):
+        roll = rng.random()
+        if roll < 0.55 or size == 0:
+            _enqueue()
+        elif roll < 0.8:
+            _dequeue()
+        else:
+            _peek()
+
+    return ops
+
+
 def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     """Deterministic op sequence for ``cls``, generated with ``random.Random(seed)`` (NEVER the
     global RNG) so the same ``seed`` always reproduces the byte-identical sequence. For ``lru``:
@@ -603,6 +713,8 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     exact-tick-expiry, and overwrite-resets-ttl boundary stress, driven by an explicit VIRTUAL
     ``tick`` op -- never wall-clock -- see its docstring). For ``ring-buffer`` (TASK-6): delegates to
     :func:`_ring_buffer_seeded_ops` (fill-to-capacity, wrap-around-overwrites-the-oldest, drain, and
+    drain-past-empty boundary stress -- see its docstring). For ``fifo`` (TASK-7): delegates to
+    :func:`_fifo_seeded_ops` (fill-then-peek-the-oldest, drain-in-arrival-order, and
     drain-past-empty boundary stress -- see its docstring). Returns ``[]`` for any class this module
     has not yet built a reference model for (no fabricated sequence for an unimplemented class)."""
     if cls not in _IMPLEMENTED_CLASSES:
@@ -613,6 +725,8 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
         return _ttl_seeded_ops(seed, n)
     if cls == "ring-buffer":
         return _ring_buffer_seeded_ops(seed, n)
+    if cls == "fifo":
+        return _fifo_seeded_ops(seed, n)
     rng = random.Random(seed)
     keys = list(_LRU_KEYS)
     ops: "list[tuple[str, tuple]]" = []
@@ -631,8 +745,9 @@ def _build_sequence(cls: str, seed: int, n: int,
                      capacity: int) -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
     :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` and
-    ``ring-buffer`` -- TASK-6 -- both use ``capacity``; ``priority-queue`` -- TASK-4 -- and
-    ``ttl-store`` -- TASK-5 -- ignore it, the reference queue/store is unbounded), and returns
+    ``ring-buffer`` -- TASK-6 -- both use ``capacity``; ``priority-queue`` -- TASK-4 --,
+    ``ttl-store`` -- TASK-5 --, and ``fifo`` -- TASK-7 -- all ignore it, their reference
+    queue/store is unbounded), and returns
     ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI with, and the
     reference model's expected output line for each, in the same order.
     Deterministic (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the
@@ -707,6 +822,25 @@ def _build_sequence(cls: str, seed: int, n: int,
             else:
                 return [], []
         return cmd_lines, expected_lines
+    if cls == "fifo":
+        fifo_reference = _fifo_reference()
+        for op, args in ops:
+            if op == "enqueue":
+                (item,) = args
+                fifo_reference.enqueue(item)
+                cmd_lines.append(f"enqueue {item}")
+                expected_lines.append("ok")
+            elif op == "dequeue":
+                value = fifo_reference.dequeue()
+                cmd_lines.append("dequeue")
+                expected_lines.append("none" if value is None else str(value))
+            elif op == "peek":
+                value = fifo_reference.peek()
+                cmd_lines.append("peek")
+                expected_lines.append("none" if value is None else str(value))
+            else:
+                return [], []
+        return cmd_lines, expected_lines
     reference = _lru_reference(capacity)
     for op, args in ops:
         if op == "put":
@@ -753,7 +887,11 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
     ``python <entry> <capacity>``, then one command per stdin line (``push <item>`` -> ``ok``, and at
     capacity OVERWRITES the single oldest item; ``pop`` -> the oldest item, FIFO order, removing it,
     or ``none`` on empty; ``peek`` -> the same oldest item without removing it, or ``none`` on
-    empty).
+    empty). TASK-7 adds the ``fifo`` convention, mirroring priority-queue/ttl-store's no-argv
+    convention (unlike LRU/ring-buffer's ``<capacity>`` argv, since a plain FIFO queue is
+    unbounded): invoked as ``python <entry>`` (no extra argv), then one command per stdin line
+    (``enqueue <item>`` -> ``ok``; ``dequeue`` -> the oldest item, FIFO order, removing it, or
+    ``none`` on empty; ``peek`` -> the same oldest item without removing it, or ``none`` on empty).
     """
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
@@ -779,12 +917,12 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         if not ops:
             return _inconclusive(f"no seeded ops generated for class {cls!r}")
 
-        # TASK-4/TASK-5/TASK-6: the LRU and ring-buffer classes both drive
-        # `python <entry> <capacity>` (both are inherently capacity-bounded); priority-queue and
-        # ttl-store (neither has a capacity concept) drive `python <entry>` with no extra argv.
-        # `capacity` is only ever consumed by the lru/ring-buffer branches of `_build_sequence` --
-        # passing it through unused for the other classes is harmless, but the CLI argv must NOT
-        # include it for them.
+        # TASK-4/TASK-5/TASK-6/TASK-7: the LRU and ring-buffer classes both drive
+        # `python <entry> <capacity>` (both are inherently capacity-bounded); priority-queue,
+        # ttl-store, and fifo (none of which has a capacity concept) drive `python <entry>` with no
+        # extra argv. `capacity` is only ever consumed by the lru/ring-buffer branches of
+        # `_build_sequence` -- passing it through unused for the other classes is harmless, but the
+        # CLI argv must NOT include it for them.
         capacity = (_LRU_CAPACITY if cls == "lru"
                     else _RING_CAPACITY if cls == "ring-buffer" else 0)
         cli_args = ([str(_LRU_CAPACITY)] if cls == "lru"
@@ -843,7 +981,7 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)`` for ``lru`` and
     TASK-6's ``ring-buffer`` -- both inherently capacity-bounded;
     ``subprocess.run([sys.executable, entry], input=...)`` -- no ``capacity`` argv -- for TASK-4's
-    ``priority-queue`` and TASK-5's ``ttl-store``) and compares its stdout, line by line, against
+    ``priority-queue``, TASK-5's ``ttl-store``, and TASK-7's ``fifo``) and compares its stdout, line by line, against
     the baked-in expected values, asserting on the FIRST divergence. NO ORACLE LEAK: every expected
     value came from the reference model computed here, never from any hidden test. Returns
     ``{"name", "code"}`` (the shape every other acceptance check in this codebase uses -- see
@@ -859,9 +997,9 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
         entry_name = str(entry) if entry else ""
         if not entry_name:
             return None
-        # TASK-4/TASK-5/TASK-6: priority-queue and ttl-store have no capacity argv (unlike lru and
-        # TASK-6's ring-buffer, both inherently capacity-bounded) -- keep the lru argv line
-        # byte-identical to before, only branch the argv expression itself.
+        # TASK-4/TASK-5/TASK-6/TASK-7: priority-queue, ttl-store, and fifo have no capacity argv
+        # (unlike lru and TASK-6's ring-buffer, both inherently capacity-bounded) -- keep the lru
+        # argv line byte-identical to before, only branch the argv expression itself.
         argv_src = ("[sys.executable, entry, str(capacity)]" if cls in ("lru", "ring-buffer")
                     else "[sys.executable, entry]")
         code = (

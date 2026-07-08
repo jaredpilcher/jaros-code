@@ -52,11 +52,11 @@ cannot reliably write those checks): the reference model is authored determinist
 harness.
 
 #### Acceptance Criteria
-- [ ] Add `harness/adt_oracle.py` exposing `classify(spec, mods) -> str | None`, a reference-model
+- [x] Add `harness/adt_oracle.py` exposing `classify(spec, mods) -> str | None`, a reference-model
       builder per supported ADT, a seeded sequence generator, and
-      `verify(root, entry, cls, *, seed) -> AdtResult`. (TASK-1 built the module + all four stages,
-      but only the `lru` reference model — the other four ADTs' reference-model builders are future
-      tasks, so this criterion stays open until every supported ADT has one.)
+      `verify(root, entry, cls, *, seed) -> AdtResult`. (TASK-1 built the module + all four stages;
+      TASK-4/5/6/7 added the priority-queue/ttl-store/ring-buffer/fifo reference models — all 5
+      `SUPPORTED_CLASSES` now have a reference-model builder.)
 - [x] `classify` returns at most one canonical ADT id or `None`; a non-ADT build yields `None` and
       the oracle is a pure no-op (adds no acceptance check).
 - [x] Reference models are built ONLY from the visible spec's declared operations — never from the

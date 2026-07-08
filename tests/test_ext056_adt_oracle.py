@@ -460,12 +460,11 @@ def test_seeded_ops_differs_across_different_seeds():
 
 
 def test_seeded_ops_empty_for_unimplemented_class():
-    # fifo/ring-buffer are classified but this module has not yet built their reference models; an
-    # unimplemented class must yield an empty (never fabricated) sequence. (priority-queue became a
-    # SECOND implemented class in TASK-4, and ttl-store a THIRD in TASK-5 -- see the
-    # "priority-queue (TASK-4)" / "ttl-store (TASK-5)" sections further down in this same file for
-    # their coverage.)
-    assert adt_oracle._seeded_ops("fifo", 1234, 24) == []
+    # TASK-7 makes "fifo" the FIFTH and FINAL implemented class -- all 5 SUPPORTED_CLASSES now
+    # have a reference model (see the "fifo (TASK-7)" section further down in this same file for
+    # its coverage), so an unimplemented class must now be a class outside SUPPORTED_CLASSES
+    # entirely; it must still yield an empty (never fabricated) sequence.
+    assert adt_oracle._seeded_ops("stack", 1234, 24) == []
 
 
 # --- (c)/(d) verify: differential drive + first-divergence ---------------------------------------
@@ -1003,6 +1002,215 @@ def test_acceptance_check_code_passes_against_correct_ring_fixture(tmp_path):
 def test_acceptance_check_code_fails_against_buggy_ring_fixture(tmp_path):
     root = _write_cli(tmp_path, _BUGGY_RING_CLI)
     check = adt_oracle.acceptance_check("main.py", "ring-buffer")
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
+
+
+# A correct deque-based fifo CLI, authored independently of the reference model in
+# `harness/adt_oracle.py` (TASK-7): enqueue/dequeue/peek with strict first-in-first-out ordering.
+# Driven with NO extra argv (the fifo CLI convention -- like priority-queue/ttl-store, unlike LRU's
+# `<capacity>` argv, since a plain FIFO queue is unbounded).
+_GOOD_FIFO_CLI = '''\
+import sys
+from collections import deque
+
+
+class Fifo:
+    def __init__(self):
+        self.data = deque()
+
+    def enqueue(self, item):
+        self.data.append(item)
+
+    def dequeue(self):
+        if not self.data:
+            return None
+        return self.data.popleft()
+
+    def peek(self):
+        if not self.data:
+            return None
+        return self.data[0]
+
+
+def main():
+    q = Fifo()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "enqueue":
+            item = parts[1]
+            q.enqueue(item)
+            print("ok")
+        elif cmd == "dequeue":
+            value = q.dequeue()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = q.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The classic LIFO-instead-of-FIFO bug: this stub is really a STACK -- `dequeue`/`peek` operate on
+# the LAST-added (most-recently-enqueued) item instead of the FIRST-added (oldest) one. Authored
+# independently of the reference model (a plain list used as a stack, not a deque), matching this
+# task's acceptance criterion for a localized, held-out-style differential check.
+_BUGGY_FIFO_CLI = '''\
+import sys
+
+
+class BuggyFifo:
+    def __init__(self):
+        self.items = []
+
+    def enqueue(self, item):
+        self.items.append(item)
+
+    def dequeue(self):
+        if not self.items:
+            return None
+        # BUG: pops the LAST-added item (LIFO/stack order) instead of the FIRST-added (FIFO).
+        return self.items.pop()
+
+    def peek(self):
+        if not self.items:
+            return None
+        # BUG: same LIFO mistake -- shows the most-recently-enqueued item, not the oldest.
+        return self.items[-1]
+
+
+def main():
+    q = BuggyFifo()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "enqueue":
+            item = parts[1]
+            q.enqueue(item)
+            print("ok")
+        elif cmd == "dequeue":
+            value = q.dequeue()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = q.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# --- fifo (TASK-7): classify, reference FIFO order, verify PASS/FAIL ----------------------------
+
+def test_classify_returns_fifo_for_fifo_shaped_spec_and_mods():
+    spec = (
+        "Build a first-in-first-out (FIFO) queue. enqueue(item) adds item to the back of the "
+        "queue. dequeue() removes and returns the oldest item, or none if empty. peek() returns "
+        "the oldest item without removing it."
+    )
+    mods = ["enqueue", "dequeue", "peek"]
+    assert adt_oracle.classify(spec, mods) == "fifo"
+    assert adt_oracle.classify_confident(spec, mods) == "fifo"
+
+
+def test_classify_does_not_return_fifo_for_non_fifo_spec():
+    spec = (
+        "Write a simple command-line notes app that lets a user add, list, and delete text notes."
+    )
+    mods = ["add", "list", "delete", "main"]
+    assert adt_oracle.classify(spec, mods) != "fifo"
+    assert adt_oracle.classify_confident(spec, mods) != "fifo"
+
+
+def test_classify_confident_does_not_return_fifo_on_method_token_overlap_alone():
+    # a plain queue that only ever says "enqueue"/"dequeue" (no "fifo"/"first-in-first-out"/
+    # "first in first out" wording) must NOT be classified -- the conservative gate requires the
+    # spec text itself to name the ADT, never method-token coincidence alone.
+    spec = "Build a simple queue: enqueue(item) adds an item, dequeue() removes and returns one."
+    mods = ["enqueue", "dequeue"]
+    assert adt_oracle.classify_confident(spec, mods) is None
+
+
+def test_fifo_seeded_ops_deterministic_across_same_seed():
+    first = adt_oracle._seeded_ops("fifo", 1234, 24)
+    second = adt_oracle._seeded_ops("fifo", 1234, 24)
+    assert first == second
+    assert len(first) >= 24
+
+
+def test_fifo_reference_dequeues_in_fifo_order():
+    ref = adt_oracle._fifo_reference()
+    ref.enqueue("f0")
+    ref.enqueue("f1")
+    ref.enqueue("f2")
+
+    assert ref.peek() == "f0"  # oldest item first, never the newest
+    assert ref.dequeue() == "f0"
+    assert ref.peek() == "f1"
+    assert ref.dequeue() == "f1"
+    assert ref.dequeue() == "f2"
+    assert ref.dequeue() is None  # drain-past-empty
+    assert ref.peek() is None    # peek on empty
+
+
+def test_verify_passes_correct_fifo_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_FIFO_CLI)
+    result = adt_oracle.verify(root, "main.py", "fifo")
+    assert result.applicable is True
+    assert result.cls == "fifo"
+    assert result.ok is True
+    assert result.first_divergence is None
+
+
+def test_verify_fails_buggy_lifo_fifo_fixture_with_localized_divergence(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_FIFO_CLI)
+    result = adt_oracle.verify(root, "main.py", "fifo")
+    assert result.applicable is True
+    assert result.cls == "fifo"
+    assert result.ok is False
+    assert result.first_divergence is not None
+    divergence = result.first_divergence
+    assert set(divergence.keys()) == {"index", "op", "args", "expected", "actual"}
+    assert isinstance(divergence["index"], int) and divergence["index"] >= 0
+    # the fill-then-peek boundary probe (a peek immediately following the fixed fill of 3
+    # enqueues) is always at the START of `_fifo_seeded_ops`'s fixed prelude, so a LIFO-instead-of-
+    # FIFO bug must surface right there -- the diverging op is that peek, not some later
+    # random-mixing op.
+    assert divergence["op"] == "peek"
+    assert divergence["expected"] == "f0"
+    assert divergence["actual"] == "f2"
+
+
+def test_verify_never_raises_on_missing_root_or_entry_for_fifo(tmp_path):
+    missing_root = tmp_path / "does-not-exist-fifo"
+    result = adt_oracle.verify(missing_root, "main.py", "fifo")
+    assert result.applicable is False
+    assert result.ok is True
+
+
+# --- fifo acceptance_check: same emitted-script drive, no import of this module -----------------
+
+def test_acceptance_check_code_passes_against_correct_fifo_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_FIFO_CLI)
+    check = adt_oracle.acceptance_check("main.py", "fifo")
+    assert check is not None
+    assert "fifo" in check["name"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_code_fails_against_buggy_fifo_fixture(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_FIFO_CLI)
+    check = adt_oracle.acceptance_check("main.py", "fifo")
     assert check is not None
     assert _run_emitted_check(root, check) is False
 # #EXT-056-REQ-1 End

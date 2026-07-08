@@ -179,3 +179,25 @@ Single-file, off-Jetson. `adt_oracle.py` is committed (5412d2f) — no concurren
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-7] FIFO-queue reference model — complete ALL 5 SUPPORTED_CLASSES
+
+Add the `fifo` reference model to `harness/adt_oracle.py` — the last unimplemented member of
+`SUPPORTED_CLASSES` (lru, priority-queue, ttl-store, fifo, ring-buffer). Mirror the 4 existing ADTs.
+Closes REQ-1's open "fifo reference model" acceptance criterion. Single-file, off-Jetson.
+
+#### Steps
+1. Add `"fifo"` to `_IMPLEMENTED_CLASSES` + confirm classify tables cover it (keywords "fifo","first-in
+   first-out","first-in-first-out"; methods enqueue/dequeue/fifo).
+2. `_fifo_reference()`: a `collections.deque` FIFO; `enqueue <item>`→`ok`, `dequeue`→oldest item (FIFO)
+   or `none` if empty, `peek`→oldest without removing or `none`. Contract-only (no leak).
+3. Extend `_build_sequence`/`_seeded_ops` for fifo: fill, drain, drain-past-empty, interleaved
+   enqueue/dequeue. Seeded/replayable.
+4. Extend `verify`/`acceptance_check` for the fifo CLI convention lockstep vs the reference (natural line
+   protocol, no capacity argv); first-divergence; NEVER raises; other ADTs unaffected.
+5. Tests in `tests/test_ext056_adt_oracle.py` (write tests EARLY): classify→fifo (+conservative negative);
+   reference FIFO order; verify PASSES a correct fixture, FAILS a LIFO-bug fixture with localized divergence.
+6. Run ONLY `timeout 240 python -m pytest tests/test_ext056_adt_oracle.py -q`, then import check. Update index.json.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle
