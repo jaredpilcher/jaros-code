@@ -133,15 +133,22 @@ structured retrieval), which is UNEXPLORED. The mission = find the COMPLETE SET 
 make each failure VISIBLE + LOCALIZED so the model can reason on it. Reaching for "ceiling" IS the drift.
 See memory [[jaros-code-deterministic-toolset-mission]] + CLAUDE.md Founding Assumption.
 
-**Honest capability state (measured 2026-07-05):** the real-systems build class moved its blocker from a
-DETERMINISTIC defect (plan-coherence — FIXED: /buildsystem now ships coherent multi-file systems incl a
-database module, no repair needed) to a class where the 2B writes structurally-plausible but
-**behaviorally-buggy** implementation code (datastore: fails 3/3 of its own acceptance; json-todo:
-best-of-3 passes only 1/3). **best-of-k at k=3 does NOT rescue it** — but per the governing frame that means
-the ACCEPTANCE SIGNAL is blind and the missing tool is a deterministic behavioral/ordering-oracle generator
-+ execution-feedback repair (raw-probes confirm the 2B FIXES bugs it can SEE), NOT that the model is capped.
-External hard bar: uncurated SWE-bench-Lite ~13%. THIS is where jcode is not yet Opus-4.8-class — and
-closing it (by building the missing deterministic tools) is the mission.
+**★ Honest capability state (RE-MEASURED per-class 2026-07-07 — the owner's per-class loop):** ran BOTH
+suites per-class on the Jetson. **Creation ~80% raw → really ~85% honest** (16-17/20): the 4 "weak"
+classes were mostly measurement/oracle artifacts, not model incapability — (a) CSV-aggregator actually
+PASSES its oracle 2/2, only "failed" because the 240s scoreboard cap cut off a legit 338s build (cap
+raised to 360s); (b) to-do list was a DETERMINISTIC entrypoint-wiring bug — FIXED (wired-DAG entrypoint
+plan-repair synthesizes main.py importing root modules, commit 8b0efcc); (c) priority-jobqueue was a
+FALSE-DONE (the ADT oracle wasn't firing because "priority JOB queue" split the "priority queue" keyword)
+— FIXED (9b77ba8), the oracle now catches its ordering bug. **Modification 73% (11/15), 100% no-regression**
+— when an edit fails it fails SAFE (never breaks existing behavior); weak modify classes: sort/stats/calc
+(all "new behavior didn't take"). **The ONE genuine hard BUILD class = the TTL store** (gemma writes a
+`len(parts)==3` guard for a 4-token `set k v ttl` command — an off-by-one; the ADT oracle correctly catches
+it). MEASURED 2026-07-07: enriching the oracle witness to name the failing input line (f1c40ba) did NOT let
+repair self-fix it (0/3 at k=1). Testing best-of-5 (valid now the oracle is CHECKABLE for this class); if
+0/5, bank it (the CLI's gemma→7B escalation covers it) and switch to the modify weak classes. External hard
+bar: uncurated SWE-bench-Lite ~13%. Lesson: most "failures" were VISIBILITY/measurement gaps the oracle +
+per-class steering exposed — exactly the deterministic-toolset thesis.
 
 - **[EXT-056 · adt-differential-oracle — HIGH, IN FLIGHT · the first tool of the complete set]**
   The first deterministic verification tool that makes the semantic-ordering blind spot VISIBLE +
