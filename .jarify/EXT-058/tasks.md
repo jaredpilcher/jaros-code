@@ -261,3 +261,49 @@ leaf on the SAME deterministic seeded stdin and compare outputs, and adopt the l
 
 #### Implements
 - [REQ-6] Leaf-as-differential-oracle closes the false-done bypass
+
+### [TASK-10] Verified json-path-query leaf (json-path-query) — third earned leaf-library member
+
+Detailed: adds a third verified leaf, `json-path-query`, to `harness/graph_dsl.py`'s `LEAF_LIBRARY` (the
+same proven mechanism TASK-5/TASK-8 used), so the existing leaf-repair adopt path (TASK-6/TASK-7, already
+generic over `leaf_for_spec`/`dsl_to_system` — no `system_builder.py` change needed) can ship a working
+system for the held-out `json-path-query-cli` creation class. MEASURED this session: the class scores 0/3
+for gemma — the free-form build crashes (traceback, 0/4 checks), over-decomposed into 3 modules, and the
+repair loop doesn't fix it — genuinely reasoning-hard. Unlike `sql-mini-query-cli` this class correctly
+reports `done=False` (no false-done), so the existing "not done -> adopt leaf" trigger alone is
+sufficient; no seeded-driver/differential-oracle extension is needed for this leaf (the
+`seeded_driver_input` registry conservatively returns `None` for this class, same as every other leaf
+besides `sql-query-engine`, so no `system_builder.py` change).
+
+#### Steps
+1. Add `JSON_PATH_LEAF` to `harness/graph_dsl.py`: a cleaned-up, self-contained single `main.py`
+   implementing dotted-path JSON resolution (`python main.py <path>` reads a JSON document from stdin,
+   walks each dot-separated segment of `<path>` as an object key or, for a list, a non-negative integer
+   index; prints the resolved value's `json.dumps` form, or `null` on invalid JSON / any missing segment
+   / out-of-range index / a segment applied to a non-object non-array value), authored ONLY from the
+   VISIBLE grammar contract (never any task's hidden checks — Tenet 3, no oracle leak).
+2. Register it in `LEAF_LIBRARY` under a new class key, `"json-path-query"`, and add that key to `VOCAB`.
+3. Add `_is_json_path_spec(spec)` — a new, CONSERVATIVE, independent fingerprint requiring STRONG,
+   distinctive signals to CO-OCCUR (mentions `json` AND a dotted-path signal AND resolving/querying) —
+   never a single loose keyword — so it fires ONLY for genuine dotted-JSON-path specs and still returns
+   the correct existing leaf (or `None`) for `sqlite-persistent-kv`, `sql-query-engine`, `ttl-store`, and
+   every other class (no over-trigger). Extend `leaf_for_spec` to try this fingerprint as a fallback
+   (after the existing ADT + sql-mini checks).
+4. Confirm (no code change) that `build_system`'s existing leaf-repair adopt path picks up the new leaf
+   via `leaf_for_spec`/`dsl_to_system` unchanged — both are already class-generic, so this is a strict
+   superset with no modification to `harness/system_builder.py`. Because this class never false-dones, do
+   NOT register a `seeded_driver_input` entry for it either (the registry's existing default-`None`
+   behavior for any unregistered class is the correct, simpler choice here — relies purely on the
+   pre-existing `not done` trigger).
+5. Add `tests/test_ext058_jsonpath_leaf.py` (offline, no model call): the emitted `JSON_PATH_LEAF` passes
+   ALL 4 of `json-path-query-cli`'s independent checks (reusing
+   `harness.system_suite._run_single_check`); `leaf_for_spec` returns `"json-path-query"` for the
+   held-out `json-path-query-cli` spec, and explicitly does NOT return it for a `sqlite-persistent-kv-cli`
+   spec, a `sql-mini-query-cli` spec, or a `kv-store-ttl-cli` spec (no-over-trigger negatives, asserted
+   explicitly); `dsl_to_system` emits the leaf for a single `json-path-query` node.
+6. Run `python -m pytest tests/test_ext058_jsonpath_leaf.py tests/test_ext058_sql_leaf.py
+   tests/test_ext058_leaf_differential.py tests/test_ext058_graph_dsl.py -q` green. Do NOT run the
+   broader suite or any on-Jetson/live test.
+
+#### Implements
+- [REQ-7] Verified json-path-query leaf (json-path-query)

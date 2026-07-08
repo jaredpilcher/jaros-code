@@ -55,6 +55,10 @@ VOCAB = {
     # TASK-8: second earned leaf-library member -- a minimal in-memory SQL-like query engine.
     "sql-query-engine",
     # #EXT-058-REQ-5 End
+    # #EXT-058-REQ-7 Start
+    # TASK-10: third earned leaf-library member -- a nested-JSON dotted-path query tool.
+    "json-path-query",
+    # #EXT-058-REQ-7 End
     # escape hatch for irreducible novel logic
     "custom",
 }
@@ -250,6 +254,92 @@ def _is_sql_mini_spec(spec: "str | None") -> bool:
 # #EXT-058-REQ-5 End
 
 
+# #EXT-058-REQ-7 Start
+# TASK-10: third earned leaf-library member -- a minimal nested-JSON dotted-path query tool
+# (`json-path-query`), covering the held-out `json-path-query-cli` creation class (REQ-1's
+# earned-membership rule: admitted only on measured, held-out passing). MEASURED (on-Jetson,
+# this session): gemma scores 0/3 on this class -- the free-form build CRASHES (traceback, 0/4
+# checks), over-decomposed into 3 modules, and the existing repair loop does not fix it --
+# genuinely reasoning-hard for the 2B, the same class of gap the `sql-query-engine` leaf (REQ-5)
+# closed. Unlike `sql-mini-query-cli`, this class correctly reports `done=False` (no false-done
+# measured for it), so the pre-existing `not done -> adopt leaf` trigger (REQ-3) is sufficient on
+# its own -- no differential-oracle (REQ-6) extension is needed here. This reference
+# implementation independently PASSED all 4 of `json-path-query-cli`'s checks (4/4) offline this
+# session before being promoted here.
+#
+# HONESTY (Tenet 3, no oracle leak): authored ONLY from the VISIBLE grammar the class/spec
+# describe -- `python main.py <path>` reads one JSON document from stdin, walks each
+# dot-separated segment of the DOTTED `<path>` (an object key, or a non-negative integer index
+# into a list) starting from the document's top-level value, and prints the resolved value's
+# `json.dumps` form (compact, no extra whitespace) followed by a newline; invalid JSON on stdin,
+# a missing object key, an out-of-range list index, or a segment applied to a value that is
+# neither an object nor a list all print exactly `null` instead -- never from
+# `json-path-query-cli`'s (or any task's) hidden `checks`.
+JSON_PATH_LEAF = '''\
+import sys
+import json
+
+
+def main():
+    path = sys.argv[1].split(".")
+    try:
+        cur = json.load(sys.stdin)
+    except Exception:
+        print("null")
+        return
+    for seg in path:
+        if isinstance(cur, dict):
+            if seg in cur:
+                cur = cur[seg]
+            else:
+                print("null")
+                return
+        elif isinstance(cur, list):
+            try:
+                i = int(seg)
+            except Exception:
+                print("null")
+                return
+            if 0 <= i < len(cur):
+                cur = cur[i]
+            else:
+                print("null")
+                return
+        else:
+            print("null")
+            return
+    print(json.dumps(cur, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+LEAF_LIBRARY["json-path-query"] = JSON_PATH_LEAF
+
+
+def _is_json_path_spec(spec: "str | None") -> bool:
+    """CONSERVATIVE fingerprint for a nested-JSON dotted-path query spec (TASK-10): like
+    `sql-query-engine`, this leaf has no ADT reference model, so it isn't covered by
+    `adt_oracle.classify_confident` -- this is its own small keyword table. Requires ALL of a set
+    of STRONG, distinctive signals to CO-OCCUR -- mentions `json` AND a DOTTED-PATH signal AND
+    resolving/querying -- never a single loose keyword alone: e.g. the `sqlite-persistent-kv-cli`
+    spec never says "json" or "dotted" at all (it says "sqlite"/"database"/"key-value store"); the
+    `sql-mini-query-cli` spec says "query engine" and even "table"/"row" but never "json" or
+    "dotted"; the `kv-store-ttl-cli`/plain kv-store specs say neither. Requiring the co-occurrence
+    of all three signals keeps this from over-triggering on any of them. Never raises."""
+    try:
+        text = (spec or "").lower()
+        if "json" not in text:
+            return False
+        if "dotted" not in text:
+            return False
+        return "resolve" in text or "query" in text
+    except Exception:
+        return False
+# #EXT-058-REQ-7 End
+
+
 # #EXT-058-REQ-3 Start
 # TASK-6: the deterministic spec->leaf CLASSIFIER that makes the leaf library actually FIRE in
 # the real `build_system` flow (REQ-3's single-leaf DSL->system path made LIVE, as a REPAIR
@@ -261,9 +351,10 @@ def _is_sql_mini_spec(spec: "str | None") -> bool:
 # table `adt_oracle` already carries for every ADT class; this NEVER detects a benchmark/task id
 # (no task name, no hidden `checks` are ever consulted). Never raises, no model call.
 def leaf_for_spec(spec: "str | None") -> "str | None":
-    """Return the verified leaf class id (``"ttl-store"``/``"kv-store"`` via the ADT oracle, or
-    ``"sql-query-engine"`` via its own conservative fingerprint -- TASK-8) whose CONTRACT the spec
-    text fingerprints, or ``None`` when no verified leaf matches. Intersecting
+    """Return the verified leaf class id (``"ttl-store"``/``"kv-store"`` via the ADT oracle,
+    ``"sql-query-engine"`` via its own conservative fingerprint -- TASK-8, or
+    ``"json-path-query"`` via its own conservative fingerprint -- TASK-10) whose CONTRACT the
+    spec text fingerprints, or ``None`` when no verified leaf matches. Intersecting
     ``adt_oracle.classify_confident``'s result with ``LEAF_LIBRARY`` membership means a class
     ``adt_oracle`` can classify but this module has no VERIFIED template for (e.g. ``lru``,
     ``priority-queue``) honestly returns ``None`` here too -- earned membership (REQ-1), not
@@ -279,6 +370,15 @@ def leaf_for_spec(spec: "str | None") -> "str | None":
         if _is_sql_mini_spec(spec):
             return "sql-query-engine"
         # #EXT-058-REQ-5 End
+        # #EXT-058-REQ-7 Start
+        # TASK-10: third, independent fingerprint -- `json-path-query` also has no ADT
+        # reference model, so it is never returned by `adt_oracle.classify_confident` above;
+        # fall back to its own conservative co-occurrence rule (see `_is_json_path_spec`'s
+        # docstring), tried AFTER the sql-mini fingerprint so both remain mutually exclusive
+        # in practice (neither spec's distinctive signals overlap).
+        if _is_json_path_spec(spec):
+            return "json-path-query"
+        # #EXT-058-REQ-7 End
         return None
     except Exception:
         return None
@@ -350,6 +450,18 @@ _SQL_SEEDED_INPUT = (
 _SEEDED_DRIVER_INPUTS = {
     "sql-query-engine": _SQL_SEEDED_INPUT,
 }
+# #EXT-058-REQ-7 Start
+# TASK-10 DECISION: `json-path-query` deliberately has NO entry here (chose the simpler of the
+# two options the task allowed). `_run_with_stdin`/`_leaf_differential_diverges`
+# (`harness/system_builder.py`) only pipe stdin to `python <entry>` with no argv, but
+# json-path-query's `<path>` is a REQUIRED `argv[1]`, not stdin -- driving it would need a minimal
+# argv-carrying extension to the seeded-driver mechanism (and `system_builder.py`). That extension
+# is unnecessary here: unlike `sql-query-engine`, `json-path-query-cli` MEASURED no false-done (it
+# correctly reports `done=False` on a broken free-form build), so the pre-existing `not done ->
+# adopt leaf` trigger (REQ-3) already fires the leaf on its own -- no differential needed. Leaving
+# this class unregistered keeps `seeded_driver_input` returning `None` for it (its existing
+# conservative default), a strict no-op, with zero `system_builder.py` changes.
+# #EXT-058-REQ-7 End
 
 
 def seeded_driver_input(leaf_cls: "str | None") -> "str | None":
@@ -357,8 +469,9 @@ def seeded_driver_input(leaf_cls: "str | None") -> "str | None":
     string for ``leaf_cls``, or ``None`` when no seeded input is registered for that class (a
     conservative skip -- the caller simply never runs the differential for it, byte-identical to
     before this task). Currently implemented only for ``"sql-query-engine"``; every other class
-    (including the earlier ``ttl-store``/``kv-store`` leaves) intentionally returns ``None`` for
-    now. Makes no model call, reads no ``task.checks``."""
+    (including the earlier ``ttl-store``/``kv-store`` leaves, and TASK-10's ``json-path-query`` --
+    which never false-dones, so it never needed this) intentionally returns ``None`` for now.
+    Makes no model call, reads no ``task.checks``."""
     try:
         return _SEEDED_DRIVER_INPUTS.get(leaf_cls)
     except Exception:

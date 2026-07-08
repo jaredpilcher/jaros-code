@@ -116,3 +116,33 @@ no leak.
       (belt-and-suspenders, purely additive).
 - [ ] The differential is derived ONLY from the leaf's own VISIBLE spec-derived seeded input, never from any
       task's hidden `checks` (no oracle leak).
+
+### [REQ-7] Verified json-path-query leaf (json-path-query)
+
+A third earned leaf-library member (REQ-1's registry): a minimal nested-JSON dotted-path query tool
+(`python main.py <path>` resolves a dotted path like `a.b.1` against a JSON document read from stdin,
+printing the resolved value's `json.dumps` form or `null` on any miss) covering the held-out
+`json-path-query-cli` creation class. MEASURED (on-Jetson, this session): this class scores 0/3 for
+gemma — the free-form build CRASHES (traceback, 0/4 checks), over-decomposed into 3 modules, and the
+existing repair loop does not fix it — genuinely reasoning-hard for the 2B, the same class of gap the
+`sql-query-engine` leaf (REQ-5) closed. Unlike `sql-mini-query-cli`, `json-path-query-cli` correctly
+reports `done=False` (no false-done measured for this class), so the EXISTING `not done -> adopt leaf`
+trigger (REQ-3) is sufficient on its own — no differential-oracle extension (REQ-6) is required for
+this leaf. Admission follows REQ-1's earned-membership rule: the reference implementation independently
+passed all 4 of the held-out task's checks before being promoted into the library.
+
+#### Acceptance Criteria
+- [ ] A verified `json-path-query` leaf template is registered in `LEAF_LIBRARY`, authored ONLY from the
+      VISIBLE spec contract (dotted-path JSON resolution via `argv[1]` + a JSON document on stdin, print
+      the resolved value's `json.dumps` form or `null` on any miss) -- never any task's hidden `checks`
+      (Tenet 3, no oracle leak).
+- [ ] The leaf passes ALL 4 of `json-path-query-cli`'s independent, oracle-authored checks.
+- [ ] `leaf_for_spec` CONSERVATIVELY classifies a genuine dotted-JSON-path spec to this leaf, keyed on
+      strong, co-occurring, distinctive signals (`json` + a dotted-path signal + resolve/query) -- never
+      a single loose keyword.
+- [ ] `leaf_for_spec` does NOT over-trigger: a `sqlite-persistent-kv` spec, a `sql-mini-query-engine`
+      spec, and a `ttl-store` spec all still resolve to their own correct leaf/`None`, never the
+      json-path leaf.
+- [ ] The existing `build_system` leaf-repair adopt path picks up the new leaf via `leaf_for_spec` with
+      no change required to `harness/system_builder.py` (a strict superset, byte-identical behavior for
+      every other class).
