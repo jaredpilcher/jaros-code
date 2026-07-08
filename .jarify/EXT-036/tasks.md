@@ -2390,3 +2390,54 @@ to be a genuine next rung rather than one lone task.
   expression parser with precedence, and a JSON-path resolver — pushing the suite's difficulty
   frontier past the now-~92%-mastered toy-CLI tier; live gemma-vs-escalating measurement against
   the grown suite remains an open follow-up)
+
+### [TASK-51] Ratchet the MODIFICATION suite's difficulty — a genuinely-hard `HARDER_SLICE` (REQ-21)
+
+MEASURED (docs/GAP-MAP.md, 2026-07-08): gemma aces the current modification suite ~35/36
+including the multi-file tier (`FIRST_SLICE` + `MULTIFILE_SLICE`) — it is SATURATED and no
+longer DISCRIMINATES (PRIME-001's difficulty ratchet, exactly the pattern that already pushed
+the creation suite's frontier via TASK-24/TASK-50). This task adds a `HARDER_SLICE` of 4
+genuinely-hard modification tasks, each starting from a COMPLEX, already-non-trivial
+`start_system` (not a toy CLI), requiring the model to comprehend intricate EXISTING logic and
+extend it precisely without breaking it.
+
+#### Steps
+1. In `harness/modification_suite.py`, after the existing `MULTIFILE_SLICE` list (leaving
+   `FIRST_SLICE`/`MULTIFILE_SLICE`/`ALL_TASKS` byte-for-byte unchanged — `ALL_TASKS` stays
+   `FIRST_SLICE + MULTIFILE_SLICE` for backward compatibility with existing callers/tests), add
+   a new `HARDER_SLICE: list[ModificationTask]` of 4 tasks, all tier `"highly-complex"`: (1) a
+   correct single-file INFIX expression evaluator (integers, `+ - * /`, parens, precedence) gains
+   support for `%` at the same precedence as `*`/`/`; (2) a correct in-memory `CREATE
+   TABLE`/`INSERT INTO`/`SELECT * FROM ... WHERE` SQL-like engine gains single-column projection
+   (`SELECT <col> FROM <t> WHERE <c>=<v>` prints only that column's value per matching row); (3) a
+   correct dotted-path JSON resolver (stdin JSON, argv path) gains Python-style NEGATIVE array
+   indices (`a.-1` = last element), preserving key/positive-index/`null`-on-missing behavior; (4)
+   a correct 2-file stats system (`statlib.py` mean+median, `main.py` CLI dispatch) gains a `mode`
+   subcommand (most frequent value, smallest wins ties), requiring a coordinated edit across both
+   files. Each `start_system` must independently pass its own `regression_checks` UNMODIFIED
+   (Tenet-3 known-good precondition).
+2. Add a NEW offline test file `tests/test_ext036_harder_modification_classes.py` (no live model,
+   no network) that: (a) asserts registry shape (4 tasks, tier `"highly-complex"`, unique names,
+   `main.py` present with `if __name__ == "__main__"`, at least one `new_check`/`regression_check`
+   each); (b) for EVERY task, writes the unmodified `start_system` to a temp root and asserts every
+   `regression_check` passes via `harness.system_suite._run_single_check` (the known-good
+   precondition); (c) for EVERY task, hand-writes a genuinely-correct REFERENCE MODIFICATION (the
+   `start_system` with the change applied) and drives it through the REAL
+   `run_modification_suite` oracle, asserting `new_behavior_ok`, `no_regression`, and `accepted`
+   are all `True`; (d) drives a NO-OP `modify_fn` (never touches `root`) through
+   `run_modification_suite` across all 4 tasks and asserts `new_behavior_ok`/`accepted` are `False`
+   for every one — proving the checks genuinely test the requested change, not trivially or
+   accidentally satisfiable by the pre-modification system (no leak, Tenet 3).
+3. Run ONLY `python -m pytest tests/test_ext036_harder_modification_classes.py -q` (must pass) and
+   `python -m pytest tests/test_ext036_modsuite.py -q` (must stay green — confirms `ALL_TASKS`/
+   `FIRST_SLICE`/`MULTIFILE_SLICE` are unchanged). Do NOT run a live-model test, a broad
+   `test_ext036*` glob, or any `-k` sweep (a Jetson measurement may be running). Update
+   `.jarify/EXT-036/index.json`'s `REQ-21` range to the grown file's `#EXT-036-REQ-21` markers.
+
+#### Implements
+- [REQ-21] Parity instrument: matching sentence->system MODIFICATION classes (adds `HARDER_SLICE`
+  — 4 genuinely-hard tasks extending a COMPLEX existing system: an infix evaluator gains modulo,
+  a mini-SQL engine gains column projection, a JSON-path resolver gains negative indices, a
+  multi-file stats CLI gains a `mode` subcommand — pushing the suite's difficulty frontier past
+  the now-saturated `FIRST_SLICE`/`MULTIFILE_SLICE` tiers; a live gemma-vs-escalating measurement
+  against the grown suite remains an open follow-up)

@@ -36,6 +36,16 @@ the whole system) is the measured next frontier and is now part of the held-out 
 ``ALL_TASKS = FIRST_SLICE + MULTIFILE_SLICE`` is provided for callers that want the fuller set;
 ``run_modification_suite``'s default ``tasks=FIRST_SLICE`` is unchanged for backward
 compatibility.
+
+TASK-51 GROWTH (2026-07-08): ``FIRST_SLICE`` + ``MULTIFILE_SLICE`` together are MEASURED
+~35/36 SATURATED -- gemma aces nearly every task, so the suite no longer discriminates.
+``HARDER_SLICE`` ratchets the difficulty frontier: each task starts from a COMPLEX,
+already-non-trivial ``start_system`` (a real infix expression evaluator, an in-memory SQL-like
+engine, a JSON-path resolver, a multi-file stats CLI) and asks for a precise EXTENSION of its
+existing logic, not a toy append. ``HARDER_SLICE`` is exposed standalone (NOT folded into
+``ALL_TASKS``, which stays byte-identical to ``FIRST_SLICE + MULTIFILE_SLICE`` for
+backward compatibility with existing callers/tests) -- callers that want the hardest tier pass
+``tasks=HARDER_SLICE`` explicitly.
 """
 
 from __future__ import annotations
@@ -733,6 +743,296 @@ MULTIFILE_SLICE: "list[ModificationTask]" = [
         regression_checks=[],
     ),
 ]
+
+
+# --- HARDER_SLICE (2026-07-08): genuinely-hard modification tier ----------------------------
+# MEASURED (docs/GAP-MAP.md, 2026-07-08): FIRST_SLICE + MULTIFILE_SLICE together are ~35/36
+# SATURATED -- gemma aces nearly every task, including the multi-file tier -- so the suite no
+# longer DISCRIMINATES (PRIME-001's ratchet: an eval suite the harness can ace is too easy to
+# stay informative, mirroring how TASK-24/TASK-50 pushed the creation suite's frontier).
+# HARDER_SLICE instead starts each task from a COMPLEX, already-non-trivial start_system (a real
+# infix expression evaluator, an in-memory SQL-like engine, a JSON-path resolver, a multi-file
+# stats CLI) requiring the model to comprehend INTRICATE EXISTING logic and extend it precisely,
+# not just append a line to a toy CLI. Each start_system is genuinely correct and verifiably
+# passes its own regression_checks BEFORE any modification (Tenet 3); every mod_sentence's
+# checks are proven satisfiable by a hand-written reference modification AND proven non-trivial
+# (a no-op modify_fn that returns start_system unchanged FAILS every new_check -- no leak) in
+# ``tests/test_ext036_harder_modification_classes.py``.
+
+_INFIX_EVAL_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def _parse_expr(tokens, pos):\n"
+    "    value, pos = _parse_term(tokens, pos)\n"
+    "    while pos < len(tokens) and tokens[pos] in (\"+\", \"-\"):\n"
+    "        op = tokens[pos]\n"
+    "        pos += 1\n"
+    "        rhs, pos = _parse_term(tokens, pos)\n"
+    "        value = value + rhs if op == \"+\" else value - rhs\n"
+    "    return value, pos\n"
+    "\n"
+    "\n"
+    "def _parse_term(tokens, pos):\n"
+    "    value, pos = _parse_factor(tokens, pos)\n"
+    "    while pos < len(tokens) and tokens[pos] in (\"*\", \"/\"):\n"
+    "        op = tokens[pos]\n"
+    "        pos += 1\n"
+    "        rhs, pos = _parse_factor(tokens, pos)\n"
+    "        value = value * rhs if op == \"*\" else int(value / rhs)\n"
+    "    return value, pos\n"
+    "\n"
+    "\n"
+    "def _parse_factor(tokens, pos):\n"
+    "    tok = tokens[pos]\n"
+    "    if tok == \"(\":\n"
+    "        value, pos = _parse_expr(tokens, pos + 1)\n"
+    "        return value, pos + 1\n"
+    "    return int(tok), pos + 1\n"
+    "\n"
+    "\n"
+    "def evaluate(line):\n"
+    "    tokens = line.split()\n"
+    "    value, _ = _parse_expr(tokens, 0)\n"
+    "    return value\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    line = sys.stdin.readline()\n"
+    "    print(evaluate(line))\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_SQL_MINI_CLI = (
+    "import sys\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    tables = {}\n"
+    "    for line in sys.stdin:\n"
+    "        line = line.rstrip(\"\\n\")\n"
+    "        if not line:\n"
+    "            continue\n"
+    "        if line.startswith(\"CREATE TABLE \"):\n"
+    "            rest = line[len(\"CREATE TABLE \"):]\n"
+    "            name, cols_part = rest.split(\" (\", 1)\n"
+    "            cols = cols_part.rstrip(\")\").split(\",\")\n"
+    "            tables[name] = {\"columns\": cols, \"rows\": []}\n"
+    "            print(\"ok\")\n"
+    "        elif line.startswith(\"INSERT INTO \"):\n"
+    "            rest = line[len(\"INSERT INTO \"):]\n"
+    "            name, values_part = rest.split(\" VALUES (\", 1)\n"
+    "            values = values_part.rstrip(\")\").split(\",\")\n"
+    "            tables[name][\"rows\"].append(values)\n"
+    "            print(\"ok\")\n"
+    "        elif line.startswith(\"SELECT * FROM \"):\n"
+    "            rest = line[len(\"SELECT * FROM \"):]\n"
+    "            name, cond = rest.split(\" WHERE \", 1)\n"
+    "            col, val = cond.split(\"=\", 1)\n"
+    "            table = tables[name]\n"
+    "            idx = table[\"columns\"].index(col)\n"
+    "            for row in table[\"rows\"]:\n"
+    "                if row[idx] == val:\n"
+    "                    print(\",\".join(row))\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_JSONPATH_CLI = (
+    "import sys\n"
+    "import json\n"
+    "\n"
+    "\n"
+    "def resolve(value, path):\n"
+    "    if not path:\n"
+    "        return value, True\n"
+    "    current = value\n"
+    "    for part in path.split(\".\"):\n"
+    "        if isinstance(current, dict):\n"
+    "            if part not in current:\n"
+    "                return None, False\n"
+    "            current = current[part]\n"
+    "        elif isinstance(current, list):\n"
+    "            if not part.lstrip(\"-\").isdigit():\n"
+    "                return None, False\n"
+    "            idx = int(part)\n"
+    "            if idx < 0 or idx >= len(current):\n"
+    "                return None, False\n"
+    "            current = current[idx]\n"
+    "        else:\n"
+    "            return None, False\n"
+    "    return current, True\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    path = sys.argv[1]\n"
+    "    try:\n"
+    "        doc = json.loads(sys.stdin.read())\n"
+    "    except Exception:\n"
+    "        print(\"null\")\n"
+    "        return\n"
+    "    value, ok = resolve(doc, path)\n"
+    "    if ok:\n"
+    "        print(json.dumps(value))\n"
+    "    else:\n"
+    "        print(\"null\")\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_STATLIB_MEAN_MEDIAN = (
+    "\"\"\"Small stats helpers.\"\"\"\n"
+    "\n"
+    "\n"
+    "def mean(nums):\n"
+    "    return sum(nums) / len(nums) if nums else 0\n"
+    "\n"
+    "\n"
+    "def median(nums):\n"
+    "    s = sorted(nums)\n"
+    "    n = len(s)\n"
+    "    if n == 0:\n"
+    "        return 0\n"
+    "    mid = n // 2\n"
+    "    if n % 2 == 1:\n"
+    "        return s[mid]\n"
+    "    return (s[mid - 1] + s[mid]) / 2\n"
+)
+
+_STATS_MODE_MAIN = (
+    "import sys\n"
+    "from statlib import mean, median\n"
+    "\n"
+    "\n"
+    "def main():\n"
+    "    args = sys.argv[1:]\n"
+    "    nums = [int(x) for x in sys.stdin.readline().split()]\n"
+    "    if args and args[0] == \"median\":\n"
+    "        print(median(nums))\n"
+    "    else:\n"
+    "        print(mean(nums))\n"
+    "\n"
+    "\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+)
+
+_STATS_MODE_BASE_SYSTEM = {"statlib.py": _STATLIB_MEAN_MEDIAN, "main.py": _STATS_MODE_MAIN}
+
+HARDER_SLICE: "list[ModificationTask]" = [
+    ModificationTask(
+        name="infix-eval-add-modulo", cls="expr-evaluator", tier="highly-complex",
+        start_system={"main.py": _INFIX_EVAL_CLI},
+        mod_sentence=(
+            "The program in main.py reads ONE line of a space-separated infix arithmetic "
+            "expression (non-negative integers, the operators + - * /, and parentheses) from "
+            "standard input and prints the integer result, respecting standard precedence (* "
+            "and / bind tighter than + and -) with left-to-right evaluation among "
+            "equal-precedence operators. Add support for the modulo operator % at the SAME "
+            "precedence as * and / (participating in the same left-to-right chain as * and / "
+            "when they appear together). Keep the existing +, -, *, /, and parentheses behavior "
+            "-- including precedence and left-to-right evaluation -- exactly unchanged."
+        ),
+        new_checks=[
+            ([], "17 % 5\n", "2"),
+            ([], "2 + 17 % 5\n", "4"),
+            ([], "20 % 7 * 3\n", "18"),
+        ],
+        regression_checks=[
+            ([], "2 + 3 * 4\n", "14"),
+            ([], "( 2 + 3 ) * 4\n", "20"),
+            ([], "10 - 2 - 3\n", "5"),
+        ],
+    ),
+    ModificationTask(
+        name="sql-mini-add-projection", cls="query-engine", tier="highly-complex",
+        start_system={"main.py": _SQL_MINI_CLI},
+        mod_sentence=(
+            "The program in main.py is a minimal in-memory SQL-like engine reading commands "
+            "from standard input, one per line: `CREATE TABLE <name> (<col1>,<col2>,...)` "
+            "prints `ok`; `INSERT INTO <name> VALUES (<v1>,<v2>,...)` prints `ok`; `SELECT * "
+            "FROM <name> WHERE <col>=<value>` prints one comma-separated line per matching row, "
+            "in insertion order. Add support for projecting a SINGLE column: `SELECT <col> FROM "
+            "<name> WHERE <cond_col>=<value>` (no `*` -- just one column name right after "
+            "SELECT) prints ONLY that column's value (not the whole row), one per matching row, "
+            "in the same row order `SELECT *` would use. Keep the existing `CREATE TABLE`, "
+            "`INSERT INTO`, and `SELECT * FROM ... WHERE` commands and their output formats "
+            "exactly unchanged."
+        ),
+        new_checks=[
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "SELECT name FROM users WHERE id=1\n", "alice"),
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "INSERT INTO users VALUES (2,bob)\nSELECT id FROM users WHERE name=bob\n", "2"),
+        ],
+        regression_checks=[
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "SELECT * FROM users WHERE id=1\n", "1,alice"),
+            ([], "CREATE TABLE users (id,name)\nINSERT INTO users VALUES (1,alice)\n"
+                 "INSERT INTO users VALUES (2,bob)\nSELECT * FROM users WHERE name=bob\n",
+             "2,bob"),
+        ],
+    ),
+    ModificationTask(
+        name="jsonpath-add-negative-index", cls="config-query", tier="highly-complex",
+        start_system={"main.py": _JSONPATH_CLI},
+        mod_sentence=(
+            "The program in main.py is run as `python main.py <path>` where <path> is a dotted "
+            "path like `a.b.c` (each segment is an object key, or, when the current value is a "
+            "JSON array, a non-negative integer index into it). It reads the entire standard "
+            "input as one JSON document and resolves <path> against it, printing the resolved "
+            "value's json.dumps form if the path fully resolves, or `null` if any segment is "
+            "missing / out of range / applied to a non-container, or the input isn't valid "
+            "JSON. Add support for NEGATIVE array indices in a path segment (e.g. `a.-1` means "
+            "the LAST element of the array at `a`, standard Python-style negative indexing) -- "
+            "a negative index that is still out of range after wrapping must still resolve to "
+            "`null` exactly like an out-of-range positive index does today. Keep the existing "
+            "object-key lookup, non-negative-index lookup, and null-on-missing/invalid behavior "
+            "exactly unchanged."
+        ),
+        new_checks=[
+            (["a.-1"], "{\"a\": [1, 2, 3]}\n", "3"),
+            (["a.-2"], "{\"a\": [\"x\", \"y\", \"z\"]}\n", "\"y\""),
+            (["a.-1.name"], "{\"a\": [{\"name\": \"x\"}, {\"name\": \"y\"}]}\n", "\"y\""),
+        ],
+        regression_checks=[
+            (["a.b"], "{\"a\": {\"b\": 42}}\n", "42"),
+            (["a.0.b"], "{\"a\": [{\"b\": \"x\"}, {\"b\": \"y\"}]}\n", "\"x\""),
+            (["a.c"], "{\"a\": {\"b\": 1}}\n", "null"),
+        ],
+    ),
+    ModificationTask(
+        name="stats-add-mode-subcmd", cls="stats-cli", tier="highly-complex",
+        start_system=dict(_STATS_MODE_BASE_SYSTEM),
+        mod_sentence=(
+            "The program in main.py is a stats CLI: run with no argument, it reads one line of "
+            "whitespace-separated integers from standard input and prints their mean "
+            "(statlib.py's `mean` function); run as `python main.py median`, it prints their "
+            "median instead (statlib.py's `median` function). Add a `mode` subcommand: `python "
+            "main.py mode` prints the MOST FREQUENT value among the numbers; if there is a tie "
+            "for most frequent, print the SMALLEST of the tied values. Implement this as a new "
+            "`mode` function added to statlib.py and wire it into main.py's dispatch. Keep the "
+            "existing no-argument (mean) and `median` subcommands and their output formats "
+            "exactly unchanged."
+        ),
+        new_checks=[
+            (["mode"], "3 3 3 9\n", "3"),
+            (["mode"], "6 6 2 2 8\n", "2"),
+        ],
+        regression_checks=[
+            ([], "1 2 3 4\n", "2.5"),
+            (["median"], "1 2 3 10\n", "2.5"),
+        ],
+    ),
+]
+
 
 ALL_TASKS: "list[ModificationTask]" = FIRST_SLICE + MULTIFILE_SLICE
 # #EXT-036-REQ-21 End

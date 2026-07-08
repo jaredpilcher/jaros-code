@@ -586,7 +586,7 @@ sentence→system frontier: ship-rate + done-rate per class × tier, measured ge
   full `tests/` 1359 green, no live model). CAVEAT: this task fixes the measured harness-precision bug; the actual
   LIVE gemma-alone / escalating-system re-measurement against the fixed suite remains the next follow-up.
 
-### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (PARTIAL — framework + first slice, EXT-036 TASK-16; grown to 10 tasks/harder change classes, TASK-20, 2026-07-03)
+### [REQ-21] Parity instrument: matching sentence→system MODIFICATION classes (edit an existing complex system)  (PARTIAL — framework + first slice, EXT-036 TASK-16; grown to 10 tasks/harder change classes, TASK-20, 2026-07-03; multi-file tier added, TASK-22, 2026-07-03; ratcheted with a genuinely-hard `HARDER_SLICE`, TASK-51, 2026-07-08)
 
 The harder, more realistic parity target: modify an EXISTING working complex system from a one-sentence change (most
 real dev is editing, not greenfield). For each (or a subset of) the CREATION-suite systems, a matching MODIFICATION
@@ -631,6 +631,29 @@ behavior holds AND nothing previously-working regressed). Reuses `modify_system`
   tasks including the 5 harder change classes added by TASK-20, plus a dedicated regression-gate test proving the
   honesty gate rejects a dishonestly-self-reported `applied=True` modification on one of the harder tasks too, not
   just the original TASK-16 fixture).
+- [x] The difficulty frontier must be RATCHETED once the existing tiers saturate, not left to go stale (PRIME-001's
+  difficulty ratchet, mirroring REQ-20's TASK-24/TASK-50 growth) — **DONE 2026-07-08** (`harness/modification_suite.py`
+  `HARDER_SLICE`, TASK-51): MEASURED (docs/GAP-MAP.md) that `FIRST_SLICE` + `MULTIFILE_SLICE` together are ~35/36
+  SATURATED — gemma aces nearly every task including the multi-file tier, so the suite no longer discriminates.
+  `HARDER_SLICE` adds 4 genuinely-hard, all-`"highly-complex"`-tier tasks, each starting from a COMPLEX,
+  already-non-trivial `start_system` (not a toy CLI) that the model must comprehend and precisely EXTEND: an infix
+  arithmetic expression evaluator (real operator precedence + parentheses) gains a modulo operator at the same
+  precedence as `*`/`/`; an in-memory SQL-like engine (`CREATE TABLE`/`INSERT INTO`/`SELECT * FROM ... WHERE`) gains
+  single-column projection (`SELECT <col> FROM ... WHERE`); a dotted-path JSON resolver gains Python-style negative
+  array indices; a two-file stats CLI (`statlib.py` mean/median + `main.py` dispatch) gains a `mode` subcommand
+  (smallest value wins ties) requiring a coordinated edit across both files. `HARDER_SLICE` is exposed standalone
+  (NOT folded into `ALL_TASKS`, which stays byte-identical to `FIRST_SLICE + MULTIFILE_SLICE` for backward
+  compatibility with existing callers/tests — callers that want the hardest tier pass `tasks=HARDER_SLICE`
+  explicitly); `run_modification_suite`'s default `tasks=FIRST_SLICE` is unchanged. HONEST (Tenet 3, no leak): each
+  `start_system` is proven to already pass its own `regression_checks` UNMODIFIED (known-good precondition); a
+  hand-written, genuinely-correct REFERENCE MODIFICATION for every task is driven through the REAL
+  `run_modification_suite` oracle and satisfies BOTH `new_checks` AND `regression_checks` (`accepted=True`); and a
+  NO-OP `modify_fn` (start_system left completely unchanged) FAILS every task's `new_checks` — proving the checks
+  genuinely test the requested change and are not trivially/accidentally satisfiable by the pre-modification system.
+  Proven OFFLINE (`tests/test_ext036_harder_modification_classes.py`, no live model, no network): all four
+  properties above, plus the registry's structural shape. CAVEAT (honest scope): a live gemma-vs-escalating
+  measurement against `HARDER_SLICE` has not been run here — that remains an explicit follow-up, mirroring REQ-20's
+  same open caveat for its own `HARDER_SLICE`.
 
 ### [REQ-22] Server/HTTP acceptance oracle for REAL web-service builds  (DONE — deterministic oracle module built, EXT-036 TASK-23; wired into build_system, TASK-25, 2026-07-04)
 
