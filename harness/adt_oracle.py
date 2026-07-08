@@ -59,8 +59,25 @@ ties broken by insertion order / stable FIFO-among-ties) or ``none`` on empty; `
 value ``pop`` would return, without removing it, or ``none`` on empty. The LRU reference/drive path
 is completely unchanged by this addition.
 
+**TASK-5 additions (this same module):** a THIRD reference model, ``_ttl_store_reference`` -- a
+plain ``dict`` of ``key -> (value, expiry_tick)`` plus a VIRTUAL clock ``now`` (an integer op
+counter) that advances ONLY via an explicit ``tick`` op -- NEVER ``time.time()`` / ``sleep`` -- so a
+seeded ttl-store run is byte-replayable exactly like the LRU/priority-queue paths. Wired into the
+existing ``_seeded_ops`` / ``_build_sequence`` dispatch and the existing ``verify`` /
+``acceptance_check`` drive paths -- the oracle now checks a THIRD ADT class. The driving CLI
+convention for ``ttl-store`` (authored ONLY from the visible set/get/ttl contract, matching the
+existing ``kv-store-ttl-cli`` task's command grammar in ``harness/system_suite.py``, extended with
+the explicit virtual-clock ``tick`` op that grammar has no equivalent for): invoked as
+``python <entry>`` (no extra argv, like priority-queue), then one command per stdin line --
+``set <key> <value> <ttl>`` -> ``ok`` (stores ``value`` under ``key`` with expiry tick
+``now + ttl``; ``ttl=0`` means already-expired, matching the ``kv-store-ttl-cli`` convention's
+immediate-expiry boundary -- no special-casing needed since ``now < now + 0`` is simply False);
+``get <key>`` -> the stored value if ``now < expiry`` else ``none`` (absent or expired); ``tick`` ->
+``ok`` (advances the virtual clock by exactly one step -- the ONLY way ``now`` ever advances). The
+LRU and priority-queue reference/drive paths are completely unchanged by this addition.
+
 **Not done here (future tasks, see ``.jarify/EXT-056/design.md``):** reference models for
-``ttl-store`` / ``fifo`` / ``ring-buffer``.
+``fifo`` / ``ring-buffer``.
 """
 
 from __future__ import annotations
@@ -82,11 +99,11 @@ from harness.system_suite import _run_cli
 SUPPORTED_CLASSES = ("lru", "priority-queue", "ttl-store", "fifo", "ring-buffer")
 
 # Classes this module has actually built a reference model + seeded-op generator + CLI convention
-# for: "lru" (TASK-1) and "priority-queue" (TASK-4). The remaining ids in SUPPORTED_CLASSES are
-# recognized by `classify` (so a build can be correctly fingerprinted) but `verify` honestly
-# reports them as inconclusive until a later task adds their reference model -- never a fabricated
-# pass/fail for a class this module cannot yet check.
-_IMPLEMENTED_CLASSES = ("lru", "priority-queue")
+# for: "lru" (TASK-1), "priority-queue" (TASK-4), and "ttl-store" (TASK-5). The remaining ids in
+# SUPPORTED_CLASSES are recognized by `classify` (so a build can be correctly fingerprinted) but
+# `verify` honestly reports them as inconclusive until a later task adds their reference model --
+# never a fabricated pass/fail for a class this module cannot yet check.
+_IMPLEMENTED_CLASSES = ("lru", "priority-queue", "ttl-store")
 
 
 @dataclass
@@ -129,7 +146,7 @@ _KEYWORDS: "dict[str, tuple[str, ...]]" = {
 _METHOD_TOKENS: "dict[str, tuple[str, ...]]" = {
     "lru": ("get", "put", "capacity", "lru"),
     "priority-queue": ("push", "pop", "peek", "priority", "enqueue"),
-    "ttl-store": ("set", "expire", "ttl"),
+    "ttl-store": ("set", "get", "expire", "ttl"),
     "fifo": ("enqueue", "dequeue", "fifo"),
     "ring-buffer": ("push", "pop", "overwrite", "ring"),
 }
@@ -273,6 +290,44 @@ def _priority_queue_reference() -> _PriorityQueueReferenceModel:
     return _PriorityQueueReferenceModel()
 
 
+# --- STAGE 2c: reference model (ttl-store -- TASK-5's 3rd implemented ADT) --------------------
+
+class _TtlStoreReferenceModel:
+    """A ``dict``-backed textbook TTL-store reference, authored ONLY from the visible set/get/ttl
+    contract (never from any hidden test): ``set(key, value, ttl)`` stores ``value`` under ``key``
+    with an expiry TICK of ``now + ttl`` (a ``ttl`` of 0 means the key is ALREADY expired -- since
+    ``now < now + 0`` is simply False, a ``get`` immediately after a ``ttl=0`` ``set``, with zero
+    ticks advanced, honestly reports a miss with no special-casing needed, matching the
+    ``kv-store-ttl-cli`` convention's immediate-expiry boundary); ``get(key)`` returns the stored
+    value if ``key`` is present AND still live (``now < expiry``), else ``None`` (absent or
+    expired); ``tick()`` advances the VIRTUAL clock ``now`` by exactly one step -- the ONLY way
+    ``now`` ever advances (NEVER wall-clock / ``time.time()`` / ``sleep``, so a seeded op sequence
+    stays byte-replayable). Overwriting an existing key via a second ``set`` REPLACES its expiry
+    relative to the CURRENT ``now`` -- the ttl countdown restarts from the moment of the overwrite,
+    not the original ``set``."""
+
+    def __init__(self):
+        self._data: "dict[Any, tuple[Any, int]]" = {}
+        self._now = 0
+
+    def set(self, key: Any, value: Any, ttl: int) -> None:
+        self._data[key] = (value, self._now + max(0, int(ttl)))
+
+    def get(self, key: Any) -> Any:
+        if key not in self._data:
+            return None
+        value, expiry = self._data[key]
+        return value if self._now < expiry else None
+
+    def tick(self) -> None:
+        self._now += 1
+
+
+def _ttl_store_reference() -> _TtlStoreReferenceModel:
+    """Factory for a fresh :class:`_TtlStoreReferenceModel`."""
+    return _TtlStoreReferenceModel()
+
+
 # --- STAGE 3: seeded, boundary-stressing op sequence ------------------------------------------
 
 _LRU_CAPACITY = 3
@@ -284,6 +339,13 @@ _LRU_KEYS = ("a", "b", "c", "d", "e")  # more keys than capacity -> guarantees e
 _PQ_TIE_PRIORITY = 2
 _PQ_PRIORITY_POOL = (1, 2, 2, 3, 4, 4, 5)
 _PQ_ITEM_PREFIX = "item"
+
+# TASK-5: ttl-store seed constants. `_TTL_KEY_POOL` is a small key pool reused across the random
+# mixing phase (so overwrite/re-read pressure recurs); `_TTL_TTL_POOL` deliberately includes 0 (the
+# immediate-expiry boundary) alongside varied positive ttls so that boundary keeps recurring
+# throughout the sequence, not just in the fixed prelude.
+_TTL_KEY_POOL = ("a", "b", "c", "d", "e")
+_TTL_TTL_POOL = (0, 1, 1, 2, 3, 5)
 
 
 def _pq_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
@@ -345,6 +407,63 @@ def _pq_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
     return ops
 
 
+def _ttl_seeded_ops(seed: int, n: int) -> "list[tuple[str, tuple]]":
+    """Deterministic, boundary-stressing op sequence for ``ttl-store`` (TASK-5), generated with
+    ``random.Random(seed)`` (NEVER the global RNG, and the virtual clock never touches wall-clock
+    time either) so the same ``seed`` always reproduces the byte-identical sequence. Stresses four
+    boundaries in a fixed prelude before any random mixing (so a broken implementation is caught
+    before later ops could mask it): (1) the IMMEDIATE-EXPIRY boundary -- a ``set`` with ``ttl=0``
+    followed immediately by a ``get`` with NO ``tick`` in between, which must already read as
+    expired; (2) the exact-tick expiry boundary -- a ``set`` with ``ttl=1``, a ``get`` BEFORE any
+    ``tick`` (must still be live), one ``tick``, then a ``get`` AFTER (must now read as expired);
+    (3) OVERWRITE-RESETS-TTL -- a key is set, ticked once, then overwritten with a fresh ttl; the
+    overwritten value must survive the tick that would have expired the ORIGINAL ttl, then expire
+    exactly on its own new schedule; (4) a ``get`` on a key that was never set (a clean miss). The
+    remainder mixes random ``set``/``get``/``tick`` ops across a small key pool with a ttl pool that
+    keeps re-including ``0`` (further immediate-expiry hits throughout, not just up front)."""
+    rng = random.Random(seed)
+    ops: "list[tuple[str, tuple]]" = []
+
+    # (1) immediate-expiry boundary: ttl=0 must already be expired with NO tick in between.
+    ops.append(("set", ("a", "v-a0", 0)))
+    ops.append(("get", ("a",)))
+
+    # (2) alive-before / expired-after a single virtual tick, right at the expiry boundary.
+    ops.append(("set", ("b", "v-b0", 1)))
+    ops.append(("get", ("b",)))
+    ops.append(("tick", ()))
+    ops.append(("get", ("b",)))
+
+    # (3) overwrite-resets-ttl: the countdown restarts from the CURRENT `now`, not the original
+    # `set` time.
+    ops.append(("set", ("c", "v-c0", 1)))
+    ops.append(("tick", ()))
+    ops.append(("set", ("c", "v-c1", 1)))
+    ops.append(("get", ("c",)))
+    ops.append(("tick", ()))
+    ops.append(("get", ("c",)))
+
+    # (4) get on a never-set key -> a clean miss.
+    ops.append(("get", ("never-set",)))
+
+    # (5) random mixed set/get/tick stress across a small key pool with a ttl pool that keeps
+    # re-including 0, so the expiry boundary keeps recurring throughout the sequence.
+    remaining = max(0, n - len(ops))
+    for i in range(remaining):
+        roll = rng.random()
+        if roll < 0.45:
+            key = rng.choice(_TTL_KEY_POOL)
+            ttl = rng.choice(_TTL_TTL_POOL)
+            ops.append(("set", (key, f"v-{key}-{i}", ttl)))
+        elif roll < 0.85:
+            key = rng.choice(_TTL_KEY_POOL)
+            ops.append(("get", (key,)))
+        else:
+            ops.append(("tick", ()))
+
+    return ops
+
+
 def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     """Deterministic op sequence for ``cls``, generated with ``random.Random(seed)`` (NEVER the
     global RNG) so the same ``seed`` always reproduces the byte-identical sequence. For ``lru``:
@@ -353,12 +472,16 @@ def _seeded_ops(cls: str, seed: int, n: int) -> "list[tuple[str, tuple]]":
     re-access reordering (a ``get`` protects a key from the next eviction), repeated keys, and
     misses (a ``get`` on an absent/evicted key). For ``priority-queue`` (TASK-4): delegates to
     :func:`_pq_seeded_ops` (tie-break, varied-priority mixing, and empty-boundary stress -- see its
-    docstring). Returns ``[]`` for any class this module has not yet built a reference model for
-    (no fabricated sequence for an unimplemented class)."""
+    docstring). For ``ttl-store`` (TASK-5): delegates to :func:`_ttl_seeded_ops` (immediate-expiry,
+    exact-tick-expiry, and overwrite-resets-ttl boundary stress, driven by an explicit VIRTUAL
+    ``tick`` op -- never wall-clock -- see its docstring). Returns ``[]`` for any class this module
+    has not yet built a reference model for (no fabricated sequence for an unimplemented class)."""
     if cls not in _IMPLEMENTED_CLASSES:
         return []
     if cls == "priority-queue":
         return _pq_seeded_ops(seed, n)
+    if cls == "ttl-store":
+        return _ttl_seeded_ops(seed, n)
     rng = random.Random(seed)
     keys = list(_LRU_KEYS)
     ops: "list[tuple[str, tuple]]" = []
@@ -377,9 +500,10 @@ def _build_sequence(cls: str, seed: int, n: int,
                      capacity: int) -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
     :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` uses
-    ``capacity``; ``priority-queue`` -- TASK-4 -- ignores it, the reference queue is unbounded),
-    and returns ``(cmd_lines, expected_lines)`` -- the exact stdin command lines to drive a CLI
-    with, and the reference model's expected output line for each, in the same order.
+    ``capacity``; ``priority-queue`` -- TASK-4 -- and ``ttl-store`` -- TASK-5 -- both ignore it, the
+    reference queue/store is unbounded), and returns ``(cmd_lines, expected_lines)`` -- the exact
+    stdin command lines to drive a CLI with, and the reference model's expected output line for
+    each, in the same order.
     Deterministic (same ``cls``/``seed``/``n``/``capacity`` -> byte-identical output). This is the
     ONE place the reference logic lives; both :func:`verify` (in-process differential drive) and
     :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted script) call it
@@ -410,6 +534,26 @@ def _build_sequence(cls: str, seed: int, n: int,
                 value = pq_reference.peek()
                 cmd_lines.append("peek")
                 expected_lines.append("none" if value is None else str(value))
+            else:
+                return [], []
+        return cmd_lines, expected_lines
+    if cls == "ttl-store":
+        ttl_reference = _ttl_store_reference()
+        for op, args in ops:
+            if op == "set":
+                key, value, ttl = args
+                ttl_reference.set(key, value, ttl)
+                cmd_lines.append(f"set {key} {value} {ttl}")
+                expected_lines.append("ok")
+            elif op == "get":
+                (key,) = args
+                value = ttl_reference.get(key)
+                cmd_lines.append(f"get {key}")
+                expected_lines.append("none" if value is None else str(value))
+            elif op == "tick":
+                ttl_reference.tick()
+                cmd_lines.append("tick")
+                expected_lines.append("ok")
             else:
                 return [], []
         return cmd_lines, expected_lines
@@ -450,7 +594,11 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
     ``ok``; ``get <key>`` -> the value or ``none``), one output line per command in the same order.
     TASK-4 adds the ``priority-queue`` convention: invoked as ``python <entry>`` (no extra argv),
     then one command per stdin line (``push <priority> <item>`` -> ``ok``; ``pop`` -> the
-    highest-priority item or ``none`` on empty; ``peek`` -> the same without removing it).
+    highest-priority item or ``none`` on empty; ``peek`` -> the same without removing it). TASK-5
+    adds the ``ttl-store`` convention: invoked as ``python <entry>`` (no extra argv), then one
+    command per stdin line (``set <key> <value> <ttl>`` -> ``ok``; ``get <key>`` -> the value if
+    live else ``none``; ``tick`` -> ``ok``, advancing the VIRTUAL clock by exactly one step --
+    NEVER wall-clock).
     """
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
@@ -476,10 +624,11 @@ def verify(root: Any, entry: Any, cls: "str | None", *, seed: int = 1234,
         if not ops:
             return _inconclusive(f"no seeded ops generated for class {cls!r}")
 
-        # TASK-4: the LRU class drives `python <entry> <capacity>`; priority-queue (no capacity
-        # concept) drives `python <entry>` with no extra argv. `capacity` is only ever consumed by
-        # the lru branch of `_build_sequence` -- passing it through unused for priority-queue is
-        # harmless, but the CLI argv must NOT include it for that class.
+        # TASK-4/TASK-5: the LRU class drives `python <entry> <capacity>`; priority-queue and
+        # ttl-store (neither has a capacity concept) drive `python <entry>` with no extra argv.
+        # `capacity` is only ever consumed by the lru branch of `_build_sequence` -- passing it
+        # through unused for the other classes is harmless, but the CLI argv must NOT include it
+        # for them.
         capacity = _LRU_CAPACITY if cls == "lru" else 0
         cli_args = [str(_LRU_CAPACITY)] if cls == "lru" else []
 
@@ -535,10 +684,10 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     directory, so the emitted script cannot ``import`` this harness module -- it only drives the
     built CLI (``subprocess.run([sys.executable, entry, str(capacity)], input=...)`` for ``lru``;
     ``subprocess.run([sys.executable, entry], input=...)`` -- no ``capacity`` argv -- for TASK-4's
-    ``priority-queue``) and compares its stdout, line by line, against the baked-in expected
-    values, asserting on the FIRST divergence. NO ORACLE LEAK: every expected value came from the
-    reference model computed here, never from any hidden test. Returns ``{"name", "code"}`` (the
-    shape every other acceptance check in this codebase uses -- see
+    ``priority-queue`` and TASK-5's ``ttl-store``) and compares its stdout, line by line, against
+    the baked-in expected values, asserting on the FIRST divergence. NO ORACLE LEAK: every expected
+    value came from the reference model computed here, never from any hidden test. Returns
+    ``{"name", "code"}`` (the shape every other acceptance check in this codebase uses -- see
     ``system_builder._no_crash_subprocess_check`` / ``_roundtrip_acceptance_check``). Never raises
     -- any internal error returns ``None`` (adds nothing to the checklist, exactly like the
     unimplemented-class case)."""
@@ -551,8 +700,8 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
         entry_name = str(entry) if entry else ""
         if not entry_name:
             return None
-        # TASK-4: priority-queue has no capacity argv (unlike lru) -- keep the lru argv line
-        # byte-identical to before, only branch the argv expression itself.
+        # TASK-4/TASK-5: priority-queue and ttl-store have no capacity argv (unlike lru) -- keep
+        # the lru argv line byte-identical to before, only branch the argv expression itself.
         argv_src = "[sys.executable, entry, str(capacity)]" if cls == "lru" else "[sys.executable, entry]"
         code = (
             "import subprocess, sys\n"

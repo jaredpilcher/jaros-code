@@ -279,6 +279,117 @@ if __name__ == "__main__":
 '''
 
 
+# A correct ttl-store CLI, authored independently of the reference model in
+# `harness/adt_oracle.py` (TASK-5): a plain dict of `key -> (value, expiry_tick)` plus a VIRTUAL
+# clock `now` that advances ONLY via the explicit `tick` command (never wall-clock/`time.time()`/
+# `sleep`), driven with NO extra argv (like priority-queue, unlike LRU's `<capacity>`).
+_GOOD_TTL_CLI = '''\
+import sys
+
+
+class TtlStore:
+    def __init__(self):
+        self.data = {}
+        self.now = 0
+
+    def set(self, key, value, ttl):
+        self.data[key] = (value, self.now + int(ttl))
+
+    def get(self, key):
+        if key not in self.data:
+            return None
+        value, expiry = self.data[key]
+        if self.now < expiry:
+            return value
+        return None
+
+    def tick(self):
+        self.now += 1
+
+
+def main():
+    store = TtlStore()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "set":
+            key, value, ttl = parts[1], parts[2], int(parts[3])
+            store.set(key, value, ttl)
+            print("ok")
+        elif cmd == "get":
+            key = parts[1]
+            value = store.get(key)
+            print("none" if value is None else value)
+        elif cmd == "tick":
+            store.tick()
+            print("ok")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# The classic off-by-one expiry bug: the liveness check uses `now <= expiry` instead of the correct
+# `now < expiry`, so every key silently survives ONE virtual tick longer than it should -- including
+# the immediate-expiry (`ttl=0`) boundary, which this bug makes NOT immediately expire. Authored
+# independently of the reference model (the same dict-based strategy, but with the inverted
+# boundary condition), matching this task's acceptance criterion for a localized, held-out-style
+# differential check.
+_BUGGY_TTL_CLI = '''\
+import sys
+
+
+class BuggyTtlStore:
+    def __init__(self):
+        self.data = {}
+        self.now = 0
+
+    def set(self, key, value, ttl):
+        self.data[key] = (value, self.now + int(ttl))
+
+    def get(self, key):
+        if key not in self.data:
+            return None
+        value, expiry = self.data[key]
+        # BUG: off-by-one -- should be `self.now < expiry`, this lets a key survive one extra tick
+        # (and makes ttl=0 NOT immediately expired, since now(0) <= expiry(0) is True).
+        if self.now <= expiry:
+            return value
+        return None
+
+    def tick(self):
+        self.now += 1
+
+
+def main():
+    store = BuggyTtlStore()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "set":
+            key, value, ttl = parts[1], parts[2], int(parts[3])
+            store.set(key, value, ttl)
+            print("ok")
+        elif cmd == "get":
+            key = parts[1]
+            value = store.get(key)
+            print("none" if value is None else value)
+        elif cmd == "tick":
+            store.tick()
+            print("ok")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
 def _write_cli(tmp_path: Path, source: str, name: str = "main.py") -> Path:
     root = tmp_path / name.replace(".py", "_root")
     root.mkdir(parents=True, exist_ok=True)
@@ -349,11 +460,12 @@ def test_seeded_ops_differs_across_different_seeds():
 
 
 def test_seeded_ops_empty_for_unimplemented_class():
-    # ttl-store/fifo/ring-buffer are classified but this module has not yet built their reference
-    # models; an unimplemented class must yield an empty (never fabricated) sequence.
-    # (priority-queue became a SECOND implemented class in TASK-4 -- see the
-    # "priority-queue (TASK-4)" section further down in this same file for its coverage.)
-    assert adt_oracle._seeded_ops("ttl-store", 1234, 24) == []
+    # fifo/ring-buffer are classified but this module has not yet built their reference models; an
+    # unimplemented class must yield an empty (never fabricated) sequence. (priority-queue became a
+    # SECOND implemented class in TASK-4, and ttl-store a THIRD in TASK-5 -- see the
+    # "priority-queue (TASK-4)" / "ttl-store (TASK-5)" sections further down in this same file for
+    # their coverage.)
+    assert adt_oracle._seeded_ops("fifo", 1234, 24) == []
 
 
 # --- (c)/(d) verify: differential drive + first-divergence ---------------------------------------
@@ -527,6 +639,131 @@ def test_acceptance_check_code_passes_against_correct_pq_fixture(tmp_path):
 def test_acceptance_check_code_fails_against_buggy_pq_fixture(tmp_path):
     root = _write_cli(tmp_path, _BUGGY_PQ_CLI)
     check = adt_oracle.acceptance_check("main.py", "priority-queue")
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
+
+
+# --- ttl-store (TASK-5): classify, reference expiry, verify PASS/FAIL ---------------------------
+
+def test_classify_returns_ttl_store_for_ttl_shaped_spec_and_mods():
+    spec = (
+        "Build a key-value store with time-to-live (TTL) semantics. set(key, value, ttl) stores "
+        "a value that will expire after ttl ticks have passed. get(key) returns the value if it "
+        "has not expired, else none."
+    )
+    mods = ["set", "get", "ttl"]
+    assert adt_oracle.classify(spec, mods) == "ttl-store"
+    assert adt_oracle.classify_confident(spec, mods) == "ttl-store"
+
+
+def test_classify_does_not_return_ttl_store_for_non_ttl_spec():
+    spec = (
+        "Write a simple command-line notes app that lets a user add, list, and delete text notes."
+    )
+    mods = ["add", "list", "delete", "main"]
+    assert adt_oracle.classify(spec, mods) != "ttl-store"
+    assert adt_oracle.classify_confident(spec, mods) != "ttl-store"
+
+
+def test_classify_confident_does_not_return_ttl_store_on_method_token_overlap_alone():
+    # a plain set/get key-value store that never says "ttl"/"time-to-live"/"expire" wording must
+    # NOT be classified -- the conservative gate requires the spec text itself to name the ADT,
+    # never method-token coincidence alone (even though bare `classify` may score this as
+    # ttl-store via the shared "set"/"get" command tokens -- exactly the false-positive
+    # `classify_confident` exists to guard against).
+    spec = "Build a simple key-value store: set(key, value) stores a value, get(key) returns it."
+    mods = ["set", "get"]
+    assert adt_oracle.classify_confident(spec, mods) is None
+
+
+def test_ttl_seeded_ops_deterministic_across_same_seed():
+    # like priority-queue (and unlike plain `lru`), the ttl-store sequence has a fixed boundary
+    # prelude ahead of the random mixing phase (see `_ttl_seeded_ops`'s docstring), so its length
+    # can exceed `n` -- what must hold is BYTE-IDENTICAL determinism across two calls with the
+    # same seed, not an exact length.
+    first = adt_oracle._seeded_ops("ttl-store", 1234, 24)
+    second = adt_oracle._seeded_ops("ttl-store", 1234, 24)
+    assert first == second
+    assert len(first) >= 24
+
+
+def test_ttl_store_reference_expires_at_correct_virtual_tick():
+    # NO real sleep anywhere -- the virtual clock only ever advances via an explicit `tick()` call.
+    ref = adt_oracle._ttl_store_reference()
+    ref.set("k", "v1", 2)
+    assert ref.get("k") == "v1"   # now=0 < expiry=2 -> live
+    ref.tick()                     # now=1
+    assert ref.get("k") == "v1"   # now=1 < expiry=2 -> still live
+    ref.tick()                     # now=2
+    assert ref.get("k") is None   # now=2 < expiry=2 is False -> expired
+
+    # ttl=0 is the immediate-expiry boundary: expired with NO tick needed at all.
+    ref.set("z", "v0", 0)
+    assert ref.get("z") is None
+
+    # a key that was never set at all is a clean miss.
+    assert ref.get("never-set") is None
+
+    # overwriting an existing key RESETS the ttl relative to the CURRENT virtual `now`, not the
+    # original `set` time.
+    ref2 = adt_oracle._ttl_store_reference()
+    ref2.set("k", "v1", 1)
+    ref2.tick()                    # now=1; the ORIGINAL ttl=1 would already be expired here
+    ref2.set("k", "v2", 1)         # overwrite: new expiry = now(1) + 1 = 2
+    assert ref2.get("k") == "v2"  # now=1 < expiry=2 -> the overwrite kept it alive
+    ref2.tick()                    # now=2
+    assert ref2.get("k") is None  # now=2 < expiry=2 is False -> expired on its OWN schedule
+
+
+def test_verify_passes_correct_ttl_store_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_TTL_CLI)
+    result = adt_oracle.verify(root, "main.py", "ttl-store")
+    assert result.applicable is True
+    assert result.cls == "ttl-store"
+    assert result.ok is True
+    assert result.first_divergence is None
+
+
+def test_verify_fails_buggy_off_by_one_expiry_ttl_fixture_with_localized_divergence(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_TTL_CLI)
+    result = adt_oracle.verify(root, "main.py", "ttl-store")
+    assert result.applicable is True
+    assert result.cls == "ttl-store"
+    assert result.ok is False
+    assert result.first_divergence is not None
+    divergence = result.first_divergence
+    assert set(divergence.keys()) == {"index", "op", "args", "expected", "actual"}
+    assert isinstance(divergence["index"], int) and divergence["index"] >= 0
+    # the immediate-expiry boundary (a ttl=0 `set` immediately followed by a `get`, with NO tick
+    # in between) is always the FIRST thing `_ttl_seeded_ops` generates, so the off-by-one
+    # `now <= expiry` bug must surface right there -- the diverging op is that get, not some
+    # later random-mixing op.
+    assert divergence["op"] == "get"
+    assert divergence["args"] == ["a"]
+    assert divergence["expected"] == "none"
+    assert divergence["actual"] != "none"
+
+
+def test_verify_never_raises_on_missing_root_or_entry_for_ttl_store(tmp_path):
+    missing_root = tmp_path / "does-not-exist-ttl"
+    result = adt_oracle.verify(missing_root, "main.py", "ttl-store")
+    assert result.applicable is False
+    assert result.ok is True
+
+
+# --- ttl-store acceptance_check: same emitted-script drive, no import of this module -------------
+
+def test_acceptance_check_code_passes_against_correct_ttl_fixture(tmp_path):
+    root = _write_cli(tmp_path, _GOOD_TTL_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ttl-store")
+    assert check is not None
+    assert "ttl-store" in check["name"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_code_fails_against_buggy_ttl_fixture(tmp_path):
+    root = _write_cli(tmp_path, _BUGGY_TTL_CLI)
+    check = adt_oracle.acceptance_check("main.py", "ttl-store")
     assert check is not None
     assert _run_emitted_check(root, check) is False
 # #EXT-056-REQ-1 End
