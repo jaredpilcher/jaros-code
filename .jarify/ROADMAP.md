@@ -407,6 +407,17 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
   oracle correctly rejects it; motivates best-of-k-oracle-select (above) — med.
 - **[acceptance-completeness at scale]** the false-done subprocess tier fixed the measured case;
   widen the acceptance probe at larger n to confirm zero false-done across classes — med.
+- **[★ ADT oracle INVOCATION-CONVENTION false-not-done (MEASURED 2026-07-07, follow-up to the vocab fix
+  760d6fd)]** the ADT differential oracle drives only the stdin-REPL convention (one process, whole op
+  sequence on stdin), but a legitimate ADT-classified build can use the argv-per-command + disk-state
+  convention (`python main.py enqueue 2 low`, one process/command — the convention `_no_crash`/
+  `_roundtrip` checks already assume elsewhere in `_minimum_acceptance`). Such a CORRECT build never reads
+  stdin → fails the oracle at op[0] → false done=False. Current creation-suite ADT tasks all specify stdin
+  (so safe TODAY), but this is a latent Tenet-3 false-not-done wired into EVERY ADT-classified real build —
+  high · med-tractable. FIX: make the oracle convention-aware (detect/support both invocation styles) +
+  relocate the 6 confounded `test_ext036_property_check.py` priority-queue tests onto a NON-ADT class (they
+  fail only because the always-on ADT oracle now catches their wrong PQ, which is correct behavior). Docs:
+  EXT-056 requirements TASK-9 note.
 
 ## LANDED (recent trail — newest first)
 
