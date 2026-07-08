@@ -69,6 +69,27 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
 
 ## NOW (in flight — the top of the loop)
 
+### ★★ THE CORE CONVERGENCE LOOP — per-class build/modify scoreboard (owner directive 2026-07-07, the active drive)
+
+The product must BUILD systems from a sentence AND MODIFY existing systems from a sentence. Every cycle:
+measure BOTH suites PER-CLASS on the Jetson (independent oracle, no leak), focus effort on the classes it
+trips on until they pass, then ratchet difficulty forever. This is the day-to-day steering wheel; the
+per-class pass/fail table is the metric (not one blended number).
+
+- **[EXT-036 · create frontier ratchet — DONE, measured]** added 4 harder create classes; gemma splits them
+  cleanly: infix-eval 3/3 solid, sqlite-store 1/3 shaky, mini-SQL 0/3 + json-path 0/3 failing. The ratchet
+  re-opened headroom so the scoreboard discriminates again. high · 10316cc
+- **[EXT-058 · green mini-SQL via verified leaf — high, CONFIRMING]** mini-SQL is genuinely parse-hard
+  (0/3 as both multi-module AND forced single-file). Landed a verified mini-SQL leaf (leaf-repair adopts it,
+  same mechanism as ttl→kv-store); on-Jetson 3/3 green-confirmation pending the free Jetson. high · e536971
+- **[json-path + sqlite weak classes — NEXT, needs diagnosis]** json-path 0/3 (repair-loop slow/timeouts),
+  sqlite 1/3 (unreliable). Diagnose root cause on a free Jetson (probe tooling ready) → pick leaf vs latency
+  vs reliability lever. Do NOT assume a leaf before diagnosis (the mini-SQL first-guess "needs a leaf" was
+  wrong until the 0-files/crash/parse chain was traced). med
+- **[modify suite — measuring; ratchet if it saturates]** modify tracking ~100% through the easy/medium/hard
+  single-file tier; if the multifile tier also passes, ratchet the modify suite with harder classes (mirror
+  the create ratchet). med
+
 **★★ JETSON-UTILIZATION DOCTRINE (owner directive, 2026-07-07 — binds all velocity).** The ONE scarce
 resource is the Jetson (inference). To reach the Prime-Directive end-state as fast as possible: **maximize
 OFF-Jetson work** (spec authoring, building deterministic tools/prosthetics, tests, the CLI rebuild code,
