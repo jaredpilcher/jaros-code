@@ -2172,3 +2172,83 @@ the listed set).
   (this task GENERALIZES REQ-32's TASK-42 mechanism from the fully-disconnected special
   case to any acyclic wired DAG; a live re-measurement of `todo-list-cli` on the served
   model remains an open follow-up, owned by the parent)
+
+### [TASK-48] Structural-bracket recovery stage for `_extract_json` — missing `}` before `]` (REQ-33 extension)
+
+MEASURED (repro artifact `.jaros-data/artifacts/todo_rawplan.log`): gemma's `todo-list-cli`
+plan embeds a whole multi-line Python class body as an export "signature" JSON string, and
+DROPS the `}` that closes the export object before the `]` ending `exports` — e.g.
+`"signature": "...return self.items"\n      ],` where a `}` was owed before that `]`.
+`_extract_json`'s existing greedy-match / `_balanced_span` / `_repair_json_candidate`
+stages (TASK-43, REQ-33) only escape control characters and drop trailing commas — none of
+them can insert an OMITTED structural closer — so `json.loads` fails ("Expecting ','
+delimiter"), `_extract_json` returns `None`, `plan=None`, and 0 files build (class scores
+0/3). The SAME defect class (a dropped internal structural closer) also kills
+`kv-store-ttl` on qwen. This task adds one more, FINAL, string-literal-aware structural
+recovery stage — additive, reached only after every existing path has already failed.
+
+#### Steps
+1. In `harness/system_builder.py`, add a new private helper `_recover_missing_braces(text:
+   str) -> str` near `_repair_json_candidate` (inside the `# #EXT-036-REQ-33` marker
+   block): walk `text` left-to-right keeping a stack of open `{`/`[` characters, tracking
+   JSON string-literal state (`in_string` + backslash-escape awareness, mirroring
+   `_balanced_span`'s scan) so brackets appearing INSIDE a string value (e.g. the embedded
+   Python class body's own `{`/`}`/`[`/`]`) never perturb the stack. When a closer (`}` or
+   `]`) is reached whose required opener is NOT the innermost entry on the stack but IS
+   present deeper in the stack, first emit the closers for every unclosed entry above that
+   depth (converting each to its matching closer, innermost first), then emit the actual
+   closer, and pop the stack down to (and including) the matched entry — this is exactly
+   the "insert the omitted `}`" recovery. When a closer's required opener is not found
+   anywhere in the stack, pass it through unchanged (an unmatched extra closer is a
+   different malformation, not this task's concern). Track a `changed` flag; if nothing
+   was ever inserted, return the input `text` object unchanged (byte-identical, no
+   reconstruction) — never fabricate keys/values/commas, only structural closers. Do NOT
+   attempt to close anything at end-of-string (a stack still open when the input simply
+   ends is END-OF-INPUT TRUNCATION, a different class — leave it to fail honestly, exactly
+   as today). Pure stdlib, never raises on `None`/empty/malformed input.
+2. Wire `_recover_missing_braces` into `_extract_json` as the LAST resort, after the
+   existing greedy `json.loads`, `_balanced_span`, and `_repair_json_candidate` loops have
+   all failed to return: for each candidate span already gathered in `candidates`, compute
+   `recovered = _recover_missing_braces(candidate)`; if `recovered == candidate` (no
+   structural insertion was possible) skip to the next candidate; otherwise try
+   `json.loads(recovered)` and, if that still fails, `json.loads(_repair_json_candidate(recovered))`
+   (composing with the existing control-char/trailing-comma repair); return the first
+   candidate that parses. Only after every candidate has been tried through this new stage
+   does the function fall through to the existing final `return None`. No change to the
+   function's signature or to any code path preceding this new stage (the byte-identical
+   valid-path guarantee and the TASK-43 balanced/repair paths are untouched and still tried
+   first). Wrap the added/changed lines with `# #EXT-036-REQ-33 Start` / `# #EXT-036-REQ-33
+   End` (extending the existing marked block).
+3. Tests `tests/test_ext036_plan_brace_recovery.py` (new, OFFLINE — no live model, no
+   network): (a) the captured plan bytes in `.jaros-data/artifacts/todo_rawplan.log`
+   (the fenced JSON body) now parse via `_extract_json(raw, "{", "}")` into a plan dict with
+   `modules` present and the export's `signature` string intact (assert it still contains
+   the embedded class body's literal text, proving no content was fabricated or
+   truncated); confirm the OLD (pre-recovery) code path genuinely fails on this input first
+   (a regression oracle, mirroring `test_ext036_extract_json_repair.py`'s
+   `_old_extract_json`), so this is a proven genuine fix, not a pre-existing pass. (b) At
+   least 6 already-VALID JSON samples — including one with nested arrays-of-objects and at
+   least one whose string VALUES literally contain the characters `{`, `}`, `[`, `]`, and
+   `,` — each pass through `_recover_missing_braces` and come back BYTE-IDENTICAL
+   (`recovered is text or recovered == text` with `changed` never true), and
+   `_extract_json` returns the exact SAME parsed result as it did before this task (call
+   the existing `_old_extract_json`/direct pre-TASK-43 style oracle or simply assert
+   `json.loads(sample) == _extract_json(sample, opener, closer)` for each). (c) A payload
+   truncated at end-of-input (e.g. an object that simply stops mid-value with no closing
+   brackets at all) is left UNCHANGED by `_recover_missing_braces` (no fabricated closers)
+   and `_extract_json` still returns `None` for it, exactly as before. (d)
+   `_recover_missing_braces` never raises on `None`/empty/malformed input.
+4. Run `python -m pytest tests/test_ext036_plan_brace_recovery.py -q` and the existing
+   plan-parse/repair unit test file (`tests/test_ext036_extract_json_repair.py`) `-q` only —
+   confirm both green with no change to the existing file's pass count (the
+   byte-identical-valid-path + TASK-43 regression guards must still hold). Do NOT run the
+   broader `tests/test_ext036*.py` glob or any `-k` sweep in this task (a live-model test
+   elsewhere in that glob triggers a Jetson model-swap that must not run here); the full
+   suite re-run remains the parent/architect's responsibility at integration time.
+
+#### Implements
+- [REQ-33] Robust `_extract_json`: balanced-bracket extraction + bounded repair for
+  malformed model JSON (extends TASK-43's mechanism with a further, FINAL structural
+  bracket-recovery stage for the MEASURED "dropped structural closer inside a nested
+  container" defect class; additive, reached only after every existing parse path has
+  already failed, so every previously-parseable plan is unaffected)

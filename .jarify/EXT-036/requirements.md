@@ -1429,6 +1429,30 @@ trailing prose) then a single `json.loads`, with zero repair on failure.
   repaired. Full `tests/` suite re-run via `python -m harness.run_with_heartbeat --
   python -m pytest tests/ -q`, confirmed green with no regression. — **DONE
   2026-07-06**
+- [x] A FINAL, string-literal-aware STRUCTURAL-BRACKET recovery stage handles a defect
+  class TASK-43's control-char/trailing-comma repair cannot: a DROPPED structural
+  closer (`}`/`]`) inside a nested container — **DONE 2026-07-08** (`harness/system_builder.py`
+  `_recover_missing_braces`, TASK-48). MEASURED (`.jaros-data/artifacts/todo_rawplan.log`):
+  gemma's `todo-list-cli` plan embeds a multi-line Python class body as an export
+  "signature" string and drops the `}` closing the export object before the `]` ending
+  `exports`; `json.loads` fails ("Expecting ',' delimiter") and 0 modules build (class
+  scores 0/3). `_recover_missing_braces` walks the text keeping a joint `{`/`[` stack
+  (string-literal + backslash-escape aware, so brackets embedded in a string value never
+  perturb depth); when a closer's matching opener is deeper in the stack than the
+  innermost entry, it inserts the missing closers for the unclosed inner containers before
+  emitting the real closer — inserting ONLY structural closers, never fabricating
+  keys/values/commas. Wired into `_extract_json` as the LAST resort, tried only after the
+  existing greedy/`_balanced_span`/`_repair_json_candidate` paths have all failed, so every
+  previously-parseable plan is byte-identical (unaffected). Whatever it recovers still
+  flows through the unchanged `validate_plan` gate — a bad recovery becomes a rejected
+  plan, never a silent false build. Does NOT recover end-of-input truncation (a stack
+  still open at end-of-string is left unchanged, a different defect class). Proven
+  OFFLINE (`tests/test_ext036_plan_brace_recovery.py`): the exact captured `todo_rawplan.log`
+  bytes now parse into a plan dict with the signature string intact (was `None` under the
+  pre-recovery logic); 6 already-valid samples (incl. nested arrays-of-objects and strings
+  literally containing `{ } [ ] ,`) pass through byte-identical and `_extract_json` returns
+  the same result as before; an end-of-input-truncated payload is left unchanged, not
+  fabricated.
 
 ### [REQ-34] Iterative REPLAN-AS-MODIFICATION build recovery (DONE — offline mechanism, EXT-036 TASK-44, 2026-07-06)
 

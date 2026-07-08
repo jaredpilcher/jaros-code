@@ -388,7 +388,12 @@
     {
       "file": "harness/system_builder.py",
       "startLine": 314,
-      "endLine": 474
+      "endLine": 578
+    },
+    {
+      "file": "tests/test_ext036_plan_brace_recovery.py",
+      "startLine": 1,
+      "endLine": 247
     }
   ],
   "REQ-1": [

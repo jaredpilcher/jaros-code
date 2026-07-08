@@ -411,6 +411,91 @@ def _repair_json_candidate(text: str) -> str:
     return "".join(out)
 
 
+def _recover_missing_braces(text: str) -> str:
+    """TASK-48 (REQ-33 extension): recover a DROPPED structural closer (`}`/`]`) inside a
+    nested container -- a defect class `_repair_json_candidate` cannot fix (it only
+    escapes control characters and drops trailing commas, never inserts a missing
+    bracket).
+
+    MEASURED (`.jaros-data/artifacts/todo_rawplan.log`): gemma's `todo-list-cli` plan
+    embeds a whole multi-line Python class body as an export "signature" JSON string and
+    drops the `}` that closes the export object before the `]` ending `exports` --
+    ``"signature": "...return self.items"\\n      ],`` where a `}` was owed before that
+    `]`. `json.loads` fails ("Expecting ',' delimiter") on this shape.
+
+    Walks `text` left-to-right keeping a stack of open `{`/`[` characters, tracking JSON
+    string-literal state (quote + backslash-escape awareness, mirroring
+    `_balanced_span`'s scan) so brackets appearing INSIDE a string value -- including the
+    embedded class body's own `{`/`}`/`[`/`]` -- never perturb the stack. When a closer's
+    matching opener is not the innermost stack entry but IS present deeper in the stack,
+    the closers for every unclosed entry above that depth are emitted first (innermost
+    first), then the real closer -- inserting ONLY omitted STRUCTURAL closers, never
+    fabricating keys/values/commas. An unmatched closer with no corresponding opener
+    anywhere in the stack is passed through unchanged (a different malformation, not this
+    helper's concern).
+
+    Does NOT recover END-OF-INPUT truncation: a stack still open when the input simply
+    ends is left untouched (no closers are ever appended at end-of-string) -- that is a
+    different defect class, left to fail honestly exactly as before this task.
+
+    Byte-identical when nothing needed recovery: returns the input `text` object itself
+    (no reconstruction) whenever no insertion was made. Pure stdlib; never raises on
+    None/empty/malformed input."""
+    if not text:
+        return text
+    openers = {"{": "}", "[": "]"}
+    closers_to_openers = {"}": "{", "]": "["}
+    stack: list[str] = []
+    out: list[str] = []
+    in_string = False
+    escape = False
+    changed = False
+    for ch in text:
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            continue
+        if ch in openers:
+            stack.append(ch)
+            out.append(ch)
+            continue
+        if ch in closers_to_openers:
+            wanted = closers_to_openers[ch]
+            if stack and stack[-1] == wanted:
+                stack.pop()
+                out.append(ch)
+                continue
+            depth_index = None
+            for idx in range(len(stack) - 1, -1, -1):
+                if stack[idx] == wanted:
+                    depth_index = idx
+                    break
+            if depth_index is None:
+                # No matching opener anywhere on the stack -- an unmatched extra
+                # closer is a different malformation; leave it untouched.
+                out.append(ch)
+                continue
+            for idx in range(len(stack) - 1, depth_index, -1):
+                out.append(openers[stack[idx]])
+            changed = True
+            del stack[depth_index:]
+            out.append(ch)
+            continue
+        out.append(ch)
+    if not changed:
+        return text
+    return "".join(out)
+
+
 def _extract_json(raw: str, opener: str, closer: str):
     """Best-effort JSON extraction: the model output may carry prose or markdown fences
     around the JSON payload; pull the outermost {..}/[..] span and parse it. Returns None
@@ -420,9 +505,10 @@ def _extract_json(raw: str, opener: str, closer: str):
     `json.loads` is preserved verbatim as the first thing tried; any input the old code
     already parsed takes that exact branch, unchanged. Only on failure does this fall
     through to a balanced-bracket extraction (string-literal aware, avoids over-spanning
-    into trailing prose that contains a stray closer) and then a bounded, string-aware
+    into trailing prose that contains a stray closer), then a bounded, string-aware
     repair (escaping unescaped control characters inside string values; dropping trailing
-    commas) before giving up."""
+    commas), and finally (TASK-48) a structural-bracket RECOVERY stage that inserts an
+    OMITTED closer the model dropped inside a nested container, before giving up."""
     raw = raw or ""
     m = re.search(re.escape(opener) + r".*" + re.escape(closer), raw, re.DOTALL)
     if m:
@@ -465,6 +551,24 @@ def _extract_json(raw: str, opener: str, closer: str):
         repaired = _repair_json_candidate(candidate)
         if repaired == candidate:
             continue
+        try:
+            return json.loads(repaired)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    # TASK-48: FINAL structural-bracket recovery -- only reached when every path above
+    # (greedy match, balanced span, and control-char/trailing-comma repair) has already
+    # failed to return. Inserts an OMITTED closer the model dropped inside a nested
+    # container (e.g. a missing '}' before a ']'); never fabricates content.
+    for candidate in candidates:
+        recovered = _recover_missing_braces(candidate)
+        if recovered == candidate:
+            continue
+        try:
+            return json.loads(recovered)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        repaired = _repair_json_candidate(recovered)
         try:
             return json.loads(repaired)
         except (json.JSONDecodeError, ValueError):
