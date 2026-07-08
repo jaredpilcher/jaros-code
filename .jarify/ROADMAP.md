@@ -140,9 +140,14 @@ PASSES its oracle 2/2, only "failed" because the 240s scoreboard cap cut off a l
 raised to 360s); (b) to-do list was a DETERMINISTIC entrypoint-wiring bug — FIXED (wired-DAG entrypoint
 plan-repair synthesizes main.py importing root modules, commit 8b0efcc); (c) priority-jobqueue was a
 FALSE-DONE (the ADT oracle wasn't firing because "priority JOB queue" split the "priority queue" keyword)
-— FIXED (9b77ba8), the oracle now catches its ordering bug. **Modification 73% (11/15), 100% no-regression**
-— when an edit fails it fails SAFE (never breaks existing behavior); weak modify classes: sort/stats/calc
-(all "new behavior didn't take"). **The ONE genuine hard BUILD class = the TTL store** (gemma writes a
+— FIXED (9b77ba8), the oracle now catches its ordering bug. **Modification 73% (11/15), 100% no-regression → really HIGHER**
+— when an edit fails it fails SAFE (never breaks existing behavior). RE-MEASURED 2026-07-07: the "weak
+modify classes" (sort/calc) were SINGLE-SAMPLE VARIANCE, not gaps — sort-asc→desc, scored 0/1 by the
+one-shot scoreboard, passed 4/4 on resample; calc-add-operators likewise passes on resample. The
+scoreboards ran each task ONCE, so one unlucky non-deterministic draw faked a 0%. **METHODOLOGY FIX:
+both scoreboard runners now default to 3 SAMPLES per task and report the honest fraction (any-pass =
+capable, all-pass = reliable) — single-sample scoring is retired as it over-reports weakness (the same
+noise that faked the creation "timeouts"). **The ONE genuine hard BUILD class = the TTL store** (gemma writes a
 `len(parts)==3` guard for a 4-token `set k v ttl` command — an off-by-one; the ADT oracle correctly catches
 it). MEASURED 2026-07-07: enriching the oracle witness to name the failing input line (f1c40ba) did NOT let
 repair self-fix it (0/3 at k=1). Testing best-of-5 (valid now the oracle is CHECKABLE for this class); if
