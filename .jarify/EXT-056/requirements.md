@@ -130,16 +130,22 @@ harness.
       (`test_acceptance_check_ttl_store_tick_convention_unchanged_by_real_seconds_fix`,
       `test_verify_ttl_store_unaffected_by_real_seconds_fix`); and the other 4 ADT classes are
       untouched (`test_acceptance_check_other_adt_classes_unaffected_by_ttl_convention_fix`).
-      **KNOWN OPEN GAP, MEASURED same session (discovered, not introduced, by this task):**
-      `_resolve_verbs` (TASK-9) picks the first synonym found ANYWHERE in the spec text for each
-      canonical verb without checking whether the canonical word is ALSO literally present, so the
-      LITERAL, unmodified `kv-store-ttl-cli` sentence (which explicitly names `set`/`get`) still
-      resolves to `store`/`read` because the surrounding prose ("key-value store", "reads commands")
-      incidentally contains those words too — a SEPARATE, pre-existing vocabulary-priority issue
-      that also mis-resolves OTHER classes (e.g. `lru`'s `put`→`set` against this same spec) and is
-      independent of this task's convention fix (proven clean in isolation with a synonym-neutral
-      real-seconds spec). Documented, not fixed, per the strict-scope instruction for this
-      ACCEPTANCE-ORACLE task — see
-      `test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec`. Tracked as
-      a follow-up requirement (give the canonical word priority when it is itself present in the
-      spec, before falling back to a synonym).
+      **GAP CLOSED by TASK-11 (2026-07-08):** `_resolve_verbs` (TASK-9) previously picked the first
+      synonym found ANYWHERE in the spec text for each canonical verb without checking whether the
+      canonical word was ALSO literally present, so the LITERAL, unmodified `kv-store-ttl-cli`
+      sentence (which explicitly names `set`/`get`) resolved to `store`/`read` because the
+      surrounding prose ("key-value store", "...the commands were read") incidentally contained
+      those words too — a SEPARATE, pre-existing vocabulary-priority issue that also mis-resolved
+      OTHER classes (e.g. `lru`'s `get`→`read` against this same spec), independent of this task's
+      convention fix. TASK-11 gives the canonical word PRIORITY: if it is literally present in the
+      spec, the verb resolves to itself; only an ABSENT canonical falls back to a declared synonym
+      (TASK-9's fallback preserved unchanged). Proven with the LITERAL `kv-store-ttl-cli` spec now
+      resolving `set`→`set`/`get`→`get`
+      (`test_resolve_verbs_prefers_literal_canonical_over_incidental_synonym_on_kv_store_ttl_cli_spec`),
+      the synonym fallback still firing when canonical is absent
+      (`test_resolve_verbs_synonym_fallback_preserved_when_canonical_absent`), other ADT classes
+      unaffected for non-colliding specs
+      (`test_resolve_verbs_other_classes_unaffected_by_canonical_priority_fix`), and the critical
+      anti-false-done proof: a correct real-seconds ttl-store CLI now PASSES `acceptance_check`
+      driven by the literal `kv-store-ttl-cli` spec while a genuinely buggy one STILL FAILS
+      (`test_acceptance_check_still_catches_buggy_build_with_literal_kv_store_ttl_cli_spec`).

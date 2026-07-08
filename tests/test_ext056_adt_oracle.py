@@ -1698,23 +1698,79 @@ def test_acceptance_check_other_adt_classes_unaffected_by_ttl_convention_fix(tmp
         assert _run_emitted_check(buggy_root, buggy_check) is False, cls
 
 
-def test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec():
-    """KNOWN OPEN GAP (discovered, NOT introduced, by this task -- documented rather than fixed,
-    to stay strictly within this task's scope): `_resolve_verbs` (TASK-9) picks the FIRST
-    synonym it finds ANYWHERE in the spec text for each canonical verb, without checking whether
-    the canonical word is ALSO literally present -- so the LITERAL, unmodified
-    `kv-store-ttl-cli` sentence (which explicitly names `set`/`get` as its own command verbs)
-    still resolves to `store`/`read`, because the surrounding PROSE ("key-value store", "reads
-    commands") incidentally contains those words too. This is a SEPARATE, pre-existing
-    vocabulary-priority issue -- it also mis-resolves OTHER classes (e.g. `lru`'s `put` resolves
-    to `set` against this exact spec, even though the spec has nothing to do with LRU) -- so it
-    predates and is independent of this task's tick-vs-real convention fix (proven above with a
-    synonym-neutral real-seconds spec, which correctly resolves to canonical `set`/`get`). This
-    test PINS the current, known behavior as a regression marker for a future follow-up task; it
-    is not this task's job to change `_resolve_verbs`'s matching priority."""
+def test_resolve_verbs_prefers_literal_canonical_over_incidental_synonym_on_kv_store_ttl_cli_spec():
+    """TASK-11 (REQ-1, MEASURED 2026-07-08 -- closes the gap the prior test of this file pinned as
+    a KNOWN OPEN GAP): `_resolve_verbs` now gives the CANONICAL word PRIORITY over any synonym
+    that merely appears in surrounding prose. Proven against the LITERAL, unmodified
+    `kv-store-ttl-cli` sentence (`harness/system_suite.py`), which explicitly names `set`/`get` as
+    its own command verbs but whose prose ("a key-value store", "...the commands were read")
+    incidentally ALSO contains the synonyms `store`/`read`: `ttl-store` now resolves `set`->`set`
+    and `get`->`get` (driving the correct verbs -- no longer false-rejecting a correct `set`/`get`
+    CLI). `lru`'s `get` (a class with nothing to do with this spec, used only to prove the fix is
+    general, not spec-specific) also now resolves to the literally-present canonical `get`, not the
+    incidental `read`. (`lru`'s `put` is not asserted here: the spec never mentions `put` at all --
+    with no canonical word present to prioritize, that verb still correctly falls back to its
+    declared synonym `set`, exactly as TASK-9 intended; `lru` is never actually classified/driven
+    for a ttl-store spec in production, `classify_confident` gates on the ×2 keyword signal.)"""
     assert adt_oracle._ttl_convention(_LITERAL_KV_STORE_TTL_CLI_SPEC) == "real"
     ttl_verbs = adt_oracle._resolve_verbs("ttl-store", _LITERAL_KV_STORE_TTL_CLI_SPEC)
-    assert ttl_verbs["set"] == "store" and ttl_verbs["get"] == "read"
+    assert ttl_verbs["set"] == "set" and ttl_verbs["get"] == "get"
     lru_verbs = adt_oracle._resolve_verbs("lru", _LITERAL_KV_STORE_TTL_CLI_SPEC)
-    assert lru_verbs["put"] == "set"
+    assert lru_verbs["get"] == "get"
+
+
+def test_resolve_verbs_synonym_fallback_preserved_when_canonical_absent():
+    """HONESTY PROOF (2, TASK-11): a spec that declares ONLY a synonym -- with NO canonical word
+    present anywhere -- still resolves to that synonym exactly as TASK-9 built it; the new
+    canonical-priority check in `_resolve_verbs` never fires when there is no literal canonical
+    word to prioritize, so it can only ever ADD correct recognition, never regress the existing
+    enqueue/dequeue synonym-fallback behavior."""
+    verbs = adt_oracle._resolve_verbs("priority-queue", _PQ_ENQUEUE_DEQUEUE_SPEC)
+    assert verbs["push"] == "enqueue"
+    assert verbs["pop"] == "dequeue"
+    assert verbs["peek"] == "peek"  # canonical AND literally present -- unaffected either way
+
+
+def test_resolve_verbs_other_classes_unaffected_by_canonical_priority_fix():
+    """HONESTY PROOF (3, TASK-11): specs that name their canonical verbs directly (no incidental
+    synonym collision) resolve to those same canonical verbs after this fix, exactly as before --
+    the new priority check changes WHICH verb wins only in a genuine collision, never in the
+    ordinary case, across every implemented ADT class."""
+    lru_spec = "An LRU cache CLI: `get <key>` returns the value, `put <key> <value>` inserts it."
+    assert adt_oracle._resolve_verbs("lru", lru_spec) == {"put": "put", "get": "get"}
+
+    pq_spec = "A priority queue: `push <priority> <item>`, `pop` removes the top, `peek` reads it."
+    assert adt_oracle._resolve_verbs("priority-queue", pq_spec) == {
+        "push": "push", "pop": "pop", "peek": "peek",
+    }
+
+    fifo_spec = "A FIFO queue: `enqueue <item>` adds, `dequeue` removes the oldest, `peek` reads it."
+    assert adt_oracle._resolve_verbs("fifo", fifo_spec) == {
+        "enqueue": "enqueue", "dequeue": "dequeue", "peek": "peek",
+    }
+
+    ring_spec = "A ring buffer: `push <item>` adds, `pop` removes the oldest, `peek` reads it."
+    assert adt_oracle._resolve_verbs("ring-buffer", ring_spec) == {
+        "push": "push", "pop": "pop", "peek": "peek",
+    }
+
+
+def test_acceptance_check_still_catches_buggy_build_with_literal_kv_store_ttl_cli_spec(tmp_path):
+    """HONESTY PROOF (4, TASK-11, the CRITICAL anti-false-done proof, end-to-end): this fix only
+    changes WHICH verbs are driven -- it never weakens the pass/fail logic. Driven with the
+    LITERAL, unmodified `kv-store-ttl-cli` spec (which now resolves to the correct `set`/`get`
+    vocabulary instead of the incidental `store`/`read`), a CORRECT real-seconds ttl-store CLI now
+    PASSES (the measured false-not-done this task fixes) and a genuinely BUGGY one that never
+    enforces its ttl STILL FAILS -- proving no false-done was introduced alongside the fix."""
+    good_root = _write_cli(tmp_path, _GOOD_TTL_REAL_CLI, name="good_kv_main.py")
+    good_check = adt_oracle.acceptance_check(
+        "good_kv_main.py", "ttl-store", spec=_LITERAL_KV_STORE_TTL_CLI_SPEC)
+    assert good_check is not None
+    assert _run_emitted_check(good_root, good_check) is True
+
+    buggy_root = _write_cli(tmp_path, _BUGGY_TTL_REAL_NEVER_EXPIRES_CLI, name="buggy_kv_main.py")
+    buggy_check = adt_oracle.acceptance_check(
+        "buggy_kv_main.py", "ttl-store", spec=_LITERAL_KV_STORE_TTL_CLI_SPEC)
+    assert buggy_check is not None
+    assert _run_emitted_check(buggy_root, buggy_check) is False
 # #EXT-056-REQ-1 End

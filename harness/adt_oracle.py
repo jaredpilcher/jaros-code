@@ -822,9 +822,24 @@ def _resolve_verbs(cls: str, spec: "str | None") -> "dict[str, str]":
     canonical verb when ``spec`` is unavailable or names no synonym for it -- SAFETY: this never
     changes the emitted command word for a spec that doesn't declare a synonym, so it can only ever
     ADD correct recognition, never regress an already-passing build. Reads ONLY the visible ``spec``
-    text -- never a hidden test (Tenet 3, no oracle leak). When more than one synonym for the same
-    verb appears in the spec, the FIRST one listed in ``_ADT_VERB_SYNONYMS`` (a fixed, deterministic
-    order) wins. Never raises -- any internal error falls back to the all-canonical mapping."""
+    text -- never a hidden test (Tenet 3, no oracle leak).
+
+    TASK-11 (MEASURED 2026-07-08 synonym-collision false-not-done, fixing the gap pinned by
+    ``test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec``): the
+    CANONICAL word always gets PRIORITY. If the canonical verb itself is literally present as a
+    whole word in the spec text, that verb resolves to ITSELF and the synonym scan is skipped
+    entirely for it -- even when a synonym word also happens to appear elsewhere in the surrounding
+    prose (e.g. the real ``kv-store-ttl-cli`` spec explicitly names `set`/`get` as its own command
+    verbs, but its prose "a key-value **store**" / "**reads** commands" incidentally also contains
+    the synonyms `store`/`read`; without this priority check the FIRST-found synonym previously won,
+    driving the wrong words and false-rejecting a correct build). Only when the canonical word is
+    ABSENT from the spec does the pre-existing first-synonym-found scan run, exactly as before. When
+    more than one synonym for the same verb appears in the spec, the FIRST one listed in
+    ``_ADT_VERB_SYNONYMS`` (a fixed, deterministic order) still wins. This can only ever make the
+    resolved verb MORE likely to be the one the spec's own command grammar declares -- it never
+    invents a command the spec doesn't mention, and a spec that names ONLY a synonym (no canonical
+    word anywhere) is completely unaffected (TASK-9's fallback is preserved). Never raises -- any
+    internal error falls back to the all-canonical mapping."""
     table = _ADT_VERB_SYNONYMS.get(cls)
     if not table:
         return {}
@@ -834,10 +849,13 @@ def _resolve_verbs(cls: str, spec: "str | None") -> "dict[str, str]":
         for canonical, synonyms in table.items():
             chosen = canonical
             if text:
-                for syn in synonyms:
-                    if syn != canonical and _contains(text, syn):
-                        chosen = syn
-                        break
+                if _contains(text, canonical):
+                    chosen = canonical
+                else:
+                    for syn in synonyms:
+                        if syn != canonical and _contains(text, syn):
+                            chosen = syn
+                            break
             resolved[canonical] = chosen
         return resolved
     except Exception:

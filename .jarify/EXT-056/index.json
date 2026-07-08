@@ -3,7 +3,7 @@
     {
       "file": "harness/adt_oracle.py",
       "startLine": 138,
-      "endLine": 1301
+      "endLine": 1319
     },
     {
       "file": "harness/system_builder.py",
@@ -18,7 +18,7 @@
     {
       "file": "tests/test_ext056_adt_oracle.py",
       "startLine": 17,
-      "endLine": 1720
+      "endLine": 1776
     },
     {
       "file": "tests/test_ext056_acceptance_wiring.py",

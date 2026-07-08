@@ -301,3 +301,52 @@ pass, and must never regress the tick-based convention or any other ADT class.
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-11] Canonical-verb priority in `_resolve_verbs` — fix a MEASURED synonym-collision Tenet-3 false-not-done
+
+MEASURED FALSE-NOT-DONE (pinned by
+`test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec`, documented as a
+KNOWN OPEN GAP in TASK-10's acceptance-criteria note): `_resolve_verbs` (TASK-9) resolves each
+canonical driving verb to the FIRST synonym found ANYWHERE in the spec prose, without ever checking
+whether the canonical word is ALSO literally present. The real `kv-store-ttl-cli` spec
+(`harness/system_suite.py`) explicitly names `set`/`get` as its own command verbs, but its
+surrounding prose ("a key-value **store**", "**reads** commands") incidentally contains the
+synonyms `store`/`read`, so `_resolve_verbs("ttl-store", ...)` resolves `set`→`store` and
+`get`→`read` — the oracle then drives `store k v` / `read k`, which the correct `set`/`get` CLI
+doesn't recognize, false-rejecting a genuinely correct build. It also mis-resolves `lru`'s
+`put`→`set` against that same unrelated spec. This is shared ACCEPTANCE-ORACLE code
+(Tenet-3-critical): the fix must be minimal and localized to `_resolve_verbs`, must never weaken
+the pass/fail logic (a genuinely-buggy build must still be caught), and must never regress TASK-9's
+existing synonym-fallback behavior for a spec that declares ONLY a synonym.
+
+#### Steps
+1. In `harness/adt_oracle.py`, edit `_resolve_verbs` ONLY: for each canonical verb, first check
+   whether the canonical word itself is literally present in the spec text (whole-word, via the
+   existing `_contains` helper); if so, resolve that verb to itself and skip the synonym scan
+   entirely. Only when the canonical word is ABSENT from the spec does the existing
+   first-synonym-found scan run as before. Keep the existing absent/ambiguous-spec fallback (defaults
+   to canonical) and the existing `except Exception` fallback unchanged. Update the function's
+   docstring to describe the new canonical-priority rule.
+2. In `tests/test_ext056_adt_oracle.py`, convert
+   `test_known_gap_resolve_verbs_synonym_collision_on_literal_kv_store_ttl_cli_spec` into a passing
+   assertion (rename if appropriate) proving `_resolve_verbs("ttl-store", _LITERAL_KV_STORE_TTL_CLI_SPEC)`
+   now resolves `set`→`set` and `get`→`get`, and `_resolve_verbs("lru", _LITERAL_KV_STORE_TTL_CLI_SPEC)`
+   resolves `put`→`put` (no more collision with the unrelated spec's incidental prose).
+3. Add/keep a test proving TASK-9's synonym-fallback is preserved: a spec that declares ONLY a
+   synonym (e.g. `enqueue`/`dequeue`, with NO `push`/`pop` token anywhere in the text) still resolves
+   `push`→`enqueue` and `pop`→`dequeue` for `priority-queue`/`fifo`, exactly as before this task.
+4. Add a cross-class regression test proving other ADT classes' `_resolve_verbs` output is unaffected
+   for specs that don't contain a colliding canonical word (e.g. re-run a representative existing
+   fixture spec per class and assert the resolved verbs are unchanged from pre-task behavior).
+5. Add/confirm a test that `acceptance_check`'s emitted checklist for the `kv-store-ttl-cli`-shaped
+   spec still FAILS a genuinely-buggy `ttl-store` build (e.g. reuse an existing buggy ttl fixture) —
+   proving the fix only changes WHICH verbs are driven, never weakens pass/fail logic (no false-done
+   introduced).
+6. Run ONLY `python -m pytest tests/test_ext056_adt_oracle.py tests/test_ext056_acceptance_wiring.py -q`
+   (must stay fully green, no regressions) and
+   `python -c "import harness.adt_oracle, harness.system_builder, harness.system_suite"`. Do NOT run
+   the broader `test_ext036*`/`test_ext056*` sweep or any `-k` sweep (triggers a live Jetson
+   model-swap). Update `.jarify/EXT-056/index.json` for the edited `_resolve_verbs` range only.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle
