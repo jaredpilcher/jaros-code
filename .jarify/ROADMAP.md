@@ -171,6 +171,21 @@ closing it (by building the missing deterministic tools) is the mission.
   tests and feeds concrete failures back, method-dependency-aware decomposition, and honest per-class
   measurement (creation/modification suites at harder tiers, held-out). Every lift proven on a HELD-OUT
   class, never the tuned one (Tenet 3).
+- **[★★ EXT-058 (new spec) · COMPOSITIONAL leaf-library + composer — the next difficulty RATCHET, PRIME-001 (h),
+  owner directive 2026-07-07]** the compositional convergence mechanism: build large systems as a DAG of
+  small, atomic, INDEPENDENTLY-VERIFIED problem-classes ("leaves") wired by deterministic connectors, rather
+  than one from-scratch generation. Two first-class parts: **(1) a verified leaf-LIBRARY** — promote every
+  class the per-class scoreboard shows solidly passing into a reusable, oracle-backed building block (the ADT
+  differential oracle's 5 canonical data structures are the seed); **(2) a deterministic COMPOSER + connectors**
+  — MEASURED 2026-07-07 that the creation failures are COMPOSITIONAL (a missing entrypoint wiring modules
+  together; the model writes the pieces but stumbles on the glue) while MODIFYING an already-composed system is
+  markedly more robust, so the wiring/contracts are deterministic checkable grains. The leaf taxonomy grows
+  EMPIRICALLY from the scoreboard, never designed top-down. **Sequencing:** first get the current single-class
+  weak spots green (the timeouts + the JSON-parse mode + the entrypoint fix just landed), THEN ratchet to
+  compositions (a first composition task = two already-passing leaves wired into one system, e.g. a
+  rate-limited TTL cache). This is the build-level twin of the agent-swarm's composition principle. HIGH ·
+  create the spec (intent/design/requirements/tasks) via `jarify-manage-specs` when it becomes NOW; the
+  build-level path to the large, real, multi-component systems PRIME-001 demands.
 - **[7B-GENERATE the acceptance checks (owner seed #122b, 2026-07-06) — NEXT, cheap on landed infra]**
   the landed 7B-REVIEW (REQ-30) is bounded by Gemma's proposals — it can only PATCH Gemma's checks, so
   a check Gemma botched too badly to salvage stays broken (likely the 4 residual false-negatives in the

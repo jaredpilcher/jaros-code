@@ -81,6 +81,30 @@ finish in **minutes**, and expand to systems so large they take **hours or days*
 at the end, every requirement is traced to work that is honestly verified. This is the north-star form of
 "just like Claude Code": hand it something big, walk away, and it stays on-task and delivers.
 
+**(h) BUILD LARGE SYSTEMS BY COMPOSITION OF VERIFIED CLASSES — the compositional convergence mechanism
+(owner directive, 2026-07-07).** The system reaches arbitrarily complex systems by growing a **library of
+small, atomic problem-CLASSES** it can each build and verify in isolation — an LRU cache, a rate limiter, a
+TTL store, a parser, a state machine, a datastore — **each backed by its own reference oracle**, and then
+**COMPOSING them — as a DAG, not a flat list — into larger systems**: a big prompt is decomposed into a DAG
+of known leaf-classes plus the novel glue between them, each leaf built or retrieved and **independently
+verified**, and the whole wired together and verified bottom-up. Two things are first-class. **(1) The
+verified leaf-library:** every class the per-class scoreboard shows *solidly* passing is promoted into a
+reusable, oracle-backed building block (the **ADT differential oracle is the seed** — five canonical
+data-structure leaves already exist with reference implementations), so a large project *reuses verified
+pieces instead of re-deriving them* — a flywheel of capability, not only of training data. **(2) The
+deterministic composer + connectors:** the wiring and the **CONTRACTS between leaves are where composition
+bugs live** — MEASURED 2026-07-07: the creation failures were *compositional* (a missing entrypoint that
+ties modules together; the model can write the pieces but stumbles on the wiring), while *modifying* an
+already-composed system is markedly more robust — so the connectors are **deterministic, checkable grains,
+not left to the model**. The leaf taxonomy is **GROWN EMPIRICALLY from measurement** (the scoreboard names
+which classes recur as independently-verifiable units), never designed top-down; not every problem divides
+cleanly, so a leaf may be a novel sub-problem the model must still solve fresh — the DAG *organizes* the
+work, it does not eliminate irreducible reasoning. This is the concrete shape of the difficulty ratchet:
+**master the atomic classes, then ratchet to COMPOSITIONS of them** (two solid leaves wired into one
+system), then to larger DAGs — the path to the large, real, multi-component systems this directive demands.
+It is the build-level twin of the agent-swarm's "capability comes from composition" (below): the swarm
+composes tiny *agent judgments*; this composes verified *system classes*.
+
 **HOW it solves all of the above — the prime-directive method, applied REFLEXIVELY (owner directive,
 2026-07-04).** The product tackles a problem with the SAME disciplined method by which this directive itself is
 pursued — there is ONE method, used both to *build jaros-code* and *by jaros-code to build/modify/solve*:
