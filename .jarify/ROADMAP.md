@@ -79,9 +79,15 @@ per-class pass/fail table is the metric (not one blended number).
 - **[EXT-036 · create frontier ratchet — DONE, measured]** added 4 harder create classes; gemma splits them
   cleanly: infix-eval 3/3 solid, sqlite-store 1/3 shaky, mini-SQL 0/3 + json-path 0/3 failing. The ratchet
   re-opened headroom so the scoreboard discriminates again. high · 10316cc
-- **[EXT-058 · green mini-SQL via verified leaf — high, CONFIRMING]** mini-SQL is genuinely parse-hard
-  (0/3 as both multi-module AND forced single-file). Landed a verified mini-SQL leaf (leaf-repair adopts it,
-  same mechanism as ttl→kv-store); on-Jetson 3/3 green-confirmation pending the free Jetson. high · e536971
+- **[EXT-058 · green mini-SQL — high, BLOCKED by a false-done, NOT green yet]** mini-SQL is genuinely
+  parse-hard (0/3 free-form both multi-module AND single-file). Landed a verified mini-SQL leaf (e536971,
+  passes 3/3 in isolation) — BUT on-Jetson confirmation found the leaf NEVER FIRES: build_system consistently
+  false-dones (`done=True`, independent oracle 0/3) on the broken free-form build, and leaf-repair only
+  triggers on `not done`. Root: sql-query-engine is a stdin-protocol class the DETERMINISTIC acceptance
+  (minimum + ADT oracle) doesn't cover, so `done` rides on non-deterministic model-proposed checks that
+  sometimes pass a broken build. **FIX = leaf-as-differential-oracle:** when a verified leaf matches the spec,
+  drive the free-form build AND the leaf on the same seeded input sequence and adopt the leaf on divergence,
+  even if `done=True`. Closes the false-done for every leaf-covered class deterministically. high · next
 - **[json-path + sqlite weak classes — NEXT, needs diagnosis]** json-path 0/3 (repair-loop slow/timeouts),
   sqlite 1/3 (unreliable). Diagnose root cause on a free Jetson (probe tooling ready) → pick leaf vs latency
   vs reliability lever. Do NOT assume a leaf before diagnosis (the mini-SQL first-guess "needs a leaf" was
