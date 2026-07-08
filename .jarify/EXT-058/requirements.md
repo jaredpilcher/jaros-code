@@ -86,3 +86,33 @@ checks before being promoted into the library.
 - [ ] The existing `build_system` leaf-repair adopt path picks up the new leaf via `leaf_for_spec` with no
       change required to `harness/system_builder.py` (a strict superset, byte-identical behavior for every
       other class).
+
+### [REQ-6] Leaf-as-differential-oracle closes the false-done bypass
+
+MEASURED (on-Jetson, 2/2 samples): for `sql-mini-query-cli`, `build_system` ships gemma's free-form build and
+reports `done=True` even though the INDEPENDENT task oracle scores 0/3 (a false-done) — the deterministic-minimum
++ ADT-oracle acceptance floor doesn't cover the stdin-line SQL protocol, so `done` rides on non-deterministic,
+model-proposed checks that sometimes pass a broken build. The pre-existing leaf-repair adopt block (REQ-3) only
+fired when the build was `not done`, so the verified `sql-query-engine` leaf (REQ-5, passes 3/3 in isolation)
+never fired and the class stayed broken. A verified leaf is a spec-faithful reference, so it doubles as a
+DIFFERENTIAL ORACLE for its own class: drive the shipped free-form build and the leaf on the SAME deterministic
+seeded stdin and compare outputs — a divergence (or a free-form run error) triggers the existing ship-clean adopt
+path EVEN WHEN the free-form build already reports `done=True`. The differential input is derived only from the
+leaf's own visible-contract template, never from any task's hidden `checks` — a legitimate spec-derived oracle,
+no leak.
+
+#### Acceptance Criteria
+- [ ] A deterministic seeded-input driver for a leaf class lives in `harness/graph_dsl.py`, implemented for
+      `sql-query-engine` (a CREATE TABLE, several INSERTs, a matching-WHERE SELECT, a no-match SELECT, and a
+      multi-row-matching SELECT with insertion order preserved) and conservatively returns `None` (skip) for
+      every other class.
+- [ ] `build_system`'s leaf-repair block runs the differential whenever `leaf_for_spec(spec)` matches a leaf AND
+      a seeded driver exists for that class — EVEN WHEN the free-form build already reports `done=True`.
+- [ ] On divergence (or a free-form run error), the existing ship-clean leaf-adopt path fires (adopt the leaf,
+      strip stale free-form modules, point `plan` at the leaf, re-verify against `root`, `build_path` set to
+      `leaf:<cls>`), reusing the SAME TASK-7 atomicity/rollback guarantees.
+- [ ] On a match, the free-form build is left completely unchanged (`build_path` stays `free-form`).
+- [ ] The differential never raises and never regresses the pre-existing `not done -> try leaf` trigger
+      (belt-and-suspenders, purely additive).
+- [ ] The differential is derived ONLY from the leaf's own VISIBLE spec-derived seeded input, never from any
+      task's hidden `checks` (no oracle leak).

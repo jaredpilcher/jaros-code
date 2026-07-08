@@ -2354,6 +2354,65 @@ def _replan_as_modification(spec: str, root: Path, built: dict[str, str], checks
     return built, unmet, rounds_run
 # #EXT-036-REQ-34 End
 
+# #EXT-058-REQ-6 Start
+# TASK-9: leaf-as-differential-oracle -- closes a MEASURED false-done where a build's
+# non-deterministic, model-proposed acceptance checks pass a system that is actually broken
+# (`sql-mini-query-cli`: the deterministic-minimum + ADT-oracle floor doesn't cover the
+# stdin-line SQL protocol). A verified leaf is a spec-faithful reference for its class, so it
+# doubles as a differential oracle: run the SHIPPED free-form build and the leaf on the SAME
+# deterministic seeded stdin (`graph_dsl.seeded_driver_input`) and compare stdout.
+def _run_with_stdin(cwd: str, entry: str, stdin_text: str) -> "tuple[bool, str]":
+    """Run ``python <entry>`` in ``cwd``, piping ``stdin_text`` to its stdin, via the SAME
+    sandboxed execution path (``run_sandboxed``: scrubbed env, resource caps, timeout +
+    tree-kill, DENY_ALL egress) ``_run_acceptance_cmd`` already uses for acceptance checks --
+    no new execution path. Returns ``(ok, stdout)`` where ``ok`` is False on a non-zero exit, a
+    timeout, or any run error. Never raises."""
+    timeout = float(os.environ.get("JCODE_TEST_TIMEOUT_S", "120"))
+    try:
+        result = run_sandboxed(f"python {entry}", cwd=cwd, egress_policy=EgressPolicy.DENY_ALL,
+                                timeout=timeout, stdin=stdin_text)
+    except Exception:
+        return False, ""
+    ok = bool(result.get("ok")) and not result.get("timed_out")
+    return ok, (result.get("stdout") or "")
+
+
+def _leaf_differential_diverges(root: Path, mods: list[dict], plan: "dict | None",
+                                 leaf_cls: str, runtime: "object | None" = None) -> bool:
+    """Differential oracle (REQ-6): run the SHIPPED free-form build (``root``, resolved via the
+    SAME ``_minimum_entry_filename`` the deterministic minimum uses) and the verified leaf
+    (emitted to a throwaway temp dir via ``graph_dsl.dsl_to_system`` -- ``root`` is never
+    touched here) on the SAME deterministic seeded stdin, and report whether their stdout
+    DIVERGES, or the free-form run errors (non-zero exit/crash/timeout). A class with no
+    seeded input (``graph_dsl.seeded_driver_input`` returns ``None``) is conservatively skipped
+    (``False`` -- no divergence claimed). Never raises: ANY internal error is treated as "no
+    divergence detected" so this can never itself break a build. Consults only the leaf's own
+    VISIBLE-contract seeded input -- never ``task.checks`` (Tenet 3, no oracle leak)."""
+    try:
+        from harness import graph_dsl
+        seeded = graph_dsl.seeded_driver_input(leaf_cls)
+        if not seeded:
+            return False
+        entry = _minimum_entry_filename(mods, plan)
+        if not entry or not (root / entry).exists():
+            return False
+        free_ok, free_out = _run_with_stdin(str(root), entry, seeded)
+        if not free_ok:
+            return True  # the free-form build errored on a deterministic, spec-legal input
+        leaf_graph = {"nodes": [{"id": "leaf", "class": leaf_cls, "params": {}}], "edges": []}
+        with tempfile.TemporaryDirectory(prefix="ext058_diff_") as _diff_dir:
+            diff_root = Path(_diff_dir)
+            if not graph_dsl.dsl_to_system(leaf_graph, diff_root):
+                return False
+            leaf_ok, leaf_out = _run_with_stdin(str(diff_root), "main.py", seeded)
+        if not leaf_ok:
+            return False  # the leaf itself failed to run here -- conservative, no claim made
+        return free_out.strip("\n") != leaf_out.strip("\n")
+    except Exception:
+        return False
+# #EXT-058-REQ-6 End
+
+
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
             repairs=None, plan_repair: str = "", security=None, quality=None,
@@ -2778,9 +2837,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # TASK-6: deterministic REPAIR candidate -- the verified leaf-library's single-leaf
     # DSL->system path (TASK-5, `harness.graph_dsl`) made LIVE. ONLY tried when the free-form
     # build (plus every repair stage above: targeted per-check repair, and the optional
-    # replan-as-modification loop) STILL has an unmet check -- so a spec with no matching leaf,
-    # or a free-form build that already passed, never reaches this block at all (byte-identical
-    # to before this task, `unmet` empty short-circuits the `if unmet:` guard immediately).
+    # replan-as-modification loop) STILL has an unmet check, OR (TASK-9, REQ-6) the free-form
+    # build DIVERGES from the leaf on a deterministic seeded input EVEN THOUGH it already
+    # reports done -- so a spec with no matching leaf, or a free-form build that already passed
+    # AND matches the leaf's behavior, never reaches this block at all (byte-identical to before
+    # TASK-9 for every such case).
     #
     # ADDITIVE + HONEST by construction: `leaf_for_spec` returns a class only when the VISIBLE
     # spec text fingerprints that leaf's contract (reusing `adt_oracle`'s conservative,
@@ -2802,82 +2863,98 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # `plan` at the leaf, and RE-VERIFIES on `root` itself before committing -- with a
     # byte-for-byte rollback to the free-form result if that re-verification (or the delete)
     # fails, so `root`/`built`/`plan`/`done` are only ever mutated together, atomically.
+    #
+    # TASK-9 (REQ-6, leaf-as-differential-oracle, MEASURED false-done fix): `leaf_cls` is now
+    # resolved UNCONDITIONALLY (both triggers below need it, computed once so they classify
+    # identically), and `leaf_diverges` is the ADDITIONAL trigger -- computed ONLY when the
+    # free-form build is already `done` (`not unmet`), so it never duplicates work the `unmet`
+    # trigger already covers. Even a `done=True` free-form build is driven against the SAME
+    # seeded stdin as the leaf (`graph_dsl.seeded_driver_input`); a divergence (or a free-form
+    # run error) means the model-proposed/deterministic-minimum checks that passed it were
+    # blind to the actual bug -- this reuses the EXACT SAME ship-clean adopt path below, so a
+    # divergence-triggered adopt gets the identical TASK-7 atomicity/rollback guarantees.
     build_path = "free-form"
-    if unmet:
-        from harness import graph_dsl
-        leaf_cls = graph_dsl.leaf_for_spec(spec)
-        if leaf_cls:
-            _beat("LEAF-REPAIR")  # #EXT-040-REQ-3
-            try:
-                leaf_graph = {"nodes": [{"id": "leaf", "class": leaf_cls, "params": {}}],
-                               "edges": []}
-                with tempfile.TemporaryDirectory(prefix="ext058_leaf_") as _cand_dir:
-                    cand_root = Path(_cand_dir)
-                    if graph_dsl.dsl_to_system(leaf_graph, cand_root):
-                        leaf_mods = [{"name": "main.py"}]
-                        leaf_checks = _minimum_acceptance(spec, leaf_mods, plan=None)
-                        leaf_unmet = [c.get("name", "?") for c in leaf_checks
-                                      if not _run_check(cand_root, c)]
-                        if leaf_checks and not leaf_unmet:
-                            leaf_code = (cand_root / "main.py").read_text(encoding="utf-8")
-                            # TASK-7: snapshot the free-form root's EXACT module set before any
-                            # mutation -- a failed adopt (fail-safe below) restores it
-                            # byte-for-byte, so `root`/`built`/`plan`/`done` stay truly
-                            # UNCHANGED on failure (Tenet 3: no half-swapped root, no false
-                            # done).
-                            pre_adopt_built = dict(built)
-                            escape = _jailed_write(root, "main.py", leaf_code, runtime)
-                            if escape is None:
-                                # TASK-7: make ROOT contain EXACTLY the leaf -- strip every
-                                # OTHER free-form module the free-form build wrote, so no stale
-                                # file/entrypoint can be picked up downstream. This closes the
-                                # MEASURED false-done: previously `root` kept the free-form
-                                # files (e.g. cli.py/store.py) and the returned `plan` still
-                                # named the free-form entrypoint, so `done=True` was reported
-                                # while the SHIPPED root still ran the buggy free-form build.
-                                stale = [n for n in pre_adopt_built if n != "main.py"]
-                                # #EXT-037-REQ-14 Start
-                                delete_errors = [e for e in
-                                                  (_jailed_delete(root, n, runtime)
-                                                   for n in stale) if e]
-                                # #EXT-037-REQ-14 End
-                                if delete_errors:
-                                    root_unmet = ["leaf adopt: " + "; ".join(delete_errors)]
-                                else:
-                                    # Belt-and-suspenders: re-run the SAME leaf checks against
-                                    # ROOT ITSELF -- what actually ships -- not just the
-                                    # throwaway cand_root, so `done=True` always reflects the
-                                    # shipped artifact (grade the adopt on what ships).
-                                    root_unmet = [c.get("name", "?") for c in leaf_checks
-                                                  if not _run_check(root, c)]
-                                if not root_unmet:
-                                    built = {"main.py": leaf_code}
-                                    unmet = []
-                                    build_path = f"leaf:{leaf_cls}"
-                                    # The leaf ships ALONE -- the entrypoint IS main.py, never
-                                    # the stale free-form plan's entrypoint (the other half of
-                                    # the measured false-done: a downstream entrypoint
-                                    # resolution that still trusted the free-form `plan`).
-                                    plan = {"entrypoint": "main.py",
-                                            "modules": [{"name": "main.py"}]}
-                                    # quality is ADVISORY (never gates `done`); recompute so it
-                                    # honestly reflects the adopted leaf module, not the stale
-                                    # free-form modules it replaced.
-                                    quality = dataclasses.asdict(assess_quality(built))
-                                else:
-                                    # FAIL SAFE: restore root to the EXACT pre-adopt free-form
-                                    # state -- never ship a half-swapped root, never adopt a
-                                    # leaf that doesn't pass on what actually ships.
-                                    # `built`/`plan`/`unmet`/`done` are left as the free-form
-                                    # result, byte-identical to before this leaf attempt.
-                                    for _name, _code in pre_adopt_built.items():
-                                        _jailed_write(root, _name, _code, runtime)
-                                    if "main.py" not in pre_adopt_built:
-                                        # #EXT-037-REQ-14 Start
-                                        _jailed_delete(root, "main.py", runtime)
-                                        # #EXT-037-REQ-14 End
-            except Exception:
-                pass
+    from harness import graph_dsl
+    leaf_cls = graph_dsl.leaf_for_spec(spec)
+    # #EXT-058-REQ-6 Start
+    # TASK-9: the ADDITIONAL differential trigger -- see the comment block above for the full
+    # rationale. Computing `leaf_diverges` only when `not unmet` means it never duplicates the
+    # pre-existing `unmet` trigger's work.
+    leaf_diverges = bool(leaf_cls) and not unmet and _leaf_differential_diverges(
+        root, mods, plan, leaf_cls, runtime)
+    # #EXT-058-REQ-6 End
+    if leaf_cls and (unmet or leaf_diverges):
+        _beat("LEAF-REPAIR")  # #EXT-040-REQ-3
+        try:
+            leaf_graph = {"nodes": [{"id": "leaf", "class": leaf_cls, "params": {}}],
+                           "edges": []}
+            with tempfile.TemporaryDirectory(prefix="ext058_leaf_") as _cand_dir:
+                cand_root = Path(_cand_dir)
+                if graph_dsl.dsl_to_system(leaf_graph, cand_root):
+                    leaf_mods = [{"name": "main.py"}]
+                    leaf_checks = _minimum_acceptance(spec, leaf_mods, plan=None)
+                    leaf_unmet = [c.get("name", "?") for c in leaf_checks
+                                  if not _run_check(cand_root, c)]
+                    if leaf_checks and not leaf_unmet:
+                        leaf_code = (cand_root / "main.py").read_text(encoding="utf-8")
+                        # TASK-7: snapshot the free-form root's EXACT module set before any
+                        # mutation -- a failed adopt (fail-safe below) restores it
+                        # byte-for-byte, so `root`/`built`/`plan`/`done` stay truly
+                        # UNCHANGED on failure (Tenet 3: no half-swapped root, no false
+                        # done).
+                        pre_adopt_built = dict(built)
+                        escape = _jailed_write(root, "main.py", leaf_code, runtime)
+                        if escape is None:
+                            # TASK-7: make ROOT contain EXACTLY the leaf -- strip every
+                            # OTHER free-form module the free-form build wrote, so no stale
+                            # file/entrypoint can be picked up downstream. This closes the
+                            # MEASURED false-done: previously `root` kept the free-form
+                            # files (e.g. cli.py/store.py) and the returned `plan` still
+                            # named the free-form entrypoint, so `done=True` was reported
+                            # while the SHIPPED root still ran the buggy free-form build.
+                            stale = [n for n in pre_adopt_built if n != "main.py"]
+                            # #EXT-037-REQ-14 Start
+                            delete_errors = [e for e in
+                                              (_jailed_delete(root, n, runtime)
+                                               for n in stale) if e]
+                            # #EXT-037-REQ-14 End
+                            if delete_errors:
+                                root_unmet = ["leaf adopt: " + "; ".join(delete_errors)]
+                            else:
+                                # Belt-and-suspenders: re-run the SAME leaf checks against
+                                # ROOT ITSELF -- what actually ships -- not just the
+                                # throwaway cand_root, so `done=True` always reflects the
+                                # shipped artifact (grade the adopt on what ships).
+                                root_unmet = [c.get("name", "?") for c in leaf_checks
+                                              if not _run_check(root, c)]
+                            if not root_unmet:
+                                built = {"main.py": leaf_code}
+                                unmet = []
+                                build_path = f"leaf:{leaf_cls}"
+                                # The leaf ships ALONE -- the entrypoint IS main.py, never
+                                # the stale free-form plan's entrypoint (the other half of
+                                # the measured false-done: a downstream entrypoint
+                                # resolution that still trusted the free-form `plan`).
+                                plan = {"entrypoint": "main.py",
+                                        "modules": [{"name": "main.py"}]}
+                                # quality is ADVISORY (never gates `done`); recompute so it
+                                # honestly reflects the adopted leaf module, not the stale
+                                # free-form modules it replaced.
+                                quality = dataclasses.asdict(assess_quality(built))
+                            else:
+                                # FAIL SAFE: restore root to the EXACT pre-adopt free-form
+                                # state -- never ship a half-swapped root, never adopt a
+                                # leaf that doesn't pass on what actually ships.
+                                # `built`/`plan`/`unmet`/`done` are left as the free-form
+                                # result, byte-identical to before this leaf attempt.
+                                for _name, _code in pre_adopt_built.items():
+                                    _jailed_write(root, _name, _code, runtime)
+                                if "main.py" not in pre_adopt_built:
+                                    # #EXT-037-REQ-14 Start
+                                    _jailed_delete(root, "main.py", runtime)
+                                    # #EXT-037-REQ-14 End
+        except Exception:
+            pass
     # #EXT-058-REQ-3 End
     # #EXT-036-REQ-4 Start
     done = not unmet

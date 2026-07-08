@@ -316,3 +316,51 @@ def dsl_to_system(graph: "dict | None", root: "Path | str", runtime: "object | N
     except Exception:  # pragma: no cover - defensive, mirrors module-wide never-raises discipline
         return False
 # #EXT-058-REQ-3 End
+
+
+# #EXT-058-REQ-6 Start
+# TASK-9: leaf-as-differential-oracle -- a DETERMINISTIC, self-consistent exercise STDIN for a
+# leaf class, used by `harness.system_builder`'s leaf-repair block to drive BOTH the shipped
+# free-form build and the verified leaf on the SAME seeded input and compare their stdout. This
+# closes a MEASURED false-done: for `sql-mini-query-cli`, the deterministic-minimum + ADT-oracle
+# acceptance floor doesn't cover the stdin-line SQL protocol (no per-command SELECT-semantics
+# check -- `select` is not one of `_MINIMUM_COMMAND_VERBS` and the class has no ADT reference), so
+# `done` can ride on a build that never crashes but silently mis-implements SELECT. A verified
+# leaf is a spec-faithful reference, so it doubles as a differential oracle for its own class.
+#
+# HONESTY (Tenet 3, no oracle leak): each seeded input below is authored ONLY from the leaf's own
+# VISIBLE grammar contract -- the SAME contract `LEAF_LIBRARY`'s template implements -- never from
+# any task's hidden `checks`; this module never imports `harness.system_suite` or reads a
+# `task.checks` anywhere. Conservative by construction: a class with no seeded input registered
+# here returns `None` (skip the differential entirely, no behavior change), never a
+# guessed/synthesized substitute.
+_SQL_SEEDED_INPUT = (
+    "CREATE TABLE users (id,name,city)\n"
+    "INSERT INTO users VALUES (1,alice,nyc)\n"
+    "INSERT INTO users VALUES (2,bob,sf)\n"
+    "INSERT INTO users VALUES (3,carol,nyc)\n"
+    "SELECT * FROM users WHERE id=2\n"
+    "SELECT * FROM users WHERE city=chicago\n"
+    "SELECT * FROM users WHERE city=nyc\n"
+)
+# Exercises: a CREATE TABLE, several INSERTs, a SELECT with a matching WHERE (single row,
+# `id=2`), a SELECT with NO match (`city=chicago` -- must print nothing), and a SELECT matching
+# MULTIPLE rows (`city=nyc` -- both `alice` and `carol`, insertion order preserved).
+
+_SEEDED_DRIVER_INPUTS = {
+    "sql-query-engine": _SQL_SEEDED_INPUT,
+}
+
+
+def seeded_driver_input(leaf_cls: "str | None") -> "str | None":
+    """Deterministic, never-raises: return the fixed, self-consistent seeded stdin exercise
+    string for ``leaf_cls``, or ``None`` when no seeded input is registered for that class (a
+    conservative skip -- the caller simply never runs the differential for it, byte-identical to
+    before this task). Currently implemented only for ``"sql-query-engine"``; every other class
+    (including the earlier ``ttl-store``/``kv-store`` leaves) intentionally returns ``None`` for
+    now. Makes no model call, reads no ``task.checks``."""
+    try:
+        return _SEEDED_DRIVER_INPUTS.get(leaf_cls)
+    except Exception:
+        return None
+# #EXT-058-REQ-6 End

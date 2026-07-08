@@ -213,3 +213,51 @@ verified building-block leaf (not thin evidence). The reference leaf body (below
 
 #### Implements
 - [REQ-5] Verified mini-SQL-engine leaf (sql-query-engine)
+
+### [TASK-9] Leaf-as-differential-oracle: close the false-done bypass for leaf-covered classes
+
+Detailed: closes a MEASURED false-done (on-Jetson, 2/2 samples) that lets a broken free-form build ship as
+`done=True` for a leaf-covered class. For `sql-mini-query-cli`, the deterministic-minimum + ADT-oracle
+acceptance floor doesn't cover the stdin-line SQL protocol (`select` is not a minimum command verb and the
+class has no ADT reference), so `done` can ride on a build that never crashes but silently mis-implements
+`SELECT` — and the pre-existing leaf-repair adopt block (TASK-6/TASK-7) only fired when `not done`, so the
+verified `sql-query-engine` leaf (TASK-8) never got a chance to fire. A verified leaf is a spec-faithful
+reference for its class, so it doubles as a DIFFERENTIAL ORACLE: drive the shipped free-form build and the
+leaf on the SAME deterministic seeded stdin and compare outputs, and adopt the leaf on divergence even when
+`done=True` already.
+
+#### Steps
+1. Add `seeded_driver_input(leaf_cls) -> str | None` to `harness/graph_dsl.py`: a deterministic, never-raises
+   exercise-input generator, implemented for `"sql-query-engine"` (a fixed stdin string: a CREATE TABLE,
+   several INSERTs, a SELECT with a matching WHERE, a SELECT with NO match — must print nothing — and a
+   SELECT matching multiple rows with insertion order preserved). Returns `None` for every other class
+   (conservative skip, no behavior change for classes without a seeded input yet). Authored ONLY from the
+   leaf's own VISIBLE grammar contract, never from any task's hidden `checks` — no oracle leak.
+2. In `harness/system_builder.py`, add `_run_with_stdin(cwd, entry, stdin_text)` (reusing the existing
+   `run_sandboxed`/`_run_acceptance_cmd` sandboxed-execution conventions: scrubbed env, resource caps,
+   timeout + tree-kill, DENY_ALL egress — no new execution path) and `_leaf_differential_diverges(root, mods,
+   plan, leaf_cls, runtime)`, which runs the free-form build's resolved entrypoint (`_minimum_entry_filename`)
+   and the leaf (emitted to a throwaway temp dir via `graph_dsl.dsl_to_system`, never touching `root`) on the
+   SAME seeded stdin and reports whether their stdout diverges, or the free-form run errors.
+3. In the leaf-repair block (`# #EXT-058-REQ-3`, inside `build_system`), resolve `leaf_cls` UNCONDITIONALLY
+   (once, ahead of both triggers) and compute `leaf_diverges` (ONLY when the build already has no unmet
+   check, so it never duplicates the pre-existing `unmet` trigger's work). Trigger the SAME EXISTING
+   ship-clean adopt path (TASK-7's atomicity/rollback logic, REUSED UNCHANGED — no reintroduced ship-stale-
+   files false-done) when EITHER `unmet` (existing trigger) OR `leaf_diverges` (new trigger) is true.
+4. Never raise anywhere in the new helpers; any differential error (missing entry, run failure, exception) is
+   treated conservatively as "no divergence detected" and falls back to the pre-existing behavior — the
+   differential can never itself break or worsen a build.
+5. Add `tests/test_ext058_leaf_differential.py` (offline, no model call): (a) a stub free-form build that
+   DIVERGES from the leaf on the seeded input (botches SELECT) is adopted (`build_path ==
+   "leaf:sql-query-engine"`) EVEN THOUGH the deterministic-minimum floor alone already reports `done=True`;
+   (b) a stub free-form build that MATCHES the leaf on the seeded input is left unchanged (`build_path ==
+   "free-form"`); (c) over-trigger guard: a non-leaf-class spec (a plain calculator) never runs the
+   differential; (d) honesty: the differential's source never references the task registry
+   (`system_suite`/`FIRST_SLICE`/`HARDER_SLICE`/`CreationTask`), and a differential-triggered adopt still
+   succeeds functionally even with `harness.system_suite` poisoned/unimportable during the call.
+6. Run `python -m pytest tests/test_ext058_leaf_differential.py tests/test_ext058_leaf_repair.py
+   tests/test_ext058_leaf_repair_ships_leaf.py tests/test_ext058_sql_leaf.py tests/test_ext058_graph_dsl.py
+   -q` green. Do NOT run the broader suite or any on-Jetson/live test (host load must stay light).
+
+#### Implements
+- [REQ-6] Leaf-as-differential-oracle closes the false-done bypass
