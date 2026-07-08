@@ -125,3 +125,31 @@ implementation, so the oracle checks a 2nd ADT and REQ-1's held-out validation c
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-5] TTL-store reference model — extend the ADT oracle to a 3rd ADT
+
+Add the `ttl-store` reference model + seeded ops to `harness/adt_oracle.py`, mirroring the LRU/PQ
+implementations, so the oracle covers a 3rd ADT toward REQ-1's held-out proof. Single-file, off-Jetson.
+Uses a VIRTUAL clock (a deterministic tick counter passed as an op arg) — NEVER wall-clock — so runs
+are byte-replayable (mirrors the creation-suite TTL convention: ttl=0 = immediate expiry, no real sleep).
+
+#### Steps
+1. In `harness/adt_oracle.py` (inside `# #EXT-056-REQ-1`), add `"ttl-store"` to `_IMPLEMENTED_CLASSES`
+   + the classify keyword/method tables (keywords: "ttl","time-to-live","expire"; methods: set/get/expire/ttl).
+2. Implement `_ttl_store_reference(...)`: a dict + per-key expiry-tick; `set <key> <value> <ttl>` stores
+   with expiry = now+ttl; `get <key>` returns the value if not expired (now < expiry) else `none`; a
+   virtual `now` advances by an explicit `tick`/step op (NOT wall-clock). Authored from the visible
+   set/get/ttl contract only (no leak).
+3. Extend `_build_sequence`/`_seeded_ops` for `ttl-store`: sets with varied ttls incl. ttl=0
+   (immediate-expiry boundary), gets before/after expiry ticks, overwrite-resets-ttl. Seeded/replayable.
+4. Extend `verify`/`acceptance_check` to drive the ttl-store CLI convention lockstep vs the reference
+   (match any ttl CreationTask convention in system_suite.py if present, else the natural line protocol);
+   report first-divergence; still NEVER raises; non-ttl builds unaffected.
+5. Tests in `tests/test_ext056_adt_oracle.py`: classify→ttl-store for a ttl-shaped spec (+ conservative
+   negative); reference expires at the right virtual tick incl. ttl=0; verify PASSES a correct ttl fixture
+   and FAILS an off-by-one-expiry-bug fixture with a localized first-divergence.
+6. Run ONLY `timeout 240 python -m pytest tests/test_ext056_adt_oracle.py -q`, then
+   `python -c "import harness.adt_oracle, harness.system_builder"`. Do NOT run the full suite. Update index.json.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle

@@ -348,6 +348,11 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ CAPABILITY: ADT oracle → 2nd ADT (priority-queue) — EXT-056 TASK-4 (465175c, 2026-07-07)]** the
+  differential oracle now covers `{lru, priority-queue}` (heapq + stable insertion-order tie-break,
+  authored from the visible contract, no leak). 22 adt-oracle tests (up from 12), `system_builder`
+  byte-unchanged. Unblocks the held-out proof (develop on {lru,priority}, hold out {ttl,ring}). NEXT:
+  ttl-store + ring-buffer references → then the stronger-grader held-out measurement (on-Jetson batch).
 - **[★★ PRODUCT UX: Claude-Code-grade CLI rebuild — EXT-057 (641fc39 + 283ecb8, 2026-07-07)]** the owner
   found the CLI "awful" (silent, command-only, no live feedback); rebuilt end-to-end in 4 layers, all
   landed: (REQ-1) streaming LLM client — `llamacpp_client.stream_complete` streams SSE token deltas,
