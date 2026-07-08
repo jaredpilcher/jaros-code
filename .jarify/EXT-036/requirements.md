@@ -1601,3 +1601,24 @@ specifically designed to avoid.
   cratering) gates whether this mechanism is promoted from opt-in to default-on — open, owner
   reserved this measurement before the architect commits (task #130's own scope is the offline
   mechanism only).
+
+### [REQ-38] Hard-tier escalation for the FIX/EDIT path (gemma → qwen-7b on repair failure)
+
+The hard-tier escalation (REQ-13, `build_system_escalating`: gemma-4-e2b primary → qwen2.5-coder-7b
+fallback on ship-failure, swap via the `:8001` model-manager) currently applies ONLY to the CREATION
+path (`/buildsystem`). The FIX/EDIT path (`fix_loop`) is gemma-only with in-gemma repair retries — so a
+hard bug-fix gemma can't crack never gets the stronger model. Owner directive (2026-07-07): the fix/edit
+path should ALSO escalate to the 7B on repair failure, mirroring REQ-13's escalate-ONLY-on-failure
+discipline (never pay for the 7B unless gemma's repair loop actually failed; keep gemma-only behavior
+byte-identical when escalation is unconfigured; ALWAYS restore gemma serving afterward).
+
+#### Acceptance Criteria
+- [ ] Add an escalate-on-failure wrapper around the fix/repair loop (analogous to
+      `build_system_escalating`): run gemma's repair loop first; only if it fails to produce a passing
+      fix AND escalation is configured, swap to qwen-7b (via the same `_http_swap(manager_url)` seam) and
+      retry the fix, returning whichever result passes.
+- [ ] Gemma-only behavior is BYTE-IDENTICAL when escalation is unconfigured (no manager/registry
+      coverage) — a pure no-op wrapper, never a regression (mirror REQ-13's `escalated=False` path).
+- [ ] The served model is ALWAYS restored to gemma-4-e2b after an escalated fix (safety).
+- [ ] Test-gated with a stubbed primary-fails/fallback-succeeds fixture proving the escalation fires
+      only on failure and never leaves the caller worse off than gemma-only.

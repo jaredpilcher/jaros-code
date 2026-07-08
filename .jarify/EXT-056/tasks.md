@@ -153,3 +153,29 @@ are byte-replayable (mirrors the creation-suite TTL convention: ttl=0 = immediat
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-6] Ring-buffer reference model — complete the ADT oracle's coverage (4th ADT)
+
+Add the `ring-buffer` (circular buffer) reference model + seeded ops to `harness/adt_oracle.py`,
+mirroring the LRU/PQ/TTL implementations, completing the oracle's coverage of the 4 canonical ADTs.
+Single-file, off-Jetson. `adt_oracle.py` is committed (5412d2f) — no concurrent writer.
+
+#### Steps
+1. Add `"ring-buffer"` to `_IMPLEMENTED_CLASSES` + classify tables (keywords "ring buffer","circular
+   buffer"; methods push/pop/overwrite/ring).
+2. `_ring_buffer_reference(capacity)`: a fixed-capacity circular buffer; `push <item>` appends; when at
+   capacity a push OVERWRITES the oldest (wrap-around); `pop` removes+returns the oldest (FIFO) or `none`
+   if empty; `peek`/`size` as the visible contract dictates. Authored from the visible contract only.
+3. Extend `_build_sequence`/`_seeded_ops` for ring-buffer: fills to capacity, wrap-around overwrites,
+   drains past empty, interleaved push/pop. Seeded/replayable.
+4. Extend `verify`/`acceptance_check` to drive the ring-buffer CLI convention lockstep vs the reference
+   (match a ring-buffer CreationTask convention in system_suite.py if present, else the natural line
+   protocol with a `<capacity>` argv like LRU); first-divergence; NEVER raises; other ADTs unaffected.
+5. Tests in `tests/test_ext056_adt_oracle.py`: classify→ring-buffer (+ conservative negative); reference
+   wrap-around overwrites oldest correctly; verify PASSES a correct fixture and FAILS a wrong-wrap-order
+   bug fixture with localized first-divergence.
+6. Run ONLY `timeout 240 python -m pytest tests/test_ext056_adt_oracle.py -q`, then
+   `python -c "import harness.adt_oracle, harness.system_builder"`. Update index.json.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle
