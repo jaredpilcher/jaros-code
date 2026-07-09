@@ -1,0 +1,14 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/fs_oracle.py",
+      "startLine": 46,
+      "endLine": 367
+    },
+    {
+      "file": "tests/test_ext059_fs_oracle.py",
+      "startLine": 10,
+      "endLine": 251
+    }
+  ]
+}
