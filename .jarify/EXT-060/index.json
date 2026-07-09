@@ -1,0 +1,22 @@
+{
+  "REQ-1": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 36,
+      "endLine": 204
+    },
+    {
+      "file": "tests/test_ext060_real_systems_suite.py",
+      "startLine": 14,
+      "endLine": 284
+    }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 207,
+      "endLine": 274
+    }
+  ],
+  "REQ-3": []
+}
