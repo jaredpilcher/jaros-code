@@ -1061,6 +1061,42 @@ def _build_module(spec: str, m: dict, built: dict, llm, *,
 # #EXT-036-REQ-3 End
 
 
+# #EXT-036-REQ-43 Start
+# TASK-56 (REQ-43 refinement): the single-file retry's OWN prompt template -- deliberately
+# NOT `BUILD_PROMPT` (which is plan-laden: it carries a single module's responsibility+
+# signature and, when a `plan` is supplied, the REQ-41 whole-system interface ledger). MEASURED
+# (csv-column-aggregator, 2026-07-08): routing the retry through `_build_module`/`BUILD_PROMPT`
+# reproduces the SAME over-decomposed design the retry exists to escape (the model still writes
+# to the planned single "the ENTIRE system" module's responsibility framing), so the retry
+# stayed 0/3. PROVEN FIX: a clean, direct, single-purpose prompt with NO plan/signature/ledger
+# context -- just the raw spec sentence -- makes gemma write ONE correct, self-contained file
+# first try.
+SINGLE_FILE_PROMPT = (
+    "Write a COMPLETE, correct Python program in ONE file (no other modules) that "
+    "satisfies this spec:\n\n{spec}\n\n"
+    "Output ONLY the Python code for main.py, no prose, no markdown fences."
+)
+
+
+def _build_single_file(spec: str, llm, *, max_repair: int = MAX_REPAIR_ATTEMPTS) -> tuple[str, bool]:
+    """The single-file retry's own direct build path -- deliberately independent of
+    `_build_module`/`BUILD_PROMPT` (see `SINGLE_FILE_PROMPT`'s comment above for why).
+    Mirrors `_build_module`'s bounded syntax-gate/repair loop EXACTLY (same `syntax_ok`/
+    `REPAIR_PROMPT`, same `MAX_REPAIR_ATTEMPTS` bound) so a syntactically-broken draw is
+    repaired or rejected, never adopted raw -- only the PROMPT differs. Returns
+    ``(code, syntax_ok)``."""
+    code = _strip_fences(_call(llm, SINGLE_FILE_PROMPT.format(spec=spec), max_tokens=BUILD_MAX_TOKENS))
+    ok, err = syntax_ok(code)
+    for _ in range(max_repair):
+        if ok:
+            break
+        code = _strip_fences(_call(llm, REPAIR_PROMPT.format(name="main.py", err=err, code=code),
+                                    max_tokens=BUILD_MAX_TOKENS))
+        ok, err = syntax_ok(code)
+    return code, ok
+# #EXT-036-REQ-43 End
+
+
 # #EXT-036-REQ-41 Start (interface-ledger cross-module coherence: AST seam check)
 # MEASURED (compositional-failure diagnosis, docs/GAP-MAP.md): `_build_module` injects a
 # sibling module's FULL SOURCE only for a module's DIRECT imports (REQ-3, unchanged above)
@@ -3064,8 +3100,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     multi-module build is still NOT done AND the plan produced MORE THAN ONE module (an
     already-done build, or one that was single-module to begin with, never reaches this stage
     -- byte-identical to before this task in both cases). It re-builds the ENTIRE system as a
-    single ``main.py`` module from the same spec (via the same ``_build_module`` path every
-    other module uses -- the retry never sees the suite oracle or any independent check),
+    single ``main.py`` module from the same spec via its OWN clean, direct prompt
+    (``SINGLE_FILE_PROMPT``/``_build_single_file``, task #TASK-56 -- deliberately NOT the
+    plan-laden ``_build_module``/``BUILD_PROMPT`` path every other module uses, which was
+    MEASURED to reproduce the same over-decomposed design the retry exists to escape; the
+    retry never sees the suite oracle or any independent check either way),
     grades it against the SAME composed acceptance ``checks``, and keeps the better of
     {multi-module, single-file} by the SAME ``_better_result`` ranking
     ``build_system_escalating`` uses (done > shipped > fewer-unmet), with the multi-module
@@ -3405,10 +3444,17 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # that was single-module from the start, never reaches this block at all (byte-identical
     # to before this task in both cases). Bounded to exactly ONE retry attempt.
     #
-    # Honest/leak-free: the retry sees ONLY `spec` (built via the exact same single-module
-    # BUILD_PROMPT path `_build_module` already uses for every other module) -- never the
-    # suite oracle, a reference implementation, or any independent/task-level check. Graded
-    # against the SAME composed acceptance BAR the multi-module build was graded against:
+    # Honest/leak-free: the retry sees ONLY `spec` -- never the suite oracle, a reference
+    # implementation, or any independent/task-level check. TASK-56 (REQ-43 refinement,
+    # MEASURED 2026-07-08): the retry originally routed through `_build_module`/`BUILD_PROMPT`
+    # (the same plan-laden path every other module uses -- carrying a planned module's
+    # responsibility/signature +, when a plan is given, the REQ-41 interface ledger), which
+    # was PROVEN to reproduce the SAME over-decomposed design the retry exists to escape
+    # (csv-column-aggregator stayed 0/3 even with the retry firing). PROVEN FIX: the retry now
+    # calls the model DIRECTLY with `SINGLE_FILE_PROMPT`/`_build_single_file` -- a clean,
+    # single-purpose prompt carrying NO plan/responsibility/signature/ledger context, just the
+    # raw spec -- which produces a correct single-file solution first try. Graded against the
+    # SAME composed acceptance BAR the multi-module build was graded against:
     # the MODEL-PROPOSED/behavioral portion of `checks` carries over completely UNCHANGED
     # (`single_checks` below), and only the DETERMINISTIC MINIMUM (`_minimum_acceptance`) --
     # which is inherently module-shape-dependent, e.g. its smoke check imports every
@@ -3438,12 +3484,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
             proposed = [c for c in checks if (c.get("name"), c.get("code")) not in multi_minimum_keys]
             single_minimum = _minimum_acceptance(spec, single_mods, single_plan)
             single_checks = list(single_minimum) + proposed
-            single_file_spec = (
-                spec + "\n\nIMPLEMENT THE ENTIRE SYSTEM IN THIS ONE FILE `main.py` ONLY -- "
-                "no other modules, no imports of sibling modules, all logic lives in this "
-                "one file."
-            )
-            single_code, single_ok = _build_module(single_file_spec, single_mods[0], {}, llm)
+            # TASK-56: the plain `spec` (never plan/responsibility/signature/ledger context)
+            # through the dedicated direct-prompt builder -- see the block comment above.
+            single_code, single_ok = _build_single_file(spec, llm)
             if single_ok:
                 with tempfile.TemporaryDirectory(prefix="ext036_singlefile_") as _sf_dir:
                     sf_cand_root = Path(_sf_dir)

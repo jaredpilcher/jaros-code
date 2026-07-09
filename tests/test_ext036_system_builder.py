@@ -109,6 +109,16 @@ class _CannedLlm:
             return _Resp(self.plan)
         if "ACCEPTANCE CHECKS" in prompt:
             return _Resp(self.checklist)
+        # #EXT-036-REQ-43 Start
+        # TASK-56: the single-file retry's OWN direct prompt (`SINGLE_FILE_PROMPT`) is no
+        # longer routed through `_build_module`/`BUILD_PROMPT`, so it no longer matches the
+        # "COMPLETE Python module" branch below by coincidence -- mirror the SAME effective
+        # answer the old retry got (`module_first["main.py"]`) so every EXISTING test whose
+        # multi-module build happens to still be unmet (triggering this retry as an
+        # incidental side effect, not the behavior under test) stays byte-identical.
+        if "COMPLETE, correct Python program in ONE file" in prompt:
+            return _Resp(self.module_first.get("main.py", ""))
+        # #EXT-036-REQ-43 End
         if "SYNTAX ERROR" in prompt:
             m = _MODULE_NAME_RE.search(prompt)
             name = m.group(1) if m else None
@@ -1219,16 +1229,25 @@ def test_env_scrub_live_in_build_system_acceptance(tmp_path, monkeypatch):
 
 
 # #EXT-036-REQ-43 Start
-# --- TASK-55 (REQ-43): single-file retry fallback for an over-decomposed build ----------
+# --- TASK-55/56 (REQ-43): single-file retry fallback for an over-decomposed build --------
 #
-# MOCKS `_build_module` and `_minimum_acceptance` directly (rather than driving every stage
-# through a `.complete()`-routed canned llm) so the test is a precise, offline unit test of
-# the RETRY GATING/RANKING/ADOPTION wiring in `build_system` itself -- not a re-test of
-# `_compose_acceptance_checklist`/`_minimum_acceptance`'s own derivation logic (covered by
-# their own dedicated tests elsewhere in this file). `_minimum_acceptance` is neutralized to
-# `[]` so the fixed `_SF_CHECKS` checklist (returned by the mocked
+# MOCKS `_build_module`, `_call`, and `_minimum_acceptance` directly (rather than driving
+# every stage through a `.complete()`-routed canned llm) so the test is a precise, offline
+# unit test of the RETRY GATING/RANKING/ADOPTION wiring in `build_system` itself -- not a
+# re-test of `_compose_acceptance_checklist`/`_minimum_acceptance`'s own derivation logic
+# (covered by their own dedicated tests elsewhere in this file). `_minimum_acceptance` is
+# neutralized to `[]` so the fixed `_SF_CHECKS` checklist (returned by the mocked
 # `_compose_acceptance_checklist`) is graded byte-identically for both the multi-module and
 # single-file candidates -- isolating exactly the behavior this task adds.
+#
+# TASK-56 (REQ-43 refinement): the single-file retry no longer routes through `_build_module`
+# at all (it was MEASURED to reproduce the over-decomposed design it's meant to escape) -- it
+# now calls `_call` directly via `_build_single_file`/`SINGLE_FILE_PROMPT`. `_build_module` is
+# still mocked to drive the ORIGINAL multi-module build stage exactly as before; `_call` is
+# separately mocked (delegating to the real `_call` for every prompt except the single-file
+# retry's own, which it distinguishes by `_SF_RETRY_PROMPT_MARKER`, text unique to
+# `SINGLE_FILE_PROMPT`) so the PLAN stage (still driven by `_PlanOnlyLlm.complete()` through
+# the real `_call`) is completely unaffected.
 
 _SF_SPEC = "A tiny CLI that prints the sum of two numbers given as command-line arguments."
 
@@ -1291,6 +1310,11 @@ _SF_CHECKS = [{"name": "prints the sum", "code": _SF_CHECK_CODE}]
 
 _SF_RETRY_MARKER = "IMPLEMENT THE ENTIRE SYSTEM IN THIS ONE FILE"
 
+# TASK-56: text unique to `SINGLE_FILE_PROMPT` (the retry's OWN direct prompt, distinct from
+# `BUILD_PROMPT`/`_SF_RETRY_MARKER` above, which is now dead -- kept only as a negative-control
+# string, asserted absent from every `_call` prompt below).
+_SF_RETRY_PROMPT_MARKER = "COMPLETE, correct Python program in ONE file"
+
 
 class _PlanOnlyLlm:
     """Handles only the PLAN prompt (`.complete()` convention); every other stage
@@ -1310,12 +1334,10 @@ class _PlanOnlyLlm:
 
 
 def _sf_fake_build_module(spec, m, built, llm, *, max_repair=None, plan=None):
-    """Stand-in for `_build_module`: routes on the module name AND (for `main.py`) on
-    whether the REQ-43 single-file marker is present in `spec` -- exactly how the real
-    single-file retry distinguishes its own build call from the original multi-module one."""
+    """Stand-in for `_build_module`, driving ONLY the original multi-module build stage
+    (TASK-56: the single-file retry no longer calls `_build_module` at all, so this fake
+    never needs to special-case a single-file marker)."""
     name = m.get("name")
-    if name == "main.py" and _SF_RETRY_MARKER in spec:
-        return _SF_MAIN_OK_SINGLEFILE, True
     if name == "helper.py":
         return _SF_HELPER_OK, True
     if name == "main.py":
@@ -1323,15 +1345,38 @@ def _sf_fake_build_module(spec, m, built, llm, *, max_repair=None, plan=None):
     return "", False
 
 
+def _sf_make_fake_call(monkeypatch, sb, *, canned: "str | None", calls: list):
+    """TASK-56: stand-in for `_call`, wired via `monkeypatch` so it can DELEGATE to the real
+    `_call` (captured before patching) for every prompt except the single-file retry's own
+    (`_SF_RETRY_PROMPT_MARKER`, unique to `SINGLE_FILE_PROMPT`) -- so the PLAN stage (still
+    driven by `_PlanOnlyLlm.complete()` through the real `_call`) and the REQ-5 targeted-repair
+    call are completely unaffected. `canned=None` means the single-file retry's own call is
+    never expected to fire in this test (records it anyway for the caller to assert absent)."""
+    real_call = sb._call
+
+    def fake_call(llm, prompt, *, max_tokens=None):
+        calls.append(prompt)
+        if _SF_RETRY_PROMPT_MARKER in prompt:
+            if canned is None:
+                raise AssertionError("single-file retry's _call fired unexpectedly")
+            return canned
+        return real_call(llm, prompt, max_tokens=max_tokens)
+
+    monkeypatch.setattr(sb, "_call", fake_call)
+
+
 def test_single_file_retry_fires_and_keeps_better_result_when_not_done(tmp_path, monkeypatch):
     """Core REQ-43 behavior: a multi-module build that stays NOT DONE after `_repair_system`
     (a genuine cross-module logic bug the stubbed targeted-repair can't fix) triggers ONE
     single-file retry; the single-file candidate genuinely passes the same acceptance bar,
     so it is ADOPTED -- `done` flips True, `modules` becomes the single `main.py`, and
-    `build_path` records `"single-file-retry"`."""
+    `build_path` records `"single-file-retry"`. TASK-56: the retry's own model call is a
+    direct `_call` with the clean `SINGLE_FILE_PROMPT` (never routed through `_build_module`)."""
     import harness.system_builder as sb
 
+    calls: list[str] = []
     monkeypatch.setattr(sb, "_build_module", _sf_fake_build_module)
+    _sf_make_fake_call(monkeypatch, sb, canned=_SF_MAIN_OK_SINGLEFILE, calls=calls)
     monkeypatch.setattr(sb, "_compose_acceptance_checklist",
                          lambda spec, mods, llm, plan=None: list(_SF_CHECKS))
     monkeypatch.setattr(sb, "_minimum_acceptance", lambda spec, mods, plan=None: [])
@@ -1343,22 +1388,30 @@ def test_single_file_retry_fires_and_keeps_better_result_when_not_done(tmp_path,
     assert result["done"] is True
     assert result["unmet"] == []
     assert result["build_path"] == "single-file-retry"
-    assert result["modules"] == {"main.py": _SF_MAIN_OK_SINGLEFILE}
-    assert (root / "main.py").read_text(encoding="utf-8") == _SF_MAIN_OK_SINGLEFILE
+    # `_build_single_file` runs the real `_strip_fences` on the canned `_call` reply (unlike
+    # the OLD `_sf_fake_build_module` stand-in, which returned the constant untouched) -- so
+    # the adopted code is the fence-stripped form (trailing whitespace trimmed), exactly what
+    # `_strip_fences` would do to a genuine model reply.
+    assert result["modules"] == {"main.py": _SF_MAIN_OK_SINGLEFILE.strip()}
+    assert (root / "main.py").read_text(encoding="utf-8") == _SF_MAIN_OK_SINGLEFILE.strip()
     assert not (root / "helper.py").exists()   # the stale multi-module sibling was stripped
+    # the retry's own prompt carried ONLY the raw spec -- never leaked the plan/responsibility/
+    # signature/ledger context `BUILD_PROMPT` would have carried
+    sf_prompts = [p for p in calls if _SF_RETRY_PROMPT_MARKER in p]
+    assert sf_prompts and all(_SF_SPEC in p for p in sf_prompts)
+    assert not any(_SF_RETRY_MARKER in p for p in sf_prompts)  # the old dead marker, never sent
 
 
 def test_single_file_retry_never_fires_on_an_already_done_multi_module_build(tmp_path, monkeypatch):
     """Non-degrading gate: a multi-module build that is ALREADY done never reaches the
-    retry -- `_build_module` is never called with the single-file marker, and the result's
-    `build_path`/`modules` are exactly the multi-module build, byte-identical to before this
-    task (the whole REQ-43 block is a no-op for a passing build)."""
+    retry -- `_call` is never invoked with the single-file retry's own prompt, and the
+    result's `build_path`/`modules` are exactly the multi-module build, byte-identical to
+    before this task (the whole REQ-43 block is a no-op for a passing build)."""
     import harness.system_builder as sb
 
-    calls: list[tuple] = []
+    calls: list[str] = []
 
     def fake_build_module(spec, m, built, llm, *, max_repair=None, plan=None):
-        calls.append((m.get("name"), _SF_RETRY_MARKER in spec))
         name = m.get("name")
         if name == "helper.py":
             return _SF_HELPER_OK, True
@@ -1367,6 +1420,7 @@ def test_single_file_retry_never_fires_on_an_already_done_multi_module_build(tmp
         return "", False
 
     monkeypatch.setattr(sb, "_build_module", fake_build_module)
+    _sf_make_fake_call(monkeypatch, sb, canned=None, calls=calls)
     monkeypatch.setattr(sb, "_compose_acceptance_checklist",
                          lambda spec, mods, llm, plan=None: list(_SF_CHECKS))
     monkeypatch.setattr(sb, "_minimum_acceptance", lambda spec, mods, plan=None: [])
@@ -1379,6 +1433,6 @@ def test_single_file_retry_never_fires_on_an_already_done_multi_module_build(tmp
     assert result["unmet"] == []
     assert result["build_path"] == "free-form"
     assert result["modules"] == {"helper.py": _SF_HELPER_OK, "main.py": _SF_MAIN_OK_MULTI}
-    # the single-file marker never appears in any `_build_module` call -- the retry never fired
-    assert not any(marker for _name, marker in calls)
+    # the single-file retry's own prompt never fired -- the whole REQ-43 block was a no-op
+    assert not any(_SF_RETRY_PROMPT_MARKER in p for p in calls)
 # #EXT-036-REQ-43 End

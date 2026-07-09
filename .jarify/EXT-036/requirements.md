@@ -1960,3 +1960,17 @@ signatures to botch, which is exactly the failure class.
       is NOT retried (byte-identical). Offline where possible (mock the build calls); no oracle leak.
 - [x] No regression to the existing repair/escalation flow; `tests/test_ext036_system_builder.py` +
       `tests/test_ext036_system_repair.py` stay green.
+
+**REFINED 2026-07-08 (TASK-56):** MEASURED that the mechanism above, as first committed, did NOT
+actually recover csv-column-aggregator — the single-file retry's build call routed through
+`_build_module`/`BUILD_PROMPT`, the SAME plan-laden prompt path (carrying the retry's own synthetic
+module's responsibility framing) every other module build uses, so the model reproduced the identical
+over-decomposed shape the retry exists to escape and the class stayed 0/3. PROVEN FIX: a hand-verified
+direct probe showed that prompting the model with a clean, single-purpose instruction — "write the whole
+system in one file, output only code," carrying NO plan/responsibility/signature/interface-ledger
+context — produces a correct solution first try. `harness/system_builder.py` now builds the retry's
+candidate via a dedicated `SINGLE_FILE_PROMPT`/`_build_single_file` (a direct `_call` + the same
+`syntax_ok`/`REPAIR_PROMPT` gate `_build_module` uses, only the prompt differs) instead of
+`_build_module`. Every other guarantee above (non-degrading `_better_result` ranking, honest/leak-free
+grading against the same composed checklist, atomic adopt + rollback against `root`) is unchanged.
+Proven OFFLINE (`tests/test_ext036_system_builder.py`, canned `_call`, no live model).
