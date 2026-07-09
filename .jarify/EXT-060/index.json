@@ -1,21 +1,48 @@
 {
+  "REQ-3": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 46,
+      "endLine": 52
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 104,
+      "endLine": 107
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 144,
+      "endLine": 184
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 337,
+      "endLine": 411
+    },
+    {
+      "file": "tests/test_ext060_real_systems_suite.py",
+      "startLine": 288,
+      "endLine": 447
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/real_systems_suite.py",
       "startLine": 36,
-      "endLine": 204
+      "endLine": 265
     },
     {
       "file": "tests/test_ext060_real_systems_suite.py",
       "startLine": 14,
-      "endLine": 284
+      "endLine": 285
     }
   ],
   "REQ-2": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 207,
-      "endLine": 274
+      "startLine": 268,
+      "endLine": 334
     }
   ]
 }
