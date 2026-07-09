@@ -29,12 +29,16 @@ from harness.system_builder import (
     build_system,
     build_system_best_of_k,
     _compose_acceptance_checklist,
+    _derive_kv_roundtrip,
     _derive_roundtrip_pair,
     _extract_command_tokens,
     _has_error_marker,
     _minimum_acceptance,
     _minimum_entry_filename,
+    _run_check,
 )
+from harness.graph_dsl import SQLITE_KV_LEAF
+from harness.system_suite import ALL_CREATION_TASKS
 
 DATASTORE_SPEC = (
     "A tiny notes datastore CLI in main.py: supports 'add <text>' and 'list' commands, "
@@ -507,3 +511,197 @@ def test_working_add_list_roundtrip_yields_done_true(tmp_path):
     assert result["shipped"] is True
     assert result["done"] is True
     assert result["unmet"] == []
+
+
+# ===========================================================================================
+# REQ-40 (TASK-52): KEY-VALUE-aware round-trip -- fixes a MEASURED false-negative sitting
+# directly beneath REQ-27's own add/list round-trip. The VERIFIED-CORRECT SQLite-kv leaf
+# (`graph_dsl.SQLITE_KV_LEAF`) FAILED `_minimum_acceptance` on exactly one check --
+# `minimum: 'create'+'get' round-trip persists` -- because (1) `_ADD_LIKE_WORDS` has no
+# "set"/"put"/"store", so the sentence's real write verb ("set") was never matched and the
+# prose word "create" was mis-picked instead, and (2) the add/list check's bare `<list>` (no
+# key) structurally cannot verify a `set <key> <value>`/`get <key>` contract. This section
+# proves the KEY-VALUE-aware fix.
+# ===========================================================================================
+
+# --- (unit) _derive_kv_roundtrip -----------------------------------------------------------
+
+KV_SPEC = (
+    "A tiny command-line key-value store in main.py, backed by a database file on disk. "
+    "Running it as `python main.py set <key> <value>` stores value under key and prints "
+    "`ok`. Running it as `python main.py get <key>` prints the stored value, or `none` if "
+    "absent. A value set in one run of the program must still be retrievable via get in a "
+    "completely separate later run of the program -- it must be persisted to disk, not just "
+    "kept in memory for the current process."
+)
+
+KV_PLAN = json.dumps({
+    "modules": [
+        {"name": "main.py",
+         "responsibility": "key-value store CLI: set persists to disk, get reads it back",
+         "exports": [{"name": "main", "signature": "def main():"}],
+         "imports": []}
+    ],
+    "entrypoint": "main.py",
+    "acceptance": "set persists a value, get reads it back across separate runs",
+})
+
+# a stdin-driven multi-command SESSION protocol (like `kv-store-ttl-cli`/`lru-cache-cli` in
+# the real held-out suite) also names both "set" and "get" as whole words, but a per-command
+# subprocess invocation is the WRONG shape for it -- must NOT trigger the KV round-trip.
+STDIN_SESSION_KV_SPEC = (
+    "An in-memory key-value store. Running it as `python main.py` (no command-line "
+    "arguments), it reads commands from standard input, one command per line, until "
+    "standard input is exhausted (EOF). Supported commands: `set <key> <value>` stores it "
+    "and prints ok; `get <key>` prints the value if present, or none."
+)
+
+
+def test_derive_kv_roundtrip_finds_set_and_get():
+    assert _derive_kv_roundtrip(KV_SPEC) == ("set", "get")
+
+
+def test_derive_kv_roundtrip_conservative_when_only_one_side_present():
+    assert _derive_kv_roundtrip("A CLI that only supports `get <key>`.") is None
+    assert _derive_kv_roundtrip("A CLI that only supports `set <key> <value>`.") is None
+    assert _derive_kv_roundtrip("A calculator CLI with an add(a, b) function.") is None
+
+
+def test_derive_kv_roundtrip_excludes_stdin_session_protocol():
+    """The critical no-over-trigger guard: a spec that names set/get but describes a
+    stdin-driven multi-command SESSION (one process, many commands) must NOT get a
+    per-invocation KV round-trip check -- that shape cannot correctly verify it, and the
+    spec never claims cross-process persistence for it."""
+    assert _derive_kv_roundtrip(STDIN_SESSION_KV_SPEC) is None
+
+
+def test_derive_kv_roundtrip_never_raises_on_bad_input():
+    assert _derive_kv_roundtrip(None) is None
+    assert _derive_kv_roundtrip("") is None
+    assert _derive_kv_roundtrip(123) is None
+
+
+def test_derive_kv_roundtrip_no_over_trigger_across_all_creation_tasks():
+    """Sweep every one of the held-out suite's specs (incl. `kv-store-ttl-cli`'s and
+    `lru-cache-cli`'s own set/put+get commands) and confirm the KV round-trip fires ONLY for
+    the genuine `sqlite-persistent-kv-cli` spec -- no other class is disturbed."""
+    matches = [t.name for t in ALL_CREATION_TASKS if _derive_kv_roundtrip(t.sentence)]
+    assert matches == ["sqlite-persistent-kv-cli"]
+
+
+# --- (core) the KV round-trip takes PRECEDENCE over the add/list one, never both ----------
+
+def test_minimum_acceptance_prefers_kv_roundtrip_over_add_list_for_kv_spec():
+    mods = [{"name": "main.py", "exports": [{"name": "main"}]}]
+    plan = {"entrypoint": "main.py"}
+    checks = _minimum_acceptance(KV_SPEC, mods, plan)
+    names = [c["name"] for c in checks]
+    roundtrip_names = [n for n in names if "round-trip persists" in n]
+    assert roundtrip_names == ["minimum: 'set'+'get' key-value round-trip persists"]
+
+
+def test_minimum_acceptance_unaffected_for_add_list_only_spec():
+    """VALUE-PRESERVING: a spec that only names add/list (no set/put/store+get) still gets
+    exactly the pre-existing add/list round-trip -- no regression."""
+    mods = DATASTORE_PLAN["modules"]
+    checks = _minimum_acceptance(DATASTORE_SPEC, mods, DATASTORE_PLAN)
+    names = [c["name"] for c in checks]
+    roundtrip_names = [n for n in names if "round-trip persists" in n]
+    assert roundtrip_names == ["minimum: 'add'+'list' round-trip persists"]
+
+
+# --- the committed SQLite-kv leaf now passes _minimum_acceptance 8/8 (was 7/8) ------------
+
+def test_sqlite_kv_leaf_passes_minimum_acceptance_8_of_8(tmp_path):
+    """MEASURED + CONFIRMED (task #131): the VERIFIED-CORRECT SQLite-kv leaf
+    (`graph_dsl.SQLITE_KV_LEAF`) previously FAILED `_minimum_acceptance` on exactly one
+    check (the mis-derived `'create'+'get'` add/list round-trip). With the KV-aware
+    round-trip taking precedence, all 8 minimum checks now pass -- no false-done, this is a
+    genuinely-persistent store passing a genuinely-verifying check."""
+    task = next(t for t in ALL_CREATION_TASKS if t.name == "sqlite-persistent-kv-cli")
+    mods = [{"name": "main.py", "exports": [{"name": "main"}]}]
+    plan = {"entrypoint": "main.py"}
+    checks = _minimum_acceptance(task.sentence, mods, plan)
+    names = [c["name"] for c in checks]
+    assert len(checks) == 8
+    assert "minimum: 'set'+'get' key-value round-trip persists" in names
+    # the OLD mis-derived add/list round-trip (which paired the prose word "create" with
+    # "get") must be GONE -- the KV round-trip took precedence, not just added alongside it.
+    assert not any("round-trip persists" in n and "create" in n for n in names)
+    (tmp_path / "main.py").write_text(SQLITE_KV_LEAF, encoding="utf-8", newline="\n")
+    results = [_run_check(tmp_path, c) for c in checks]
+    assert all(results), list(zip(names, results))
+
+
+# --- (end to end) build_system: a genuinely-PERSISTENT kv store -> done=True; a
+# non-persistent (in-memory-only) one -> done=False, caught by the KV round-trip ----------
+
+# genuinely persists to a JSON file on disk -- state survives a fresh process invocation.
+PERSISTENT_KV_CLI = (
+    "import json\n"
+    "import os\n"
+    "import sys\n\n"
+    "STORE_FILE = 'store.json'\n\n"
+    "def _load():\n"
+    "    if not os.path.exists(STORE_FILE):\n"
+    "        return {}\n"
+    "    with open(STORE_FILE) as f:\n"
+    "        return json.load(f)\n\n"
+    "def main():\n"
+    "    args = sys.argv[1:]\n"
+    "    if not args:\n"
+    "        return\n"
+    "    if args[0] == 'set' and len(args) == 3:\n"
+    "        data = _load()\n"
+    "        data[args[1]] = args[2]\n"
+    "        with open(STORE_FILE, 'w') as f:\n"
+    "            json.dump(data, f)\n"
+    "        print('ok')\n"
+    "    elif args[0] == 'get' and len(args) == 2:\n"
+    "        data = _load()\n"
+    "        print(data.get(args[1], 'none'))\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+# BROKEN (non-persistent): keeps state in a module-level dict only -- a fresh subprocess
+# invocation always starts with an empty store, so a `get` in a SEPARATE process can never
+# see a value `set` in an earlier process. Genuinely, physically non-persistent -- not a
+# fake/mocked failure.
+NON_PERSISTENT_KV_CLI = (
+    "import sys\n\n"
+    "_STORE = {}\n\n"
+    "def main():\n"
+    "    args = sys.argv[1:]\n"
+    "    if not args:\n"
+    "        return\n"
+    "    if args[0] == 'set' and len(args) == 3:\n"
+    "        _STORE[args[1]] = args[2]\n"
+    "        print('ok')\n"
+    "    elif args[0] == 'get' and len(args) == 2:\n"
+    "        print(_STORE.get(args[1], 'none'))\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+
+def test_persistent_kv_store_yields_done_true(tmp_path):
+    llm = _CannedLlm(plan=KV_PLAN, module_first={"main.py": PERSISTENT_KV_CLI},
+                      checklist_first=ONE_TRIVIAL_MODEL_CHECK)
+    result = build_system(KV_SPEC, tmp_path / "persistent_kv", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is True
+    assert result["unmet"] == []
+
+
+def test_non_persistent_kv_store_yields_done_false(tmp_path):
+    """THE CORE FIX proven end to end: a store that keeps state ONLY in memory for the
+    current process genuinely FAILS the KV round-trip (two independent subprocess
+    invocations can never share in-memory state) -- `done` is honestly False, not a hollow
+    pass. This is a REAL, physically-verified failure, not a mocked/faked one."""
+    llm = _CannedLlm(plan=KV_PLAN, module_first={"main.py": NON_PERSISTENT_KV_CLI},
+                      checklist_first=ONE_TRIVIAL_MODEL_CHECK)
+    result = build_system(KV_SPEC, tmp_path / "non_persistent_kv", llm=llm)
+    assert result["shipped"] is True
+    assert result["done"] is False
+    assert any("key-value round-trip" in u for u in result["unmet"])

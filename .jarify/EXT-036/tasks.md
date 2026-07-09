@@ -2441,3 +2441,61 @@ extend it precisely without breaking it.
   multi-file stats CLI gains a `mode` subcommand — pushing the suite's difficulty frontier past
   the now-saturated `FIRST_SLICE`/`MULTIFILE_SLICE` tiers; a live gemma-vs-escalating measurement
   against the grown suite remains an open follow-up)
+
+### [TASK-52] KEY-VALUE-aware persistence round-trip — fixes a false-negative on set/get datastores (REQ-40)
+
+MEASURED + CONFIRMED OFFLINE (2026-07-08): the VERIFIED-CORRECT SQLite-kv leaf
+(`graph_dsl.SQLITE_KV_LEAF`, passes all 5 of `sqlite-persistent-kv-cli`'s independent oracle
+checks incl. genuine cross-process persistence) FAILS `build_system`'s `_minimum_acceptance`
+on exactly one check — `minimum: 'create'+'get' round-trip persists`. This is the real
+blocker keeping `sqlite-persistent-kv-cli` from greening, NOT a reasoning issue. Two root
+causes in the existing add/list round-trip derivation (REQ-27): (1) `_ADD_LIKE_WORDS =
+("add","create","save","insert","new")` has no "set"/"put"/"store", so the sqlite spec's real
+write verb ("set") is never matched and the prose word "create" (from "create the database
+file") is mis-picked instead; (2) `_roundtrip_acceptance_check` is ADD/LIST-shaped — it runs
+`<entry> <add> <sentinel>` then a BARE `<entry> <list>` with no key, which structurally cannot
+verify a `set <key> <value>`/`get <key>` contract (a bare `get` returns nothing).
+
+#### Steps
+1. In `harness/system_builder.py`, add `_derive_kv_roundtrip(spec) -> (set_cmd, get_cmd) |
+   None`: detects a key-value SET/GET contract — the spec names a store verb (`set`/`put`/
+   `store`) AND a `get` retrieve verb, both as whole words (reuse `_first_word_match`).
+   Conservatively EXCLUDE a spec describing a stdin-driven multi-command SESSION protocol
+   (matching "standard input"/"stdin") — a per-command subprocess invocation is the WRONG
+   shape for that contract, and existing suite specs like `kv-store-ttl-cli`/`lru-cache-cli`
+   also name `set`/`put`+`get` as whole words but are in-memory, single-session stores that
+   never claim cross-process persistence (verify via a sweep of all 24 `ALL_CREATION_TASKS`
+   specs that the new detector fires ONLY for `sqlite-persistent-kv-cli`). Never raises.
+2. Add `_roundtrip_kv_acceptance_check(entry, set_cmd, get_cmd) -> dict`: from a FRESH
+   invocation, run `<entry> <set_cmd> <SENTINEL_KEY> <SENTINEL_VAL>` as one subprocess, then a
+   SEPARATE `<entry> <get_cmd> <SENTINEL_KEY>` subprocess, and assert the fixed literal
+   `SENTINEL_VAL` appears in the get output — reading back BY THE SAME KEY it was just written
+   under. Use FIXED literal sentinel key+value (`_KV_ROUNDTRIP_SENTINEL_KEY`/
+   `_KV_ROUNDTRIP_SENTINEL_VAL`), never derived from `task.checks`/`system_suite` (no leak,
+   Tenet 3). Two INDEPENDENT subprocess invocations make this a genuine CROSS-PROCESS
+   persistence check — a non-persistent (in-memory-only) store must still FAIL it.
+3. Wire into `_minimum_acceptance`: when `_derive_kv_roundtrip` detects the KV contract, emit
+   the KV round-trip INSTEAD OF the add/list round-trip (precedence, never double-counted) —
+   closes the exact `'create'+'get'` mis-pairing. A spec that only names add/list (e.g.
+   `todo-list-cli`) is UNCHANGED — still gets exactly the pre-existing add/list round-trip.
+4. Tests, extending `tests/test_ext036_acceptance_completeness.py` (OFFLINE, no live model):
+   (a) `_derive_kv_roundtrip` unit behavior — finds set+get, conservative when only one side
+   present, excludes the stdin-session protocol shape, a 24-task sweep across
+   `ALL_CREATION_TASKS` confirming no-over-trigger, never raises on bad input; (b)
+   `_minimum_acceptance` prefers the KV round-trip over add/list for a KV spec, and an
+   add/list-only spec (`todo-list-cli`-style) is unaffected; (c) the real
+   `graph_dsl.SQLITE_KV_LEAF` now passes `_minimum_acceptance` 8/8 (was 7/8) for the real
+   `sqlite-persistent-kv-cli` spec (a dedicated regression test running every check via
+   `_run_check`); (d) an end-to-end `build_system` run against a genuinely-persistent
+   (disk-backed) kv CLI reports `done=True`; (e) an end-to-end `build_system` run against a
+   genuinely non-persistent (in-memory-only, module-level dict) kv CLI reports `done=False`
+   with the KV round-trip listed in `unmet` — a REAL, physically-verified failure, not
+   mocked. Run `python -m pytest tests/test_ext036_system_builder.py -k "roundtrip or
+   persist or minimum or acceptance" -q` plus the extended
+   `tests/test_ext036_acceptance_completeness.py` — both offline, stay green. Do NOT run the
+   broad suite or any live-model test (a Jetson re-measure may be running).
+
+#### Implements
+- [REQ-40] KEY-VALUE-aware persistence round-trip — fixes a false-negative on set/get
+  datastores (closes the MEASURED `sqlite-persistent-kv-cli` blocker: the committed SQLite-kv
+  leaf now passes `_minimum_acceptance` 8/8, was 7/8)

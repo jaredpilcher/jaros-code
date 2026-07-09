@@ -1519,7 +1519,17 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
     drive of the built CLI against an independently-authored textbook reference model
     (`adt_oracle.acceptance_check`), catching semantic-ordering bugs (e.g. LRU eviction order)
     that no no-crash/substring check can see. Classification/emit failures are swallowed
-    (append nothing) so this can never break checklist derivation."""
+    (append nothing) so this can never break checklist derivation.
+    STRENGTHENED AGAIN (REQ-40, TASK-52): the add/list round-trip above is structurally the
+    WRONG shape for a SET/GET key-value contract (a bare `list` with no key can never verify
+    `get <key>`) and its word derivation can mis-pick a prose word ("create") over the spec's
+    real write verb ("set") -- MEASURED to false-fail the verified-correct SQLite-kv leaf.
+    When the spec instead clearly names a SET-like write command (`set`/`put`/`store`) AND a
+    `get` read command (`_derive_kv_roundtrip`), and does not describe a stdin-driven
+    multi-command SESSION protocol, a KEY-VALUE-shaped round-trip check
+    (`_roundtrip_kv_acceptance_check`) is added INSTEAD of the add/list one -- it reads back
+    BY THE SAME KEY it just wrote, via two INDEPENDENT subprocess invocations, so it genuinely
+    verifies cross-process persistence and still fails a non-persistent (in-memory-only) store."""
     if not mods:
         return []
     checks = list(_smoke_checklist(mods))
@@ -1535,10 +1545,22 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
                 # #EXT-036-REQ-28 End
             ))
         # #EXT-036-REQ-27 Start
-        pair = _derive_roundtrip_pair(spec)
-        if pair:
-            add_cmd, list_cmd = pair
-            checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
+        # #EXT-036-REQ-40 Start
+        # TASK-52 (REQ-40): a detected SET/GET key-value contract takes PRECEDENCE over the
+        # generic add/list pair -- see `_derive_kv_roundtrip`'s docstring for why the add/list
+        # derivation mis-picks a prose word ("create") as the write verb, and why a bare
+        # add/list round-trip structurally cannot verify a `set <key> <value>`/`get <key>`
+        # contract, for a spec like `sqlite-persistent-kv-cli`.
+        kv_pair = _derive_kv_roundtrip(spec)
+        if kv_pair:
+            set_cmd, get_cmd = kv_pair
+            checks.append(_roundtrip_kv_acceptance_check(entry, set_cmd, get_cmd))
+        else:
+            pair = _derive_roundtrip_pair(spec)
+            if pair:
+                add_cmd, list_cmd = pair
+                checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
+        # #EXT-036-REQ-40 End
         # #EXT-036-REQ-27 End
         # #EXT-056-REQ-1 Start
         # TASK-2: the ADT differential-oracle check (EXT-056/REQ-1) -- CONSERVATIVE by
@@ -1728,6 +1750,92 @@ def _roundtrip_acceptance_check(entry: str, add_cmd: str, list_cmd: str) -> dict
     )
     return {"name": f"minimum: '{add_cmd}'+'{list_cmd}' round-trip persists", "code": code}
 # #EXT-036-REQ-27 End
+# #EXT-036-REQ-40 Start
+# TASK-52 (REQ-40): a MEASURED false-negative sitting directly beneath REQ-27's own add/list
+# round-trip. MEASURED + CONFIRMED OFFLINE: the VERIFIED-CORRECT SQLite-kv leaf
+# (`graph_dsl.SQLITE_KV_LEAF`, passes all 5 of its independent oracle checks including genuine
+# cross-process persistence) FAILS `_minimum_acceptance` on exactly one check --
+# `minimum: 'create'+'get' round-trip persists`. Two root causes: (1) `_ADD_LIKE_WORDS` has no
+# "set"/"put"/"store", so the sentence's real write verb ("set") is never matched, and the word
+# "create" -- present only in PROSE ("create the database file") -- is mis-picked as the add
+# command instead; (2) even with the right verb, `_roundtrip_acceptance_check` is
+# ADD/LIST-shaped: it runs `<add> <sentinel>` then a BARE `<list>` with no key, which
+# structurally cannot verify a `set <key> <value>` / `get <key>` contract (a bare `get` returns
+# nothing). Fix: a KEY-VALUE-aware round-trip, detected + composed independently of (and taking
+# precedence over) the add/list derivation.
+
+_KV_SET_LIKE_WORDS = ("set", "put", "store")
+_KV_GET_LIKE_WORDS = ("get",)
+_KV_ROUNDTRIP_SENTINEL_KEY = "jaroskvkeysentinel471"
+_KV_ROUNDTRIP_SENTINEL_VAL = "jaroskvvalsentinel933"
+# A spec describing a STDIN-driven multi-command SESSION protocol (one process, many commands
+# read from standard input over its lifetime -- e.g. `kv-store-ttl-cli`/`lru-cache-cli`) is NOT
+# one where `<entry> <verb> <args>` is a valid PER-COMMAND invocation: spawning a fresh
+# subprocess per command cannot exercise that contract, and such a spec never claims
+# persistence ACROSS separate process runs (it is intentionally scoped to one run/session).
+# Excluding it is conservative -- it only fires the check on a contract it can actually verify.
+_STDIN_SESSION_RE = re.compile(r"(?i)\bstandard input\b|\bstdin\b")
+
+
+def _derive_kv_roundtrip(spec: str) -> "tuple[str, str] | None":
+    """Conservative derivation (REQ-40): when the SPEC sentence clearly names BOTH a SET-like
+    write command (`set`/`put`/`store`) AND a `get` read command as whole words -- AND the
+    spec does not describe a stdin-driven multi-command SESSION protocol (`_STDIN_SESSION_RE`,
+    which would make a per-command subprocess invocation structurally wrong for that
+    contract) -- returns `(set_cmd, get_cmd)`; else `None` (no KV round-trip emitted --
+    under-assert rather than false-fail a contract this shape cannot correctly verify). Never
+    raises."""
+    if not isinstance(spec, str) or not spec.strip():
+        return None
+    try:
+        set_cmd = _first_word_match(spec, _KV_SET_LIKE_WORDS)
+        get_cmd = _first_word_match(spec, _KV_GET_LIKE_WORDS)
+    except Exception:
+        return None
+    if not set_cmd or not get_cmd or set_cmd == get_cmd:
+        return None
+    try:
+        if _STDIN_SESSION_RE.search(spec):
+            return None
+    except Exception:
+        return None
+    return set_cmd, get_cmd
+
+
+def _roundtrip_kv_acceptance_check(entry: str, set_cmd: str, get_cmd: str) -> dict:
+    """One BEHAVIORAL minimum acceptance check (REQ-40): from a FRESH invocation, runs
+    `<entry> <set_cmd> <sentinel_key> <sentinel_val>` as one subprocess, then a SEPARATE
+    `<entry> <get_cmd> <sentinel_key>` subprocess, and asserts the FIXED LITERAL sentinel
+    VALUE actually appears in the get output. Unlike `_roundtrip_acceptance_check`
+    (add/list-shaped, a bare list with no key), this reads the value back BY THE SAME KEY it
+    was just written under -- the only shape that genuinely verifies a set/get key-value
+    contract. Running the set and get as two INDEPENDENT subprocess invocations (a fresh
+    Python interpreter each time) is what makes this a genuine CROSS-PROCESS persistence
+    check: a store that only keeps state in-memory for the current process cannot pass it --
+    only a store that actually persists (e.g. to disk) can. NO ORACLE LEAK: `sentinel_key`/
+    `sentinel_val` are fixed literals never derived from/leaked into the solving prompt; the
+    assertion is only that the system's OWN stated set/get contract holds."""
+    code = (
+        _ERROR_MARKER_HELPER_SRC +
+        "import subprocess, sys\n"
+        f"entry = {entry!r}\n"
+        f"set_cmd = {set_cmd!r}\n"
+        f"get_cmd = {get_cmd!r}\n"
+        f"sentinel_key = {_KV_ROUNDTRIP_SENTINEL_KEY!r}\n"
+        f"sentinel_val = {_KV_ROUNDTRIP_SENTINEL_VAL!r}\n"
+        "set_result = subprocess.run([sys.executable, entry, set_cmd, sentinel_key, sentinel_val],\n"
+        "                             capture_output=True, text=True, timeout=20, input='')\n"
+        "set_out = (set_result.stdout or '') + (set_result.stderr or '')\n"
+        "assert not _has_error_marker(set_out), 'kv set failed: ' + repr(set_out)\n"
+        "get_result = subprocess.run([sys.executable, entry, get_cmd, sentinel_key],\n"
+        "                             capture_output=True, text=True, timeout=20, input='')\n"
+        "get_out = (get_result.stdout or '') + (get_result.stderr or '')\n"
+        "assert sentinel_val in get_out, "
+        "'kv round-trip failed: set=' + repr(set_out) + ' get=' + repr(get_out)\n"
+    )
+    return {"name": f"minimum: '{set_cmd}'+'{get_cmd}' key-value round-trip persists",
+            "code": code}
+# #EXT-036-REQ-40 End
 # #EXT-036-REQ-28 Start
 # TASK-39 (REQ-28): fixes a MEASURED FALSE-NEGATIVE sitting directly beneath REQ-27's own
 # floor. A best-of-k (k=5) attempt built a GENUINELY WORKING SQLite notes CLI (physically
