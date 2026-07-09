@@ -928,6 +928,7 @@ BUILD_PROMPT = """Write the COMPLETE Python module `{name}` for this system.
 System spec: {spec}
 This module's responsibility: {resp}
 It MUST define exactly these (matching signatures): {sigs}
+{ledger}
 {deps}
 Output ONLY the Python code for {name} (no markdown fences, no prose)."""
 
@@ -967,18 +968,84 @@ def syntax_ok(code: str) -> tuple[bool, str]:
                 pass
 
 
+# #EXT-036-REQ-41 Start
+def _build_interface_ledger(plan: "dict | None") -> str:
+    """Deterministically assemble a COMPACT ledger of the WHOLE module DAG from `plan`
+    (task #compositional-seams): for every planned module, its name + responsibility +
+    its exported names WITH signatures (``exports[].signature``). Injected into EVERY
+    ``_build_module`` call so the model always sees the whole system's CONTRACT, not just
+    its own direct imports' full source -- a signature-only ledger costs ~10x fewer
+    tokens than bodies, so the whole system's contract fits the small model's context
+    window even past the ~3-module point where full-source injection alone blows it.
+
+    This is a pure signature summary, never a substitute for the direct-imports' FULL
+    SOURCE ``_build_module`` already injects separately (unchanged by this function) --
+    the two are complementary: the ledger gives global awareness of every EXACT call
+    shape in the system, the full source of direct deps gives the actual implementation
+    to import from.
+
+    Degrades gracefully: returns ``""`` (a no-op, byte-identical to before this task) when
+    `plan` is falsy/malformed, has no modules, or every module has no exports -- never
+    raises."""
+    if not isinstance(plan, dict):
+        return ""
+    mods = plan.get("modules")
+    if not isinstance(mods, list) or not mods:
+        return ""
+    lines: list[str] = []
+    for m in mods:
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name")
+        if not name:
+            continue
+        resp = str(m.get("responsibility") or "").strip()
+        sig_strs: list[str] = []
+        for e in (m.get("exports") or []):
+            if isinstance(e, dict):
+                sig = str(e.get("signature") or e.get("name") or "").strip()
+            else:
+                sig = str(e or "").strip()
+            if sig:
+                sig_strs.append(sig)
+        sig_blob = "; ".join(sig_strs) if sig_strs else "(no declared exports)"
+        label = f"{name} ({resp})" if resp else str(name)
+        lines.append(f"  - {label}: {sig_blob}")
+    if not lines:
+        return ""
+    return ("SYSTEM INTERFACE LEDGER (every module in this system + its EXACT exported "
+            "signature -- when calling a sibling module's function, call it with EXACTLY "
+            "this shape, never a guessed/different one):\n" + "\n".join(lines))
+# #EXT-036-REQ-41 End
+
+
 def _build_module(spec: str, m: dict, built: dict, llm, *,
-                   max_repair: int = MAX_REPAIR_ATTEMPTS) -> tuple[str, bool]:
+                   max_repair: int = MAX_REPAIR_ATTEMPTS,
+                   # #EXT-036-REQ-41 Start
+                   plan: "dict | None" = None,
+                   # #EXT-036-REQ-41 End
+                   ) -> tuple[str, bool]:
     """Build one module's body: model writes it given responsibility+signature+already-built
     sibling code, then a bounded syntax-gate/repair loop (REQ-3 — the two probe-discovered
-    gaps: token budget + syntax gate). Returns (code, syntax_ok)."""
+    gaps: token budget + syntax gate). Returns (code, syntax_ok).
+
+    ``plan`` (REQ-41, optional, default None): when given, the WHOLE system's interface
+    ledger (see ``_build_interface_ledger``) is injected into the prompt alongside this
+    module's own direct-imports' full source (unchanged, still scoped to
+    ``m.get("imports")`` only -- FULL SOURCE injection is deliberately reserved for direct
+    imports, never all siblings, to keep the token cost bounded). ``plan=None`` (every
+    pre-existing caller) degrades byte-identically to before this parameter existed."""
     name = m.get("name", "")
     sigs = "; ".join(e.get("signature", e.get("name", "")) for e in (m.get("exports", []) or []))
     dep_srcs = [f"# already-written {imp}:\n{built[imp]}" for imp in (m.get("imports", []) or []) if imp in built]
     deps = ("You MUST import from these already-written modules (use their real names):\n"
             + "\n\n".join(dep_srcs)) if dep_srcs else ""
+    # #EXT-036-REQ-41 Start
+    ledger = _build_interface_ledger(plan) if plan else ""
+    # #EXT-036-REQ-41 End
     code = _strip_fences(_call(llm, BUILD_PROMPT.format(
-        name=name, spec=spec, resp=m.get("responsibility", ""), sigs=sigs, deps=deps),
+        name=name, spec=spec, resp=m.get("responsibility", ""), sigs=sigs,
+        ledger=ledger, deps=deps),
         max_tokens=BUILD_MAX_TOKENS))
     ok, err = syntax_ok(code)
     for _ in range(max_repair):
@@ -989,6 +1056,288 @@ def _build_module(spec: str, m: dict, built: dict, llm, *,
         ok, err = syntax_ok(code)
     return code, ok
 # #EXT-036-REQ-3 End
+
+
+# #EXT-036-REQ-41 Start (interface-ledger cross-module coherence: AST seam check)
+# MEASURED (compositional-failure diagnosis, docs/GAP-MAP.md): `_build_module` injects a
+# sibling module's FULL SOURCE only for a module's DIRECT imports (REQ-3, unchanged above)
+# -- for a 2B model, a wrong-shape cross-module call still slips through when the exact
+# `def` line is buried in a long dependency body (e.g. the model calls `db.add(title)`
+# when the built `db.py` actually exports `def add(title, done):`). The interface ledger
+# (above) is the PREVENTIVE half of the fix (make the contract impossible to miss before
+# generation); this is the DETECTIVE half -- a deterministic, POST-ASSEMBLE AST scan of the
+# actually-built modules that catches a mismatch that slips through anyway and turns it
+# into a concrete, actionable repair-loop input (see `check_interface_seams` below).
+def _arg_arity(args: "ast.arguments", skip_first: bool = False) -> "tuple[int, int | None]":
+    """Positional-arg arity of a function's ``args`` node: ``(min_required, max_allowed)``.
+    ``max_allowed`` is ``None`` when a ``*args`` is present (unbounded). A positional
+    param with a default reduces ``min_required`` but still counts toward
+    ``max_allowed``. ``skip_first`` drops the leading ``self``/``cls`` (for a class
+    ``__init__``). Pure, never raises on a well-formed ``ast.arguments`` node."""
+    posonly = list(getattr(args, "posonlyargs", []) or [])
+    positional = posonly + list(args.args or [])
+    if skip_first and positional:
+        positional = positional[1:]
+    n_defaults = len(args.defaults or [])
+    min_required = max(0, len(positional) - n_defaults)
+    max_allowed = None if args.vararg else len(positional)
+    return min_required, max_allowed
+
+
+def _module_top_level_defs(code: str) -> "dict | None":
+    """AST-parse `code` and return a symbol table of its TOP-LEVEL names:
+    ``{name: {"kind": "function"|"class"|"other", "min_args": int|None, "max_args": int|None}}``
+    (arity keys are ``None`` for ``"other"`` -- a plain module-level assignment, arity
+    unknowable). Returns ``None`` (never a partial/misleading table) when `code` doesn't
+    parse, or when the module's surface is UNCERTAIN (a wildcard ``from x import *``, a
+    module-level ``__getattr__`` -- PEP 562 -- or a call to
+    ``globals``/``setattr``/``exec``/``eval`` anywhere in the module, any of which can
+    add/rebind top-level names this static scan cannot see) -- callers must then skip
+    judging calls into this module entirely, never guess. Never raises."""
+    if not isinstance(code, str):
+        return None
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return None
+    uncertain = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
+            uncertain = True
+            break
+        if isinstance(node, ast.Call):
+            fn = node.func
+            fn_name = fn.id if isinstance(fn, ast.Name) else (
+                fn.attr if isinstance(fn, ast.Attribute) else None)
+            if fn_name in ("globals", "setattr", "exec", "eval"):
+                uncertain = True
+                break
+    if uncertain:
+        return None
+    table: dict = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == "__getattr__":
+                return None  # PEP 562 module-level __getattr__ -- fully dynamic surface
+            mn, mx = _arg_arity(node.args)
+            table[node.name] = {"kind": "function", "min_args": mn, "max_args": mx}
+        elif isinstance(node, ast.ClassDef):
+            init = next((n for n in node.body
+                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                         and n.name == "__init__"), None)
+            mn, mx = _arg_arity(init.args, skip_first=True) if init is not None else (0, 0)
+            table[node.name] = {"kind": "class", "min_args": mn, "max_args": mx}
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    table[t.id] = {"kind": "other", "min_args": None, "max_args": None}
+    return table
+
+
+def _module_import_aliases(code: str, sibling_stems: set) -> dict:
+    """AST-parse `code` and return ``{local_alias: target_stem}`` for every top-level
+    plain ``import <sibling>`` / ``import <sibling> as <alias>`` statement that binds a
+    name to one of `sibling_stems`. ``from <sibling> import X`` is deliberately NOT
+    captured -- that shape's call sites are ``X(...)``, not ``alias.X(...)``, a different
+    AST pattern the conservative attribute-call seam check below doesn't target (avoiding
+    a harder, more false-positive-prone resolution). Never raises; returns ``{}`` on a
+    parse failure."""
+    if not isinstance(code, str):
+        return {}
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return {}
+    aliases: dict = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                stem = alias.name.split(".")[0]
+                if stem in sibling_stems:
+                    aliases[alias.asname or stem] = stem
+    return aliases
+
+
+def check_interface_seams(built: "dict[str, str]") -> "list[dict]":
+    """Deterministic, CONSERVATIVE, POST-ASSEMBLE AST seam check: for every module in
+    `built`, find calls of the shape ``alias.method(...)`` where `alias` is bound to a
+    SIBLING module (another key of `built`) via a plain ``import <sibling>`` statement,
+    and verify `method` resolves to a top-level function/class of that sibling with a
+    COMPATIBLE positional arity (accounting for defaults/``*args``). Returns a list of
+    ``{caller, callee, alias, method, n_args, min_args, max_args, message}`` dicts, one
+    per CONFIDENT mismatch -- empty when nothing is flagged.
+
+    NEVER raises, and never flags a genuinely uncertain call (a miss is always preferred
+    over a false positive here, per the conservatism the task demands):
+      - a caller/callee module that fails to parse, or whose surface
+        ``_module_top_level_defs`` marks UNCERTAIN (wildcard import / dynamic
+        globals-setattr-exec-eval / a module-level ``__getattr__``), is skipped entirely;
+      - a call using ANY keyword argument or a starred (``*args``/``**kwargs``) unpacking
+        at the call site is skipped (arity from positional count alone would be
+        unreliable);
+      - a call resolving to a plain module-level VALUE (not a function/class def) is
+        skipped -- it could be a callable object, arity unknowable;
+      - a call whose attribute name does NOT resolve to any top-level symbol of the
+        target module is skipped (NOT flagged as a name-mismatch) -- this check is
+        deliberately ARITY-ONLY on symbols it can confidently resolve; a genuinely
+        missing symbol surfaces instead as a real runtime failure the acceptance
+        checklist / other checks already catch, so this stays a narrow, high-confidence
+        signal rather than a second, riskier name-mismatch heuristic;
+      - stdlib calls and same-module calls never match `alias` (only a local `import
+        <sibling>` of another key of `built` is considered) so they are never even
+        candidates."""
+    if not isinstance(built, dict) or not built:
+        return []
+    try:
+        stems = {Path(n).stem: n for n in built if isinstance(n, str)}
+    except Exception:
+        return []
+    defs_cache: dict = {}
+
+    def defs_for(stem: str):
+        if stem not in defs_cache:
+            defs_cache[stem] = _module_top_level_defs(built.get(stems.get(stem, ""), ""))
+        return defs_cache[stem]
+
+    findings: list = []
+    for caller_name, caller_code in built.items():
+        if not isinstance(caller_code, str):
+            continue
+        caller_stem = Path(caller_name).stem
+        try:
+            tree = ast.parse(caller_code)
+        except (SyntaxError, ValueError):
+            continue
+        aliases = _module_import_aliases(caller_code, set(stems) - {caller_stem})
+        if not aliases:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if not (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)):
+                continue
+            alias = fn.value.id
+            target_stem = aliases.get(alias)
+            if not target_stem:
+                continue  # not a sibling-module alias -- stdlib/local/other, not a candidate
+            if node.keywords or any(isinstance(a, ast.Starred) for a in node.args):
+                continue  # uncertain call shape -- skip, never guess
+            method = fn.attr
+            table = defs_for(target_stem)
+            if table is None:
+                continue  # target module unparseable or too dynamic to trust -- skip
+            entry = table.get(method)
+            if entry is None or entry["kind"] == "other":
+                continue  # unresolved symbol or arity-unknowable value -- arity-only, skip
+            n_args = len(node.args)
+            min_args, max_args = entry["min_args"], entry["max_args"]
+            if n_args < min_args or (max_args is not None and n_args > max_args):
+                callee_name = stems.get(target_stem, target_stem)
+                required = (str(min_args) if min_args == max_args else
+                            (f"{min_args}+" if max_args is None else f"{min_args}-{max_args}"))
+                findings.append({
+                    "caller": caller_name,
+                    "callee": callee_name,
+                    "alias": alias,
+                    "method": method,
+                    "n_args": n_args,
+                    "min_args": min_args,
+                    "max_args": max_args,
+                    "message": (
+                        f"{caller_name} calls {alias}.{method}(...) [{n_args} arg"
+                        f"{'s' if n_args != 1 else ''}] but {callee_name} defines "
+                        f"{method}(...) requiring {required} arg"
+                        f"{'s' if required != '1' else ''}"
+                    ),
+                })
+    return findings
+
+
+_SEAM_CHECK_TEMPLATE = '''import ast
+
+def _arg_arity(args, skip_first=False):
+    posonly = list(getattr(args, "posonlyargs", []) or [])
+    positional = posonly + list(args.args or [])
+    if skip_first and positional:
+        positional = positional[1:]
+    n_defaults = len(args.defaults or [])
+    min_required = max(0, len(positional) - n_defaults)
+    max_allowed = None if args.vararg else len(positional)
+    return min_required, max_allowed
+
+def _top_level_defs(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except Exception:
+        return None
+    table = {{}}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            table[node.name] = _arg_arity(node.args)
+        elif isinstance(node, ast.ClassDef):
+            init = next((n for n in node.body
+                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                         and n.name == "__init__"), None)
+            table[node.name] = _arg_arity(init.args, skip_first=True) if init is not None else (0, 0)
+    return table
+
+def _call_arg_counts(path, alias, method):
+    try:
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except Exception:
+        return None
+    counts = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                    and fn.value.id == alias and fn.attr == method):
+                if node.keywords or any(isinstance(a, ast.Starred) for a in node.args):
+                    continue
+                counts.append(len(node.args))
+    return counts
+
+CALLER = {caller!r}
+CALLEE = {callee!r}
+ALIAS = {alias!r}
+METHOD = {method!r}
+
+_table = _top_level_defs(CALLEE)
+_counts = _call_arg_counts(CALLER, ALIAS, METHOD)
+if _table is not None and _counts is not None:
+    _entry = _table.get(METHOD)
+    if _entry is not None:
+        _min_args, _max_args = _entry
+        _bad = [c for c in _counts if c < _min_args or (_max_args is not None and c > _max_args)]
+        if _bad:
+            _required = (str(_min_args) if _min_args == _max_args else
+                         (str(_min_args) + "+" if _max_args is None
+                          else str(_min_args) + "-" + str(_max_args)))
+            raise AssertionError(
+                CALLER + " calls " + ALIAS + "." + METHOD + "(...) with " + str(_bad) +
+                " arg(s) but " + CALLEE + " defines " + METHOD + "(...) requiring " +
+                _required + " arg(s)")
+'''
+
+
+def _seam_check_code(finding: dict) -> str:
+    """Render `finding` (one item from ``check_interface_seams``'s return list) as a
+    SELF-CONTAINED, stdlib-only Python script that RE-DERIVES the same arity check fresh
+    from the files currently on disk (relative to the acceptance run's cwd == the
+    assembled system's `root`) -- a genuinely DYNAMIC check, not a static always-fail
+    marker: if a later repair round fixes the mismatch (either side -- the caller's call
+    site or the callee's signature), this check re-evaluates and PASSES for real. Never
+    imports this harness's own code (kept import-free beyond stdlib ``ast``) so it runs
+    unmodified inside the same sandboxed acceptance execution every other check uses."""
+    return _SEAM_CHECK_TEMPLATE.format(
+        caller=finding.get("caller", ""), callee=finding.get("callee", ""),
+        alias=finding.get("alias", ""), method=finding.get("method", ""),
+    )
+# #EXT-036-REQ-41 End
 
 
 # #EXT-036-REQ-39 Start (TASK-49: deterministic module-body repair for a length-guard /
@@ -2724,7 +3073,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         if m is None:
             continue
         try:
-            code, ok = _build_module(spec, m, built, llm)
+            # #EXT-036-REQ-41 Start
+            code, ok = _build_module(spec, m, built, llm, plan=plan)
+            # #EXT-036-REQ-41 End
         except Exception as exc:
             return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"build failed for {name}: {exc}")
@@ -2905,6 +3256,26 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         except Exception:
             pass  # never raises -- a property-check failure just means fewer checks, never more
     # #EXT-036-REQ-37 End
+    # #EXT-036-REQ-41 Start
+    # Interface-ledger cross-module coherence: ALWAYS-ON, deterministic AST seam check.
+    # PURELY ADDITIVE to the composed checklist (never removes/weakens an existing check),
+    # runs AFTER the optional 7B-review block above so a deterministic, ground-truth seam
+    # finding is never treated as a "model-proposed" check subject to review/drop -- it is
+    # peer to the deterministic minimum (REQ-26), always gated as-is. A confident,
+    # genuine cross-module arity mismatch becomes a synthetic, DYNAMIC check (re-derived
+    # fresh from the files on disk each run, so a later repair round that fixes either
+    # side of the mismatch makes it pass for real) that feeds the SAME `_repair_system`
+    # loop as any other unmet check below. No findings (the common case) -> no-op, `checks`
+    # unchanged.
+    try:
+        for _finding in check_interface_seams(built):
+            checks.append({
+                "name": f"seam: {_finding['caller']} -> {_finding['alias']}.{_finding['method']}",
+                "code": _seam_check_code(_finding),
+            })
+    except Exception:
+        pass  # never raises -- a seam-check failure just means fewer checks, never more
+    # #EXT-036-REQ-41 End
     if not checks:
         # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,

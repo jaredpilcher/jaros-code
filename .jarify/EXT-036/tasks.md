@@ -2499,3 +2499,71 @@ verify a `set <key> <value>`/`get <key>` contract (a bare `get` returns nothing)
 - [REQ-40] KEY-VALUE-aware persistence round-trip — fixes a false-negative on set/get
   datastores (closes the MEASURED `sqlite-persistent-kv-cli` blocker: the committed SQLite-kv
   leaf now passes `_minimum_acceptance` 8/8, was 7/8)
+
+### [TASK-53] Interface ledger + AST seam check — the #1 generic fix for cross-module compositional coherence (REQ-41)
+
+MEASURED (design review, compositional-failure diagnosis): `_build_module` injects the FULL
+SOURCE of a sibling module into a build prompt only for that module's DIRECT imports (REQ-3)
+-- for a 2B model, once a system grows past ~3 modules, a cross-module call can still come
+out the WRONG SHAPE (e.g. `db.add(title)` when the built `db` module actually exports
+`add(title, done)`) because the exact `def` line is buried in a full dependency body and the
+model never sees a COMPACT, whole-system view of every contract at once. This is the top
+generic mechanism from the design review: a PREVENTIVE half (a compact interface ledger,
+always in context) plus a DETECTIVE half (a deterministic post-assemble AST check that
+catches a mismatch that slips through anyway and routes it into the existing repair loop).
+Generic -- lifts EVERY multi-module class, not one; no leaves.
+
+#### Steps
+1. In `harness/system_builder.py`, add `_build_interface_ledger(plan: dict | None) -> str`:
+   deterministically assemble, from `plan["modules"]`, a compact ledger line per module (its
+   name + responsibility + its exported names WITH signatures from `exports[].signature`).
+   Degrades to `""` (never raises) on a missing/malformed plan or a module with no exports.
+2. Add a `plan: dict | None = None` keyword parameter to `_build_module`; when given, compute
+   `_build_interface_ledger(plan)` and inject it into `BUILD_PROMPT` (a new `{ledger}` slot)
+   alongside the module's own direct-imports' FULL SOURCE (`deps`, UNCHANGED — still scoped to
+   `m.get("imports")` only, never all siblings). `plan=None` (every pre-existing caller) is a
+   byte-identical no-op. Wire `build_system`'s BUILD loop (the one `_build_module` call site)
+   to pass `plan=plan`.
+3. Add a deterministic, POST-ASSEMBLE AST seam check: `_module_top_level_defs(code)` (a
+   symbol table of a module's top-level function/class/other names + positional arity,
+   returning `None` on a parse failure or an UNCERTAIN surface -- a wildcard `from x import *`,
+   a module-level `__getattr__`, or a `globals`/`setattr`/`exec`/`eval` call anywhere);
+   `_module_import_aliases(code, sibling_stems)` (alias -> sibling-module-stem for a plain
+   `import <sibling>`, never `from <sibling> import X`); `check_interface_seams(built: dict) ->
+   list[dict]` walks every module's AST for `alias.method(...)` calls into a sibling module and
+   flags a CONFIDENT positional-arity mismatch (never a name-mismatch, never a call using
+   keywords/`*args`/`**kwargs`, never a call into an uncertain-surface module) with a concrete
+   `{caller, callee, alias, method, n_args, min_args, max_args, message}` finding. Never raises.
+4. Add `_seam_check_code(finding) -> str`: renders a SELF-CONTAINED, stdlib-only (`ast`) Python
+   script that RE-DERIVES the same arity check fresh from the files on disk each run -- a
+   genuinely DYNAMIC check (not a static always-fail marker), so a later repair round that
+   fixes either side of the mismatch makes it pass for real.
+5. In `build_system`, right after the composed acceptance checklist is assembled (after the
+   optional 7B-review and spec-properties blocks, before the empty-checklist guard), call
+   `check_interface_seams(built)` and append one synthetic check per finding
+   (`{"name": f"seam: {caller} -> {alias}.{method}", "code": _seam_check_code(finding)}`) to
+   `checks` -- purely ADDITIVE, guarded (never raises), so it feeds the SAME `unmet`/
+   `_repair_system` (REQ-5) repair loop as any other check, peer to the deterministic minimum
+   (never subject to the optional reviewer, which only touches model-proposed checks).
+6. Tests `tests/test_ext036_interface_seam.py` (OFFLINE -- no live model, no network): ledger
+   assembly contains every module's exported signatures and degrades gracefully; a module's
+   build prompt carries the WHOLE ledger but full source only for its direct imports (a
+   non-imported sibling's signature appears in the ledger, never its full source); the seam
+   check catches the measured arity-mismatch shape with the concrete message, does not flag a
+   correct-arity call, correctly handles class-constructor arity and defaults/`*args`;
+   conservative-by-construction coverage (same-module calls, stdlib calls, keyword/starred
+   calls, and calls into a dynamic/uncertain module are never flagged, and an unresolved
+   symbol is never treated as a name-mismatch); the generated seam-check script is proven
+   genuinely DYNAMIC via a real subprocess run (fails while mismatched, passes once fixed); and
+   an end-to-end `build_system` run with a canned 2-module arity-mismatch draw shows the seam
+   finding enters `unmet` and the existing repair loop resolves it to `done=True`, while a
+   correct-arity draw is never flagged. Run `tests/test_ext036_system_builder.py`,
+   `tests/test_ext036_system_repair.py`, and the new file (all offline) -- stay green. Do NOT
+   run the broad suite or any live-model test (a Jetson re-measure may be running); do NOT
+   touch `harness/secure_exec.py` or `harness/graph_dsl.py`.
+
+#### Implements
+- [REQ-41] Interface ledger + AST seam check — the #1 generic fix for cross-module
+  compositional coherence (the deterministic mechanism + offline correctness tests; the true
+  LIFT — does the small model now build bigger, correctly-wired multi-module systems — is an
+  on-Jetson re-measure that follows this commit, out of scope here)

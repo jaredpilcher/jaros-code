@@ -1820,3 +1820,89 @@ BARE `<entry> <list>` with no key, which structurally cannot verify a `set <key>
   round-trip in `unmet`; full targeted suite (`tests/test_ext036_system_builder.py -k
   "roundtrip or persist or minimum or acceptance"` plus the extended
   `test_ext036_acceptance_completeness.py`) stays green. — **DONE 2026-07-08**
+
+### [REQ-41] Interface ledger + AST seam check — the #1 generic fix for cross-module compositional coherence (DONE — offline mechanism, EXT-036 TASK-53, 2026-07-08)
+
+**MEASURED (design review, compositional-failure diagnosis):** `_build_module` injects a
+sibling module's FULL SOURCE for a module's DIRECT imports only (REQ-3) — for a 2B model,
+once a system grows past ~3 modules the exact shape of a sibling's exported call (e.g.
+`db.add(title, done)`) can still get lost/guessed wrong even when the dependency's source
+is present, because the one relevant `def` line is buried in a full module body and the
+model has no COMPACT, system-wide view of every contract at once. The measured symptom:
+the model emits a cross-module call with the WRONG shape (e.g. calls `db.add(title)` when
+the built `db` module actually exports `add(title, done)`) — a "compositional/seam-wiring"
+defect that generically depresses every multi-module class, not one. This is the top
+generic mechanism identified to lift it: a PREVENTIVE half (make the whole system's
+contract cheap and impossible to miss during generation) and a DETECTIVE half (catch a
+mismatch that slips through anyway, deterministically, and route it into the existing
+repair loop).
+
+#### Acceptance Criteria
+- [x] A deterministic INTERFACE LEDGER is assembled from the PLAN (never the model, never
+  `task.checks` — no oracle leak): for every module, its name + responsibility + its
+  exported names WITH signatures (`exports[].signature`). — **DONE 2026-07-08**
+  (`harness/system_builder.py::_build_interface_ledger`)
+- [x] The ledger is injected into EVERY `_build_module` call (the WHOLE system's contract,
+  not just one module's own direct imports), while FULL SOURCE injection stays reserved for
+  a module's DIRECT imports only (`m.get("imports")`, unchanged from REQ-3) — the ledger
+  costs ~10x fewer tokens than bodies, so the whole contract fits the small model's context
+  window even past the point where full-source-only injection alone would blow it. — **DONE
+  2026-07-08** (`_build_module`'s new `plan=` parameter; `build_system`'s BUILD loop passes
+  `plan=plan` on its one call site)
+- [x] Preserves current behavior when a module has no plan/exports — degrades to today's
+  behavior (an empty ledger, byte-identical prompt otherwise), never crashes. — **DONE
+  2026-07-08** (`plan=None`, the default, is a complete no-op; every pre-existing
+  `_build_module` caller is unaffected)
+- [x] A deterministic, POST-ASSEMBLE AST seam check (`check_interface_seams`): scans every
+  built module for cross-module calls (`alias.method(...)` where `alias` is bound to a
+  sibling module via a plain `import <sibling>`) and verifies each resolves to a top-level
+  function/class of that sibling with COMPATIBLE positional arity (accounting for
+  defaults/`*args`, `self`/`cls` excluded for a class `__init__`). — **DONE 2026-07-08**
+- [x] CONSERVATIVE by construction (a false positive that forces needless repair is worse
+  than a miss, per Tenet 3): NEVER flags a call using any keyword argument or starred
+  (`*args`/`**kwargs`) unpacking; NEVER flags a call resolving to a plain module-level VALUE
+  (arity unknowable) or to a symbol it cannot confidently resolve (arity-only, not a
+  name-mismatch heuristic); NEVER judges a module whose surface is UNCERTAIN (a wildcard
+  `from x import *`, a module-level `__getattr__` — PEP 562 — or a call to
+  `globals`/`setattr`/`exec`/`eval` anywhere in it); stdlib calls and same-module calls are
+  never even candidates (only a local `import <sibling>` of another built module is
+  considered). Never raises on malformed/non-string input. — **DONE 2026-07-08**
+- [x] On a CONFIDENT mismatch, produces a CONCRETE message (e.g. "main.py calls
+  db.add(title) [1 arg] but db.py defines add(...) requiring 2 args") and feeds it into the
+  EXISTING `_repair_system` (REQ-5) repair loop as a genuinely DYNAMIC unmet check — a
+  self-contained, stdlib-only script that RE-DERIVES the same check fresh from the files on
+  disk each run (never a static always-fail marker), so a later repair round that fixes
+  EITHER side of the mismatch (the caller's call site or the callee's signature) makes it
+  pass for real. Purely ADDITIVE to the composed acceptance checklist (never removes/weakens
+  an existing check); runs AFTER the optional 7B-review step (REQ-30) so a deterministic,
+  ground-truth seam finding is never treated as a reviewable model proposal — peer to the
+  deterministic minimum (REQ-26), always gated as-is. — **DONE 2026-07-08**
+  (`harness/system_builder.py::_seam_check_code`, wired into `build_system` right before the
+  acceptance checklist's empty-check guard)
+- [x] NO ORACLE LEAK (Tenet 3): the ledger derives only from the PLAN (itself derived from
+  the visible spec); the seam check derives only from the assembled module SOURCE — neither
+  ever reads `task.checks` or any held-out oracle. Does not weaken any existing acceptance
+  gate — purely additive to the composed checklist. — **DONE 2026-07-08**
+- [x] Every `build_system`-family wrapper (`build_system_escalating`,
+  `build_system_governed`, `build_system_best_of_k`) calls `build_system` internally, so all
+  of them inherit the ledger + seam check for free with no additional wiring. — **DONE
+  2026-07-08** (verified by inspection: the single `_build_module` call site and the single
+  seam-check wiring point both live inside `build_system` itself)
+- [x] Proven OFFLINE (`tests/test_ext036_interface_seam.py`, no live model): ledger assembly
+  contains every module's exported signatures and degrades gracefully on a missing/malformed
+  plan; a module's build prompt carries the WHOLE ledger but FULL SOURCE only for its direct
+  imports (a non-imported sibling's signature appears in the ledger, never its full source);
+  the seam check catches the exact measured arity-mismatch shape with the concrete message,
+  does NOT flag a correct-arity call, correctly judges class-constructor arity and
+  defaults/`*args`, and is proven conservative (same-module calls, stdlib calls, keyword/
+  starred calls, and calls into a dynamic/uncertain module are never flagged, and an
+  unresolved symbol is deliberately not treated as a name-mismatch); the generated seam
+  check script is proven genuinely DYNAMIC (fails while the mismatch stands, passes once a
+  real fix is applied to either side, driven as a real subprocess); and an end-to-end
+  `build_system` run with a canned 2-module arity-mismatch draw shows the seam finding
+  enters `unmet` and the SAME repair loop that fixes the underlying no-crash defect also
+  resolves the seam check, reaching `done=True`, while a correct-arity draw is never
+  flagged. Full targeted suite (`tests/test_ext036_system_builder.py`,
+  `tests/test_ext036_system_repair.py`, `tests/test_ext036_interface_seam.py`) stays green;
+  no regression to the byte-identical direct-imports-full-source behavior REQ-3 already
+  proved.
