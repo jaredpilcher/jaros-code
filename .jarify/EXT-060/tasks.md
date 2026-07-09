@@ -17,3 +17,20 @@
 #### Implements
 - [REQ-1] Suite scaffold + leaves-OFF pass@1 runner
 - [REQ-2] CSV→JSON group-by ETL task graded by fs_oracle
+
+### [TASK-2] Retry/backoff library task wired to import_driver (REQ-3)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a `RETRY_BACKOFF_LIB_TASK` `RealSystemTask` (oracle_kind
+   'import') with a contract-exact sentence for a single-file `retry.py` exporting `retry(times,
+   exceptions=Exception)`; add `'import'` dispatch in `grade_real_system_task`/`_grade_*` that wires
+   `harness/import_driver.py` (`drive_import`): import the built module, apply the decorator to a
+   fail-then-succeed callable with an injected sleep, assert retry-count + eventual success + no real sleep.
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks) + leak-free.
+3. Extend `tests/test_ext060_real_systems_suite.py` (OFFLINE, no Jetson): hand-authored CORRECT retry.py
+   stub passes the import_driver grading; a WRONG one (wrong count / gives up early) fails; leaves-OFF holds.
+4. Run `python -m pytest tests/test_ext060_real_systems_suite.py tests/test_ext059_import_driver.py -q`;
+   confirm green. Update `.jarify/EXT-060/index.json` (REQ-3 ranges) + check REQ-3 boxes.
+
+#### Implements
+- [REQ-3] Retry/backoff decorator library task graded by import_driver

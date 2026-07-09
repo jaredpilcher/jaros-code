@@ -1,7 +1,7 @@
 ---
 id: EXT-060
 title: Real-systems capability suite (leaves-OFF North-Star instrument)
-status: partial
+status: covered
 priority: high
 implementation: []
 ---
@@ -33,11 +33,17 @@ independently).
 
 ### [REQ-3] Retry/backoff decorator library task graded by import_driver
 
-A real reusable library: a `retry(times, ...)` decorator that re-invokes a failing callable up to N
-times with an injected sleep. Graded by `import_driver` (import the built module, drive with an injected
-clock + a fail-then-succeed function; assert call-count and no real wall-clock sleep).
+A real reusable library: a single-file `retry.py` module exporting a `retry(times, exceptions=Exception)`
+decorator that re-invokes a wrapped callable up to `times` attempts on the given exception(s), sleeping
+between attempts, and returns the first success (re-raising if all attempts fail). Graded by
+`harness/import_driver.py`: import the built module in a fresh subprocess, apply the decorator to a
+fail-then-succeed callable with an INJECTED sleep, and assert the call-count and eventual return value
+with NO real wall-clock sleep.
 
 #### Acceptance Criteria
-- [ ] The sentence specifies the importable public API (module + decorator signature/semantics).
-- [ ] Graded by `import_driver` with an injected clock; asserts the decorator retries the right number of
-      times and returns the eventual success, using no real sleep; a broken retry (wrong count) fails.
+- [x] The task's sentence is contract-exact: names the module filename (`retry.py`), the public decorator
+      name + signature/semantics (attempts, which exceptions, return-first-success, re-raise-on-exhaust),
+      with oracle-chosen call parameters echoed by the contract (no hidden key).
+- [x] Graded by `import_driver` with an injected clock/sleep: a fail-twice-then-succeed callable wrapped
+      by `retry(times=3)` returns the success and is called exactly 3 times, using no real sleep; a broken
+      retry (wrong count, or gives up early) FAILS. Leaves-OFF (no leaf may count as a pass); no oracle leak.

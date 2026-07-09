@@ -21,6 +21,7 @@ from pathlib import Path
 
 from harness.real_systems_suite import (
     CSV_GROUPBY_ETL_TASK,
+    RETRY_BACKOFF_LIB_TASK,
     RealSystemTask,
     grade_real_system_task,
     run_real_systems_suite,
@@ -282,3 +283,165 @@ def test_run_real_systems_suite_never_raises_on_a_non_shipping_build(monkeypatch
     assert report["results"][0]["accepted"] is False
     assert report["aggregate"]["overall"]["pass_rate"] == 0.0
 # #EXT-060-REQ-1 End
+
+
+# #EXT-060-REQ-3 Start
+# TASK-2: offline tests for the retry/backoff decorator library task's import_driver grading path
+# (REQ-3). FULLY OFFLINE, exactly like the REQ-2 tests above -- every ``retry.py`` stub below is
+# hand-authored straight to a temp directory; ``build_system``/the model is never invoked here.
+CORRECT_RETRY_STUB = """
+    import time
+
+
+    def retry(times, exceptions=Exception):
+        def decorator(fn):
+            def wrapped(*args, **kwargs):
+                last_exc = None
+                for attempt in range(times):
+                    try:
+                        return fn(*args, **kwargs)
+                    except exceptions as exc:
+                        last_exc = exc
+                        if attempt < times - 1:
+                            time.sleep(0.001)
+                raise last_exc
+            return wrapped
+        return decorator
+"""
+
+# WRONG: gives up after the FIRST attempt -- never retries at all, so the decorated call raises
+# on the very first (still-failing) attempt instead of eventually succeeding.
+GIVES_UP_EARLY_RETRY_STUB = """
+    def retry(times, exceptions=Exception):
+        def decorator(fn):
+            def wrapped(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return wrapped
+        return decorator
+"""
+
+# WRONG: off-by-one retry count -- attempts `times - 1` times instead of `times`, so against the
+# fail-twice-then-succeed spy it exhausts its (too-few) attempts before ever reaching the
+# succeeding 3rd call: called only 2 times (not exactly 3) and never returns "success" at all.
+WRONG_COUNT_RETRY_STUB = """
+    import time
+
+
+    def retry(times, exceptions=Exception):
+        def decorator(fn):
+            def wrapped(*args, **kwargs):
+                last_exc = None
+                for attempt in range(times - 1):  # BUG: one attempt too few
+                    try:
+                        return fn(*args, **kwargs)
+                    except exceptions as exc:
+                        last_exc = exc
+                        time.sleep(0.001)
+                raise last_exc
+            return wrapped
+        return decorator
+"""
+
+# WRONG: never sleeps between attempts (a busy-loop retry) -- still returns the eventual success
+# with the right call count, so only the injected-clock sleep-count check catches this.
+NO_SLEEP_BETWEEN_RETRY_STUB = """
+    def retry(times, exceptions=Exception):
+        def decorator(fn):
+            def wrapped(*args, **kwargs):
+                last_exc = None
+                for attempt in range(times):
+                    try:
+                        return fn(*args, **kwargs)
+                    except exceptions as exc:
+                        last_exc = exc  # BUG: never calls time.sleep between attempts
+                raise last_exc
+            return wrapped
+        return decorator
+"""
+
+
+def test_correct_retry_stub_passes_the_import_driver_oracle():
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ext060_test_") as tmp:
+        root = Path(tmp)
+        _write(root, "retry.py", CORRECT_RETRY_STUB)
+        accepted, note = grade_real_system_task(RETRY_BACKOFF_LIB_TASK, root, python_exe=PY)
+        assert accepted is True, note
+
+
+def test_gives_up_early_retry_stub_is_caught():
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ext060_test_") as tmp:
+        root = Path(tmp)
+        _write(root, "retry.py", GIVES_UP_EARLY_RETRY_STUB)
+        accepted, note = grade_real_system_task(RETRY_BACKOFF_LIB_TASK, root, python_exe=PY)
+        assert accepted is False
+        assert "returns_equals" in note.lower() or "raised" in note.lower()
+
+
+def test_wrong_retry_count_stub_is_caught():
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ext060_test_") as tmp:
+        root = Path(tmp)
+        _write(root, "retry.py", WRONG_COUNT_RETRY_STUB)
+        accepted, note = grade_real_system_task(RETRY_BACKOFF_LIB_TASK, root, python_exe=PY)
+        assert accepted is False
+        assert "call_count" in note.lower() or "returns_equals" in note.lower()
+
+
+def test_no_sleep_between_attempts_retry_stub_is_caught():
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ext060_test_") as tmp:
+        root = Path(tmp)
+        _write(root, "retry.py", NO_SLEEP_BETWEEN_RETRY_STUB)
+        accepted, note = grade_real_system_task(RETRY_BACKOFF_LIB_TASK, root, python_exe=PY)
+        assert accepted is False
+        assert "sleep" in note.lower()
+
+
+def test_retry_backoff_task_is_declared_correctly():
+    assert RETRY_BACKOFF_LIB_TASK.oracle_kind == "import"
+    assert "retry.py" in RETRY_BACKOFF_LIB_TASK.sentence
+    assert "retry(times, exceptions=Exception)" in RETRY_BACKOFF_LIB_TASK.sentence
+    assert RETRY_BACKOFF_LIB_TASK.oracle_spec["module"] == "retry"
+    assert RETRY_BACKOFF_LIB_TASK.oracle_spec["expected_sleep_calls"] == 2
+
+
+def test_retry_backoff_task_itself_is_leaves_off():
+    # A sanity check that the suite's own concrete retry task does NOT fingerprint any verified
+    # leaf's contract -- otherwise the suite would be measuring the leaf library, not the model.
+    from harness.graph_dsl import leaf_for_spec
+
+    assert leaf_for_spec(RETRY_BACKOFF_LIB_TASK.sentence) is None
+
+
+def test_retry_backoff_task_leaves_off_via_run_real_systems_suite(monkeypatch):
+    """Same end-to-end wiring proof as the ETL task's version above: a fake ``build_system`` writes
+    the CORRECT hand-authored ``retry.py`` stub straight into the build root (never the real
+    model), proving the full build->leaves-off-check->grade wiring for the import oracle path."""
+    import harness.real_systems_suite as suite_mod
+
+    def _fake_build_system(spec, root, *, llm=None, **kwargs):
+        _write(Path(root), "retry.py", CORRECT_RETRY_STUB)
+        return {"shipped": True, "done": True, "build_path": "free-form", "note": "fake build"}
+
+    monkeypatch.setattr(suite_mod, "build_system", _fake_build_system)
+
+    report = run_real_systems_suite([RETRY_BACKOFF_LIB_TASK], llm=object())
+    assert report["results"][0]["accepted"] is True, report["results"][0]["note"]
+    assert report["results"][0]["leaf_fired"] is False
+    assert report["aggregate"]["overall"] == {"n": 1, "pass_rate": 1.0}
+    assert report["aggregate"]["by_cls"]["library"] == {"n": 1, "pass_rate": 1.0}
+
+
+def test_real_systems_tasks_includes_both_landed_tasks():
+    from harness.real_systems_suite import REAL_SYSTEMS_TASKS
+
+    names = {t.name for t in REAL_SYSTEMS_TASKS}
+    assert CSV_GROUPBY_ETL_TASK.name in names
+    assert RETRY_BACKOFF_LIB_TASK.name in names
+# #EXT-060-REQ-3 End
