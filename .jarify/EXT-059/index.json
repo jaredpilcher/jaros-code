@@ -10,5 +10,22 @@
       "startLine": 10,
       "endLine": 251
     }
+  ],
+  "REQ-2": [
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 114,
+      "endLine": 121
+    },
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 138,
+      "endLine": 233
+    },
+    {
+      "file": "tests/test_ext059_check_variants.py",
+      "startLine": 10,
+      "endLine": 205
+    }
   ]
 }

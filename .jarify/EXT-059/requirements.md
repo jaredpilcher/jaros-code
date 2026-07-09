@@ -6,6 +6,8 @@ priority: high
 implementation:
   - harness/fs_oracle.py
   - tests/test_ext059_fs_oracle.py
+  - harness/system_suite.py
+  - tests/test_ext059_check_variants.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -33,11 +35,11 @@ Extend the suite's check vocabulary beyond substring-contains to **exact-stdout-
 n<threshold empty cases are honestly scored.
 
 #### Acceptance Criteria
-- [ ] New check kinds are dispatchable through the existing `_run_single_check` seam in
+- [x] New check kinds are dispatchable through the existing `_run_single_check` seam in
       `harness/system_suite.py` (or an imported helper) without breaking existing substring checks.
-- [ ] `exact_stdout` compares the built system's full stdout for byte/string equality; `expect_rc`
+- [x] `exact_stdout` compares the built system's full stdout for byte/string equality; `expect_rc`
       asserts the process exit code; `empty_output` asserts stdout is empty — each with clear pass/fail.
-- [ ] Tests prove each variant discriminates: a stub emitting extra output fails `exact_stdout`, a stub
+- [x] Tests prove each variant discriminates: a stub emitting extra output fails `exact_stdout`, a stub
       exiting 0 fails `expect_rc:2`, a stub printing anything fails `empty_output`.
 
 ### [REQ-3] Import-driver oracle (`import_driver`)

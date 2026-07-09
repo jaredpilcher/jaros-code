@@ -96,10 +96,12 @@ def _resolve_entry(plan) -> "str | None":
 
 
 def _run_single_check(check, root: Path, plan, python_exe: str) -> bool:
-    """Run ONE acceptance check for a task: either a ``callable(root, plan) -> bool`` or a
-    black-box ``(argv, stdin, expected_substring)`` CLI check against the resolved entrypoint.
-    Never raises -- a missing entrypoint file, a non-zero exit, a timeout, or any exception is a
-    real ``False`` (never a fabricated pass, Tenet 3).
+    """Run ONE acceptance check for a task: either a ``callable(root, plan) -> bool``, a
+    black-box ``(argv, stdin, expected_substring)`` CLI check against the resolved entrypoint, or
+    (TASK-2/REQ-2) a dict-shaped ``{"kind": ..., ...}`` check for the ``exact_stdout`` /
+    ``expect_rc`` / ``empty_output`` variants. Never raises -- a missing entrypoint file, a
+    non-zero exit, a timeout, or any exception is a real ``False`` (never a fabricated pass,
+    Tenet 3).
 
     TASK-15 (REQ-20): every current task's sentence pins a SINGLE-FILE convention ("in a file
     named main.py"). If the plan-declared entrypoint doesn't resolve to a real file (e.g. the
@@ -109,6 +111,14 @@ def _run_single_check(check, root: Path, plan, python_exe: str) -> bool:
     try:
         if callable(check):
             return bool(check(root, plan))
+        # #EXT-059-REQ-2 Start
+        # TASK-2 (REQ-2): dict-shaped checks (``{"kind": "exact_stdout" | "expect_rc" |
+        # "empty_output", ...}``) dispatch through this SAME seam, purely additively -- the
+        # existing 3-tuple substring-contains unpack right below is completely untouched.
+        if isinstance(check, dict):
+            passed, _message = _run_check_variant(check, root, plan, python_exe)
+            return bool(passed)
+        # #EXT-059-REQ-2 End
         argv, stdin, expected = check
         entry = _resolve_entry(plan)
         entry_path = (root / entry) if entry else None
@@ -123,6 +133,104 @@ def _run_single_check(check, root: Path, plan, python_exe: str) -> bool:
         return expected in out
     except Exception:
         return False
+
+
+# #EXT-059-REQ-2 Start
+# TASK-2 (REQ-2): exact-stdout / exit-code / empty-output check variants -- extend the suite's
+# check vocabulary beyond substring-contains so error-paths, exact serialization forms, and
+# empty-output cases are honestly scored. Each new kind carries the SAME ``argv``/``stdin``
+# fields the existing 3-tuple convention already uses (as dict keys instead of tuple position,
+# since a dict is needed to name which comparison kind applies), reuses the exact SAME
+# entrypoint-resolution convention (``_resolve_entry`` + the ``main.py`` fallback) and the exact
+# SAME sandboxed/scrubbed-env/DENY_ALL-egress subprocess runner (``run_sandboxed``) every other
+# black-box check in this module already goes through -- no divergent execution path.
+
+_CHECK_VARIANT_KINDS = ("exact_stdout", "expect_rc", "empty_output")
+
+
+def _run_cli_full(python_exe: str, entry_path: Path, argv: "list[str]", stdin: "str | None",
+                   cwd: Path, timeout: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Like ``_run_cli`` but surfaces the FULL detail (separate ``stdout``/``stderr`` and the
+    real process ``returncode``) the ``exact_stdout``/``expect_rc``/``empty_output`` check kinds
+    need to compare against -- ``_run_cli`` itself is left completely untouched (it still returns
+    the same ``(ok, combined_out)`` 2-tuple every existing caller, including
+    ``harness.datastore_oracle``, already relies on byte-for-byte). Reuses the exact same
+    ``run_sandboxed`` call underneath -- no divergent execution path. Never raises."""
+    cmd = [python_exe, str(entry_path)] + list(argv or [])
+    result = run_sandboxed(cmd, cwd=str(cwd), egress_policy=EgressPolicy.DENY_ALL,
+                            timeout=timeout, stdin=stdin)
+    return {
+        "ok": bool(result.get("ok")),
+        "stdout": result.get("stdout") or "",
+        "stderr": result.get("stderr") or "",
+        "returncode": result.get("returncode"),
+        "note": result.get("note") or "",
+    }
+
+
+def _resolve_check_entry(root: Path, plan) -> "Path | None":
+    """The exact same plan-declared-entrypoint-with-``main.py``-fallback resolution
+    ``_run_single_check`` already applies to the 3-tuple checks, factored out here so the new
+    dict-shaped checks below use an IDENTICAL resolution -- never a divergent one."""
+    entry = _resolve_entry(plan)
+    entry_path = (root / entry) if entry else None
+    if entry_path is None or not entry_path.is_file():
+        fallback = root / "main.py"
+        entry_path = fallback if fallback.is_file() else None
+    return entry_path
+
+
+def _run_check_variant(check: dict, root: Path, plan, python_exe: str) -> "tuple[bool, str]":
+    """Dispatch ONE dict-shaped check. ``check['kind']`` is one of:
+
+    - ``"exact_stdout"``: ``check['expected']`` must equal the built system's FULL stdout
+      exactly (string equality, never a substring match).
+    - ``"expect_rc"``: ``check['rc']`` must equal the built system's real process exit code
+      (any integer, not just 0 -- this is what makes error-paths gradeable).
+    - ``"empty_output"``: the built system's stdout must be the empty string.
+
+    Every kind shares ``check['argv']``/``check['stdin']`` (mirroring the existing 3-tuple
+    convention's fields) to drive the run. Returns ``(passed, message)`` where ``message`` is
+    always a clear, human-readable pass/fail explanation -- on a mismatch it names both the
+    expected and actual value. Never raises -- a missing entrypoint, a process that never
+    completed (failed to start / timed out, so its output can't be trusted either way), or any
+    exception is an honest ``(False, <reason>)``, never a fabricated pass (Tenet 3)."""
+    try:
+        kind = check.get("kind")
+        if kind not in _CHECK_VARIANT_KINDS:
+            return False, f"unknown check kind: {kind!r}"
+        argv = check.get("argv") or []
+        stdin = check.get("stdin")
+        entry_path = _resolve_check_entry(root, plan)
+        if entry_path is None:
+            return False, "no resolvable entrypoint (plan entrypoint missing and no main.py fallback)"
+
+        result = _run_cli_full(python_exe, entry_path, argv, stdin, root)
+        if result["returncode"] is None:
+            return False, f"process never completed (timeout or failed to start): {result['note']}"
+
+        if kind == "exact_stdout":
+            expected = check.get("expected", "")
+            actual = result["stdout"]
+            if actual == expected:
+                return True, "exact_stdout matched"
+            return False, f"exact_stdout mismatch: expected {expected!r}, got {actual!r}"
+
+        if kind == "expect_rc":
+            expected_rc = check.get("rc")
+            actual_rc = result["returncode"]
+            if actual_rc == expected_rc:
+                return True, f"expect_rc matched (rc={actual_rc})"
+            return False, f"expect_rc mismatch: expected rc={expected_rc!r}, got rc={actual_rc!r}"
+
+        # kind == "empty_output"
+        actual = result["stdout"]
+        if actual == "":
+            return True, "empty_output matched"
+        return False, f"empty_output mismatch: expected empty stdout, got {actual!r}"
+    except Exception as exc:
+        return False, f"check raised unexpectedly: {exc}"
+# #EXT-059-REQ-2 End
 
 
 def _rates(results: "list[dict]") -> dict:
