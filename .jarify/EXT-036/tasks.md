@@ -2617,3 +2617,30 @@ the generic fix for the measured over-decomposition failure (csv-column-aggregat
 
 #### Implements
 - [REQ-43] Single-file retry fallback — recover from OVER-DECOMPOSITION of a simple spec
+
+### [TASK-57] Bounded regression-gated new-behavior repair loop in modify_system (REQ-44)
+
+Give the modify path the repair loop the build path already has, so a regression-safe-but-wrong edit
+(measured: sql-mini-add-projection) gets fixed instead of shipped broken.
+
+#### Steps
+1. In `harness/system_builder.py` `modify_system` (~line 3910), after the regression-gated apply +
+   the best-effort new-behavior evaluation (step 5), add a BOUNDED (≤2 round) repair loop that fires
+   ONLY when the edit is applied, regression is preserved, but the new-behavior checks (derived from
+   `mod_sentence`) do not all pass.
+2. Each round: re-regenerate the target module(s) via the existing `_regenerate_module` path, giving
+   the model the change request + the CONCRETE failing new-behavior output (reuse the REQ-42 enriched
+   `_run_check_verbose` so the feedback carries "expected X, got Y"). Re-assemble onto `root`
+   (jailed writes), then re-run BOTH the baseline/regression checks and the new-behavior checks.
+3. Keep the re-regeneration ONLY if it passes ALL regression checks AND strictly more new-behavior
+   checks than the current best; otherwise revert that round (disk + dict) — mirror the existing
+   regression-gate revert/atomicity. Update `new_behavior_ok`/`note` to reflect the repaired result.
+4. Leak-free (only the built system's own output + `mod_sentence`); `applied` still never strictly
+   requires new behavior; bounded.
+5. Tests in `tests/test_ext036_system_repair.py` (offline, injected llm): regression-safe-but-new-broken
+   edit → repaired + kept; a retry that would regress → reverted; already-working edit → not repaired
+   (byte-identical). Run `tests/test_ext036_system_repair.py` + `tests/test_ext036_system_builder.py`;
+   confirm green. Update `.jarify/EXT-036/index.json` (REQ-44 ranges).
+
+#### Implements
+- [REQ-44] Modify path — bounded, regression-gated NEW-BEHAVIOR repair loop

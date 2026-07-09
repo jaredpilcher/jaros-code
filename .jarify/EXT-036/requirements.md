@@ -1974,3 +1974,34 @@ candidate via a dedicated `SINGLE_FILE_PROMPT`/`_build_single_file` (a direct `_
 `_build_module`. Every other guarantee above (non-degrading `_better_result` ranking, honest/leak-free
 grading against the same composed checklist, atomic adopt + rollback against `root`) is unchanged.
 Proven OFFLINE (`tests/test_ext036_system_builder.py`, canned `_call`, no live model).
+
+### [REQ-44] Modify path — bounded, regression-gated NEW-BEHAVIOR repair loop
+
+MEASURED (2026-07-09, sql-mini-add-projection, the sole 0/2 modify-frontier class — also the soft
+spot on the build side): `modify_system` regenerates the target module ONCE, hard-gates on the
+REGRESSION checks (existing behavior preserved — correct), then checks new behavior only ADVISORILY
+and ships regardless. So a regression-safe-but-behaviorally-WRONG edit (the model wrote a `SELECT
+<col>` projection branch guarded by `parts[1] in tables` where `parts[1]` is the column not the
+table → projection outputs nothing) just ships with `new_behavior_ok=False` and is never repaired.
+The build path has an acceptance-repair loop; the modify path has none. Add the analog: when the
+applied edit preserves regression but fails the new-behavior checks, feed the model its ACTUAL wrong
+output (the REQ-42 enriched feedback) and re-regenerate, bounded — keeping a re-try ONLY if it still
+preserves regression AND passes strictly more new-behavior checks.
+
+#### Acceptance Criteria
+- [x] After `modify_system`'s regression-gated apply, if the new-behavior checks (derived from
+      `mod_sentence`) do not all pass, run a BOUNDED repair loop (≤2 rounds) that re-regenerates the
+      target module(s) given the change request + the concrete failing new-behavior output (reuse the
+      REQ-42 enriched `_run_check_verbose` feedback), re-assembles, and re-evaluates.
+- [x] NON-DEGRADING + REGRESSION-SAFE by construction: a re-regeneration is kept ONLY if it still
+      passes ALL baseline/regression checks AND passes strictly more new-behavior checks than the
+      current best; otherwise it is reverted (disk + returned dict). The regression guarantee (REQ-14)
+      is never weakened, and the loop can only improve or leave the result unchanged.
+- [x] Honest: `applied` still does not strictly REQUIRE new behavior (a model-authored new-behavior
+      check can be wrong), but `new_behavior_ok` reflects the repaired result; no oracle leak (the
+      loop sees only the built system's own output + `mod_sentence`, never the suite's independent
+      checks). Bounded — never an unbounded loop.
+- [x] Tests (offline, injected llm): an edit that is regression-safe but new-broken is driven to
+      new-behavior-passing by the repair loop and kept; an edit whose retry would regress is reverted;
+      an already-fully-working edit is not repaired (byte-identical). `tests/test_ext036_system_repair.py`
+      + `tests/test_ext036_system_builder.py` stay green.

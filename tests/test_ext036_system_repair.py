@@ -364,3 +364,157 @@ def test_repair_module_prompt_carries_actual_observed_output(tmp_path):
     assert "0.00" in prompt, "the model must SEE the actual wrong output in its repair prompt"
     assert "35.00" in prompt
 # #EXT-036-REQ-42 End
+
+
+# #EXT-036-REQ-44 Start
+# --- TASK-57: bounded, regression-gated NEW-BEHAVIOR repair loop in modify_system ----------
+#
+# MEASURED (sql-mini-add-projection): modify_system regenerates the target module ONCE,
+# hard-gates on the REGRESSION checks (correct, REQ-14), then checks new behavior only
+# ADVISORILY and ships regardless -- a regression-safe-but-behaviorally-WRONG edit shipped
+# broken and was never repaired. These tests prove the modify-path analog of the build path's
+# `_repair_system`: (a) a regression-safe-but-new-broken edit gets repaired and the corrected
+# result kept; (b) a retry that would regress an existing check is reverted, prior best kept;
+# (c) an already-working edit never enters the loop -- byte-identical.
+#
+# OFFLINE -- same `.complete(LlmRequest) -> .text` convention as `test_ext036_modify.py`'s
+# `_CannedModifyLlm`. The repair-round "APPLY MODIFICATION" call is distinguished from the
+# INITIAL one by the feedback marker `_new_behavior_repair_request` embeds in its prompt (
+# "previous attempt did not fully satisfy") -- never any prompt-count/ordering assumption.
+
+from harness.system_builder import modify_system as _modify_system_r44
+
+_MUL_SENTENCE = "add a mul(a, b) function to calc.py that returns the product"
+
+_CALC_ORIG_R44 = "def add(a, b):\n    return a + b\n"
+# regression-safe (add untouched) but mul is WRONG (sums instead of multiplying)
+_CALC_MUL_WRONG = "def add(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a + b\n"
+# the CORRECTED mul, add still untouched -- what a successful repair round should produce
+_CALC_MUL_CORRECT = "def add(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a * b\n"
+# a "fix" that corrects mul but incidentally BREAKS add -- must be reverted, never kept
+_CALC_MUL_FIX_BREAKS_ADD = "def add(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a * b\n"
+
+_R44_BASELINE_CHECKLIST = (
+    '[{"name": "adds correctly", "code": "from calc import add\\nassert add(1, 2) == 3\\n"}]'
+)
+_R44_NEW_CHECKLIST = (
+    '[{"name": "multiplies correctly", "code": "from calc import mul\\nassert mul(2, 3) == 6\\n"}]'
+)
+
+_REPAIR_FEEDBACK_MARKER = "previous attempt did not fully satisfy"
+
+
+class _CannedR44Llm:
+    """Routes `.complete()` by prompt stage, same convention as `_CannedModifyLlm`
+    (test_ext036_modify.py): "MODIFICATION TARGET" / "APPLY MODIFICATION" (the INITIAL
+    regeneration, vs. a REPAIR ROUND once `_REPAIR_FEEDBACK_MARKER` appears in the prompt) /
+    "ACCEPTANCE CHECKS" (baseline vs. the mod-sentence-derived new-behavior checklist)."""
+
+    def __init__(self, *, target='["calc.py"]', initial=_CALC_MUL_WRONG,
+                 repair_fix=_CALC_MUL_CORRECT, baseline_checklist=_R44_BASELINE_CHECKLIST,
+                 new_checklist=_R44_NEW_CHECKLIST) -> None:
+        self.target = target
+        self.initial = initial
+        self.repair_fix = repair_fix
+        self.baseline_checklist = baseline_checklist
+        self.new_checklist = new_checklist
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        prompt = request.prompt
+        self.prompts.append(prompt)
+        if "MODIFICATION TARGET" in prompt:
+            return _Resp(self.target)
+        if "APPLY MODIFICATION" in prompt:
+            if _REPAIR_FEEDBACK_MARKER in prompt:
+                return _Resp(self.repair_fix)
+            return _Resp(self.initial)
+        if "SYNTAX ERROR" in prompt:
+            return _Resp("")   # unused -- every canned body here is valid syntax
+        if "RUNNABLE PYTHON CODE" in prompt:
+            return _Resp("[]")
+        if "ACCEPTANCE CHECKS" in prompt:
+            if _MUL_SENTENCE in prompt:
+                return _Resp(self.new_checklist)
+            return _Resp(self.baseline_checklist)
+        return _Resp("")
+
+
+def test_newbehavior_repair_fixes_and_keeps_corrected_edit(tmp_path):
+    """(a) The initial apply is regression-safe but its own new-behavior check fails; the
+    repair round re-regenerates calc.py fed the concrete failing output, produces a genuinely
+    correct mul, and that corrected result is KEPT."""
+    root = tmp_path / "sys"
+    llm = _CannedR44Llm()
+    result = _modify_system_r44({"calc.py": _CALC_ORIG_R44}, _MUL_SENTENCE, root, llm=llm)
+
+    assert result["applied"] is True
+    assert result["regressed"] == []
+    assert result["new_behavior_ok"] is True
+    assert result["modules"]["calc.py"].strip() == _CALC_MUL_CORRECT.strip()
+    assert (root / "calc.py").read_text().strip() == _CALC_MUL_CORRECT.strip()
+    assert "repair" in result["note"].lower()
+
+    # exactly one INITIAL + one REPAIR-ROUND "APPLY MODIFICATION" call -- bounded, not re-tried
+    apply_prompts = [p for p in llm.prompts if "APPLY MODIFICATION" in p]
+    assert len(apply_prompts) == 2
+    repair_prompts = [p for p in apply_prompts if _REPAIR_FEEDBACK_MARKER in p]
+    assert len(repair_prompts) == 1
+    # the repair-round prompt carries the concrete OBSERVED failure (leak-free -- the built
+    # system's own wrong output, never a reference implementation)
+    assert "multiplies correctly" in repair_prompts[0]
+
+    # existing behavior genuinely still holds against the KEPT (repaired) module
+    ns: dict = {}
+    exec(compile(result["modules"]["calc.py"], "calc.py", "exec"), ns)
+    assert ns["add"](1, 2) == 3
+    assert ns["mul"](2, 3) == 6
+
+
+def test_newbehavior_repair_round_that_would_regress_is_reverted(tmp_path):
+    """(b) The repair round's "fix" does correct mul but incidentally breaks the previously-
+    passing "adds correctly" check -- REQ-14 must never be weakened, so this round is REVERTED
+    (disk + dict) and the prior best (the regression-safe-but-new-broken initial edit) is kept,
+    not the regressing fix."""
+    root = tmp_path / "sys"
+    llm = _CannedR44Llm(repair_fix=_CALC_MUL_FIX_BREAKS_ADD)
+    result = _modify_system_r44({"calc.py": _CALC_ORIG_R44}, _MUL_SENTENCE, root, llm=llm)
+
+    assert result["applied"] is True             # the base modification itself still applied
+    assert result["regressed"] == []              # the TOP-LEVEL result never reports a regression
+    assert result["new_behavior_ok"] is False      # never granted -- the fix was rejected
+    assert "repair" not in result["note"].lower()
+
+    # reverted to the prior best-seen (pre-repair-round) content -- NOT the regressing fix
+    assert result["modules"]["calc.py"].strip() == _CALC_MUL_WRONG.strip()
+    assert (root / "calc.py").read_text().strip() == _CALC_MUL_WRONG.strip()
+
+    # existing behavior genuinely still holds (never actually regressed on disk)
+    ns: dict = {}
+    exec(compile(result["modules"]["calc.py"], "calc.py", "exec"), ns)
+    assert ns["add"](1, 2) == 3
+
+    # bounded: the regressing round rejects-and-stops -- never a second repair attempt
+    repair_prompts = [p for p in llm.prompts if "APPLY MODIFICATION" in p and _REPAIR_FEEDBACK_MARKER in p]
+    assert len(repair_prompts) == 1
+
+
+def test_newbehavior_repair_skipped_when_already_working(tmp_path):
+    """(c) The INITIAL apply already fully satisfies its own new-behavior checklist -- the
+    repair loop must never even be entered (byte-identical to before this task: no extra
+    regeneration call, no extra check runs beyond the ordinary best-effort evaluation)."""
+    root = tmp_path / "sys"
+    llm = _CannedR44Llm(initial=_CALC_MUL_CORRECT)
+    result = _modify_system_r44({"calc.py": _CALC_ORIG_R44}, _MUL_SENTENCE, root, llm=llm)
+
+    assert result["applied"] is True
+    assert result["new_behavior_ok"] is True
+    assert result["modules"]["calc.py"].strip() == _CALC_MUL_CORRECT.strip()
+    assert "repair" not in result["note"].lower()
+    assert result["note"] == "applied — existing behavior preserved; new behavior confirmed"
+
+    # the repair-round marker never appears in ANY prompt -- the loop was never entered
+    assert not [p for p in llm.prompts if _REPAIR_FEEDBACK_MARKER in p]
+    apply_prompts = [p for p in llm.prompts if "APPLY MODIFICATION" in p]
+    assert len(apply_prompts) == 1
+# #EXT-036-REQ-44 End

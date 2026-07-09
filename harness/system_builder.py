@@ -3907,6 +3907,157 @@ def _importable_modules(modules: dict, root: Path, python_exe: "str | None" = No
     return importable
 
 
+# #EXT-036-REQ-44 Start
+# TASK-57 (REQ-44): MEASURED (sql-mini-add-projection) -- `modify_system` regenerates the target
+# module ONCE, hard-gates on the REGRESSION checks (correct, REQ-14), then checks new behavior
+# only ADVISORILY and ships regardless. A regression-safe-but-behaviorally-WRONG edit therefore
+# just ships broken and is never repaired -- the build path has an acceptance-repair loop
+# (`_repair_system`), the modify path did not. This adds the modify-path analog: bounded,
+# regression-gated, fires ONLY once the edit is applied + regression-safe but its own
+# new-behavior checklist does not fully pass.
+MAX_MODIFY_NEWBEHAVIOR_ROUNDS = 2   # bounded modify-path new-behavior repair loop, REQ-44
+
+
+def _purge_module_pycache(root: Path, name: str) -> None:
+    """Best-effort cleanup (REQ-44): remove any cached bytecode for module ``name`` under
+    ``root/__pycache__``. MEASURED: this repair loop can rewrite the SAME module to
+    SAME-SIZE-different-content within one tight round (e.g. a wrong-value fix followed by a
+    corrected one of equal length); Python's default mtime+size ``.pyc`` staleness check can
+    then alias the two writes and the check subprocess's import machinery serves the STALE
+    compiled bytecode instead of the just-written source, making an already-fixed edit look
+    like it still fails. Purging after every write in this loop keeps each round's check run
+    honestly reflecting the CURRENT on-disk source. Never raises."""
+    stem = Path(name).stem
+    if not stem:
+        return
+    pycache = root / "__pycache__"
+    try:
+        if not pycache.is_dir():
+            return
+        for f in pycache.glob(f"{stem}.*.pyc"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _new_behavior_repair_request(mod_sentence: str, new_checks: list, root: Path) -> str:
+    """Build one repair round's change request (REQ-44): the ORIGINAL modification sentence
+    plus the CONCRETE observed output of every currently-failing new-behavior check (reusing
+    the REQ-42 enriched ``_run_check_verbose``, so a wrong-VALUE failure carries "expected X,
+    got Y" rather than a bare ``AssertionError``). Leak-free (Tenet 3): only surfaces the
+    check's OWN run output -- never a reference implementation or the suite's independent
+    oracle. Fed straight into ``_regenerate_module`` (the SAME regeneration path
+    ``modify_system`` already used), so no new apply mechanism is invented. Never raises."""
+    lines = [mod_sentence, "",
+             "The previous attempt did not fully satisfy this. Observed failures (your own "
+             "system's actual output, not a hidden test):"]
+    for check in new_checks or []:
+        try:
+            ok, out = _run_check_verbose(root, check)
+        except Exception:
+            ok, out = False, ""
+        if ok:
+            continue
+        lines.append(f"- {check.get('name', '?')}: {(out or '')[-500:]}")
+    return "\n".join(lines)
+
+
+def _modify_newbehavior_repair(
+        modules: dict, changed_names: list, root: Path, mod_sentence: str,
+        baseline_checks: list, baseline_passing: set, new_checks: list, llm, *,
+        max_rounds: int = MAX_MODIFY_NEWBEHAVIOR_ROUNDS, runtime: "object | None" = None,
+) -> tuple[dict, bool, bool]:
+    """Bounded, regression-gated NEW-BEHAVIOR repair loop for ``modify_system`` (REQ-44) -- the
+    modify-path analog of the build path's ``_repair_system``. Only ever called once the edit
+    has already been APPLIED and passed the REGRESSION gate; re-regenerates the SAME target
+    module(s) ``modify_system`` already changed (``changed_names``) via the existing
+    ``_regenerate_module`` path, fed the original change request PLUS the concrete failing
+    new-behavior output (``_new_behavior_repair_request``), re-assembles onto ``root`` (the
+    same jailed-write path), then re-runs BOTH the baseline/regression checks and the
+    new-behavior checks.
+
+    NON-DEGRADING BY CONSTRUCTION (REQ-14 is never weakened): a round is KEPT only when it
+    still passes EVERY baseline/regression check AND passes STRICTLY MORE new-behavior checks
+    than the current best; otherwise it is REVERTED (disk + the returned dict) to the best-seen
+    content, mirroring ``modify_system``'s own regression-gate revert/atomicity exactly. Best-
+    seen ``(modules, new_behavior_ok)`` is tracked and returned -- the loop can only improve or
+    leave the result unchanged, never regress a working edit or leave a half-swapped root.
+    Bounded to ``max_rounds``; stops early once every new-behavior check passes, or once a
+    round fails to produce any syntactically valid regeneration, or once a round is rejected.
+    Never raises. Returns ``(modules, new_behavior_ok, repaired)`` where ``repaired`` reports
+    whether any round's content was actually kept."""
+    def _pass_count(checks: list) -> int:
+        return sum(1 for c in checks if _run_check(root, c))
+
+    best_modules = dict(modules)
+    # `root` currently reflects `modules` (the just-applied, regression-safe edit) -- the
+    # caller only invokes this once that state is on disk, so counting passes here is exact.
+    best_count = _pass_count(new_checks)
+    best_ok = bool(new_checks) and best_count == len(new_checks)
+    if best_ok or not changed_names or not new_checks:
+        return best_modules, best_ok, False
+
+    repaired = False
+    try:
+        for _round in range(max_rounds):
+            feedback = _new_behavior_repair_request(mod_sentence, new_checks, root)
+            round_modules = dict(best_modules)
+            round_changed = []
+            for name in changed_names:
+                try:
+                    new_code, ok = _regenerate_module(name, round_modules[name], feedback, llm)
+                except Exception:
+                    continue
+                if not ok:
+                    continue
+                round_modules[name] = new_code
+                round_changed.append(name)
+            if not round_changed:
+                break   # no valid regeneration this round -- nothing to try, stop
+
+            written: list = []
+            escape = None
+            for name in round_changed:
+                escape = _jailed_write(root, name, round_modules[name], runtime)
+                _purge_module_pycache(root, name)   # REQ-44: never check against stale bytecode
+                if escape is not None:
+                    break
+                written.append(name)
+            if escape is not None:
+                # never leave a half-written round -- restore the best-seen content on disk
+                for name in written:
+                    _jailed_write(root, name, best_modules[name], runtime)
+                    _purge_module_pycache(root, name)
+                break
+
+            regression_ok = all(
+                c.get("name", "?") not in baseline_passing or _run_check(root, c)
+                for c in baseline_checks
+            )
+            round_count = _pass_count(new_checks)
+            if regression_ok and round_count > best_count:
+                best_modules = round_modules
+                best_count = round_count
+                best_ok = best_count == len(new_checks)
+                repaired = True
+                if best_ok:
+                    break
+            else:
+                # revert this round -- restore best-seen content (disk + dict), then stop
+                for name in round_changed:
+                    _jailed_write(root, name, best_modules[name], runtime)
+                    _purge_module_pycache(root, name)
+                break
+    except Exception:
+        pass   # never raise -- fall through with whatever progress was made
+
+    return best_modules, best_ok, repaired
+# #EXT-036-REQ-44 End
+
+
 def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None,
                    runtime: "object | None" = None) -> dict:
     """Modify an EXISTING system (``modules``: ``{name: code}``) from a one-sentence change
@@ -3937,6 +4088,14 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
          against the (accepted) modified system; ``new_behavior_ok`` reports whether it passed
          (advisory — ``applied`` never depends on it, since the model-authored new-behavior
          check could itself be wrong, and REQ-14 only REQUIRES existing behavior preserved).
+      6. (REQ-44, TASK-57) When step 5 finds the new-behavior checklist does NOT fully pass,
+         run a BOUNDED (≤2 round), regression-gated repair loop (``_modify_newbehavior_repair``
+         — the modify-path analog of ``_repair_system``): re-regenerate the SAME target
+         module(s) given the change request plus the concrete failing new-behavior output
+         (REQ-42 enriched feedback), re-assemble, and re-check. A round is kept ONLY if it
+         still passes every regression check AND passes strictly more new-behavior checks than
+         the current best; otherwise it is reverted. Never weakens REQ-14; can only improve or
+         leave the result unchanged; skipped entirely when new behavior already passed.
 
     Returns ``{modules, applied, regressed: [names], new_behavior_ok, note}``. Uses
     ``harness.coding_loop.build_llm()`` when ``llm`` is None (mirrors ``build_system``); an
@@ -4110,9 +4269,26 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
         new_checks = []
     new_behavior_ok = bool(new_checks) and all(_run_check(root, c) for c in new_checks)
 
+    # #EXT-036-REQ-44 Start
+    # TASK-57: the edit is applied + regression-safe (step 4 above) but its OWN new-behavior
+    # checklist doesn't fully pass -- run the bounded, regression-gated repair loop instead of
+    # shipping the wrong result as-is. Fires ONLY here (never when new_behavior_ok is already
+    # True, never when there is no target module to re-regenerate) -- an already-fully-working
+    # edit is byte-identical to before this task.
+    repaired = False
+    if new_checks and not new_behavior_ok and changed_names:
+        modules, new_behavior_ok, repaired = _modify_newbehavior_repair(
+            modules, changed_names, root, mod_sentence, baseline_checks, baseline_passing,
+            new_checks, llm, runtime=runtime)
+    # #EXT-036-REQ-44 End
+
     note = "applied — existing behavior preserved"
     if new_checks:
         note += "; new behavior " + ("confirmed" if new_behavior_ok else "not confirmed")
+    # #EXT-036-REQ-44 Start
+    if repaired:
+        note += " (repaired)"
+    # #EXT-036-REQ-44 End
     # #EXT-036-REQ-35 Start
     if added_names:
         note += "; added module(s): " + ", ".join(added_names)
