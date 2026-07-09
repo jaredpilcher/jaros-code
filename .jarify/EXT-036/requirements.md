@@ -1906,3 +1906,30 @@ repair loop).
   `tests/test_ext036_system_repair.py`, `tests/test_ext036_interface_seam.py`) stays green;
   no regression to the byte-identical direct-imports-full-source behavior REQ-3 already
   proved.
+
+### [REQ-42] Execution-feedback enrichment — repair sees the ACTUAL wrong output, not a bare AssertionError
+
+MEASURED (2026-07-08, csv-column-aggregator, the sole 0/2 weak class on the harder scoreboard):
+build_system produces a multi-module system that RUNS cleanly (rc=0, no exception) but prints
+the WRONG value (`0.00` for every aggregate; expected `35.00`/`15.00`) — a plan-signature-induced
+sibling bug (`parse_csv_stream -> list[list[float]]` floats the string name column, drops all rows).
+`done=False` is correctly detected, but the repair round fails to fix it. Root cause: the repair
+feedback (`_repair_module_for_check`'s `error`) for a wrong-VALUE failure is a bare `AssertionError`
+traceback that does NOT show the built system's actual output — the model is told "assert '35.00' in
+output failed" but never that the output was `0.00`, so it cannot localize the defect. This is the
+"runs but prints wrong" failure class generically (not csv-specific): the biggest per-task repair
+lift is making execution feedback carry the concrete observed-vs-expected signal.
+
+#### Acceptance Criteria
+- [x] When an acceptance check fails on a wrong VALUE (assertion mismatch, not a crash/timeout), the
+      repair feedback fed to the model includes the built system's ACTUAL observed output (the stdout/
+      stderr it produced for that check's scenario) alongside the expected value — e.g. "expected
+      '35.00' in output, got: '0.00'".
+- [x] Implemented generically for the deterministic acceptance checks (no per-class special-casing);
+      honest and leak-free (it surfaces the built system's OWN output vs the expected already encoded
+      in the check — never the hidden suite oracle, never the reference implementation).
+- [x] A unit test proves that for a build whose entrypoint prints the wrong value, the string handed
+      to `_repair_module_for_check` (or the repair prompt it builds) contains the actual observed
+      output, whereas today it contains only a bare AssertionError. Offline (no model/Jetson call).
+- [x] No regression: `tests/test_ext036_system_repair.py` + `tests/test_ext036_system_builder.py`
+      stay green; the non-degrading repair guarantee (REQ-23) is preserved.

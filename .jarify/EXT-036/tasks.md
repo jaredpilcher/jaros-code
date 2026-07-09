@@ -2567,3 +2567,28 @@ Generic -- lifts EVERY multi-module class, not one; no leaves.
   compositional coherence (the deterministic mechanism + offline correctness tests; the true
   LIFT — does the small model now build bigger, correctly-wired multi-module systems — is an
   on-Jetson re-measure that follows this commit, out of scope here)
+
+### [TASK-54] Enrich repair feedback with the built system's actual observed output (REQ-42)
+
+Give the acceptance-driven repair loop the concrete observed-vs-expected signal for wrong-value
+failures, so the model can localize a "runs but prints wrong" defect (measured: csv-column-aggregator
+prints 0.00, repair blind to it).
+
+#### Steps
+1. In `harness/system_builder.py`, trace the failing-check feedback path (`_run_check_verbose` →
+   `_repair_module_for_check` → `REPAIR_MODULE_PROMPT`) and make the `error` string carry the built
+   system's ACTUAL stdout/stderr for the failing scenario (not just the AssertionError). Cleanest
+   generic route: make the deterministic acceptance-check scripts capture the built entrypoint's real
+   stdout and, on assertion failure, surface it (`assert expected in out, f"expected {expected!r}, got
+   {out!r}"`) — so the captured run output already contains "got '0.00'"; OR enrich the feedback
+   assembly to append the observed output. No per-class special-casing.
+2. Keep it honest/leak-free: surface only the built system's own output + the expected already encoded
+   in the check; never the hidden suite oracle or a reference implementation.
+3. Add an offline test in `tests/test_ext036_system_repair.py`: a built stub whose entrypoint prints a
+   wrong value produces repair feedback (the string passed to the repair prompt) that CONTAINS the
+   actual observed output; a bare-AssertionError-only feedback is the failing baseline. No model call.
+4. Run `tests/test_ext036_system_repair.py` + `tests/test_ext036_system_builder.py`; confirm green +
+   the REQ-23 non-degrading guarantee holds. Update `.jarify/EXT-036/index.json` (REQ-42 ranges).
+
+#### Implements
+- [REQ-42] Execution-feedback enrichment — repair sees the ACTUAL wrong output, not a bare AssertionError

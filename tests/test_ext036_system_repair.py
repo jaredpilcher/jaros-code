@@ -230,3 +230,137 @@ def test_repair_that_swaps_regression_is_reverted_not_accepted(tmp_path):
     ns: dict = {}
     exec(compile(result["modules"]["calc.py"], "calc.py", "exec"), ns)
     assert ns["add"](1, 2) == 3
+
+
+# #EXT-036-REQ-42 Start
+# --- TASK-54: execution-feedback enrichment -- repair sees the ACTUAL wrong output ---------
+#
+# MEASURED (2026-07-08, csv-column-aggregator): a build that RUNS cleanly but prints the WRONG
+# value fails its acceptance check with a bare `AssertionError` (the model writes
+# `assert "35.00" in result.stdout` with no message), so the repair round is fed "the assertion
+# failed" but never "the output was '0.00'" and repairs blind. These tests drive the feedback
+# path directly (construct a built stub + check inline, no model call) and prove the fix: the
+# string reaching the repair now carries the actual observed output next to the expected value.
+
+from harness.system_builder import _enrich_assert_messages, _run_check_verbose, _repair_module_for_check
+
+# a check shaped exactly like the measured csv-column-aggregator failure: a real subprocess
+# invocation of the built entrypoint, asserting the expected aggregate is in its stdout
+WRONG_VALUE_CHECK = {
+    "name": "prints the correct total",
+    "code": (
+        "import subprocess, sys\n"
+        "result = subprocess.run([sys.executable, 'main.py'], capture_output=True, text=True)\n"
+        "assert '35.00' in result.stdout\n"
+    ),
+}
+
+# the built stub's entrypoint: runs cleanly (rc=0, no exception) but prints the WRONG value --
+# exactly the "runs but prints wrong" class REQ-42 targets, never touching any hidden oracle
+WRONG_VALUE_ENTRYPOINT = "print('0.00')\n"
+
+
+def test_enrich_assert_messages_embeds_actual_and_expected_values():
+    """The deterministic AST transform turns a bare `assert expected in out` into one whose
+    message reprs BOTH operands the check itself already tests -- never anything outside the
+    check's own code (leak-free)."""
+    enriched = _enrich_assert_messages(WRONG_VALUE_CHECK["code"])
+    assert enriched != WRONG_VALUE_CHECK["code"]
+    tree_ok = True
+    try:
+        compile(enriched, "<check>", "exec")
+    except SyntaxError:
+        tree_ok = False
+    assert tree_ok, "the enriched check must still be valid, runnable Python"
+    assert "35.00" in enriched
+    assert "result.stdout" in enriched
+
+
+def test_enrich_assert_messages_is_byte_identical_when_msg_already_present():
+    """A check that already supplies its own assert message is left completely alone (never
+    double-wrapped or mangled)."""
+    code = "x = 1\nassert x == 2, 'already has a message'\n"
+    assert _enrich_assert_messages(code) == code
+
+
+def test_enrich_assert_messages_never_raises_on_unparseable_code():
+    assert _enrich_assert_messages("this is not ( python") == "this is not ( python"
+
+
+def test_run_check_verbose_surfaces_actual_observed_output_for_wrong_value(tmp_path):
+    """The generic REQ-42 regression test: for a built stub whose entrypoint prints the WRONG
+    value, `_run_check_verbose`'s captured run output now CONTAINS the actual observed output
+    next to the expected value -- not just a bare AssertionError."""
+    root = tmp_path / "built"
+    root.mkdir()
+    (root / "main.py").write_text(WRONG_VALUE_ENTRYPOINT, encoding="utf-8")
+
+    ok, out = _run_check_verbose(root, WRONG_VALUE_CHECK)
+
+    assert ok is False
+    assert "0.00" in out, "the ACTUAL observed output must reach the repair feedback"
+    assert "35.00" in out, "the expected value (already encoded in the check) stays present"
+    assert "AssertionError" in out  # still a real, honest run failure -- not silently swallowed
+
+
+def test_run_check_verbose_pre_change_baseline_was_a_bare_assertion_error(tmp_path):
+    """Baseline proof: running the SAME check's ORIGINAL (un-enriched) code -- i.e. what
+    `_run_check_verbose` fed the repair loop BEFORE this task -- produces a bare
+    `AssertionError` with no observed value at all. This is the measured gap TASK-54 closes;
+    the enriched run above is a strict superset of information, never a regression."""
+    root = tmp_path / "built"
+    root.mkdir()
+    (root / "main.py").write_text(WRONG_VALUE_ENTRYPOINT, encoding="utf-8")
+
+    from harness.system_builder import _run_acceptance_cmd
+    chk = root / "_baseline_check.py"
+    chk.write_text(WRONG_VALUE_CHECK["code"], encoding="utf-8", newline="\n")
+    try:
+        ok, baseline_out = _run_acceptance_cmd(str(root), "python _baseline_check.py")
+    finally:
+        chk.unlink()
+
+    assert ok is False
+    assert "AssertionError" in baseline_out
+    assert "0.00" not in baseline_out, "pre-change feedback never showed the actual value"
+
+
+def test_run_check_verbose_does_not_change_pass_outcome_when_correct(tmp_path):
+    """Enrichment only touches the FAILURE message -- a correct build's check still passes,
+    proving REQ-42 changes no pass/fail outcome (no `done`-semantics regression)."""
+    root = tmp_path / "built"
+    root.mkdir()
+    (root / "main.py").write_text("print('35.00')\n", encoding="utf-8")
+
+    ok, out = _run_check_verbose(root, WRONG_VALUE_CHECK)
+    assert ok is True
+    assert "AssertionError" not in out
+
+
+def test_repair_module_prompt_carries_actual_observed_output(tmp_path):
+    """End of the feedback path: the `error` `_run_check_verbose` now returns for a wrong-value
+    failure, once handed to `_repair_module_for_check`, lands in the actual REPAIR_MODULE_PROMPT
+    text sent to the model -- so the model is told what the built system ACTUALLY printed, not
+    just that an assertion failed."""
+    root = tmp_path / "built"
+    root.mkdir()
+    (root / "main.py").write_text(WRONG_VALUE_ENTRYPOINT, encoding="utf-8")
+    ok, err = _run_check_verbose(root, WRONG_VALUE_CHECK)
+    assert ok is False
+
+    captured: list[str] = []
+
+    class _RecordingLlm:
+        def complete(self, request):
+            captured.append(request.prompt)
+            return _Resp("not json at all")   # unparseable -> no fabricated fix; we only check the prompt
+
+    built = {"main.py": WRONG_VALUE_ENTRYPOINT}
+    fix = _repair_module_for_check(SPEC, WRONG_VALUE_CHECK, err, built, _RecordingLlm())
+
+    assert fix is None   # canned response is unparseable -- never a fabricated fix
+    assert len(captured) == 1
+    prompt = captured[0]
+    assert "0.00" in prompt, "the model must SEE the actual wrong output in its repair prompt"
+    assert "35.00" in prompt
+# #EXT-036-REQ-42 End

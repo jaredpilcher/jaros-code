@@ -189,6 +189,9 @@ a manufactured false-negative); a clean run is SATISFIED (a pass).
 from __future__ import annotations
 
 import ast
+# #EXT-036-REQ-42 Start
+import copy  # TASK-54: deepcopy assert-test sub-expressions into a synthesized failure message
+# #EXT-036-REQ-42 End
 import json
 import os
 import py_compile
@@ -2539,13 +2542,91 @@ REPAIR_MODULE_PROMPT = (
 MAX_SYSTEM_REPAIR_ROUNDS = 2   # bounded system-level (acceptance-driven) repair loop, REQ-5
 
 
+# #EXT-036-REQ-42 Start
+# TASK-54: MEASURED (2026-07-08, csv-column-aggregator) -- a build that RUNS cleanly but prints
+# the WRONG value fails its acceptance check with a bare `AssertionError` traceback (the model
+# writes `assert "35.00" in result.stdout` with no message), so `_run_check_verbose`'s captured
+# `out` never shows the ACTUAL observed output and the repair round is blind: it is told the
+# assertion failed but never what came out instead. Fix, generic (no per-class special-casing):
+# a deterministic AST transform rewrites every message-less `assert` in a check script to embed
+# an f-string that reprs the SAME operand expressions the check already tests against -- so a
+# failing run's own stdout/stderr (still produced by the check's own code, still gated by the
+# check's own already-encoded expected value) now literally contains "expected ..., got ...".
+def _enrich_assert_messages(code: str) -> str:
+    """Deterministically rewrite every message-less ``assert`` in an acceptance-check script
+    (REQ-42) so its failure message reprs the actual runtime value(s) the assertion tested,
+    e.g. ``assert expected in out`` becomes
+    ``assert expected in out, f"expected {expected!r} in output, got: {out!r}"``. Only ever
+    reprs expressions the check's OWN code already evaluates (never the hidden suite oracle,
+    a reference implementation, or anything outside the check) -- Tenet 3 leak-free. Returns
+    the code UNCHANGED, byte-identical, on any parse/transform failure or when there is
+    nothing to enrich (never a fabricated check, never raises)."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return code
+
+    changed = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert) or node.msg is not None:
+            continue
+        test = node.test
+        if isinstance(test, ast.Compare) and len(test.ops) == 1 and len(test.comparators) == 1:
+            op = test.ops[0]
+            if isinstance(op, ast.In):
+                verb = "in"
+            elif isinstance(op, ast.NotIn):
+                verb = "not in"
+            elif isinstance(op, ast.Eq):
+                verb = "=="
+            elif isinstance(op, ast.NotEq):
+                verb = "!="
+            else:
+                verb = None
+            if verb is None:
+                continue
+            msg_expr = ast.JoinedStr(values=[
+                ast.Constant(value="expected "),
+                ast.FormattedValue(value=copy.deepcopy(test.left), conversion=ord("r"), format_spec=None),
+                ast.Constant(value=f" {verb} output, got: "),
+                ast.FormattedValue(value=copy.deepcopy(test.comparators[0]), conversion=ord("r"), format_spec=None),
+            ])
+        else:
+            # Generic fallback for non-comparison asserts (e.g. `assert ok`): still surfaces
+            # the check's own tested expression's actual runtime value, never a static guess.
+            msg_expr = ast.JoinedStr(values=[
+                ast.Constant(value="assertion failed, actual value: "),
+                ast.FormattedValue(value=copy.deepcopy(test), conversion=ord("r"), format_spec=None),
+            ])
+        node.msg = msg_expr
+        changed = True
+
+    if not changed:
+        return code
+    try:
+        ast.fix_missing_locations(tree)
+        return ast.unparse(tree)
+    except Exception:
+        return code
+# #EXT-036-REQ-42 End
+
+
 def _run_check_verbose(root: Path, check: dict) -> tuple[bool, str]:
     """Like ``_run_check`` but also returns the run output (stdout+stderr) so a failing
     check can be fed back to the model as repair feedback (REQ-5). Runs via the same
-    sandboxed execution path (``_run_acceptance_cmd``, REQ-7); never raises."""
+    sandboxed execution path (``_run_acceptance_cmd``, REQ-7); never raises.
+
+    REQ-42 (TASK-54): the check's code is deterministically passed through
+    ``_enrich_assert_messages`` first, so a wrong-VALUE failure's captured ``out`` carries the
+    check's own actual observed output next to its expected value, not a bare
+    ``AssertionError`` -- fixing the measured "runs but prints wrong" repair-feedback blind
+    spot. Only ever enriches the check's OWN assert message; changes no pass/fail outcome."""
     code = check.get("code", "")
     if not code:
         return False, "no check code"
+    # #EXT-036-REQ-42 Start
+    code = _enrich_assert_messages(code)
+    # #EXT-036-REQ-42 End
     chk_path = root / "_s2s_acceptance_check.py"
     # #EXT-037-REQ-11 Start
     # TASK-15: same deliberate raw-write choice as `_run_check` above -- internal build-scratch,
