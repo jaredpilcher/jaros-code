@@ -366,6 +366,62 @@ steer/amend + /buildsystem-loop interrupt, #26 multimodal (image→e4b vision). 
 
 ## NEXT (planned specs/requirements to create + implement — this week)
 
+### ★★ EXTENSIVE PYTHON-BREADTH CAPABILITY PROGRAM (owner steer 2026-07-08 "cover the 90% of what's done in Python — diverse, combinable, extensive"; mapped by the taxonomy workflow, synthesis in `.jaros-data/taxonomy_synthesis.txt`)
+
+The map is done: a **~66-task consolidated build suite** across 13 domains (A CLI/automation, B files/OS,
+C data/ETL, D parsers/DSLs/serialization, E text/templating/codegen, F reusable libraries/packages,
+G concurrency/workers, H databases/persistence, I networking/protocols/clients, J scraping/HTTP-client,
+K web apps & APIs, L algorithms/sims/games, M **combined multi-component** — the ~90% integration bar).
+Honest coverage: green-across ≈ the construction spine of **85–90% of everyday stdlib Python + their
+composition**; deliberately EXCLUDED (not "solved") ≈ 10–15%: GUI/TUI, ML training/inference, heavy-numeric,
+externally-brokered distributed systems, true wall-clock daemons. **The decisive finding: the blocker is the
+VERIFICATION SUBSTRATE, not the model — most of these tasks cannot even be *scored honestly* today.** The
+ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
+
+- **[C1 oracle substrate — BLOCKER, unlocks ~30 tasks, top-of-NOW next]** (new spec) — small deterministic
+  verifiers, no model call: **(a) `fs_oracle.py`** seed-tree→run-sandboxed→independent byte-for-byte tree
+  inspection (~14 tasks: all of B, file-organizer, csv-join, codegen, SSG); **(b) exact-stdout-equality +
+  rc-aware + is-empty** check variants in `system_suite` (today substring-contains only; ~10 tasks);
+  **(c) HTTP `http_check` growth** (request bodies, custom headers, Set-Cookie/Location capture, ordered
+  token-threading sequence runner; ~5 web tasks); **(d) `fixture_server`** oracle (oracle hosts server, built
+  code is the client; ~4 scraping tasks); **(e) `import_driver`** (import built module in fresh subprocess,
+  exercise pinned public API; ~6 library tasks). **high** · nothing on the broadened bar is honestly
+  measurable without it — Phase-0 = C1(a)+(b) is the immediately-shippable first slice (~18 stdlib tasks,
+  domains A+B+L-easy/med).
+- **[C2 execution-feedback self-repair — biggest per-task lift]** (aligns with the deterministic-toolset
+  mission) — run the built system, capture the REAL traceback/stderr/failed-assertion, feed back for a
+  targeted deterministic repair, re-run (bounded). **high** · lifts EVERY task; attacks the "prints plausibly
+  but doesn't do the effect" class. Bolt onto Phase-0 immediately.
+- **[C3 cross-module coherence — unlocks the combined tier M]** — 🔧 IN FLIGHT (interface-ledger builder,
+  EXT-036 REQ-41): DAG-wide signature ledger into `_build_module` + AST seam-arity check → repair. **high** ·
+  the composition data says multi-file systems fail on WIRING not logic.
+- **[C5 localhost-egress + multi-process orchestration — unlocks live integration/protocol servers]** —
+  ⚠️ egress-precision PARKED (honest stop, owner guardrail "no hole, or stop"). TWO static-scan attempts to
+  exempt `http.server`/`socketserver` at the IMPORT level each left a real exfil hole (caught by independent
+  security review, reverted to the safe over-broad gate): once you import-exempt those modules, their
+  re-exported real `socket`/`http.client` submodules are reachable through UNBOUNDED aliasing paths
+  (`http.server.socket.socket().connect()`, `m=http.server.socket; m.socket()...`, `getattr(http.server,
+  'socket')...`) that AST tracking can't chase exhaustively. Static import-level exemption is the wrong lever.
+  CLEAN PATH (for the Phase-2 web tier, not now): flag ATTRIBUTE-ACCESS to the network re-export submodules
+  (`.socket`/`.client`) of the exempted inbound modules — the tell no legit inbound server ever does — instead
+  of tracking the resulting socket instance; OR a real RUNTIME egress block (Linux netns/firewall) so the
+  static scan needn't be perfect. Web-service builds stay blocked at HEAD until then (matches Phase-2
+  sequencing — NOT blocking the immediate C1(b)/C1(e) substrate). Remaining C5 also: N-process
+  dependency-ordered startup + localhost-allow for built CLIENT CLIs. **high, but Phase-2**.
+- **[C4 venv/dep-install phase]** controlled INSTALL phase (requirements.txt→venv→install) strictly separate
+  from the DENY_ALL run phase → run built system under that venv (Flask/FastAPI/SQLAlchemy/pandas variants).
+  **med** · "real Python" dep realism.
+- **[C6 compositional DAG composer]** (per [[jaros-code-compositional-direction]]) build verified atomic
+  classes then a deterministic composer wires entrypoint+shared-store+step-order — depends on C1/C3/C5;
+  makes the combined tier CONVERGE. **med**. **[C7 repo-map context for 3+ file builds]** — **low** now.
+- **[real-systems-suite instrument]** (new spec) — adopt the ~66 tasks (+ the 5 workflow-authored real
+  tasks) as `harness/real_systems_suite.py`, **leaves-OFF asserted**, pass@1 per-class, frozen held-out.
+  Guardrails (Tenet-3): no leaf counted as capability, no oracle leak, real behavioral verification
+  (independent sqlite/tree/import/HTTP+restart), determinism (injected clock/tick, ephemeral ports),
+  weight the ★ leaf-resistant discriminators as the honest signal. **high** · the North-Star capability
+  instrument that replaces the saturated daily-driver at the top of the curve. Phased rollout:
+  Phase-0 A+B+L (C1a+b), Phase-1 H+D+F (C1e), Phase-2 K+J+I (C1c+d, C5), Phase-3 M + dep variants (C4+C3+C6).
+
 - **[research-augmented-planning lift measurement]** EXT-038 REQ-4 landed the WIRING
   (`enable_research=True`); whether it actually LIFTS the real-library-systems-tier accept rate is
   unmeasured — a held-out A/B (`enable_research` on vs off) over Flask/pandas/requests/click/
