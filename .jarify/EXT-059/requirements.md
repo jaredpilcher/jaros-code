@@ -8,6 +8,8 @@ implementation:
   - tests/test_ext059_fs_oracle.py
   - harness/system_suite.py
   - tests/test_ext059_check_variants.py
+  - harness/import_driver.py
+  - tests/test_ext059_import_driver.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -49,12 +51,12 @@ public API (call a named function/class with oracle-chosen arguments), and check
 for the reusable-library task class that is import-and-call, not stdin→stdout.
 
 #### Acceptance Criteria
-- [ ] `harness/import_driver.py` runs a driver snippet in a fresh subprocess that imports the built
+- [x] `harness/import_driver.py` runs a driver snippet in a fresh subprocess that imports the built
       module by name, calls the contract-named API, and reports the result via a sentinel the oracle
       greps (never the module's own printing).
-- [ ] Supports injected dependencies where the contract needs determinism (e.g. an injected clock/sleep
+- [x] Supports injected dependencies where the contract needs determinism (e.g. an injected clock/sleep
       for retry/cache libraries) so no wall-clock is used.
-- [ ] Tests prove a correct library passes and a broken one (wrong return / wrong call-count) fails.
+- [x] Tests prove a correct library passes and a broken one (wrong return / wrong call-count) fails.
 
 ### [REQ-4] Fixture-server oracle (`fixture_server`)
 

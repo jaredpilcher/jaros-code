@@ -21,11 +21,18 @@
       "file": "harness/system_suite.py",
       "startLine": 138,
       "endLine": 233
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/import_driver.py",
+      "startLine": 48,
+      "endLine": 528
     },
     {
-      "file": "tests/test_ext059_check_variants.py",
-      "startLine": 10,
-      "endLine": 205
+      "file": "tests/test_ext059_import_driver.py",
+      "startLine": 9,
+      "endLine": 279
     }
   ]
 }

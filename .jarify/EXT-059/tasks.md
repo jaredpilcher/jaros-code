@@ -40,3 +40,27 @@ and empty-output cases are honestly scored — pairs with TASK-1 to complete the
 
 #### Implements
 - [REQ-2] Exact-stdout / exit-code / empty-output check variants
+
+### [TASK-3] Build the import-driver oracle (`harness/import_driver.py`)
+
+A verifier that imports a built module/package in a fresh sandboxed subprocess and exercises a pinned
+public API — for the reusable-library task class (import-and-call, not stdin→stdout). Unlocks domain F.
+
+#### Steps
+1. Create `harness/import_driver.py` with `drive_import(root, module, api_calls, checks, timeout=..., injected=None)`:
+   render a small stdlib-only driver snippet that `sys.path`-inserts `root`, imports the built module by
+   name, calls the contract-named public API (function/class) with oracle-chosen arguments, and reports
+   each result via a unique sentinel line the oracle greps (never the module's own printing).
+2. Run that driver in a fresh subprocess through the existing `secure_exec` sandbox (scrubbed env,
+   resource caps, process-tree teardown via `server_oracle._kill_tree` in `finally`), mirroring
+   `fs_oracle.run_and_inspect`'s launch convention.
+3. Support injected dependencies for determinism (e.g. an injected `clock`/`sleep` seam for retry/cache
+   libraries) via a small pre-amble the driver installs before calling the API — never wall-clock.
+4. Grade declarative post-conditions: `returns_equals` (sentinel value equals expected), `raises`
+   (a named exception type is raised), `call_count` (an injected spy recorded N calls). Never raises.
+5. Add `tests/test_ext059_import_driver.py`: a correct library module passes; a broken one (wrong return,
+   wrong call-count, missing raise) fails the relevant post-condition; injected-clock determinism proven.
+   Offline (no model calls). Update `.jarify/EXT-059/index.json` (REQ-3) + check REQ-3 boxes.
+
+#### Implements
+- [REQ-3] Import-driver oracle (`import_driver`)
