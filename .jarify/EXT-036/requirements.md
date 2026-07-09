@@ -1933,3 +1933,30 @@ lift is making execution feedback carry the concrete observed-vs-expected signal
       output, whereas today it contains only a bare AssertionError. Offline (no model/Jetson call).
 - [x] No regression: `tests/test_ext036_system_repair.py` + `tests/test_ext036_system_builder.py`
       stay green; the non-degrading repair guarantee (REQ-23) is preserved.
+
+### [REQ-43] Single-file retry fallback — recover from OVER-DECOMPOSITION of a simple spec
+
+MEASURED + CONFIRMED (2026-07-08, csv-column-aggregator, the sole 0/2 harder-scoreboard class, still
+0/3 after the REQ-42 feedback fix): the task is trivially solvable in ~12 lines single-file (verified: a
+hand-written single-file version passes both independent checks), but the model OVER-DECOMPOSES it into
+3 modules and bakes a defect into a sibling's design (a `parse_csv_stream -> list[list[float]]` signature
+that floats the string column and drops every row -> prints 0.00). Repairing MODULE code cannot fix a
+wrong PLAN. The generic lever (not csv-specific): when a multi-module build fails acceptance, ALSO try
+building the whole system as ONE file and keep whichever passes — a single file has no seams/cross-module
+signatures to botch, which is exactly the failure class.
+
+#### Acceptance Criteria
+- [x] When `build_system`'s repair loop finishes NOT done AND the plan produced more than one module,
+      it performs ONE single-file retry: build the entire system as a single `main.py` module from the
+      same spec, then grade it against the SAME composed acceptance checklist.
+- [x] Non-degrading + additive: the better of {multi-module result, single-file result} is kept
+      (done > shipped > fewer-unmet); a build that was already `done` is never retried, and the retry
+      can only improve or leave the result unchanged — it can NEVER regress a passing multi-module build
+      or manufacture a false-done (graded by the same real checks).
+- [x] Honest + leak-free: the single-file retry sees only the spec (never the suite oracle / reference /
+      independent checks); the kept result's `build_path` records that a single-file retry was used.
+- [x] Tests prove: a spec whose multi-module build stays unmet triggers the single-file retry and the
+      single-file result is kept when it scores better; a spec whose multi-module build is already done
+      is NOT retried (byte-identical). Offline where possible (mock the build calls); no oracle leak.
+- [x] No regression to the existing repair/escalation flow; `tests/test_ext036_system_builder.py` +
+      `tests/test_ext036_system_repair.py` stay green.

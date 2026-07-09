@@ -2592,3 +2592,28 @@ prints 0.00, repair blind to it).
 
 #### Implements
 - [REQ-42] Execution-feedback enrichment — repair sees the ACTUAL wrong output, not a bare AssertionError
+
+### [TASK-55] Single-file retry fallback for over-decomposed builds (REQ-43)
+
+When a multi-module build fails acceptance, try the whole system as one file and keep the better result —
+the generic fix for the measured over-decomposition failure (csv-column-aggregator).
+
+#### Steps
+1. In `harness/system_builder.py` `build_system`, after `_repair_system` returns, add a gated retry:
+   if the result is NOT done AND the plan had >1 module, construct a single-module plan (entrypoint
+   `main.py`, all logic in one file) and build it from the same spec via the existing module-build path
+   (reuse `_build_module`/assemble/acceptance; a build prompt instructing "implement the ENTIRE system in
+   this one file main.py, no other modules").
+2. Grade the single-file build against the SAME composed acceptance checklist; pick the better of the two
+   results by the existing ranking (done > shipped > fewer unmet). Record the choice in `build_path`
+   (e.g. `single-file-retry`). Never retry an already-done build; never regress (keep multi-module if it
+   ranks >= the retry).
+3. Keep it honest/leak-free (spec only, never the suite oracle/independent checks) and bounded (ONE retry).
+4. Add tests to `tests/test_ext036_system_builder.py`: a not-done multi-module build triggers the retry
+   and keeps the better single-file result; an already-done build is not retried (byte-identical path).
+   Mock the model/build calls where possible so tests stay offline. Run
+   `tests/test_ext036_system_builder.py` + `tests/test_ext036_system_repair.py`; confirm green.
+   Update `.jarify/EXT-036/index.json` (REQ-43 ranges).
+
+#### Implements
+- [REQ-43] Single-file retry fallback — recover from OVER-DECOMPOSITION of a simple spec

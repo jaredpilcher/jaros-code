@@ -1216,3 +1216,169 @@ def test_env_scrub_live_in_build_system_acceptance(tmp_path, monkeypatch):
     assert result["done"] is True    # the check asserting the secret is ABSENT actually passed
     assert result["unmet"] == []
 # #EXT-037-REQ-7 End
+
+
+# #EXT-036-REQ-43 Start
+# --- TASK-55 (REQ-43): single-file retry fallback for an over-decomposed build ----------
+#
+# MOCKS `_build_module` and `_minimum_acceptance` directly (rather than driving every stage
+# through a `.complete()`-routed canned llm) so the test is a precise, offline unit test of
+# the RETRY GATING/RANKING/ADOPTION wiring in `build_system` itself -- not a re-test of
+# `_compose_acceptance_checklist`/`_minimum_acceptance`'s own derivation logic (covered by
+# their own dedicated tests elsewhere in this file). `_minimum_acceptance` is neutralized to
+# `[]` so the fixed `_SF_CHECKS` checklist (returned by the mocked
+# `_compose_acceptance_checklist`) is graded byte-identically for both the multi-module and
+# single-file candidates -- isolating exactly the behavior this task adds.
+
+_SF_SPEC = "A tiny CLI that prints the sum of two numbers given as command-line arguments."
+
+_SF_PLAN_JSON = """{
+  "modules": [
+    {"name": "helper.py", "responsibility": "define add(a, b)",
+     "exports": [{"name": "add", "signature": "def add(a, b):"}], "imports": []},
+    {"name": "main.py", "responsibility": "CLI entrypoint: print the sum of two argv ints",
+     "exports": [{"name": "main", "signature": "def main():"}], "imports": ["helper.py"]}
+  ],
+  "entrypoint": "main.py",
+  "acceptance": "python main.py 1 2 prints 3"
+}"""
+
+_SF_HELPER_OK = "def add(a, b):\n    return a + b\n"
+
+# Multi-module main.py with the MEASURED failure shape: syntactically fine, cross-module
+# call correctly shaped, but a genuine LOGIC bug baked in (off-by-one) -- repairing this
+# module's body alone would fix it, but `_repair_system`'s own model call is stubbed to
+# return no fix below (mirrors the MEASURED case where targeted repair doesn't recover it).
+_SF_MAIN_BROKEN = (
+    "import sys\n"
+    "from helper import add\n\n\n"
+    "def main():\n"
+    "    a, b = int(sys.argv[1]), int(sys.argv[2])\n"
+    "    print(add(a, b) + 1)\n\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+# The CORRECT multi-module main.py (used by the already-done test -- no retry should fire).
+_SF_MAIN_OK_MULTI = (
+    "import sys\n"
+    "from helper import add\n\n\n"
+    "def main():\n"
+    "    a, b = int(sys.argv[1]), int(sys.argv[2])\n"
+    "    print(add(a, b))\n\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+# The single-file retry's correct, self-contained main.py -- no import of `helper` at all.
+_SF_MAIN_OK_SINGLEFILE = (
+    "import sys\n\n\n"
+    "def add(a, b):\n    return a + b\n\n\n"
+    "def main():\n"
+    "    a, b = int(sys.argv[1]), int(sys.argv[2])\n"
+    "    print(add(a, b))\n\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_SF_CHECK_CODE = (
+    "import subprocess, sys\n"
+    "result = subprocess.run([sys.executable, 'main.py', '1', '2'], capture_output=True,\n"
+    "                        text=True, timeout=20)\n"
+    "assert result.stdout.strip() == '3', result.stdout + result.stderr\n"
+)
+_SF_CHECKS = [{"name": "prints the sum", "code": _SF_CHECK_CODE}]
+
+_SF_RETRY_MARKER = "IMPLEMENT THE ENTIRE SYSTEM IN THIS ONE FILE"
+
+
+class _PlanOnlyLlm:
+    """Handles only the PLAN prompt (`.complete()` convention); every other stage
+    (per-module build, acceptance checklist, targeted repair) is mocked directly below, so
+    this stub only ever needs to answer the ONE call `build_system` still routes through the
+    model in these tests."""
+
+    def __init__(self, plan: str) -> None:
+        self.plan = plan
+        self.prompts: list[str] = []
+
+    def complete(self, request):
+        self.prompts.append(request.prompt)
+        if "build PLAN" in request.prompt:
+            return _Resp(self.plan)
+        return _Resp("")   # e.g. the REQ-5 targeted-repair prompt -- no fix offered
+
+
+def _sf_fake_build_module(spec, m, built, llm, *, max_repair=None, plan=None):
+    """Stand-in for `_build_module`: routes on the module name AND (for `main.py`) on
+    whether the REQ-43 single-file marker is present in `spec` -- exactly how the real
+    single-file retry distinguishes its own build call from the original multi-module one."""
+    name = m.get("name")
+    if name == "main.py" and _SF_RETRY_MARKER in spec:
+        return _SF_MAIN_OK_SINGLEFILE, True
+    if name == "helper.py":
+        return _SF_HELPER_OK, True
+    if name == "main.py":
+        return _SF_MAIN_BROKEN, True
+    return "", False
+
+
+def test_single_file_retry_fires_and_keeps_better_result_when_not_done(tmp_path, monkeypatch):
+    """Core REQ-43 behavior: a multi-module build that stays NOT DONE after `_repair_system`
+    (a genuine cross-module logic bug the stubbed targeted-repair can't fix) triggers ONE
+    single-file retry; the single-file candidate genuinely passes the same acceptance bar,
+    so it is ADOPTED -- `done` flips True, `modules` becomes the single `main.py`, and
+    `build_path` records `"single-file-retry"`."""
+    import harness.system_builder as sb
+
+    monkeypatch.setattr(sb, "_build_module", _sf_fake_build_module)
+    monkeypatch.setattr(sb, "_compose_acceptance_checklist",
+                         lambda spec, mods, llm, plan=None: list(_SF_CHECKS))
+    monkeypatch.setattr(sb, "_minimum_acceptance", lambda spec, mods, plan=None: [])
+
+    root = tmp_path / "built"
+    llm = _PlanOnlyLlm(_SF_PLAN_JSON)
+    result = sb.build_system(_SF_SPEC, root, llm=llm)
+
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert result["build_path"] == "single-file-retry"
+    assert result["modules"] == {"main.py": _SF_MAIN_OK_SINGLEFILE}
+    assert (root / "main.py").read_text(encoding="utf-8") == _SF_MAIN_OK_SINGLEFILE
+    assert not (root / "helper.py").exists()   # the stale multi-module sibling was stripped
+
+
+def test_single_file_retry_never_fires_on_an_already_done_multi_module_build(tmp_path, monkeypatch):
+    """Non-degrading gate: a multi-module build that is ALREADY done never reaches the
+    retry -- `_build_module` is never called with the single-file marker, and the result's
+    `build_path`/`modules` are exactly the multi-module build, byte-identical to before this
+    task (the whole REQ-43 block is a no-op for a passing build)."""
+    import harness.system_builder as sb
+
+    calls: list[tuple] = []
+
+    def fake_build_module(spec, m, built, llm, *, max_repair=None, plan=None):
+        calls.append((m.get("name"), _SF_RETRY_MARKER in spec))
+        name = m.get("name")
+        if name == "helper.py":
+            return _SF_HELPER_OK, True
+        if name == "main.py":
+            return _SF_MAIN_OK_MULTI, True
+        return "", False
+
+    monkeypatch.setattr(sb, "_build_module", fake_build_module)
+    monkeypatch.setattr(sb, "_compose_acceptance_checklist",
+                         lambda spec, mods, llm, plan=None: list(_SF_CHECKS))
+    monkeypatch.setattr(sb, "_minimum_acceptance", lambda spec, mods, plan=None: [])
+
+    root = tmp_path / "built"
+    llm = _PlanOnlyLlm(_SF_PLAN_JSON)
+    result = sb.build_system(_SF_SPEC, root, llm=llm)
+
+    assert result["done"] is True
+    assert result["unmet"] == []
+    assert result["build_path"] == "free-form"
+    assert result["modules"] == {"helper.py": _SF_HELPER_OK, "main.py": _SF_MAIN_OK_MULTI}
+    # the single-file marker never appears in any `_build_module` call -- the retry never fired
+    assert not any(marker for _name, marker in calls)
+# #EXT-036-REQ-43 End

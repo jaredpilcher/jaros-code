@@ -3059,6 +3059,22 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     stage, so a research failure of any kind degrades to the `enable_research=False` behavior for
     that build, never turning an otherwise-successful build into a failure.
 
+    Single-file retry (EXT-036 REQ-43, task #TASK-55): ALWAYS ON, no parameter -- runs
+    immediately after the ``_repair_system`` targeted repair loop above. Fires ONLY when the
+    multi-module build is still NOT done AND the plan produced MORE THAN ONE module (an
+    already-done build, or one that was single-module to begin with, never reaches this stage
+    -- byte-identical to before this task in both cases). It re-builds the ENTIRE system as a
+    single ``main.py`` module from the same spec (via the same ``_build_module`` path every
+    other module uses -- the retry never sees the suite oracle or any independent check),
+    grades it against the SAME composed acceptance ``checks``, and keeps the better of
+    {multi-module, single-file} by the SAME ``_better_result`` ranking
+    ``build_system_escalating`` uses (done > shipped > fewer-unmet), with the multi-module
+    result passed as primary so it wins any tie -- non-degrading by construction. Exactly ONE
+    retry is attempted. The single-file candidate is written into `root` (replacing the stale
+    multi-module files) only after it independently re-verifies against `root` itself, with a
+    byte-for-byte rollback on any failure; the returned dict's `build_path` records
+    `"single-file-retry"` when it wins.
+
     Leaf-repair (EXT-058 REQ-3, task #TASK-6): ALWAYS ON, no parameter -- a strict superset of
     every prior stage. Only tried once every stage above still leaves the build NOT DONE:
     ``harness.graph_dsl.leaf_for_spec(spec)`` fingerprints the visible spec text against the
@@ -3067,8 +3083,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     `_minimum_acceptance` floor a free-form build must pass. It is adopted -- written into
     `root` through the same gated write path (Tenet 1), `done` flipped True -- ONLY when it
     genuinely passes; the returned dict's `build_path` records which path won
-    (`"free-form"` or `"leaf:<class>"`). A spec with no matching leaf, or a free-form build that
-    already passed, never reaches this stage at all -- byte-identical to before this task."""
+    (`"free-form"`, `"single-file-retry"`, or `"leaf:<class>"`). A spec with no matching leaf,
+    or a build that already passed, never reaches this stage at all -- byte-identical to before
+    this task."""
     # #EXT-036-REQ-30 End
     root = Path(root)
     # #EXT-040-REQ-3 Start
@@ -3376,6 +3393,101 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         built, unmet, repairs = _repair_system(spec, root, built, checks, unmet, llm, runtime=runtime)
         # #EXT-037-REQ-11 End
     # #EXT-036-REQ-5 End
+    # #EXT-036-REQ-43 Start
+    # TASK-55 (REQ-43): SINGLE-FILE RETRY FALLBACK for an over-decomposed build. MEASURED
+    # (csv-column-aggregator, 2026-07-08, the sole 0/2 harder-scoreboard class): a spec that
+    # is trivially solvable in ~12 lines single-file gets OVER-DECOMPOSED by the planner into
+    # multiple modules, and the model bakes a cross-module signature defect into a sibling's
+    # design (e.g. a `parse_csv_stream -> list[list[float]]` signature that floats the string
+    # column and drops every row) -- repairing MODULE bodies cannot fix a wrong PLAN. GATED:
+    # fires ONLY when the multi-module build (after every repair round above) is STILL not
+    # done AND the plan produced MORE THAN ONE module -- an already-done build, or a build
+    # that was single-module from the start, never reaches this block at all (byte-identical
+    # to before this task in both cases). Bounded to exactly ONE retry attempt.
+    #
+    # Honest/leak-free: the retry sees ONLY `spec` (built via the exact same single-module
+    # BUILD_PROMPT path `_build_module` already uses for every other module) -- never the
+    # suite oracle, a reference implementation, or any independent/task-level check. Graded
+    # against the SAME composed acceptance BAR the multi-module build was graded against:
+    # the MODEL-PROPOSED/behavioral portion of `checks` carries over completely UNCHANGED
+    # (`single_checks` below), and only the DETERMINISTIC MINIMUM (`_minimum_acceptance`) --
+    # which is inherently module-shape-dependent, e.g. its smoke check imports every
+    # PLANNED sibling module by name -- is recomputed for the single-file's own one-module
+    # shape, mirroring the SAME established pattern this function already uses for the
+    # leaf-adopt swap below (`_minimum_acceptance(spec, leaf_mods, plan=None)`) and for the
+    # REQ-30 check-reviewer's own minimum/proposed split above. This can only flip
+    # not-done -> done by genuinely passing a real, non-sparser acceptance bar -- it can
+    # never manufacture a false-done.
+    #
+    # Kept/discarded via the SAME `_better_result` deterministic ranking
+    # `build_system_escalating` already uses (done > shipped > fewer-unmet); the multi-module
+    # result is always PASSED AS PRIMARY so it wins any tie -- non-degrading by construction:
+    # a multi-module result that already ranks >= the retry is kept completely unchanged
+    # (and the single-file candidate is only ever ADOPTED into `root` once it independently
+    # re-verifies against `root` itself, mirroring the leaf-adopt atomicity/rollback pattern
+    # (TASK-7) so a failed adopt can never leave a half-swapped root).
+    build_path = "free-form"
+    if unmet and len(mods) > 1:
+        _beat("SINGLE-FILE-RETRY")  # #EXT-040-REQ-3
+        try:
+            single_mods = [{"name": "main.py", "responsibility": "the ENTIRE system",
+                             "exports": [], "imports": []}]
+            single_plan = {"entrypoint": "main.py", "modules": single_mods}
+            multi_minimum = _minimum_acceptance(spec, mods, plan)
+            multi_minimum_keys = {(c.get("name"), c.get("code")) for c in multi_minimum}
+            proposed = [c for c in checks if (c.get("name"), c.get("code")) not in multi_minimum_keys]
+            single_minimum = _minimum_acceptance(spec, single_mods, single_plan)
+            single_checks = list(single_minimum) + proposed
+            single_file_spec = (
+                spec + "\n\nIMPLEMENT THE ENTIRE SYSTEM IN THIS ONE FILE `main.py` ONLY -- "
+                "no other modules, no imports of sibling modules, all logic lives in this "
+                "one file."
+            )
+            single_code, single_ok = _build_module(single_file_spec, single_mods[0], {}, llm)
+            if single_ok:
+                with tempfile.TemporaryDirectory(prefix="ext036_singlefile_") as _sf_dir:
+                    sf_cand_root = Path(_sf_dir)
+                    (sf_cand_root / "main.py").write_text(single_code, encoding="utf-8")
+                    sf_unmet = [c.get("name", "?") for c in single_checks
+                                if not _run_check(sf_cand_root, c)]
+                sf_result = {"shipped": True, "done": not sf_unmet, "unmet": sf_unmet}
+                mm_result = {"shipped": True, "done": not unmet, "unmet": list(unmet)}
+                winner = _better_result(sf_result, mm_result)
+                if winner is sf_result and not sf_unmet:
+                    pre_retry_built = dict(built)
+                    escape = _jailed_write(root, "main.py", single_code, runtime)
+                    if escape is None:
+                        stale = [n for n in pre_retry_built if n != "main.py"]
+                        delete_errors = [e for e in
+                                          (_jailed_delete(root, n, runtime) for n in stale) if e]
+                        if delete_errors:
+                            root_unmet = ["single-file retry adopt: " + "; ".join(delete_errors)]
+                        else:
+                            # Belt-and-suspenders: re-run the SAME (single-file-shaped)
+                            # checks against ROOT ITSELF -- what actually ships -- not just
+                            # the throwaway candidate dir, so `done=True` always reflects
+                            # the shipped artifact.
+                            root_unmet = [c.get("name", "?") for c in single_checks
+                                          if not _run_check(root, c)]
+                        if not root_unmet:
+                            built = {"main.py": single_code}
+                            unmet = []
+                            build_path = "single-file-retry"
+                            plan = {"entrypoint": "main.py", "modules": [{"name": "main.py"}]}
+                            quality = dataclasses.asdict(assess_quality(built))
+                        else:
+                            # FAIL SAFE: restore root to the EXACT pre-retry multi-module
+                            # state -- never ship a half-swapped root, never adopt a
+                            # single-file candidate that doesn't pass on what actually
+                            # ships. `built`/`plan`/`unmet` are left as the multi-module
+                            # result, byte-identical to before this retry.
+                            for _name, _code in pre_retry_built.items():
+                                _jailed_write(root, _name, _code, runtime)
+                            if "main.py" not in pre_retry_built:
+                                _jailed_delete(root, "main.py", runtime)
+        except Exception:
+            pass  # never raises -- any retry failure leaves the multi-module result untouched
+    # #EXT-036-REQ-43 End
     # #EXT-036-REQ-34 Start
     # TASK-44 (REQ-34): OPT-IN iterative replan-as-modification recovery -- default
     # `replan_on_failure=False` is a complete no-op (this whole block never runs), keeping
@@ -3433,7 +3545,12 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # run error) means the model-proposed/deterministic-minimum checks that passed it were
     # blind to the actual bug -- this reuses the EXACT SAME ship-clean adopt path below, so a
     # divergence-triggered adopt gets the identical TASK-7 atomicity/rollback guarantees.
-    build_path = "free-form"
+    # #EXT-036-REQ-43 Start
+    # TASK-55: `build_path` is now initialized once, above, by the single-file-retry block
+    # (REQ-43) -- it already holds "free-form" (the byte-identical prior default) whenever
+    # that block didn't fire/adopt, or "single-file-retry" when it did; a leaf-adopt below
+    # still freely overwrites either value with "leaf:<class>" on its own, unrelated success.
+    # #EXT-036-REQ-43 End
     from harness import graph_dsl
     leaf_cls = graph_dsl.leaf_for_spec(spec)
     # #EXT-058-REQ-6 Start
