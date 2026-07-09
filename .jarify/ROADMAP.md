@@ -88,10 +88,28 @@ per-class pass/fail table is the metric (not one blended number).
   + a usage-probe hardening fix (ce07ab1 — the leaf crashed on no-args, failing build_system's usage check
   so leaf-repair rolled it back; caught by on-hardware measurement, not the isolated test). On-Jetson 3/3,
   all samples adopt the leaf, no leak. high · cc4c2d4+ce07ab1
-- **[sqlite-persistent-kv — NEXT, the last weak create class]** currently 1/3 (capable but unreliable — gemma
-  CAN build a working cross-process SQLite store but not every time; some timeouts). Different from mini-SQL/
-  json-path (which were 0/3). Diagnose whether the misses are false-done/timeout/wrong → pick lever (a verified
-  leaf would make it reliable, but confirm it's warranted first). med
+- **[EXT-058/EXT-036 · green sqlite — ✅ DONE, on-Jetson 3/3]** sqlite-persistent-kv was 1/3 (variable). Greened
+  via the verified sqlite-kv leaf (27f9010) PLUS a generic acceptance fix (feb71b4): the minimum-acceptance
+  round-trip mis-derived the write verb ("create" from prose, add/list-shaped) and false-negatived every correct
+  persistent store AND blocked the leaf from adopting. Fixed with a key-value-aware persistence round-trip
+  (set k v → get k → assert value, cross-process, still fails a non-persistent store). On-Jetson 3/3: leaf adopts
+  on wrong builds, correct builds now done=True. **All 4 hardest new build-classes now green.** high · 27f9010+feb71b4
+
+### ★★ OWNER STEER 2026-07-08 — BUILD TOWARD GENUINE REAL-SYSTEM CAPABILITY (not eval-class leaves)
+
+Owner: "this will solve REAL problems + build REAL systems — build toward that level of capability." The honest
+gap: the 4 hard classes were greened via hand-written verified LEAVES + 7B escalation, NOT genuine model
+generation. The real bar = the model+harness GENUINELY builds novel real systems it has NO leaf for, verified by
+real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fallback but do NOT count as capability.
+- **[real-systems suite (new frontier instrument) — NOW]** a genuinely-harder tier: a REST microservice w/
+  persistence, a job-queue service, an ETL pipeline, a reusable library w/ tests, a stateful protocol server —
+  each with an honest behavioral oracle, measured with NO leaves so the number reflects GENUINE capability. Being
+  designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard classes become the FLOOR.
+- **[first real-system probe — RUNNING]** build a real stdlib HTTP REST API from one sentence; build_system
+  serve-and-checks it (starts server, drives HTTP). No API leaf → tests genuine capability. Result pending.
+- **[GENERIC capability mechanisms — NEXT, from the workflow plan]** decompose → cross-module coherence →
+  dependency/run-env → run-and-verify + self-repair from real failure output → context mgmt. Build the mechanisms
+  that lift real-system building BROADLY, not per-class leaves. Top 2-3 → Jarify specs when the workflow lands.
 - **[modify suite — measuring; ratchet if it saturates]** modify tracking ~100% through the easy/medium/hard
   single-file tier; if the multifile tier also passes, ratchet the modify suite with harder classes (mirror
   the create ratchet). med
