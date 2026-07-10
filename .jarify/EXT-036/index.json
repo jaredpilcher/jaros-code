@@ -1,5 +1,27 @@
 {
+  "REQ-49": [
+    {
+      "file": "tests/test_ext036_agent_scaffold.py",
+      "startLine": 13,
+      "endLine": 285
+    },
+    {
+      "file": "harness/agent_scaffold.py",
+      "startLine": 44,
+      "endLine": 243
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3391,
+      "endLine": 3407
+    }
+  ],
   "REQ-53": [
+    {
+      "file": "tests/test_ext036_endpoint_shape.py",
+      "startLine": 13,
+      "endLine": 286
+    },
     {
       "file": "harness/endpoint_shape.py",
       "startLine": 34,
@@ -14,11 +36,6 @@
       "file": "harness/system_builder.py",
       "startLine": 4264,
       "endLine": 4271
-    },
-    {
-      "file": "tests/test_ext036_endpoint_shape.py",
-      "startLine": 13,
-      "endLine": 286
     }
   ],
   "REQ-23": [
@@ -303,23 +320,6 @@
       "file": "harness/session.py",
       "startLine": 251,
       "endLine": 317
-    }
-  ],
-  "REQ-49": [
-    {
-      "file": "harness/agent_scaffold.py",
-      "startLine": 44,
-      "endLine": 243
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3391,
-      "endLine": 3407
-    },
-    {
-      "file": "tests/test_ext036_agent_scaffold.py",
-      "startLine": 13,
-      "endLine": 285
     }
   ],
   "REQ-30": [
@@ -671,7 +671,7 @@
     {
       "file": "tests/test_ext036_guard_index_repair.py",
       "startLine": 29,
-      "endLine": 343
+      "endLine": 349
     }
   ],
   "REQ-2": [

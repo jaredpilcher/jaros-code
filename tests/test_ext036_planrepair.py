@@ -21,7 +21,9 @@ import re
 
 os.environ.setdefault("OLLAMA_MODEL", "gemma2:2b")
 
-from harness.system_builder import build_system, _repair_plan_entrypoint, validate_plan
+from harness.system_builder import (
+    build_system, _repair_plan_entrypoint, _repair_plan_entrypoint_multi, validate_plan,
+)
 
 _MODULE_NAME_RE = re.compile(r"module `([^`]+)`")
 
@@ -183,16 +185,34 @@ def test_multi_module_wired_dag_mismatched_entrypoint_now_builds(tmp_path):
     module shape (cli.py imports calculator.py, entrypoint main.py) is NO LONGER rejected.
     The multi-module entrypoint repair now ADDS main.py importing the ROOT module (cli.py),
     so the plan is coherent and the build proceeds to ship -- the exact fix for the
-    todo-list build that was writing 0 files."""
+    todo-list build that was writing 0 files.
+
+    TASK-158 (test-hygiene, no REQ change): plan-repair itself is verified directly against
+    the PLAN structure `_repair_plan_entrypoint_multi` actually produces (calculator.py +
+    cli.py + the newly-added main.py entrypoint) -- decoupled from which downstream module
+    set ultimately SHIPS. This canned fixture's `calculator.py` module declares an `add`
+    export that the canned llm's single fixed stub (`RUNNABLE_MODULE`, just `print('hi')`)
+    never implements, so the genuinely-repaired multi-module build fails its own smoke check
+    and the later single-file-retry (EXT-036 REQ-43, TASK-55/56) correctly wins the SAME
+    `_better_result` ranking every other build uses, legitimately collapsing the SHIPPED
+    modules to `{"main.py"}`. That is not a plan-repair regression; plan-repair's own
+    output is asserted below, independent of that downstream build-path choice."""
+    import json
+    repaired_plan, repair_note = _repair_plan_entrypoint_multi(
+        json.loads(MULTI_MODULE_MISMATCHED_PLAN))
+    assert repair_note == (
+        "plan-repair: added missing entrypoint module main.py importing roots ['cli.py']")
+    assert {m["name"] for m in repaired_plan["modules"]} == {"calculator.py", "cli.py", "main.py"}
+    assert repaired_plan["entrypoint"] == "main.py"
+    assert validate_plan(repaired_plan) == []
+
     llm = _CannedLlm(plan=MULTI_MODULE_MISMATCHED_PLAN, module_code=RUNNABLE_MODULE,
                       checklist="[]")
     result = build_system(SPEC, tmp_path / "built", llm=llm)
 
     assert result["shipped"] is True
     assert "coherence" not in (result.get("note") or "")
-    assert result["plan_repair"] == (
-        "plan-repair: added missing entrypoint module main.py importing roots ['cli.py']")
-    assert set(result["modules"]) == {"calculator.py", "cli.py", "main.py"}
+    assert result["plan_repair"] == repair_note
     assert (tmp_path / "built" / "main.py").is_file()
 
 

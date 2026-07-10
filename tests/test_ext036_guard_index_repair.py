@@ -316,27 +316,33 @@ class _CannedLlm:
 
 
 def test_build_system_repairs_the_measured_guard_defect(tmp_path):
+    """TASK-158 (test-hygiene, no REQ change): the later filename contract (REQ-46) renames
+    the shipped entrypoint `cli.py` -> `main.py` -- the guard-index repair itself (this
+    task's own wiring) is verified intact below via the renamed shipped module; the plan's
+    stated `cli.py` responsibility/content is unchanged, only the on-disk/shipped filename."""
     root = tmp_path / "built"
     llm = _CannedLlm()
 
     result = build_system(SPEC, root, llm=llm)
 
-    fixed_cli = result["modules"]["cli.py"]
+    fixed_cli = result["modules"]["main.py"]
     assert "if len(parts) == 4:" in fixed_cli
     assert "if len(parts) == 3:" not in fixed_cli
 
-    on_disk = (root / "cli.py").read_text(encoding="utf-8")
+    on_disk = (root / "main.py").read_text(encoding="utf-8")
     assert "if len(parts) == 4:" in on_disk
 
 
 def test_build_system_leaves_a_correct_guard_untouched(tmp_path):
+    """TASK-158 (test-hygiene, no REQ change): see the sibling test above -- the later
+    filename contract (REQ-46) renames the shipped entrypoint `cli.py` -> `main.py`."""
     root = tmp_path / "built"
     llm = _CannedLlm()
     llm.modules["cli.py"] = CLI_BUGGY.replace("len(parts) == 3", "len(parts) == 4")
 
     result = build_system(SPEC, root, llm=llm)
 
-    fixed_cli = result["modules"]["cli.py"]
+    fixed_cli = result["modules"]["main.py"]
     assert fixed_cli.count("len(parts) == 4") == 1
     assert "len(parts) == 3" not in fixed_cli
 

@@ -26,6 +26,35 @@ from harness.commit_replay import _docker_force_remove
 MI_TEST_IMAGE = "mi-test"
 
 
+# TASK-158 (test-hygiene, no REQ change): these tests exercise the REAL Docker daemon
+# against the REAL `mi-test` image (built locally for the eval harness, never shipped in
+# this repo) -- on a machine with Docker reachable but WITHOUT that image already built
+# (MEASURED: `docker image inspect mi-test` -> rc=1), every `docker run ... mi-test ...`
+# call fails on an image-pull-access-denied error before the container/timeout machinery
+# under test ever runs, which is an ENVIRONMENTAL precondition gap, not a harness defect.
+# Skip honestly rather than red when either the daemon is unreachable or the image is
+# missing; tests still run for real wherever both preconditions hold.
+def _docker_ready() -> bool:
+    try:
+        daemon_ok = subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=10,
+        ).returncode == 0
+        if not daemon_ok:
+            return False
+        return subprocess.run(
+            ["docker", "image", "inspect", MI_TEST_IMAGE],
+            capture_output=True, timeout=10,
+        ).returncode == 0
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _docker_ready(),
+    reason="requires local Docker daemon + mi-test image",
+)
+
+
 def _container_exists(name: str) -> bool:
     """True if the container appears in `docker ps -a` (any state)."""
     r = subprocess.run(
