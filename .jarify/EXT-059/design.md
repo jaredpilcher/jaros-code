@@ -40,6 +40,29 @@ broadened-suite task definitions that consume them are a separate, follow-on spe
      build points at the Jetson llama.cpp endpoint); asserts the ORDERED tool-call sequence +
      clean termination, never the model's intelligence -- reuses secure_exec's sandboxed launch +
      server_oracle._kill_tree, same as every oracle above
+
+                     state_machine_oracle (REQ-7) / conservation_oracle (REQ-8) /
+                     double_entry_oracle (REQ-9) -- a THIRD axis: grades INVARIANT ENFORCEMENT
+                                        |
+     +----------------------+----------------------+-----------------------------+
+     |                      |                      |                             |
+  state_machine_oracle   conservation_oracle   double_entry_oracle               |
+  (REQ-7)                (REQ-8)               (REQ-9)                          |
+     |                      |                      |                             |
+  illegal transitions    oversell/overdraw/    an unbalanced entry              |
+  must be REJECTED        double-spend must     (debits != credits) must        |
+  (e.g. ship-before-pay)  be REJECTED; a        be REJECTED; every accepted    |
+  -- accept ops must       conserved quantity     entry's exact int-cents legs   |
+  land on the modeled      (stock/points/wallet)  must land on the shadow-       |
+  next state               must never drift       tracked account balances       |
+     +----------------------+----------------------+-----------------------------+
+                                        |
+       each renders ONE `api_calls` + `checks` plan and hands it UNMODIFIED to
+       `harness.import_driver.drive_import` (fresh sandboxed subprocess, sentinel
+       protocol, conjunctive checks gate) -- no reimplementation of import_driver's
+       machinery; each maintains its own Python-side "shadow" (state / quantities /
+       account balances) to independently verify the built entity's own reads,
+       so a build can never grade itself
 ```
 
 ## Key design decisions
@@ -57,3 +80,10 @@ broadened-suite task definitions that consume them are a separate, follow-on spe
   argument; ports are always ephemeral (`bind :0`); a timeout doubles as a deterministic deadlock signal.
 - **Two-plane.** Every verifier is pure execution plane — deterministic Python, replayable, no Decision
   needed for read-only inspection; any file the verifier writes for seeding goes to a sandbox tmp tree.
+- **Invariant enforcement, not just effect presence (REQ-7/8/9).** `state_machine_oracle`,
+  `conservation_oracle`, and `double_entry_oracle` share a pinned contract — class-based, driven via
+  `harness.import_driver.drive_import` — and a common honesty core: the ILLEGAL/invalid op (an illegal
+  state transition, an oversell/overdraw, an unbalanced ledger entry) must be REFUSED, not silently
+  allowed, while every LEGAL op must land exactly on a Python-side "shadow" (modeled state / conserved
+  quantities / exact-int-cents account balances) that the oracle tracks independently of the built
+  entity's own reads — so a build can never grade itself.
