@@ -1,7 +1,7 @@
 # Production-Systems Atlas — jaros-code Completeness Ledger
 
 **Status:** living planning artifact (a coverage ledger, like `docs/GAP-MAP.md`) — **NOT product code.**
-**Last assembled:** 2026-07-09 · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below).
+**Last assembled:** 2026-07-09 · **Wave-1 OSS-decomposition expansion:** 2026-07-10 (§3.4, +73 classes) · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below) + read-only GitHub/OSS product research (§3.4 provenance note).
 
 ---
 
@@ -41,8 +41,9 @@ deployed — Tenet 2/3 clean.
 |---|---|
 | Raw class rows across the 3 slices | **199** (SaaS/devtools 80 · fintech/finops 59 · verticals 60) |
 | Cross-slice duplicates reconciled | **~17** (see §2.4) |
-| **Distinct production-system classes** | **≈ 182** |
-| Stdlib-buildable-now (zero deps, offline) | **≈ 176 / 182 (~97%)** |
+| Wave-1 OSS-decomposition additions (§3.4, 2026-07-10) | **+73** (G1–G73, deduped against all prior rows) |
+| **Distinct production-system classes** | **≈ 255** |
+| Stdlib-buildable-now (zero deps, offline) | **≈ 249 / 255 (~98%)** |
 | Needs a 3rd-party dep (all have a stdlib/simulated path) | **~6** (CAMT/OFX/MT940 parse, NACHA validator, real broker, Postgres/Redis wire — Docker-backed oracles exist) |
 
 ### 2.2 Per-vertical / cluster counts
@@ -61,6 +62,7 @@ deployed — Tenet 2/3 clean.
 | Media / Streaming | 7 | `verticals.md` (Media) |
 | Marketplaces | 6 | `verticals.md` (Marketplaces) |
 | Cross-cutting infra (shared, build-once) | ~4 | `verticals.md` (cross) |
+| **Wave-1 OSS decompositions** — observability/error-tracking 9 · product analytics 7 · collaboration+community 9 · scheduling 6 · workflow/automation 6 · ERP/HR/internal-ops 5 · support desk 4 · marketing/email 3 · monitoring/status 3 · files/sync 4 · CMS/publishing 5 · IAM 3 · commerce/finance 2 · BI 3 · PM 2 · web/forms 2 | **73** | §3.4 (GitHub-mined) |
 
 ### 2.3 Status breakdown (current reality)
 
@@ -70,14 +72,14 @@ Status values: **unmapped** → **mapped** → **on-roadmap** → **building** �
 |---|---|---|
 | **verified** (utility tier — real, but being demoted as "toys-are-the-floor") | 5 | retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl (≈ atlas class **S45 ETL**) |
 | **building** | 2 | **REST+DB CRUD service** (create+modify — first SaaS rung; service oracle just landed) · **agent-loop oracle** (the AGENT-oracle substrate itself, unblocking A1–A10) |
-| **mapped** | ≈ 175 | everything else in this atlas |
+| **mapped** | ≈ 248 | everything else in this atlas (incl. the 73 wave-1 G-rows, §3.4) |
 | on-roadmap | 0 (roadmap owns this; assigned as classes are promoted from §5/§6) | — |
 | unmapped | 0 (this atlas is the completeness boundary; new discoveries append here) | — |
 
 **Honest read:** the *verified* tier today is the small utility/leaf class (config/CLI/file/etl/
 memoize/retry). It is **real but demoted** — those are the FLOOR, not the frontier. The frontier is
 the first **service** rung (REST+DB CRUD, `building`) and the **agent** cluster (gated on the
-agent-loop oracle, `building`). Coverage today ≈ **5 verified + 2 building / 182** — the number this
+agent-loop oracle, `building`). Coverage today ≈ **5 verified + 2 building / 255** — the number this
 ledger exists to move.
 
 ### 2.4 Reconciliation notes (dedupe)
@@ -324,6 +326,107 @@ through the HTTP/datastore boundary — not "prints the right string." Leak-proo
 | V59 | LTI 1.3 tool-launch handshake | EdTech | 4 | C+M | HTTP + NEW:protocol-conformance | yes |
 | V60 | FHIR resource REST server | Health | 4 | C+M | HTTP + NEW:protocol-conformance | yes |
 
+### 3.4 Wave-1 OSS-product decomposition additions (GitHub-mined, 2026-07-10)
+
+**Provenance:** flagship production OSS products decomposed into their constituent components via
+read-only web research (Sentry, PostHog, Plausible/Umami, Zulip/Mattermost, Discourse, Cal.com,
+Temporal, Airflow/Dagster, n8n, Nextcloud, Etherpad, ERPNext/Odoo, Snipe-IT, Chatwoot, listmonk,
+Uptime Kuma/Healthchecks, Grafana, Ghost/Strapi/Directus, Keycloak/Authentik, Medusa/Saleor,
+Firefly III, Metabase/Superset, Plane/OpenProject, Shlink, Formbricks/LimeSurvey). Every row was
+deduped against §3.1–§3.3 (near-duplicates were dropped, not padded). **All rows: status =
+`mapped`, stdlib-buildable = yes.** The Source column names the real product that ships the
+component (grounding, not endorsement).
+
+| ID | Class | Vertical/Category | Tier | C/M | Oracle | Example task sentence | Source |
+|---|---|---|---|---|---|---|---|
+| G1 | Error-event grouping / dedup engine (fingerprint→issue) | observability | 3 | C+M | IMPORT+DB | Build a service that ingests error reports and files each one under an existing issue when its signature matches, or opens a new issue otherwise. | Sentry |
+| G2 | Release tracking + regression reopen | observability | 3 | C+M | DB + NEW:state-machine | Build an issue tracker where a resolved error reopens automatically if it is seen again in a newer release version. | Sentry |
+| G3 | Symbolication (minified frame → original source lookup) | observability | 3 | C+M | FS+IMPORT | Build a tool that rewrites minified error frames back to original file and line numbers using a source-map-style lookup file. | Sentry |
+| G4 | Data-retention purge job (per-project policy) | observability/cross | 2 | C+M | DB + NEW:clock | Build a job that permanently removes records older than each project's configured retention period and reports exactly what it deleted. | Sentry / Zulip |
+| G5 | Ownership / assignment rules (path→owner matching) | devtools | 2 | C+M | IMPORT | Build a matcher that assigns each incoming issue to a team based on CODEOWNERS-style path patterns, most-specific rule wins. | Sentry |
+| G6 | Notification digest / rollup (batched summaries) | cross | 3 | C+M | NEW:clock + SMTP-sink | Build a notifier that groups all alerts for a user within a period into one summary message instead of sending each alert separately. | Sentry / Zulip |
+| G7 | Alerting rule engine (threshold/for-duration, pending→firing→resolved) | observability | 3 | C+M | IMPORT + NEW:state-machine/clock | Build an alert evaluator that fires when a metric stays above a threshold for a set duration and sends a resolved notice when it recovers. | Grafana / Sentry |
+| G8 | Alert routing by label matchers (policy tree + grouping) | observability | 3 | C+M | IMPORT | Build a router that walks a policy tree of label matchers to decide which contact channel each alert goes to, grouping related alerts together. | Grafana |
+| G9 | Silence / maintenance-window suppression | observability | 2 | C+M | NEW:clock | Build a suppression layer where alerts matching an active maintenance window are held back and delivery resumes when the window ends. | Grafana / Uptime Kuma |
+| G10 | Identity resolution / person merge (anon→identified) | analytics | 3 | C+M | DB+IMPORT (attribution invariant) | Build an event store where an anonymous visitor's history merges into their account when they log in, so every event maps to exactly one person. | PostHog |
+| G11 | Funnel conversion analysis (ordered steps) | analytics | 3 | C+M | IMPORT (exact counts) | Build an analyzer that computes how many users completed each ordered step of signup, activation, and purchase within a window. | PostHog |
+| G12 | Retention cohort matrix (first-seen × return period) | analytics | 3 | C | IMPORT | Build a report that groups users by first-seen week and counts exactly how many returned in each following week. | PostHog |
+| G13 | Sessionization of event streams (inactivity gap) | analytics | 2 | C+M | IMPORT | Build a processor that splits a user's event stream into visits whenever more than thirty minutes of inactivity passes. | PostHog |
+| G14 | Segmentation / cohort predicate engine | analytics/marketing | 2 | C+M | IMPORT+DB | Build a segment evaluator that returns the exact set of users matching property and behavior conditions combined with and/or logic. | PostHog / listmonk |
+| G15 | Privacy-preserving unique-visitor counting (rotating salted hash) | analytics | 2 | C+M | IMPORT+DB | Build a page-view counter that counts distinct visitors using a salted hash of address and user agent, with the salt rotated daily. | Plausible / Umami |
+| G16 | Traffic attribution (referrer/UTM parse + breakdown) | analytics | 2 | C+M | IMPORT | Build a report that classifies each visit's origin from its referrer and campaign parameters and totals visits per source, medium, and campaign. | Plausible |
+| G17 | Team-chat channels + threaded topics | collaboration | 3 | C+M | HTTP+DB | Build a chat service with channels and per-topic threads where members post, edit, and fetch messages in order. | Zulip / Mattermost |
+| G18 | Unread-count / read-state tracking | collaboration | 2 | C+M | DB (exact-count invariant) | Build per-user read markers so each member sees an exact count of messages they have not read in each conversation. | Zulip |
+| G19 | Presence tracking (online/idle/offline from pings) | collaboration | 2 | C+M | NEW:clock | Build a presence service that marks a user idle after no activity for N minutes and offline after M, driven by periodic client pings. | Zulip |
+| G20 | Mention parsing + notification targeting | collaboration | 2 | C+M | IMPORT | Build a parser that finds @user and @group references in a message and returns exactly the set of accounts to notify. | Zulip / Mattermost |
+| G21 | Poll / voting service (one vote per user) | collaboration/community | 2 | C+M | DB (invariant) | Build a poll service where each member gets one changeable vote per poll and totals always match the votes stored. | Discourse / Zulip |
+| G22 | Trust-level progression engine (activity thresholds) | community | 2 | C+M | DB+IMPORT | Build a member-level system that promotes users when their activity counters cross thresholds and never demotes below an earned floor. | Discourse |
+| G23 | Flag-threshold auto-moderation workflow | community | 3 | C+M | NEW:state-machine | Build a moderation flow where a post is hidden automatically once enough distinct members flag it and a reviewer can restore or remove it. | Discourse |
+| G24 | Badge / achievement award engine (award-once) | community | 2 | C+M | DB+IMPORT (idempotent award) | Build an award system that grants each badge at most once per user when their activity meets the badge's criteria. | Discourse |
+| G25 | Time-decay trending / "hot" ranking | community/media | 2 | C+M | IMPORT + NEW:clock | Build a front-page ranker that scores topics by engagement discounted by age so newer active topics outrank stale popular ones. | Discourse / HN-style |
+| G26 | Availability / slot computation (interval math) | scheduling | 3 | C+M | IMPORT (exact slots) | Build a slot finder that returns bookable meeting times from working hours minus busy periods, honoring meeting length and per-day caps. | Cal.com |
+| G27 | Timezone-aware schedule presentation (DST-correct) | scheduling | 3 | C+M | IMPORT (fixture zoneinfo) | Build a converter that renders a host's weekly availability in any viewer's timezone, correct across daylight-saving changes. | Cal.com |
+| G28 | Recurrence-rule expansion (calendar patterns) | scheduling | 2 | C+M | IMPORT | Build an expander that lists the concrete dates for rules like "every second Tuesday" or "last Friday of each month" up to a horizon. | Cal.com / Firefly III |
+| G29 | ICS calendar file generate/parse round-trip | scheduling | 2 | C+M | FS+IMPORT | Build a tool that writes bookings out as an ICS calendar file and reads one back into the same booking records. | Cal.com |
+| G30 | Round-robin / capacity-weighted assignment engine | scheduling/support | 2 | C+M | IMPORT (deterministic) | Build an assigner that hands each new booking to the least-recently-chosen eligible host, respecting per-host weights and load caps. | Cal.com / Chatwoot |
+| G31 | Timed hold / reservation auto-release | scheduling/e-comm | 3 | C+M | NEW:clock+concurrency | Build a hold service that reserves a slot while a visitor checks out and frees it automatically if they do not finish in time. | Cal.com |
+| G32 | Durable workflow via event-history replay | workflow | 4 | C+M | IMPORT+DB (replay determinism) | Build a workflow runner that logs every step's outcome and, after a crash, replays the log to resume exactly where it left off without redoing completed steps. | Temporal |
+| G33 | Task lease / worker-liveness reassignment | workflow | 3 | C+M | NEW:clock+concurrency | Build a work distributor where a task claimed by a worker returns to the pool if the worker stops reporting in before finishing. | Temporal |
+| G34 | Data-pipeline scheduler (logical dates + backfill/catchup) | data-pipeline | 3 | C+M | DB/FS + NEW:clock | Build a pipeline scheduler that runs each job once per period, records which periods completed, and re-runs any missed past periods on request. | Airflow / Dagster |
+| G35 | Integration workflow runner (trigger→steps, branch/merge) | automation | 4 | C+M | IMPORT (step transcript) | Build an automation runner that executes a stored graph of steps — fetch, transform, branch on a condition, act — passing each step's output to the next. | n8n / Huginn |
+| G36 | Safe template-expression evaluator (sandboxed interpolation) | automation | 2 | C+M | IMPORT | Build an interpolator that fills double-brace placeholders in step parameters from prior step outputs without allowing arbitrary code execution. | n8n |
+| G37 | Multi-stage approval chain (role-gated sign-offs) | workflow/ERP | 3 | C+M | NEW:state-machine | Build a purchase-approval flow where requests pass through ordered role-based sign-offs and any rejection returns them to the requester. | ERPNext / Odoo |
+| G38 | Inventory valuation ledger (FIFO / moving-average COGS) | ERP/e-comm | 3 | C+M | NEW:conservation (exact COGS) | Build a stock ledger that records receipts and issues and computes cost of goods for each issue under first-in-first-out costing. | ERPNext |
+| G39 | Multi-level BOM explosion / material requirements | ERP/manufacturing | 3 | C+M | IMPORT (exact rollup) | Build a bill-of-materials expander that computes total raw-material quantities needed for N units of a product with nested sub-assemblies. | ERPNext |
+| G40 | Payroll run (salary components → exact net) | ERP/HR | 3 | C+M | IMPORT + NEW:conservation | Build a payroll calculator that turns salary components, allowances, and deductions into exact per-employee net pay and a run total that balances. | ERPNext |
+| G41 | Leave/PTO accrual + balance enforcement | ERP/HR | 2 | C+M | DB + NEW:clock (non-negative) | Build a leave tracker that accrues days per policy each month and rejects requests that would take a balance below zero. | ERPNext |
+| G42 | Asset checkout/checkin registry (single custody) | ERP/internal-ops | 2 | C+M | DB + NEW:conservation | Build an equipment registry where each asset can be signed out to only one person at a time and its custody history is complete. | Snipe-IT |
+| G43 | Help-desk ticket lifecycle + assignment | support | 2 | C+M | NEW:state-machine | Build a ticket service where conversations move through open, waiting, snoozed, and resolved states with agent and team ownership. | Chatwoot / Zammad |
+| G44 | SLA timer tracking (business-hours aware, breach flags) | support | 3 | C+M | NEW:clock | Build an SLA tracker that measures first-response and resolution times counting only business hours and flags breaches. | Chatwoot |
+| G45 | Event automation rules (condition→action on records) | support/cross | 2 | C+M | IMPORT+DB | Build a rules engine that, when a record is created or updated, evaluates and/or conditions and applies actions like labeling and assigning. | Chatwoot / Firefly III |
+| G46 | Business-hours / holiday calendar computation | support/cross | 2 | C+M | IMPORT + NEW:clock | Build a calendar helper that answers whether a moment is inside working hours and when the next working period starts, holidays included. | Chatwoot / Cal.com |
+| G47 | Campaign batch-send engine (pause/resume, exactly-once) | marketing | 3 | C+M | NEW:SMTP-sink + DB | Build a mail-out engine that sends a templated message to every subscriber of chosen lists in capped batches, with pause, resume, and exactly one send per subscriber. | listmonk |
+| G48 | Double opt-in subscription flow (single-use confirm) | marketing | 2 | C+M | NEW:state-machine + SMTP-sink | Build a signup flow where a subscriber only becomes active after clicking a single-use confirmation link sent by mail. | listmonk |
+| G49 | Bounce processing + suppression list | marketing | 2 | C+M | DB+IMPORT | Build a bounce handler that records delivery failures per address and blocklists an address after N hard failures so it is never mailed again. | listmonk |
+| G50 | Uptime monitor scheduler (K-failure debounce, transitions) | monitoring | 3 | C+M | NEW:clock + state-machine (fixture upstream) | Build a monitor that probes each target on its interval, requires K consecutive failures before declaring it down, and records every status change. | Uptime Kuma |
+| G51 | Public status page + exact uptime percentage | monitoring | 2 | C+M | HTTP+DB | Build a status page service that shows each component's current state and its exact uptime percentage computed from check history. | Uptime Kuma / Cachet |
+| G52 | Dead-man-switch push monitoring (missed check-in) | monitoring | 2 | C+M | NEW:clock | Build a watcher that alerts when a job fails to check in within its expected window, and clears when check-ins resume. | Healthchecks.io / Uptime Kuma |
+| G53 | File-sync state detection / change planner (conflict copies) | files | 3 | C+M | FS+IMPORT | Build a sync planner that compares a local folder against a remote listing using stored change tags and emits the exact upload, download, and conflict-copy plan. | Nextcloud |
+| G54 | Chunked / resumable upload assembly (checksum-verified) | files | 3 | C+M | HTTP+FS + NEW:conservation (bytes) | Build an upload service that accepts file parts out of order, verifies the assembled checksum, and completes only when every byte is accounted for. | Nextcloud |
+| G55 | File version history + prune policy | files | 2 | C+M | FS+DB | Build a store that keeps prior versions of each file on every save, restores any version exactly, and thins old versions per policy. | Nextcloud |
+| G56 | Collaborative text merge (OT/CRDT convergence) | files/collab | 4 | C+M | IMPORT (convergence property) | Build a merge engine where two editors' concurrent edits to the same document produce the same final text regardless of arrival order. | Etherpad / Nextcloud |
+| G57 | Slug generation + uniqueness (collision suffix) | CMS | 1 | C+M | IMPORT+DB | Build a helper that turns titles into URL-safe identifiers and appends a counter when a duplicate exists. | Ghost / Strapi |
+| G58 | Content draft/publish lifecycle (dual versions, timed go-live) | CMS | 2 | C+M | DB + NEW:state-machine | Build a content store keeping a draft and a published copy per document, with publish, unpublish, and modified-since-publish status; a timed publish goes live at its set moment. | Strapi / Ghost |
+| G59 | RSS/Atom feed + sitemap generation (exact XML) | CMS | 1 | C+M | FS/HTTP (exact XML) | Build a generator that emits a valid RSS feed and sitemap for published posts, newest first, matching the stored content exactly. | Ghost |
+| G60 | Markdown render + HTML sanitization (XSS strip) | CMS | 2 | C+M | IMPORT (fixture tables) | Build a renderer that converts markdown to HTML while stripping script tags and event-handler attributes from embedded HTML. | Ghost / Discourse |
+| G61 | Dynamic content-model CRUD generator (runtime schema) | CMS | 4 | C+M | HTTP+DB | Build a service where an admin defines a content type's fields at runtime and the matching validated CRUD endpoints exist immediately. | Strapi / Directus |
+| G62 | Brute-force lockout with progressive delay | auth | 2 | C+M | HTTP + NEW:clock | Build login protection that temporarily locks an account after repeated failures, doubling the lock time on each subsequent burst. | Keycloak |
+| G63 | Password-policy engine (composition / history rules) | auth | 2 | C+M | IMPORT | Build a validator that enforces length, character-class, and no-reuse-of-last-N rules when a user sets a new password. | Keycloak |
+| G64 | SCIM-style user-provisioning sync API | auth | 3 | C+M | HTTP+DB | Build a provisioning endpoint where an upstream directory creates, patches, and deactivates users and a downstream mirror stays consistent. | Keycloak / Authentik |
+| G65 | Gift-card issue/redeem (code + non-negative balance) | e-comm | 2 | C+M | DB + NEW:conservation | Build a gift-card service that issues coded cards and applies partial redemptions so a card's remaining value never goes below zero. | Medusa / Saleor |
+| G66 | Envelope budgeting with period limits + carryover | personal-finance | 2 | C+M | NEW:conservation + clock | Build a budgeting tracker that allots an amount per category per month, records spending against it, and reports exact remaining amounts with optional carryover. | Firefly III |
+| G67 | Guarded read-only SQL executor (row cap, single statement) | BI | 3 | C+M | IMPORT+DB | Build a query runner that executes only single read statements against a database, enforcing a row cap and rejecting any write or multi-statement input. | Metabase / Superset |
+| G68 | Query-AST → SQL compiler (filters/groups/aggregates) | BI | 3 | C+M | IMPORT (exact results) | Build a compiler that turns a JSON description of filters, groupings, and aggregations into SQL and returns exact result rows. | Metabase |
+| G69 | Scheduled report delivery (saved-query subscriptions) | BI | 3 | C+M | NEW:clock + SMTP-sink + DB | Build a subscriptions service that runs saved queries on a schedule and mails the rendered results to each recipient list. | Metabase / Superset |
+| G70 | Kanban rank ordering (stable fractional ranks, column moves) | PM | 2 | C+M | DB (ordering invariant) | Build a board service where cards keep a stable total order within columns as they are inserted, moved, and re-ranked between neighbors. | Plane / OpenProject |
+| G71 | Issue dependency graph (cycle prevention) | PM | 2 | C+M | IMPORT (graph invariant) | Build a linker that records blocks and blocked-by relations between issues and rejects any link that would create a circular dependency. | OpenProject / Plane |
+| G72 | URL shortener + exact visit stats | web | 1 | C+M | HTTP+DB | Build a link service that mints short codes redirecting to long URLs and counts visits per code exactly. | Shlink / Kutt |
+| G73 | Form builder + validated submissions (runtime fields) | forms | 2 | C+M | HTTP+DB+IMPORT | Build a form service where an admin defines fields with types and required flags and submissions are validated and stored accordingly. | Formbricks / LimeSurvey |
+
+**Dedupe record (honesty, Tenet 3):** candidates found in the same products but **dropped as
+near-duplicates of existing rows**: DSN/ingest keys (≈S27), inbound event sampling/quotas (≈S7/S8),
+row-level security/data sandboxing (≈S6), trash-bin restore (≈S68), share links with signed tokens
+(≈S33), cart promotions/vouchers (≈V12), warehouse stock transfers (≈V36 conservation), credential
+vault (≈S29), invitation/magic-link tokens (≈S4 token flow), procurement three-way match (≈F18/F28
+recon), time-series downsampling (≈S46), canned-response templating (≈S30), cron next-fire (≈S15),
+member tier gating (≈V16), payment authorize/capture (≈F17), forum post CRUD (≈generic CRUD),
+reaction aggregates (≈V15), wiki page tree (≈V3+G55).
+
+**Oracle-demand signal from this wave:** injectable-clock recurs in **~17** of the 73 rows —
+this wave materially raises its §4 priority; state-machine ~8, conservation ~6, SMTP-sink ~4,
+concurrency ~2. No genuinely new oracle *kind* was needed — every component graded onto the
+existing §4 vocabulary, which is evidence the substrate list is converging.
+
 ---
 
 ## 4. RANKED NEW-ORACLE SUBSTRATE — the lever
@@ -410,6 +513,6 @@ today plus the four soon-to-land invariant oracles.
 - **Every oracle grades structural invariants over a replayed op-script**, never a memorizable output
   string — the model cannot fake it by branching on a known task. Optimization classes grade on
   **feasibility + cost-bound**, never a single gold solution.
-- **The `verified` tier is honest and small (5 utility + 2 building / 182).** The utility tier is the
+- **The `verified` tier is honest and small (5 utility + 2 building / 255).** The utility tier is the
   FLOOR being demoted; the frontier is the first service rung and the agent cluster. Moving
   `verified` up — by landing the ranked oracles in §4 — is the whole game.
