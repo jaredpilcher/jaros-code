@@ -3114,3 +3114,53 @@ segments) -- same epistemics as the signature-contract repair (REQ-45).
 - [REQ-53] Deterministic endpoint-shape contract repair (a new AST-only, leak-free repair fixing
   a path-segment-count guard that mismatches the spec's own endpoint template, wired into both
   the BUILD and MODIFY deterministic-repair chains)
+
+### [TASK-67] Conservative gating for the agent tool-call-parse scaffold (REQ-54, owner directive 2026-07-10 -- close a measured board 0/3)
+
+MEASURED MOTIVATION: the board class `schema-validation-retry-loop` (EXT-060 REQ-30) measures
+0/3 -- "tool_call count mismatch: expected 2, got 20". The task's contract requires the agent to
+VALIDATE each structured payload and DECIDE ITSELF to stop after a successful validation
+(task-specific stop judgement). REQ-49's generic skeleton finalizes only on a model final/content
+turn and otherwise dispatches every tool_call turn -- with this task's 2-turn script it dispatches
+to max-steps (=20). The spec's `OPENAI_BASE_URL`/tool keywords trigger
+`spec_demands_tool_calling_agent`, so the scaffold fires and REPLACES/INJECTS the standard loop,
+making the class STRUCTURALLY unable to pass -- REQ-49's non-degrading claim breaks for
+validation/retry-style orchestration.
+
+#### Steps
+1. `harness/agent_scaffold.py`: add `spec_demands_custom_stop_logic(spec_text) -> bool` -- True
+   when the visible spec demands orchestration judgement beyond plain dispatch-until-final:
+   detect phrases like validate/validation, schema check, retry once/retry the request, "decide
+   when to stop", "stop after", "finalize when", "until ... valid", max-attempts semantics.
+   Precise -- match validation/retry/stop-decision LANGUAGE, not merely the word "tool" (or a
+   bare "stop"). Never raises.
+2. Gate `apply_agent_scaffold`: when `spec_demands_tool_calling_agent(spec)` AND
+   `spec_demands_custom_stop_logic(spec)` -> no-op (return modules unchanged + a note "agent-
+   scaffold skipped: spec demands custom stop/validation orchestration the generic skeleton
+   cannot express"), checked BEFORE the empty-modules/broken-loop paths so the empty-build/
+   skeleton fallback also respects the gate.
+3. Regression-guard the flip side against the REAL sentences in `harness/real_systems_suite.py`:
+   `PLAIN_AGENT_TASK.sentence` (plain-tool-calling-agent) and
+   `AGENT_ADD_STEP_GUARD_MODIFY.mod_sentence` (combined with its `base_sentence`, the agent
+   modify task) must NOT trigger `spec_demands_custom_stop_logic`; `VALIDATION_RETRY_TASK.sentence`
+   (schema-validation-retry-loop) MUST trigger it.
+4. Tests `tests/test_ext036_agent_scaffold_gating.py` (OFFLINE -- no model/Jetson call): (a)
+   `spec_demands_custom_stop_logic` True for the real schema-validation-retry-loop sentence +
+   representative validation/retry phrasings, False for the real plain-agent + agent-modify
+   sentences and generic tool-calling phrasings; (b) `apply_agent_scaffold` no-ops (byte-
+   identical modules + the skip note) on a gated spec even when the loop looks broken/absent;
+   (c) the plain-agent and agent-modify real sentences still trigger the scaffold exactly as
+   before. Run `python -m pytest tests/test_ext036_agent_scaffold.py
+   tests/test_ext036_agent_scaffold_gating.py tests/test_ext060_clock_agent_tasks.py -q` (all
+   green -- 19+ pre-existing REQ-49 tests unaffected; the clock-agent tests' offline fixtures
+   don't go through `build_system` so are unaffected by this gate). Also `python -c "import ast;
+   ast.parse(open('harness/agent_scaffold.py').read())"` and `python -c "import
+   harness.agent_scaffold; import harness.system_builder; import harness.real_systems_suite"`
+   (clean). Update `.jarify/EXT-036/index.json` per jarify-manage-links. Do NOT touch
+   `harness/system_builder.py` (the wire calls `apply_agent_scaffold`, which now self-gates),
+   `harness/real_systems_suite.py`, or `harness/agent_oracle.py`.
+
+#### Implements
+- [REQ-54] Conservative gating for the AGENT tool-call-parse scaffold (a precise detector for
+  validation/retry/stop-decision spec language + a gate on `apply_agent_scaffold` so it never
+  fires on a spec the generic skeleton structurally cannot satisfy)

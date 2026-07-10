@@ -1,43 +1,4 @@
 {
-  "REQ-49": [
-    {
-      "file": "tests/test_ext036_agent_scaffold.py",
-      "startLine": 13,
-      "endLine": 285
-    },
-    {
-      "file": "harness/agent_scaffold.py",
-      "startLine": 44,
-      "endLine": 243
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3391,
-      "endLine": 3407
-    }
-  ],
-  "REQ-53": [
-    {
-      "file": "tests/test_ext036_endpoint_shape.py",
-      "startLine": 13,
-      "endLine": 286
-    },
-    {
-      "file": "harness/endpoint_shape.py",
-      "startLine": 34,
-      "endLine": 267
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3321,
-      "endLine": 3335
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 4264,
-      "endLine": 4271
-    }
-  ],
   "REQ-23": [
     {
       "file": "harness/coherence_suite.py",
@@ -322,6 +283,40 @@
       "endLine": 317
     }
   ],
+  "REQ-54": [
+    {
+      "file": "harness/agent_scaffold.py",
+      "startLine": 98,
+      "endLine": 143
+    },
+    {
+      "file": "harness/agent_scaffold.py",
+      "startLine": 281,
+      "endLine": 288
+    },
+    {
+      "file": "tests/test_ext036_agent_scaffold_gating.py",
+      "startLine": 15,
+      "endLine": 161
+    }
+  ],
+  "REQ-49": [
+    {
+      "file": "harness/agent_scaffold.py",
+      "startLine": 53,
+      "endLine": 309
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3391,
+      "endLine": 3407
+    },
+    {
+      "file": "tests/test_ext036_agent_scaffold.py",
+      "startLine": 13,
+      "endLine": 285
+    }
+  ],
   "REQ-30": [
     {
       "file": "harness/acceptance_review.py",
@@ -424,6 +419,28 @@
       "endLine": 256
     }
   ],
+  "REQ-53": [
+    {
+      "file": "harness/endpoint_shape.py",
+      "startLine": 34,
+      "endLine": 267
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3321,
+      "endLine": 3335
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4264,
+      "endLine": 4271
+    },
+    {
+      "file": "tests/test_ext036_endpoint_shape.py",
+      "startLine": 13,
+      "endLine": 286
+    }
+  ],
   "REQ-50": [
     {
       "file": "harness/port_coercion.py",
@@ -499,6 +516,13 @@
       "file": "harness/system_builder.py",
       "startLine": 3465,
       "endLine": 3505
+    }
+  ],
+  "REQ-20": [
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 44,
+      "endLine": 846
     }
   ],
   "REQ-42": [
@@ -889,13 +913,6 @@
       "file": "harness/system_builder.py",
       "startLine": 5124,
       "endLine": 5305
-    }
-  ],
-  "REQ-20": [
-    {
-      "file": "harness/system_suite.py",
-      "startLine": 44,
-      "endLine": 846
     }
   ]
 }

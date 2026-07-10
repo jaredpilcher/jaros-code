@@ -2484,3 +2484,50 @@ actual shape, mechanical + leak-free.
   `tests/test_ext036_modify_repair_seam.py` / `tests/test_ext036_port_coercion.py` /
   `tests/test_ext036_routing_contract.py` / `tests/test_ext036_http_service_scaffold.py` /
   `tests/test_ext036_signature_contract.py` / `tests/test_ext036_system_builder.py` (148 passed).
+
+### [REQ-54] Conservative gating for the AGENT tool-call-parse scaffold (DONE — EXT-036 TASK-67, 2026-07-10)
+
+MEASURED MOTIVATION: the canonical board class `schema-validation-retry-loop` (EXT-060 REQ-30)
+measures 0/3 with the signature "tool_call count mismatch: expected 2, got 20". The task's
+contract requires the built agent to LOCALLY VALIDATE each structured payload and DECIDE ITSELF to
+stop after a successful validation (a task-specific stop judgement). REQ-49's generic
+`apply_agent_scaffold` skeleton finalizes ONLY on a model final/content turn and otherwise
+dispatches every `tool_calls` turn — with this task's 2-turn stub script it dispatches to
+max-steps (=20) instead of stopping after the second, valid submission. Because the spec's
+`OPENAI_BASE_URL`/`tool_calls`/chat-completions keywords DO trigger
+`spec_demands_tool_calling_agent`, the scaffold was firing and REPLACING (or filling in on an
+empty build) the entrypoint with the fixed skeleton — making this class STRUCTURALLY unable to
+pass, breaking REQ-49's "non-degrading" claim for validation/retry-style orchestration the generic
+skeleton cannot express.
+
+#### Acceptance Criteria
+- [x] `harness/agent_scaffold.py::spec_demands_custom_stop_logic(spec_text) -> bool` — True when
+  the visible spec demands orchestration judgement beyond plain dispatch-until-final: matches
+  validate/validation, schema, retry, a max-attempts/retries/requests cap, or an explicit
+  stop-decision phrase ("decide when to stop", "stop after", "finalize when", "until ... valid").
+  Precise (Tenet 3 — never a blanket "tool" or bare "stop" match, so a plain step-count guard
+  phrased only as "stop after 3 tool calls" is NOT flagged). Never raises — non-string/empty input
+  is simply not a demand.
+- [x] `apply_agent_scaffold` gated: when `spec_demands_tool_calling_agent(spec)` AND
+  `spec_demands_custom_stop_logic(spec)` → returns `modules` unchanged plus an explanatory note
+  ("agent-scaffold skipped: spec demands custom stop/validation orchestration the generic skeleton
+  cannot express"), checked BEFORE the empty-modules/broken-loop paths so the empty-build fallback
+  also respects the gate — better to leave repair/retry paths a chance to work on gemma's own
+  attempt than ship a skeleton structurally unable to pass.
+- [x] Regression-guard verified against the ACTUAL real-system sentences (not just synthetic
+  phrasings): `PLAIN_AGENT_TASK.sentence` (the plain tool-calling-agent CREATE class) and
+  `AGENT_ADD_STEP_GUARD_MODIFY.mod_sentence` (combined with its `base_sentence`, the agent MODIFY
+  class) do NOT trigger `spec_demands_custom_stop_logic` — both classes still scaffold exactly as
+  before; `VALIDATION_RETRY_TASK.sentence` (the schema-validation-retry-loop class) DOES trigger
+  it, gating the scaffold to a no-op on that class.
+- [x] Proven OFFLINE (no model/Jetson call, `tests/test_ext036_agent_scaffold_gating.py`): (a)
+  `spec_demands_custom_stop_logic` is True for the real validation-retry sentence + representative
+  validation/retry phrasings, False for the real plain-agent + agent-modify sentences and generic
+  tool-calling phrasings, never raises on garbage; (b) `apply_agent_scaffold` no-ops
+  (byte-identical modules + the skip note) on the real validation-retry spec whether the loop is
+  broken, absent, or the modules dict is empty, and on generic validation phrasings combined with
+  agent-demanding boilerplate; (c) the plain-agent and agent-modify real sentences still trigger
+  the scaffold exactly as before (a broken loop is still replaced with the skeleton). All 19
+  pre-existing `tests/test_ext036_agent_scaffold.py` tests stay green (no regression to REQ-49),
+  and `tests/test_ext060_clock_agent_tasks.py` stays green (its offline fixtures don't go through
+  `build_system`, so unaffected by this gate).

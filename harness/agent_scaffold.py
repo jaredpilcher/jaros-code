@@ -40,6 +40,15 @@ a loop that correctly performs BOTH the chat-completions round-trip AND the ``fu
 ``json.loads(...arguments...)`` extraction -- an already-working agent (including one with EXTRA,
 task-specific logic layered on top, e.g. the step-guard MODIFY task) is left completely untouched.
 Never raises.
+
+**REQ-54 (conservative gating):** the generic skeleton above is a FIXED shape -- dispatch every
+``tool_calls`` turn, finalize only on a model final/content turn. MEASURED (EXT-060 REQ-30,
+``schema-validation-retry-loop`` 0/3, "tool_call count mismatch: expected 2, got 20") that this
+shape is STRUCTURALLY unable to express a spec demanding task-specific orchestration judgement --
+e.g. a validation-retry loop that must VALIDATE each structured payload and DECIDE ITSELF to stop
+after a successful validation. :func:`spec_demands_custom_stop_logic` detects that language and
+``apply_agent_scaffold`` self-gates to a no-op (plus an explanatory note) rather than replace a
+possibly-fixable model attempt with a skeleton guaranteed to fail that class.
 """
 # #EXT-036-REQ-49 Start
 from __future__ import annotations
@@ -84,6 +93,54 @@ def spec_demands_tool_calling_agent(spec_text: "str | None") -> bool:
         return True
     low = text.lower()
     return "chat" in low and "completion" in low
+
+
+# #EXT-036-REQ-54 Start
+# EXT-036 REQ-54: conservative gating for the AGENT tool-call-parse scaffold (REQ-49) -- MEASURED
+# (EXT-060 REQ-30, `schema-validation-retry-loop` 0/3, "tool_call count mismatch: expected 2, got
+# 20"): that class's contract requires the agent to LOCALLY VALIDATE each structured payload and
+# DECIDE ITSELF to stop after a successful validation (a task-specific stop judgement) -- but
+# `apply_agent_scaffold`'s generic skeleton finalizes ONLY on a model final/content turn and
+# otherwise dispatches EVERY tool_calls turn, so with this class's 2-turn stub script it dispatches
+# to the max-steps ceiling (20) instead of stopping after the second, valid submission. When the
+# spec demands this kind of validation/retry/stop-decision orchestration, the generic skeleton is
+# STRUCTURALLY unable to express it, so firing it would replace a possibly-fixable model attempt
+# with a guaranteed-wrong one -- worse than a no-op (better to leave repair/retry paths a chance to
+# work on gemma's own attempt than ship a skeleton that can never pass).
+_CUSTOM_STOP_RE = re.compile(
+    r"\bvalidat(?:e|es|ed|ing|ion)\b"
+    r"|\bschema\b"
+    r"|\bre-?tr(?:y|ies|ying)\b"
+    r"|\bmax(?:imum)?[- ]?(?:attempts|retries|requests)\b"
+    r"|\bdecide when to stop\b"
+    r"|\bstop after\b"
+    r"|\bfinalize when\b"
+    r"|\buntil\b[^.]{0,80}\bvalid\b",
+    re.IGNORECASE,
+)
+
+
+def spec_demands_custom_stop_logic(spec_text: "str | None") -> bool:
+    """True when the visible ``spec_text`` demands ORCHESTRATION judgement beyond the generic
+    skeleton's fixed shape (dispatch every ``tool_calls`` turn, finalize only on a model
+    final/content turn) -- e.g. a validation-retry loop that VALIDATES each structured payload
+    and DECIDES ITSELF when to stop (retry once on failure, finalize once valid, give up after a
+    bounded number of attempts).
+
+    Detects validation/retry/stop-decision LANGUAGE precisely -- validate/validation, schema,
+    retry, a max-attempts/retries/requests cap, or an explicit stop-decision phrase ("decide when
+    to stop", "stop after", "finalize when", "until ... valid") -- never a bare mention of "tool"
+    or "stop" alone (e.g. a plain step-count guard phrased as "stop after 3 tool calls" with none
+    of the above words is NOT flagged; that shape does not require task-specific VALIDATION
+    judgement the generic skeleton structurally cannot host). Never raises -- any non-string or
+    empty input is simply not a demand."""
+    if not spec_text:
+        return False
+    try:
+        return bool(_CUSTOM_STOP_RE.search(str(spec_text)))
+    except Exception:
+        return False
+# #EXT-036-REQ-54 End
 
 
 def has_correct_agent_loop(modules: "dict[str, str] | None") -> bool:
@@ -194,9 +251,10 @@ def _resolve_entry_name(modules: "dict[str, str]", spec_text: "str | None") -> s
 def apply_agent_scaffold(modules: "dict[str, str]", spec_text: "str | None", *,
                           llm=None) -> "tuple[dict[str, str], list[str]]":
     """The public, never-raising repair: fires ONLY when ``spec_text`` demands the pinned
-    tool-calling agent contract (:func:`spec_demands_tool_calling_agent`) AND no module in
-    ``modules`` already correctly performs the full mechanical protocol
-    (:func:`has_correct_agent_loop`).
+    tool-calling agent contract (:func:`spec_demands_tool_calling_agent`) AND does NOT demand
+    custom stop/validation orchestration the generic skeleton cannot express
+    (:func:`spec_demands_custom_stop_logic`, REQ-54) AND no module in ``modules`` already
+    correctly performs the full mechanical protocol (:func:`has_correct_agent_loop`).
 
     When it fires, REPLACES the spec-demanded entrypoint module (resolved via
     ``harness.filename_contract.demanded_filenames``, falling back to ``main.py``) with the
@@ -220,6 +278,14 @@ def apply_agent_scaffold(modules: "dict[str, str]", spec_text: "str | None", *,
 
         if not spec_demands_tool_calling_agent(spec_text):
             return mods, notes
+        # #EXT-036-REQ-54 Start
+        if spec_demands_custom_stop_logic(spec_text):
+            notes.append(
+                "agent-scaffold skipped: spec demands custom stop/validation orchestration "
+                "the generic skeleton cannot express"
+            )
+            return mods, notes
+        # #EXT-036-REQ-54 End
         if not mods:
             return mods, notes
 
