@@ -248,3 +248,55 @@ always.
 
 #### Implements
 - [REQ-9] Double-entry-balance invariant oracle (`double_entry_oracle`)
+
+### [TASK-8] Build the injectable-clock oracle (`harness/clock_oracle.py`)
+
+A deterministic, model-free verifier that grades TIME-DEPENDENT behavior by injecting a fully
+controllable clock into a built entity -- the single highest-demand missing oracle, measured
+across three independent atlas research waves (39 mapped classes: SLA/deadline timers, token/
+magic-link validity windows, auth lockout/backoff, digest/batch windows, accrual math, monitor/
+scheduler cadence, grace-period logic, retention/expiry sweepers). The honesty core: a build must
+derive every time decision from the INJECTED clock, never the real wall clock.
+
+#### Steps
+1. Create `harness/clock_oracle.py` defining the declarative spec shape: `clock_param` (the
+   constructor keyword the oracle injects a `now_fn`-shaped callable under), optional
+   `construct_args`/`construct_kwargs` (must not already define `clock_param`), an ordered
+   `timeline` (list of `{"at": <epoch-seconds int>, "call": <method>, "args": [...],
+   "kwargs": {...}, "expect": {"returns": <value>} | {"raises": "<ExceptionName>"},
+   "allow_backward": <bool, optional>}` steps), and optional `expect_final` (dict of zero-arg
+   entity reader method name -> expected value, checked once after the whole timeline).
+2. Because the clock contract needs the injected clock MUTATED between successive calls in the
+   same live subprocess -- a seam `harness.import_driver.drive_import`'s existing driver template
+   has no analogue for (its clock support only fakes `time.sleep`; spies return one static
+   value) -- render a small stdlib-only driver FOLLOWING `harness/import_driver.py`'s own
+   template + sentinel-line-protocol pattern (a mutable `_CLOCK` holder + `_now()` closure passed
+   as the injected keyword, set explicitly before every timeline call), while reusing
+   `import_driver`'s audited sandboxed launch (`_launch_driver`), teardown
+   (`server_oracle._kill_tree`), and post-condition grading (`_parse_sentinels`/`_eval_check`)
+   UNMODIFIED. Do NOT edit `harness/import_driver.py` itself.
+3. Implement `grade_clock(root, *, module, entity, spec, python_exe=None, timeout=..., mem_mb=512)
+   -> (accepted: bool, note: str)`: construct the entity once with the injected clock, then for
+   each timeline step set the clock to that step's `at` value and call the named method, checking
+   the step's `expect` against the sentinel-reported result/raised-exception; after the whole
+   script, call every `expect_final` reader (if declared) once more.
+4. Add `validate_spec(spec) -> (bool, note)` (checks `clock_param`/`construct_kwargs`/`timeline`/
+   `expect_final` shape, including that the timeline's `at` values are non-decreasing unless a
+   step declares `allow_backward`, and that `expect` is exactly one of `returns`/`raises`) BEFORE
+   anything is driven, and wrap the whole grading path in a top-level try/except so `grade_clock`
+   NEVER raises -- any malformed spec, uncallable entity, construction failure, or crashing/
+   garbage fixture is an honest `(False, note)`.
+5. Add `tests/test_ext059_clock_oracle.py` (offline, hand-written fixtures, no model call):
+   (a) a CORRECT sliding-window rate-limiter fixture passes across an ordinary jump and an
+   exact-boundary jump; (b) a BROKEN fixture that secretly uses the real wall clock instead of
+   the injected one is CAUGHT (`accepted=False`) -- the flagship honesty test, proven via a
+   3600-simulated-second jump executed in real milliseconds; (c) an off-by-one window-boundary
+   comparison bug is caught; (d) a token-validity-window fixture is proven valid then expired
+   (both directions) by the same timeline, and a fixture missing its expiry check entirely is
+   caught; (e) the oracle never raises on a crashing/garbage fixture, a missing entity, or a
+   construction failure. Run only `python -m pytest tests/test_ext059_clock_oracle.py -q`.
+6. Update `.jarify/EXT-059/index.json` (via `jarify-manage-links`) mapping REQ-10 to the new file
+   ranges; `requirements.md` status stays `partial` (REQ-4/REQ-5 remain open).
+
+#### Implements
+- [REQ-10] Injectable-clock oracle (`clock_oracle`)

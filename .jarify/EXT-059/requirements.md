@@ -18,6 +18,8 @@ implementation:
   - tests/test_ext059_conservation_oracle.py
   - harness/double_entry_oracle.py
   - tests/test_ext059_double_entry_oracle.py
+  - harness/clock_oracle.py
+  - tests/test_ext059_clock_oracle.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -234,3 +236,56 @@ must always equal total credits.
 
 **Follow-up (not built here):** a running `total_debits()`/`total_credits()` reader-pair variant, a
 multi-currency variant, and an HTTP-service-driven variant.
+
+### [REQ-10] Injectable-clock oracle (`clock_oracle`)
+
+A deterministic, model-free verifier that grades TIME-DEPENDENT behavior by injecting a fully
+controllable clock into a built entity and driving it through a scripted timeline -- the single
+highest-demand missing oracle in the substrate, measured across three independent atlas research
+waves (39 mapped classes: SLA/deadline timers, token/magic-link validity windows, auth lockout/
+backoff, digest/batch windows, accrual math, monitor/scheduler cadence, grace-period logic,
+retention/expiry sweepers). The honesty core: a build must derive every time decision from the
+INJECTED clock, never the real wall clock -- proven by driving wall-clock-impossible jumps (e.g.
+two calls 3600 simulated seconds apart executed in real milliseconds) that only a correctly-wired
+entity can answer consistently.
+
+#### Acceptance Criteria
+- [x] `harness/clock_oracle.py` accepts a declarative spec (`clock_param` -- the constructor
+      keyword the oracle injects a `now_fn`-shaped callable under; `construct_args`/
+      `construct_kwargs` -- optional entity construction arguments, must not already define
+      `clock_param`; `timeline` -- an ordered list of `{"at": <epoch-seconds int>, "call":
+      <method>, "args": [...], "kwargs": {...}, "expect": {"returns": <value>} |
+      {"raises": "<ExceptionName>"}, "allow_backward": <bool, optional>}` steps; `expect_final` --
+      optional dict of zero-arg entity reader method name -> expected value, checked once after
+      the whole timeline), then drives a built class-based entity through the timeline in a fresh
+      sandboxed subprocess, setting the injected clock to each step's `at` value immediately
+      before that step's call.
+- [x] The injected clock is mutated BETWEEN calls in the SAME live subprocess -- a capability
+      `harness.import_driver.drive_import`'s existing seam does not provide (its own clock
+      support only fakes `time.sleep`; spies return one static value). This module therefore
+      renders its OWN small stdlib-only driver (following `harness/import_driver.py`'s own
+      template + sentinel-protocol pattern) while reusing `import_driver`'s audited sandboxed
+      launch (`_launch_driver`), teardown (`server_oracle._kill_tree`), and post-condition
+      grading (`_parse_sentinels`/`_eval_check`) UNMODIFIED -- no reimplementation of those parts,
+      and `harness/import_driver.py` itself is never edited.
+- [x] Each timeline step's expectation must hold exactly at the injected `at` value active for
+      that call (`returns` -- exact equality; `raises` -- exact exception type name); a build
+      that secretly consults the real wall clock instead of the injected one is caught naturally
+      because a wall-clock-impossible jump (declared far apart in simulated time, executed in
+      real milliseconds) cannot produce two different time-relative answers from real time.
+- [x] `validate_spec` requires the timeline's `at` values to be non-decreasing unless a step
+      explicitly declares `"allow_backward": true`, and requires `expect` to be exactly one of
+      `returns`/`raises` -- a spec that silently time-travels backward by accident, or declares
+      neither/both expectation kinds, is rejected before anything is ever driven.
+- [x] Never raises: a missing/uncallable entity, a construction failure, a crashing fixture, or a
+      malformed spec is an honest `accepted=False` with a diagnostic note.
+- [x] Tests prove a correct sliding-window rate-limiter fixture passes across an ordinary jump and
+      an exact-boundary jump; a fixture that secretly uses the real wall clock instead of the
+      injected one is CAUGHT (`accepted=False`) -- the flagship honesty test; an off-by-one
+      window-boundary comparison bug is caught; a token-validity-window fixture is proven valid
+      then expired (both directions) by the same timeline, and a fixture missing its expiry check
+      entirely is caught; the oracle never raises on a crashing/garbage fixture, a missing
+      entity, or a construction failure.
+
+**Follow-up (not built here):** a concurrent/interleaved-clock variant and a service-based variant
+that drives calls over HTTP via `harness/server_oracle.py`'s launch/request lifecycle.

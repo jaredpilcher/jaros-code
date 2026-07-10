@@ -1,4 +1,52 @@
 {
+  "REQ-9": [
+    {
+      "file": "tests/test_ext059_double_entry_oracle.py",
+      "startLine": 11,
+      "endLine": 347
+    },
+    {
+      "file": "harness/double_entry_oracle.py",
+      "startLine": 1,
+      "endLine": 381
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "tests/test_ext059_conservation_oracle.py",
+      "startLine": 11,
+      "endLine": 356
+    },
+    {
+      "file": "harness/conservation_oracle.py",
+      "startLine": 1,
+      "endLine": 307
+    }
+  ],
+  "REQ-10": [
+    {
+      "file": "tests/test_ext059_clock_oracle.py",
+      "startLine": 11,
+      "endLine": 438
+    },
+    {
+      "file": "harness/clock_oracle.py",
+      "startLine": 1,
+      "endLine": 479
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": "tests/test_ext059_agent_oracle.py",
+      "startLine": 10,
+      "endLine": 381
+    },
+    {
+      "file": "harness/agent_oracle.py",
+      "startLine": 67,
+      "endLine": 598
+    }
+  ],
   "REQ-7": [
     {
       "file": "tests/test_ext059_state_machine_oracle.py",
@@ -33,42 +81,6 @@
       "file": "harness/fs_oracle.py",
       "startLine": 46,
       "endLine": 367
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": "tests/test_ext059_double_entry_oracle.py",
-      "startLine": 11,
-      "endLine": 347
-    },
-    {
-      "file": "harness/double_entry_oracle.py",
-      "startLine": 1,
-      "endLine": 381
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": "tests/test_ext059_conservation_oracle.py",
-      "startLine": 11,
-      "endLine": 356
-    },
-    {
-      "file": "harness/conservation_oracle.py",
-      "startLine": 1,
-      "endLine": 307
-    }
-  ],
-  "REQ-6": [
-    {
-      "file": "tests/test_ext059_agent_oracle.py",
-      "startLine": 10,
-      "endLine": 381
-    },
-    {
-      "file": "harness/agent_oracle.py",
-      "startLine": 67,
-      "endLine": 598
     }
   ],
   "REQ-2": [
