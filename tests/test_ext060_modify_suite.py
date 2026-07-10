@@ -225,10 +225,16 @@ def test_ini_default_flag_modify_task_itself_is_leaves_off():
 
 
 def test_real_systems_modify_tasks_includes_both_tasks():
+    # #EXT-060-REQ-10 Start
+    # TASK-8: the modify roster GREW by one (REST_SQLITE_ADD_UPDATE_MODIFY, REQ-10) -- this test
+    # now asserts membership + a minimum size rather than an exact count, so future roster growth
+    # (the design doc's explicit "roster only ever GROWS" direction) does not require touching
+    # this unrelated test again.
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert RETRY_BASE_DELAY_MODIFY_TASK.name in names
     assert INI_DEFAULT_FLAG_MODIFY_TASK.name in names
-    assert len(REAL_SYSTEMS_MODIFY_TASKS) == 2
+    assert len(REAL_SYSTEMS_MODIFY_TASKS) >= 3
+    # #EXT-060-REQ-10 End
 
 
 # --- run_real_systems_modify_suite: end-to-end with a canned stub llm ------------------------

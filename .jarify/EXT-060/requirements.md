@@ -169,3 +169,62 @@ real-systems: create X/A, modify Y/B, total (X+Y)/(A+B)".
       MODIFY tasks and print the single canonical headline.
 - [x] Offline-testable: `run_canonical_scoreboard` is importable and its aggregation is correct given a
       stub llm returning a fixed correct module/modification (no real Jetson call in the test).
+
+### [REQ-9] `oracle_kind="service"` + first REST/SQLite CRUD service CREATE task (the first SaaS rung)
+
+The canonical scoreboard's first genuinely-SaaS-shaped task: a stdlib REST API (`http.server` +
+`sqlite3` + `json`, no framework) exposing CRUD operations over an `items` resource, persisted to a
+SQLite file. Graded by a NEW `oracle_kind="service"` dispatch in `grade_real_system_task` that (a) runs
+the built entrypoint as a real long-lived server on an ephemeral localhost port and drives real HTTP
+requests against it via the ALREADY-LANDED `harness/server_oracle.py::serve_and_check_stdlib` (no new
+process-launch/teardown mechanism — reused verbatim), and (b), after the server is torn down,
+INDEPENDENTLY re-opens the resulting SQLite file (reusing `harness/datastore_oracle.py`'s detection/
+row-counting helpers, or a tiny inline stdlib `sqlite3` read) and asserts real persisted state — never
+trusting the service's own HTTP responses for durability. `serve_and_check_stdlib`'s `http_check` dict
+contract is minimally, backward-compatibly extended with an optional `json_body` key (existing checks
+that omit it behave byte-identically to before) so a check can drive `POST`/`PUT` requests carrying a
+real JSON request body — the previously-landed contract (`method`, `path`, `status`, `json_contains`,
+`body_contains`) had no way to send a request body at all, which a REST CRUD API's `POST`/`PUT`
+endpoints require to be tested honestly.
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="service"` to a new `_grade_service` grader.
+      `oracle_spec` shape: `{"entry": str, "http_checks": [...], "db": {"path": str|None, "min_rows":
+      int, "table": str|None} | None, "startup_timeout": float, "request_timeout": float}`.
+- [x] Grading requires `serve_and_check_stdlib(...)` to report `ok=True` with every check passed; when
+      `db` is present, requires an INDEPENDENT post-teardown SQLite read to satisfy the row-count
+      assertion. NEVER raises — any failure at any stage is an honest `(False, note)`.
+- [x] `harness/server_oracle.py`'s `http_check` dict gains an optional `json_body` key (`_do_request`
+      sends it as a JSON-encoded request body with a `Content-Type: application/json` header when
+      present); omitting the key is byte-identical to the prior behavior (regression-proof).
+- [x] `REST_SQLITE_CRUD_TASK` (`RealSystemTask`, `oracle_kind="service"`) is added to
+      `REAL_SYSTEMS_TASKS`: a contract-exact sentence (filename `main.py`, stdlib-only, `PORT` env var,
+      `data.db` SQLite file, `items` resource with integer autoincrement `id` + string `name`,
+      `POST`/`GET`/`GET <id>`/`DELETE <id>` semantics + status codes, persistence across restarts) with
+      every oracle-checked value (paths, JSON bodies, statuses) derivable from that same visible
+      sentence (no hidden key, no leak). Leaves-OFF enforced identically to every other task in this
+      module (static `leaf_for_spec` + post-build `build_path` check).
+- [x] Offline-testable: a hand-authored CORRECT stdlib CRUD service fixture is accepted (including the
+      independent db assertion); a WRONG fixture (doesn't persist to SQLite, wrong status code, or
+      missing an endpoint) is rejected; the oracle never raises on a crashing/never-binding fixture.
+
+### [REQ-10] First REST/SQLite CRUD MODIFY task (add a `PUT` endpoint)
+
+The canonical scoreboard's first SaaS-shaped MODIFY task: starting from a known-good baseline items
+CRUD service (missing `PUT`), a one-sentence change request asks for an added `PUT /items/<id>`
+endpoint that updates an item's name. Graded by the SAME `oracle_kind="service"` dispatcher REQ-9
+lands — no new oracle code for the MODIFY half, mirroring how REQ-7's MODIFY tasks reused REQ-3/REQ-4's
+existing oracle dispatch.
+
+#### Acceptance Criteria
+- [x] `REST_SQLITE_ADD_UPDATE_MODIFY` (`RealSystemModifyTask`, `oracle_kind="service"`) is added to
+      `REAL_SYSTEMS_MODIFY_TASKS`. `start_system` is a hand-authored CORRECT baseline stdlib CRUD
+      `main.py` (matching REQ-9's original contract, no `PUT`); `mod_sentence` asks for the added `PUT
+      /items/<id>` endpoint (JSON body `{"name": ...}`, 200 + updated item JSON on success, 404 when
+      absent) — every oracle-checked value is derivable from the visible `mod_sentence`.
+- [x] `oracle_spec`'s `http_checks` cover the new `PUT` behavior AND regress the existing
+      `POST`/`GET`/`DELETE`/404 behavior against the SAME running service (a modification that broke an
+      existing endpoint fails the task); the `db` assertion still independently verifies persisted rows
+      after the full check sequence.
+- [x] Offline-testable: a hand-authored CORRECT post-modification module (baseline + `PUT`) is accepted;
+      the unmodified baseline (no `PUT`) is rejected by the new checks.

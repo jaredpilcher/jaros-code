@@ -197,3 +197,55 @@
 
 #### Implements
 - [REQ-8] Unified canonical scoreboard runner
+
+### [TASK-8] `oracle_kind="service"` + first REST/SQLite CRUD CREATE+MODIFY tasks (REQ-9, REQ-10)
+
+#### Steps
+1. In `harness/server_oracle.py`'s `_do_request`, add support for an optional `json_body` key on the
+   `http_check` dict: when present, `json.dumps` it to bytes and pass it as the request `data=` with a
+   `Content-Type: application/json` header on the `urllib.request.Request(...)` call; when absent,
+   build the request exactly as before (`data=None`, no extra headers) so every existing caller of
+   `serve_and_check_stdlib`/`_check_one` is byte-identical. Update the module's docstrings to mention
+   the new key.
+2. In `harness/real_systems_suite.py`, import `serve_and_check_stdlib` from `harness.server_oracle`,
+   `detect_sqlite_datastore`/`count_all_rows` from `harness.datastore_oracle`, and stdlib `sqlite3`.
+   Add `_grade_service(oracle_spec, root, python_exe)` that (a) calls `serve_and_check_stdlib(root,
+   oracle_spec.get("entry", "main.py"), oracle_spec.get("http_checks") or [], startup_timeout=...,
+   request_timeout=...)`, requiring `ok=True`; (b) when `oracle_spec.get("db")` is present, AFTER
+   `serve_and_check_stdlib` has returned (server already torn down), opens a FRESH `sqlite3` connection
+   to the declared/detected `.db` file and asserts the row count (schema-agnostic via `count_all_rows`,
+   or against a named `table` when given) meets `min_rows`; never raises, mirrors every other `_grade_*`
+   helper's `(accepted, note)` return shape. Wire `oracle_kind == "service"` into
+   `grade_real_system_task`'s dispatch.
+3. Add `REST_SQLITE_CRUD_TASK` (`RealSystemTask`, `oracle_kind="service"`) to `REAL_SYSTEMS_TASKS`: the
+   contract-exact stdlib REST/SQLite CRUD sentence (filename `main.py`, `PORT` env var, `data.db`
+   SQLite file created if missing, `items` resource with autoincrement integer `id` + string `name`,
+   `POST`/`GET`/`GET <id>`/`DELETE <id>` semantics + status codes, persists across restarts).
+   `oracle_spec.http_checks` drives two `POST`s (so an item survives the later `DELETE`, keeping the
+   independent db assertion honestly satisfiable), a `GET` list, a `GET` single item, a `DELETE`, and a
+   post-delete `GET` 404; `oracle_spec.db` asserts `>=1` row in `data.db` after the full sequence.
+4. Add `REST_SQLITE_ADD_UPDATE_MODIFY` (`RealSystemModifyTask`, `oracle_kind="service"`) to
+   `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored correct baseline CRUD `main.py`
+   (matching TASK-8 step 3's original contract, no `PUT`); `mod_sentence` asks for an added `PUT
+   /items/<id>` endpoint (JSON body `{"name": ...}`, 200 + updated item JSON, 404 when absent).
+   `oracle_spec.http_checks` seed two items, exercise the new `PUT` (including a `PUT` on a
+   subsequently-deleted id, asserting 404), and regress the existing `POST`/`GET`/`DELETE`/404
+   behavior; `oracle_spec.db` asserts the surviving item's row.
+5. Add `tests/test_ext060_service_oracle.py` (OFFLINE, no model/Jetson — hand-written fixture services
+   only): (a) a CORRECT stdlib items service fixture passes `grade_real_system_task` for
+   `REST_SQLITE_CRUD_TASK`-shaped input, including the independent db assertion; (b) WRONG fixtures
+   (doesn't persist to sqlite / wrong status code / missing `DELETE`) are rejected; (c) the service
+   oracle never raises on a crashing/never-binding fixture; (d) a correct post-modify fixture (baseline
+   + `PUT`) is accepted by `REST_SQLITE_ADD_UPDATE_MODIFY`'s checks and the unmodified baseline is
+   rejected; (e) both tasks are members of their respective lists and `leaf_for_spec` returns `None`
+   for both sentences. Also add `tests/test_ext036_server_oracle_stdlib.py`-style regression coverage
+   (or extend that file minimally) proving an `http_check` WITHOUT `json_body` still behaves exactly as
+   before the extension.
+6. Run `python -m pytest tests/test_ext060_service_oracle.py tests/test_ext060_real_systems_suite.py
+   tests/test_ext036_server_oracle_stdlib.py -q`; confirm green (offline only — do not run the full
+   suite). Update `.jarify/EXT-060/index.json` (REQ-9/REQ-10 ranges, via `jarify-manage-links`) and flip
+   the REQ-9/REQ-10 acceptance boxes + `status` toward `covered` if both requirements are fully met.
+
+#### Implements
+- [REQ-9] `oracle_kind="service"` + first REST/SQLite CRUD service CREATE task (the first SaaS rung)
+- [REQ-10] First REST/SQLite CRUD MODIFY task (add a `PUT` endpoint)

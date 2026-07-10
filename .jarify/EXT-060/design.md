@@ -62,6 +62,49 @@ by `.jaros-data/realsys_build_one.py` + `.jaros-data/realsys_killable.py` for th
 (not reinvented) so a pathological CREATE build or MODIFY draw can never wedge the whole canonical run
 — each task's build/modify+grade happens in its own subprocess, bounded by a per-task wall-clock kill.
 
+## The first SaaS rung (REQ-9/REQ-10): `oracle_kind="service"`
+
+The first held-out task shaped like a REAL backend service (not a CLI/library): a stdlib REST API
+persisting to SQLite. Grading composes two ALREADY-LANDED independent oracles — never a new
+process-launch/teardown mechanism, never trusting the service's own HTTP responses for durability:
+
+```text
+        REST_SQLITE_CRUD_TASK.sentence            REST_SQLITE_ADD_UPDATE_MODIFY.mod_sentence
+                    |                                            |
+              build_system(...)                         modify_system(start_system, ...)
+                    |                                            |
+                    +--------------------+-----------------------+
+                                         |
+                          grade_real_system_task(task, root)
+                             oracle_kind="service"
+                                         |
+                                  _grade_service(spec, root)
+                                         |
+                    +--------------------+-----------------------+
+                    |                                             |
+     (a) serve_and_check_stdlib(root, entry,           (b) AFTER teardown: independently
+         http_checks)  -- REAL localhost HTTP,              re-open the SQLite file
+         REAL subprocess server, ephemeral port             (harness.datastore_oracle helpers /
+         (harness/server_oracle.py, unchanged                inline stdlib sqlite3) and assert
+         launch/poll/teardown machinery; `http_check`        the persisted row-count -- catches
+         dict gains one new optional key, `json_body`,       a service that only kept state
+         so a POST/PUT check can send a real JSON             in-memory (HTTP looks right, disk
+         request body -- everything else byte-identical)      state does not)
+                    |                                             |
+                    +--------------------+-----------------------+
+                                         |
+                        (accepted, note) -- never raises,
+                        same shape every other oracle_kind returns
+```
+
+The `json_body` extension to `harness/server_oracle.py`'s `http_check` contract is the ONE new piece of
+execution-plane machinery this pair of requirements needs: `serve_and_check_stdlib`'s prior contract
+(`method`/`path`/`status`/`json_contains`/`body_contains`) had no way to send a REQUEST body at all, so
+a REST CRUD API's `POST`/`PUT` endpoints (which the sentence explicitly requires to accept `{"name":
+...}`) could not be exercised honestly without it. The extension is additive and backward-compatible —
+every existing `http_check` (across `server_oracle`'s own tests and every earlier EXT-060 task) that
+omits `json_body` sends the exact same request as before.
+
 **Demoted (regression checks / feeders, NOT the tracked number):** `harness/system_suite.py`'s toy-CLI
 creation suite, `harness/modification_suite.py`, and `harness/daily_driver.py`. They keep running as
 fast local regression signals and as a source of new task shapes to graduate into EXT-060's fixed,

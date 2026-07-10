@@ -102,13 +102,15 @@ gap: the 4 hard classes were greened via hand-written verified LEAVES + 7B escal
 generation. The real bar = the model+harness GENUINELY builds novel real systems it has NO leaf for, verified by
 real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fallback but do NOT count as capability.
 - **[real-systems suite (new frontier instrument) — NOW]** a genuinely-harder tier: a REST microservice w/
-  persistence, a job-queue service, an ETL pipeline, a reusable library w/ tests, a stateful protocol server —
-  each with an honest behavioral oracle, measured with NO leaves so the number reflects GENUINE capability. Being
-  designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard classes become the FLOOR.
+  persistence (✅ FIRST rung landed — EXT-060 REQ-9/REQ-10, `oracle_kind="service"` + a stdlib REST/SQLite
+  CRUD CREATE+MODIFY pair), a job-queue service, an ETL pipeline, a reusable library w/ tests, a stateful
+  protocol server — each with an honest behavioral oracle, measured with NO leaves so the number reflects
+  GENUINE capability. Being designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard
+  classes become the FLOOR.
 - **[EXT-060 canonical scoreboard — FIRST ON-JETSON MEASUREMENT, NOW]** run
-  `.jaros-data/realsys_canonical.py` live on the Jetson to get the FIRST honest combined pass@1 (5 create +
-  2 modify = 7 tasks) for the new canonical scoreboard -- the number to trend from here forward. high ·
-  immediate follow-up to REQ-7/REQ-8.
+  `.jaros-data/realsys_canonical.py` live on the Jetson to get the FIRST honest combined pass@1 (now 6
+  create + 3 modify = 9 tasks, incl. the new SaaS-shaped REST/SQLite pair) for the new canonical
+  scoreboard -- the number to trend from here forward. high · immediate follow-up to REQ-7/REQ-8/REQ-9/REQ-10.
 - **[first real-system probe — RUNNING]** build a real stdlib HTTP REST API from one sentence; build_system
   serve-and-checks it (starts server, drives HTTP). No API leaf → tests genuine capability. Result pending.
 - **[GENERIC capability mechanisms — NEXT, from the workflow plan]** decompose → cross-module coherence →
@@ -582,6 +584,25 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ FIRST SaaS RUNG — EXT-060 REQ-9/REQ-10, TASK-8 (2026-07-09)]** the canonical scoreboard's first
+  genuinely-SaaS-shaped tasks: a NEW `oracle_kind="service"` in `grade_real_system_task` grades a real
+  stdlib REST API (`http.server` + `sqlite3` + `json`, no framework) by (a) launching it as a real
+  subprocess server on an ephemeral localhost port and driving real HTTP requests
+  (`harness.server_oracle.serve_and_check_stdlib`, reused verbatim) and (b), AFTER teardown,
+  INDEPENDENTLY re-opening the SQLite file it wrote (`harness.datastore_oracle` helpers) to assert real
+  persisted rows — never trusting the service's own HTTP responses for durability. One minimal,
+  backward-compatible extension was needed to make this honest: `server_oracle`'s `http_check` dict
+  gained an optional `json_body` key (existing checks that omit it are byte-identical to before) so a
+  `POST`/`PUT` check can send a real JSON request body — the prior contract had no way to send one at
+  all, and a REST CRUD API can't be tested honestly without it. `REST_SQLITE_CRUD_TASK` (CREATE, an
+  `items` resource with autoincrement id + name, full POST/GET/DELETE/404 + persistence-across-restart
+  contract) joins `REAL_SYSTEMS_TASKS` (now 6); `REST_SQLITE_ADD_UPDATE_MODIFY` (MODIFY, adds a `PUT
+  /items/<id>` endpoint to a known-good baseline, regression-checks the existing endpoints) joins
+  `REAL_SYSTEMS_MODIFY_TASKS` (now 3). 36 new offline tests green (hand-written fixture services only —
+  a correct fixture accepted incl. the independent db assertion, an in-memory-only fixture and a
+  wrong-status-code fixture rejected, a crashing/never-binding fixture never raises), no regression
+  (115/115 across EXT-060+adjacent+EXT-036-stdlib-server-oracle). Offline-only this pass — the first
+  on-Jetson measurement of whether gemma can actually BUILD this class is the immediate next step.
 - **[★★ EXT-060 IS NOW THE CANONICAL real-systems SCOREBOARD — REQ-7/REQ-8, TASK-6/TASK-7 landed (2026-07-09)]**
   Stopped the real-systems scoreboard drift (owner directive): EXT-060 is now THE ONE tracked real-systems
   number, with TWO HALVES -- CREATE (`run_real_systems_suite`, 5 tasks) + a NEW MODIFY half

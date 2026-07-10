@@ -285,7 +285,18 @@ def _do_request(port: int, check: dict, request_timeout: float):
     if not str(path).startswith("/"):
         path = "/" + str(path)
     url = f"http://127.0.0.1:{port}{path}"
-    req = urllib.request.Request(url, method=method)
+    # #EXT-060-REQ-9 Start
+    # TASK-8: the prior contract had no way to send a REQUEST BODY at all -- a REST CRUD API's
+    # POST/PUT endpoints can't be exercised honestly without one. Additive + backward-compatible:
+    # a check that omits `json_body` builds the exact same `Request(url, method=method)` as before
+    # (`data=None`, no extra headers).
+    data = None
+    headers: dict = {}
+    if check.get("json_body") is not None:
+        data = json.dumps(check["json_body"]).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    # #EXT-060-REQ-9 End
     try:
         with urllib.request.urlopen(req, timeout=request_timeout) as resp:
             status = resp.getcode()
@@ -301,8 +312,12 @@ def _do_request(port: int, check: dict, request_timeout: float):
 
 
 def _check_one(port: int, check, request_timeout: float) -> dict:
-    """Run ONE http_check and grade it. Guarded per-check -- a malformed check dict or a
-    request error never propagates, it is reported as a failed check."""
+    """Run ONE http_check and grade it. ``check`` accepts ``method``, ``path``, ``status``,
+    ``json_contains``, ``body_contains``, and (EXT-060 REQ-9) an optional ``json_body`` sent as the
+    request's JSON-encoded body (``Content-Type: application/json``) -- omitted by default, so a
+    check with no ``json_body`` sends no body at all, exactly as before this key existed. Guarded
+    per-check -- a malformed check dict or a request error never propagates, it is reported as a
+    failed check."""
     try:
         if not isinstance(check, dict):
             raise TypeError(f"http_check must be a dict, got {type(check)!r}")
@@ -465,7 +480,8 @@ def serve_and_check_stdlib(root, entry: "str | None", http_checks, *,
     every check in ``http_checks`` against it as a REAL HTTP request via the SAME
     :func:`_check_one`/:func:`_do_request` this module already uses for ``serve_and_check`` --
     same ``http_check`` dict contract (``method``, ``path``, optional ``status``/
-    ``json_contains``/``body_contains``).
+    ``json_contains``/``body_contains``/``json_body``, the last (EXT-060 REQ-9) sent as the
+    request's JSON-encoded body when present).
 
     NEVER raises: any failure at any stage (missing/invalid ``entry``, bad ``root``, an
     unlaunchable process, a server that never binds, a malformed check) is reported honestly as

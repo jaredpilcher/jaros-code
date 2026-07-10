@@ -27,6 +27,7 @@ reference implementation the model could not see.
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -56,6 +57,17 @@ from harness.import_driver import drive_import
 
 IMPORT_DEFAULT_TIMEOUT_S = 15.0
 # #EXT-060-REQ-3 End
+
+# #EXT-060-REQ-9 Start
+# TASK-8: reuse (not reimplement) the already-landed server oracle (EXT-036 REQ-22/REQ-47) for the
+# "service" oracle_kind's real-HTTP grading, and the already-landed sqlite datastore oracle (EXT-039
+# REQ-1) for its INDEPENDENT post-teardown persistence assertion.
+from harness.datastore_oracle import count_all_rows, detect_sqlite_datastore
+from harness.server_oracle import serve_and_check_stdlib
+
+SERVICE_DEFAULT_STARTUP_TIMEOUT_S = 15.0
+SERVICE_DEFAULT_REQUEST_TIMEOUT_S = 5.0
+# #EXT-060-REQ-9 End
 
 
 @dataclass
@@ -96,6 +108,14 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
       built module in a FRESH sandboxed subprocess (``harness.import_driver.drive_import``) and
       drives its public API with any injected clock/spies declared -- for a reusable LIBRARY task
       (no CLI/stdout contract at all).
+    - ``"service"``: ``task.oracle_spec`` is ``{"entry": str, "http_checks": [...], "db": {"path":
+      str | None, "min_rows": int, "table": str | None} | None, "startup_timeout": float,
+      "request_timeout": float}``. Launches the built entrypoint as a real long-lived server on an
+      ephemeral localhost port and drives real HTTP requests against it
+      (``harness.server_oracle.serve_and_check_stdlib``); when ``"db"`` is present, AFTER the server
+      is torn down, INDEPENDENTLY re-opens the resulting SQLite file (``harness.datastore_oracle``)
+      and asserts the persisted row count -- never trusting the service's own HTTP responses for
+      durability. For a stdlib REST/SQLite-backed service (no framework, no CLI/stdout contract).
 
     Returns ``(accepted, note)``. NEVER RAISES: an unknown ``oracle_kind``, a malformed
     ``oracle_spec``, or any exception during grading is an honest ``(False, <reason>)`` -- never a
@@ -111,6 +131,10 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
         if task.oracle_kind == "import":
             return _grade_import(spec, root, python_exe)
         # #EXT-060-REQ-3 End
+        # #EXT-060-REQ-9 Start
+        if task.oracle_kind == "service":
+            return _grade_service(spec, root, python_exe)
+        # #EXT-060-REQ-9 End
         return False, f"unknown oracle_kind: {task.oracle_kind!r}"
     except Exception as exc:  # never raise -- an honest diagnostic result instead
         return False, f"grade_real_system_task raised unexpectedly: {exc}"
@@ -188,6 +212,107 @@ def _grade_import(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool,
         )
     return True, result.note
 # #EXT-060-REQ-3 End
+
+
+# #EXT-060-REQ-9 Start
+# TASK-8: the ``oracle_kind == "service"`` grading path -- for a real, long-lived REST/SQLite-backed
+# service (no CLI/stdout contract at all). Wires (never reimplements)
+# ``harness.server_oracle.serve_and_check_stdlib`` for the real-HTTP half, and
+# ``harness.datastore_oracle``'s detection/row-counting helpers (or a tiny inline stdlib ``sqlite3``
+# read) for the INDEPENDENT, post-teardown persistence half -- never trusting the service's own HTTP
+# responses for durability, exactly the same "hollow-persistence" concern
+# ``harness.datastore_oracle.verify_persistence`` already guards against for CLI-shaped systems.
+def _verify_service_db(root: Any, db_spec: dict) -> "tuple[bool, str]":
+    """Open a FRESH ``sqlite3`` connection to the SQLite file the ``db_spec`` names (or, when no
+    ``"path"`` is given, the file :func:`harness.datastore_oracle.detect_sqlite_datastore` detects
+    under ``root``) and assert its row count meets ``db_spec.get("min_rows", 0)`` -- schema-agnostic
+    (``harness.datastore_oracle.count_all_rows``) unless ``db_spec["table"]`` names one table
+    explicitly. Called ONLY after the server process has already been torn down (by the caller), so
+    this is a genuinely independent read of what actually landed on disk. Never raises: any failure
+    (missing file, bad query, malformed spec) is an honest ``(False, <reason>)``."""
+    try:
+        root_path = Path(root)
+    except (TypeError, ValueError) as exc:
+        return False, f"db assertion: invalid root {root!r}: {exc}"
+
+    db_rel = db_spec.get("path") if isinstance(db_spec, dict) else None
+    if db_rel:
+        db_file = root_path / str(db_rel)
+    else:
+        info = detect_sqlite_datastore(root_path)
+        if info is None or not info.db_path:
+            return False, "db assertion: no db_path given and none could be auto-detected"
+        db_file = root_path / info.db_path
+
+    if not db_file.exists():
+        return False, (f"db assertion: database file does not exist at {db_file} -- the service "
+                        "never actually persisted to SQLite (hollow-persistence: HTTP responses "
+                        "may look correct, the file does not exist)")
+
+    conn = None
+    try:
+        conn = sqlite3.connect(str(db_file))
+        cur = conn.cursor()
+        table = db_spec.get("table") if isinstance(db_spec, dict) else None
+        if table:
+            try:
+                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                row = cur.fetchone()
+                row_count = int(row[0]) if row else 0
+            except Exception as exc:
+                return False, f"db assertion: could not query table {table!r}: {exc}"
+        else:
+            row_count = count_all_rows(cur)
+    except Exception as exc:
+        return False, f"db assertion: could not open/query database file {db_file}: {exc}"
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+    min_rows = db_spec.get("min_rows", 0) if isinstance(db_spec, dict) else 0
+    try:
+        min_rows = int(min_rows)
+    except (TypeError, ValueError):
+        min_rows = 0
+    if row_count < min_rows:
+        return False, (f"db assertion: found {row_count} row(s) independently in {db_file}, "
+                        f"expected >= {min_rows}")
+    return True, f"db assertion ok: {row_count} row(s) independently verified in {db_file}"
+
+
+def _grade_service(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "service"`` grading path: (a) launch the built entrypoint as a real
+    server and drive every declared ``http_checks`` entry against it as a REAL HTTP request
+    (``harness.server_oracle.serve_and_check_stdlib`` -- unchanged launch/poll/teardown machinery,
+    the SAME sandboxed subprocess convention every other check in this codebase already goes
+    through); (b) when ``oracle_spec["db"]`` is present, AFTER that server has already been torn
+    down, independently re-verify the persisted SQLite state (:func:`_verify_service_db`). ``python
+    _exe`` is accepted for dispatch-signature parity with the other ``_grade_*`` helpers but is not
+    forwarded -- ``serve_and_check_stdlib`` always launches the entry with ``sys.executable``
+    (there is no interpreter-override parameter on that function). Never raises: any failure at any
+    stage is an honest ``(False, <reason>)``."""
+    entry = oracle_spec.get("entry") or "main.py"
+    http_checks = oracle_spec.get("http_checks") or []
+    startup_timeout = oracle_spec.get("startup_timeout", SERVICE_DEFAULT_STARTUP_TIMEOUT_S)
+    request_timeout = oracle_spec.get("request_timeout", SERVICE_DEFAULT_REQUEST_TIMEOUT_S)
+
+    result = serve_and_check_stdlib(root, entry, http_checks,
+                                     startup_timeout=startup_timeout, request_timeout=request_timeout)
+    if not result.get("ok"):
+        return False, f"service http checks failed: {result.get('note')}"
+
+    db_spec = oracle_spec.get("db")
+    if isinstance(db_spec, dict):
+        db_ok, db_note = _verify_service_db(root, db_spec)
+        if not db_ok:
+            return False, db_note
+        return True, f"ok: service http checks passed; {db_note}"
+
+    return True, "ok: service http checks passed"
+# #EXT-060-REQ-9 End
 
 
 def _rates(results: "list[dict]") -> dict:
@@ -874,3 +999,203 @@ def run_canonical_scoreboard(*, llm: Any = None,
     combined = _combined_rate(create.get("results") or [], modify.get("results") or [])
     return {"create": create, "modify": modify, "combined": combined}
 # #EXT-060-REQ-8 End
+
+
+# #EXT-060-REQ-9 Start
+# TASK-8: the FIRST genuinely-SaaS-shaped task -- a stdlib REST API (http.server + sqlite3 + json,
+# no framework) exposing CRUD over an `items` resource, persisted to SQLite, graded by the new
+# "service" oracle_kind (real HTTP over a real subprocess server + an INDEPENDENT post-teardown
+# SQLite read -- never trusting the service's own HTTP responses for durability).
+_REST_SQLITE_CRUD_SENTENCE = (
+    "Write a Python web service in a file named main.py using only the standard library "
+    "(http.server + sqlite3 + json). On startup it listens on the TCP port given by the PORT "
+    "environment variable and stores data in a SQLite database file named data.db in the current "
+    "directory (create the table if missing). It serves a JSON REST API for `items`, each item "
+    "having an integer id (autoincrement) and a string `name`: `POST /items` with a JSON body "
+    "`{\"name\": ...}` inserts a new item and responds 201 with the created item as JSON including "
+    "its id; `GET /items` responds 200 with a JSON array of all items; `GET /items/<id>` responds "
+    "200 with that item as JSON, or 404 if absent; `DELETE /items/<id>` deletes it and responds "
+    "204, or 404 if absent. Data must persist in data.db across process restarts."
+)
+
+REST_SQLITE_CRUD_TASK = RealSystemTask(
+    name="rest-sqlite-items-crud-service",
+    cls="rest-api",
+    sentence=_REST_SQLITE_CRUD_SENTENCE,
+    oracle_kind="service",
+    oracle_spec={
+        "entry": "main.py",
+        "http_checks": [
+            # A SECOND item ("beta") is created and deliberately never deleted below, purely so
+            # the independent post-teardown db assertion (>= 1 row) is honestly satisfiable even
+            # though item "alpha" (id 1) IS deleted later in this same sequence -- a correct
+            # implementation genuinely ends the run with exactly one persisted row (id 2, "beta"),
+            # never zero, so `min_rows: 1` never accidentally rejects a correct build.
+            {"method": "POST", "path": "/items", "json_body": {"name": "alpha"},
+             "status": 201, "json_contains": {"name": "alpha", "id": 1}},
+            {"method": "POST", "path": "/items", "json_body": {"name": "beta"},
+             "status": 201, "json_contains": {"name": "beta", "id": 2}},
+            {"method": "GET", "path": "/items", "status": 200, "body_contains": "alpha"},
+            {"method": "GET", "path": "/items/1", "status": 200,
+             "json_contains": {"name": "alpha"}},
+            {"method": "DELETE", "path": "/items/1", "status": 204},
+            {"method": "GET", "path": "/items/1", "status": 404},
+        ],
+        "db": {"path": "data.db", "min_rows": 1},
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(REST_SQLITE_CRUD_TASK)
+
+
+# TASK-8: the correct baseline stdlib CRUD service used both as the MODIFY task's known-good
+# `start_system` and (in tests/test_ext060_service_oracle.py) as the hand-authored CORRECT fixture
+# proving the "service" oracle_kind grades REST_SQLITE_CRUD_TASK honestly. Matches
+# REST_SQLITE_CRUD_TASK's contract exactly (no `PUT` -- that is what REST_SQLITE_ADD_UPDATE_MODIFY
+# adds).
+_REST_SQLITE_BASELINE_PY = '''import json
+import os
+import sqlite3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse
+
+DB_PATH = "data.db"
+
+
+def _init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS items ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)"
+    )
+    conn.commit()
+    return conn
+
+
+CONN = _init_db()
+
+
+def _item_id(path):
+    parts = urlparse(path).path.strip("/").split("/")
+    if len(parts) == 2 and parts[0] == "items":
+        try:
+            return int(parts[1])
+        except ValueError:
+            return None
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {}
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/items":
+            cur = CONN.execute("SELECT id, name FROM items ORDER BY id")
+            rows = [{"id": r[0], "name": r[1]} for r in cur.fetchall()]
+            self._send_json(200, rows)
+            return
+        item_id = _item_id(self.path)
+        if item_id is not None:
+            cur = CONN.execute("SELECT id, name FROM items WHERE id = ?", (item_id,))
+            row = cur.fetchone()
+            if row is None:
+                self._send_json(404, {"error": "not found"})
+            else:
+                self._send_json(200, {"id": row[0], "name": row[1]})
+            return
+        self._send_json(404, {"error": "not found"})
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/items":
+            self._send_json(404, {"error": "not found"})
+            return
+        data = self._read_json()
+        name = data.get("name")
+        cur = CONN.execute("INSERT INTO items (name) VALUES (?)", (name,))
+        CONN.commit()
+        self._send_json(201, {"id": cur.lastrowid, "name": name})
+
+    def do_DELETE(self):
+        item_id = _item_id(self.path)
+        if item_id is None:
+            self._send_json(404, {"error": "not found"})
+            return
+        cur = CONN.execute("DELETE FROM items WHERE id = ?", (item_id,))
+        CONN.commit()
+        if cur.rowcount == 0:
+            self._send_json(404, {"error": "not found"})
+        else:
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+if __name__ == "__main__":
+    port = int(os.environ["PORT"])
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    server.serve_forever()
+'''
+# #EXT-060-REQ-9 End
+
+
+# #EXT-060-REQ-10 Start
+# TASK-8: the first SaaS-shaped MODIFY task -- add a `PUT /items/<id>` endpoint to the baseline
+# CRUD service above. Graded by the SAME "service" oracle_kind dispatcher REQ-9 lands -- no new
+# oracle code for the MODIFY half, mirroring how REQ-7's MODIFY tasks reused REQ-3/REQ-4's oracle
+# dispatch verbatim.
+_REST_SQLITE_PUT_MOD_SENTENCE = (
+    "Add a `PUT /items/<id>` endpoint that accepts a JSON body `{\"name\": ...}`, updates that "
+    "item's name, and responds 200 with the updated item as JSON (or 404 if the item does not "
+    "exist)."
+)
+
+REST_SQLITE_ADD_UPDATE_MODIFY = RealSystemModifyTask(
+    name="rest-sqlite-items-put-modify",
+    cls="rest-api-modify",
+    start_system={"main.py": _REST_SQLITE_BASELINE_PY},
+    mod_sentence=_REST_SQLITE_PUT_MOD_SENTENCE,
+    oracle_kind="service",
+    oracle_spec={
+        "entry": "main.py",
+        "http_checks": [
+            # Two items seeded: id 1 ("alpha") is updated via PUT then deleted below (exercising
+            # the NEW endpoint plus the still-working DELETE/404 regression path, plus a PUT
+            # against the now-deleted id); id 2 ("keep") is left alone so the independent
+            # post-teardown db assertion (>= 1 row) stays honestly satisfiable.
+            {"method": "POST", "path": "/items", "json_body": {"name": "alpha"},
+             "status": 201, "json_contains": {"name": "alpha", "id": 1}},
+            {"method": "POST", "path": "/items", "json_body": {"name": "keep"},
+             "status": 201, "json_contains": {"name": "keep", "id": 2}},
+            {"method": "PUT", "path": "/items/1", "json_body": {"name": "beta"},
+             "status": 200, "json_contains": {"name": "beta", "id": 1}},
+            {"method": "GET", "path": "/items/1", "status": 200,
+             "json_contains": {"name": "beta"}},
+            {"method": "DELETE", "path": "/items/1", "status": 204},
+            {"method": "GET", "path": "/items/1", "status": 404},
+            {"method": "PUT", "path": "/items/1", "json_body": {"name": "gamma"}, "status": 404},
+        ],
+        "db": {"path": "data.db", "min_rows": 1},
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(REST_SQLITE_ADD_UPDATE_MODIFY)
+# #EXT-060-REQ-10 End
