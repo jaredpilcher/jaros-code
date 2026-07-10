@@ -350,3 +350,55 @@ existing synonym-fallback behavior for a spec that declares ONLY a synonym.
 
 #### Implements
 - [REQ-1] ADT Differential Oracle
+
+### [TASK-12] Priority-queue min/max convention fix — fix a MEASURED Tenet-3 false-negative on a legitimate max-heap spec
+
+MEASURED FALSE-NEGATIVE (found during the TASK-158/EXT-036 diagnosis): `_priority_queue_reference`
+(TASK-4) hard-codes a MIN-heap comparison (a numerically SMALLER priority number wins), but a spec
+can legitimately declare the OPPOSITE convention ("highest number first" / "max-heap"). The
+always-on ADT floor then DEMOTES a genuinely correct max-heap build (`done=False`) because the
+reference model's assumed direction disagrees with the build's own declared direction — a
+false-negative that would corrupt the grading of any legitimate max-heap priority-queue spec (a
+real one was observed: the pre-re-domain `test_ext036_property_check.py` priority-queue fixture's
+correct build got `done=False` from the oracle minimum). This touches ACCEPTANCE-ORACLE code
+(Tenet-3-critical): the fix must never turn a genuinely-broken pq CLI into a pass, and must never
+regress the pre-existing min-heap convention or any other ADT class.
+
+#### Steps
+1. In `harness/adt_oracle.py`, add `pq_convention(spec: str | None) -> str | None`: returns
+   `"max"` ONLY when the spec text explicitly, unambiguously states the max-heap direction (e.g.
+   `"max-heap"`, `"descending priority"`, "the highest number goes first", "a higher number means
+   higher priority") and does not also state the opposite; `"min"` — the pre-existing, already-proven
+   universal default — for an absent/empty spec, a spec that explicitly states the min-heap
+   direction (e.g. `"min-heap"`, `"ascending priority"`, "the smallest number has the highest
+   priority"), AND a spec that is simply SILENT about direction (mirrors `_ttl_convention`'s
+   "silence resolves safely" precedent — never a new guess, since "min" was already the universal
+   assumption for every priority-queue build graded before this task); `None` (AMBIGUOUS) ONLY when
+   the spec states BOTH directions at once (self-contradictory) — the one case this function
+   genuinely cannot resolve safely. Never raises.
+2. Parameterize `_PriorityQueueReferenceModel`/`_priority_queue_reference` by `convention` (default
+   `"min"`, byte-identical to before): store the priority negated when `convention == "max"` so
+   `heapq` (a min-heap) pops the numerically LARGEST priority first; the insertion-order tie-break
+   counter is unaffected either way.
+3. Extend `_build_sequence(cls, seed, n, capacity, verbs=None, pq_convention="min")` with the new
+   keyword-only `pq_convention` param, consumed ONLY by the `priority-queue` branch (every other
+   class, and every pre-existing caller including `verify`, is unaffected).
+4. In `acceptance_check`, for `cls == "priority-queue"`, resolve `pq_convention(spec)`: when it
+   returns `None` (ambiguous), return `None` immediately — SKIP the pq differential check entirely
+   (do not inject the pq minimum) rather than guess; otherwise pass the resolved convention through
+   to `_build_sequence`. Every other class is untouched.
+5. Add tests to `tests/test_ext056_adt_oracle.py`: `pq_convention` on min/max/silent/ambiguous
+   (self-contradictory) phrasings; a correct MAX-heap pq fixture now PASSES `acceptance_check` when
+   the spec says max (previously would have been false-negatived); a correct MIN-heap pq fixture
+   still passes with an explicit min spec and with no spec at all (no regression, byte-identical
+   reference behavior); a self-contradictory spec makes `acceptance_check` return `None` (the
+   not-applicable/skip path, no demotion); a genuinely WRONG pq (max spec, min behavior) is still
+   caught; other ADT classes' `acceptance_check` emissions are unaffected.
+6. Run `python -m pytest tests/test_ext056_adt_oracle.py tests/test_ext056_acceptance_wiring.py -q`
+   (must stay fully green) and `python -m pytest tests/test_ext036_property_check.py -q` (the
+   re-domained tests must stay green) and
+   `python -c "import harness.adt_oracle, harness.system_builder, harness.system_suite"`. Update
+   `.jarify/EXT-056/index.json` for the extended `adt_oracle.py`/test file ranges.
+
+#### Implements
+- [REQ-1] ADT Differential Oracle

@@ -279,6 +279,89 @@ if __name__ == "__main__":
 '''
 
 
+# A correct MAX-heap priority-queue CLI (TASK-12), authored independently of the reference model:
+# a numerically LARGER priority number wins (the opposite direction of `_GOOD_PQ_CLI` above) --
+# achieved by negating the priority before pushing onto Python's own min-heap `heapq`, the textbook
+# way to get max-heap behavior out of a min-heap. Same stdin protocol/no-argv convention as
+# `_GOOD_PQ_CLI`; only the ordering direction differs.
+_GOOD_MAX_PQ_CLI = '''\
+import heapq
+import sys
+
+
+class MaxPriorityQueue:
+    def __init__(self):
+        self.heap = []
+        self.counter = 0
+
+    def push(self, priority, item):
+        heapq.heappush(self.heap, (-priority, self.counter, item))
+        self.counter += 1
+
+    def pop(self):
+        if not self.heap:
+            return None
+        _, _, item = heapq.heappop(self.heap)
+        return item
+
+    def peek(self):
+        if not self.heap:
+            return None
+        _, _, item = self.heap[0]
+        return item
+
+
+def main():
+    pq = MaxPriorityQueue()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "push":
+            priority, item = int(parts[1]), parts[2]
+            pq.push(priority, item)
+            print("ok")
+        elif cmd == "pop":
+            value = pq.pop()
+            print("none" if value is None else value)
+        elif cmd == "peek":
+            value = pq.peek()
+            print("none" if value is None else value)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+_PQ_MIN_SPEC = (
+    "Build a priority queue backed by a min-heap. push(priority, item) inserts an item at the "
+    "given priority; pop() removes and returns the highest-priority item -- a numerically "
+    "SMALLER priority number wins; peek() returns the same item without removing it."
+)
+_PQ_MAX_SPEC = (
+    "Build a priority queue backed by a max-heap. push(priority, item) inserts an item at the "
+    "given priority; pop() removes and returns the highest-priority item -- the highest number "
+    "goes first (a numerically LARGER priority number wins); peek() returns the same item "
+    "without removing it."
+)
+
+# SILENT on direction (names neither "min"/"max" wording at all) -- resolves to the pre-existing
+# "min" default (byte-identical to before TASK-12), NOT ambiguous/skipped.
+_PQ_SILENT_SPEC = (
+    "Build a priority queue. push(priority, item) inserts an item at the given priority; pop() "
+    "removes and returns the highest-priority item; peek() returns the same item without "
+    "removing it."
+)
+# genuinely AMBIGUOUS -- states BOTH directions at once (self-contradictory); this is the ONE
+# case `pq_convention` resolves to None.
+_PQ_CONTRADICTORY_SPEC = (
+    "Build a priority queue. It runs as either a min-heap or a max-heap depending on a runtime "
+    "configuration flag; push(priority, item) inserts an item at the given priority."
+)
+
+
 # A correct ttl-store CLI, authored independently of the reference model in
 # `harness/adt_oracle.py` (TASK-5): a plain dict of `key -> (value, expiry_tick)` plus a VIRTUAL
 # clock `now` that advances ONLY via the explicit `tick` command (never wall-clock/`time.time()`/
@@ -659,6 +742,147 @@ def test_acceptance_check_code_fails_against_buggy_pq_fixture(tmp_path):
     check = adt_oracle.acceptance_check("main.py", "priority-queue")
     assert check is not None
     assert _run_emitted_check(root, check) is False
+
+
+# --- priority-queue CONVENTION detection (TASK-12): pq_convention + convention-aware
+# acceptance_check -- fixes a MEASURED Tenet-3 false-negative on a legitimate max-heap spec -------
+
+def test_pq_convention_detects_min_max_and_ambiguous_phrasings():
+    # (a) explicit "min" phrasings.
+    assert adt_oracle.pq_convention("uses a min-heap") == "min"
+    assert adt_oracle.pq_convention("pops items in ascending priority order") == "min"
+    assert adt_oracle.pq_convention(
+        "pop() returns the item with the highest priority (the numerically smallest "
+        "priority value wins)"
+    ) == "min"
+    assert adt_oracle.pq_convention("the smallest number has the highest priority") == "min"
+    assert adt_oracle.pq_convention(_PQ_MIN_SPEC) == "min"
+
+    # explicit "max" phrasings.
+    assert adt_oracle.pq_convention("uses a max-heap") == "max"
+    assert adt_oracle.pq_convention("pops items in descending priority order") == "max"
+    assert adt_oracle.pq_convention(
+        "the item whose priority number is largest -- the highest number goes first"
+    ) == "max"
+    assert adt_oracle.pq_convention("a higher number means higher priority") == "max"
+    assert adt_oracle.pq_convention(_PQ_MAX_SPEC) == "max"
+
+    # AMBIGUOUS (self-contradictory): a real spec that states BOTH directions at once resolves to
+    # None -- the ONE case this function genuinely cannot resolve safely.
+    assert adt_oracle.pq_convention(_PQ_CONTRADICTORY_SPEC) is None
+    assert adt_oracle.pq_convention(
+        "this queue can run as either a min-heap or a max-heap depending on mode"
+    ) is None
+
+    # an ABSENT spec (no spec information supplied at all), and a spec that is simply SILENT
+    # about direction (mentions neither "min"/"max" wording), are NOT ambiguous -- both resolve to
+    # the pre-existing, already-proven "min" default (byte-identical to before TASK-12, mirroring
+    # `_ttl_convention`'s "silence defaults safely" precedent), never a skip.
+    assert adt_oracle.pq_convention(None) == "min"
+    assert adt_oracle.pq_convention("") == "min"
+    assert adt_oracle.pq_convention(_PQ_SILENT_SPEC) == "min"
+
+
+def test_priority_queue_reference_supports_max_convention_pops_largest_first():
+    ref = adt_oracle._priority_queue_reference("max")
+    ref.push(1, "low-priority-first-in")
+    ref.push(5, "high-priority-a")
+    ref.push(5, "high-priority-b")  # tie with the item above -- must come out AFTER it (FIFO)
+    ref.push(3, "mid-priority")
+
+    assert ref.peek() == "high-priority-a"
+    assert ref.pop() == "high-priority-a"
+    assert ref.peek() == "high-priority-b"
+    assert ref.pop() == "high-priority-b"
+    assert ref.pop() == "mid-priority"
+    assert ref.pop() == "low-priority-first-in"
+    assert ref.pop() is None
+
+
+def test_acceptance_check_passes_correct_max_heap_pq_fixture_when_spec_says_max(tmp_path):
+    # (b) MEASURED FIX: previously the always-on min-heap assumption would have false-rejected
+    # this genuinely-correct max-heap build (done=False on a correct implementation). With the
+    # spec declaring "max-heap" explicitly, the differential check now drives the reference model
+    # with the SAME direction the build itself declares, and the correct build PASSES.
+    root = _write_cli(tmp_path, _GOOD_MAX_PQ_CLI)
+    check = adt_oracle.acceptance_check("main.py", "priority-queue", spec=_PQ_MAX_SPEC)
+    assert check is not None
+    assert "priority-queue" in check["name"]
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_still_passes_correct_min_heap_pq_fixture_with_explicit_min_spec(tmp_path):
+    # (c) no regression: a correct min-heap build with an EXPLICIT min-heap spec still passes --
+    # byte-identical reference behavior to the pre-TASK-12 no-spec default.
+    root = _write_cli(tmp_path, _GOOD_PQ_CLI)
+    check = adt_oracle.acceptance_check("main.py", "priority-queue", spec=_PQ_MIN_SPEC)
+    assert check is not None
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_no_spec_still_defaults_to_min_convention_byte_identical(tmp_path):
+    # (c, continued) the pre-existing no-spec calling convention (every caller before TASK-12,
+    # including every test above this section) is completely unaffected: still "min", still a
+    # real emitted check, not a skip.
+    good_root = _write_cli(tmp_path, _GOOD_PQ_CLI, name="good_main.py")
+    check = adt_oracle.acceptance_check("good_main.py", "priority-queue")
+    assert check is not None
+    assert _run_emitted_check(good_root, check) is True
+
+    bad_root = _write_cli(tmp_path, _GOOD_MAX_PQ_CLI, name="bad_main.py")
+    # a max-heap build against the UNCHANGED no-spec (implicitly "min") drive is correctly
+    # caught as a divergence -- the no-spec path was never taught to accept max-heap behavior.
+    check2 = adt_oracle.acceptance_check("bad_main.py", "priority-queue")
+    assert check2 is not None
+    assert _run_emitted_check(bad_root, check2) is False
+
+
+def test_acceptance_check_skips_pq_differential_check_for_ambiguous_spec(tmp_path):
+    # (d) CONSERVATIVE default: a real, self-contradictory spec (states BOTH directions) must
+    # SKIP the differential check entirely (return None -- the module's existing not-applicable
+    # convention for acceptance_check) rather than silently guess a convention and risk demoting
+    # a genuinely correct build of the OTHER direction.
+    assert adt_oracle.pq_convention(_PQ_CONTRADICTORY_SPEC) is None
+    check = adt_oracle.acceptance_check("main.py", "priority-queue", spec=_PQ_CONTRADICTORY_SPEC)
+    assert check is None
+
+
+def test_acceptance_check_silent_spec_defaults_to_min_not_skipped(tmp_path):
+    # a real spec that is simply SILENT about direction (never says "max") is NOT ambiguous -- it
+    # must NOT be skipped; it drives the pre-existing "min" default, exactly like an absent spec.
+    # This is the exact shape several pre-existing (pre-TASK-12) tests already relied on: a spec
+    # passed for an UNRELATED reason (e.g. vocabulary/synonym testing) that happens to say nothing
+    # about priority direction must keep working exactly as before.
+    root = _write_cli(tmp_path, _GOOD_PQ_CLI)
+    check = adt_oracle.acceptance_check("main.py", "priority-queue", spec=_PQ_SILENT_SPEC)
+    assert check is not None
+    assert _run_emitted_check(root, check) is True
+
+
+def test_acceptance_check_catches_wrong_convention_pq_max_spec_min_behavior(tmp_path):
+    # (e) the critical anti-false-done proof: a build that is genuinely WRONG relative to its
+    # OWN declared spec (the spec says max-heap, but the build behaves like a min-heap) must
+    # still be caught, not waved through by the convention-aware fix.
+    root = _write_cli(tmp_path, _GOOD_PQ_CLI)  # min-heap behavior
+    check = adt_oracle.acceptance_check("main.py", "priority-queue", spec=_PQ_MAX_SPEC)
+    assert check is not None
+    assert _run_emitted_check(root, check) is False
+
+
+def test_acceptance_check_other_adt_classes_unaffected_by_pq_convention_fix(tmp_path):
+    # regression guard: the pq convention fix only ever branches on `cls == "priority-queue"` --
+    # every other ADT class's acceptance_check emission is untouched.
+    fixtures = {
+        "lru": (_GOOD_LRU_CLI, None),
+        "ttl-store": (_GOOD_TTL_CLI, None),
+        "fifo": (_GOOD_FIFO_CLI, None),
+        "ring-buffer": (_GOOD_RING_CLI, None),
+    }
+    for cls, (good_source, _) in fixtures.items():
+        root = _write_cli(tmp_path, good_source, name=f"{cls.replace('-', '_')}_main.py")
+        check = adt_oracle.acceptance_check(f"{cls.replace('-', '_')}_main.py", cls)
+        assert check is not None, cls
+        assert _run_emitted_check(root, check) is True, cls
 
 
 # --- ttl-store (TASK-5): classify, reference expiry, verify PASS/FAIL ---------------------------

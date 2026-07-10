@@ -149,3 +149,37 @@ harness.
       anti-false-done proof: a correct real-seconds ttl-store CLI now PASSES `acceptance_check`
       driven by the literal `kv-store-ttl-cli` spec while a genuinely buggy one STILL FAILS
       (`test_acceptance_check_still_catches_buggy_build_with_literal_kv_store_ttl_cli_spec`).
+- [x] TASK-12 (REQ-1, MEASURED during the TASK-158/EXT-036 diagnosis): the `priority-queue`
+      reference model (TASK-4) hard-coded a MIN-heap comparison (a numerically SMALLER priority
+      number wins), but a spec can legitimately declare the OPPOSITE convention ("highest number
+      first" / "max-heap") — the always-on ADT floor then DEMOTED a genuinely correct max-heap
+      build (`done=False`) because the reference model's assumed direction disagreed with the
+      build's own declared direction, corrupting the grading of any legitimate max-heap
+      priority-queue spec. Fix: `pq_convention(spec)` reads ONLY the visible spec text to tell an
+      explicit `"max"`-worded spec (`"max-heap"`/`"descending priority"`/"the highest number goes
+      first"/"a higher number means higher priority") from everything else, resolving to the
+      pre-existing `"min"` default for an absent spec, a spec that explicitly states `"min"`, AND a
+      spec that is simply SILENT about direction (mirrors `_ttl_convention`'s "silence resolves
+      safely" precedent — silence was already the universal assumption before this task, so this
+      is never a new guess), and resolving to `None` (AMBIGUOUS) ONLY when the spec states BOTH
+      directions at once (self-contradictory) — the one case that genuinely cannot be resolved
+      safely. `_PriorityQueueReferenceModel`/`_priority_queue_reference`/`_build_sequence` are
+      parameterized by `convention` (default `"min"`, byte-identical to every pre-TASK-12 caller);
+      `acceptance_check` resolves the convention from `spec` for the `priority-queue` class only,
+      and SKIPS the differential check entirely (returns `None`, adding nothing to the checklist)
+      when `pq_convention` resolves to `None` rather than guess — a skipped check is honest, a
+      wrong-convention check is a false-negative that corrupts the acceptance signal (Tenet 3).
+      Proven offline: a correct max-heap pq fixture now PASSES `acceptance_check` when the spec
+      says max (`test_acceptance_check_passes_correct_max_heap_pq_fixture_when_spec_says_max` —
+      closes the measured false-negative); a correct min-heap pq fixture still passes with an
+      explicit min spec, a silent spec, and no spec at all
+      (`test_acceptance_check_still_passes_correct_min_heap_pq_fixture_with_explicit_min_spec`,
+      `test_acceptance_check_silent_spec_defaults_to_min_not_skipped`,
+      `test_acceptance_check_no_spec_still_defaults_to_min_convention_byte_identical` — no
+      regression, byte-identical reference behavior); a self-contradictory spec makes
+      `acceptance_check` skip the check entirely
+      (`test_acceptance_check_skips_pq_differential_check_for_ambiguous_spec` — the not-applicable
+      path, no demotion); a genuinely WRONG pq (max spec, min behavior) is still caught
+      (`test_acceptance_check_catches_wrong_convention_pq_max_spec_min_behavior` — the critical
+      anti-false-done proof); and the other 4 ADT classes' `acceptance_check` emissions are
+      unaffected (`test_acceptance_check_other_adt_classes_unaffected_by_pq_convention_fix`).

@@ -122,6 +122,36 @@ spawns the built CLI as one persistent, unbuffered subprocess and probes REAL wa
 (a short-real-ttl key expires after an actual ``time.sleep`` just past it; a long-real-ttl key set
 at the same time does not). The pre-existing virtual-clock ``tick`` drive, and every other ADT
 class, are completely unchanged.
+
+**TASK-12 additions (this same module, MEASURED during the TASK-158/EXT-036 diagnosis, Tenet-3
+false-negative on legitimate max-heap priority-queue specs):** the ``priority-queue`` reference
+model (TASK-4) hard-coded a MIN-heap comparison (a numerically SMALLER priority number wins), but a
+spec can legitimately declare the OPPOSITE convention (a numerically LARGER priority number wins --
+"highest number first" / "max-heap"). The always-on ADT floor then DEMOTED a genuinely correct
+max-heap build (``done=False``) because the reference model's assumed direction disagreed with the
+build's own declared direction -- a false-negative, not a real bug. ``pq_convention(spec)`` reads
+ONLY the VISIBLE spec text (never a hidden test -- Tenet 3, no leak): ``"max"`` ONLY when the spec
+explicitly, unambiguously states the max-heap direction (``"max-heap"``/``"descending
+priority"``/"the highest number goes first"/"a higher number means higher priority") and doesn't
+ALSO state the opposite; ``"min"`` -- this module's ONE pre-existing, already-proven universal
+default -- for an absent/empty spec, a spec that explicitly states the min-heap direction, AND a
+spec that is simply SILENT about direction (mirrors ``_ttl_convention``'s precedent: silence
+resolves to the historically-safe default, exactly what every priority-queue build was already
+graded against before this task, never a new guess); ``None`` (AMBIGUOUS) ONLY when the spec states
+BOTH directions at once (self-contradictory) -- the one case this function genuinely cannot resolve
+safely. ``_PriorityQueueReferenceModel``/``_priority_queue_reference``/``_build_sequence`` are now
+parameterized by ``convention`` (default ``"min"`` -- BYTE-IDENTICAL to every pre-TASK-12 caller,
+including ``verify`` and every caller of ``acceptance_check`` that passes no ``spec`` at all, which
+is exactly the pre-existing universal min-heap assumption every prior test already relies on).
+``acceptance_check`` resolves the convention from ``spec`` ONLY for the ``priority-queue`` class: an
+absent spec or a spec silent on direction keeps the safe ``"min"`` default (no behavior change for
+any existing caller); an explicit ``"max"`` spec drives the reference with that convention (closing
+the measured false-negative); a self-contradictory spec makes ``acceptance_check`` return ``None``
+-- SKIPPING the pq differential check entirely rather than guess (per the CONSERVATIVE-default rule
+this module already follows elsewhere: a skipped check is honest, a wrong-convention check is a
+false-negative that corrupts the acceptance signal). Every other ADT class, and
+``classify``/``classify_confident`` (which only ever detect that a build IS a priority queue, never
+which direction it uses), are completely untouched by this addition.
 """
 
 from __future__ import annotations
@@ -316,20 +346,28 @@ def _lru_reference(capacity: int) -> _LruReferenceModel:
 class _PriorityQueueReferenceModel:
     """A ``heapq``-backed textbook priority-queue reference, authored ONLY from the visible
     push/pop/peek contract (never from any hidden test): ``push(priority, item)`` inserts ``item``
-    at the given ``priority``; ``pop()`` removes and returns the item with the numerically
-    SMALLEST ``priority`` value (the convention used throughout this module: a SMALLER priority
-    number is a HIGHER priority -- e.g. "priority 1" outranks "priority 5", the same convention
-    Python's own ``heapq`` and most task-scheduler textbooks use), breaking ties between EQUAL
-    priorities by INSERTION order (stable FIFO-among-ties) via a monotonic counter that only ever
-    increases; ``peek()`` returns the same value ``pop()`` would return, without removing it. Both
-    ``pop()`` and ``peek()`` return ``None`` on an empty queue."""
+    at the given ``priority``; ``pop()`` removes and returns the item with the HIGHEST priority
+    under ``convention`` (default ``"min"``, BYTE-IDENTICAL to the pre-TASK-12 behavior -- a
+    numerically SMALLER priority number wins, e.g. "priority 1" outranks "priority 5", the same
+    convention Python's own ``heapq`` and most task-scheduler textbooks use; ``convention="max"``
+    -- TASK-12, REQ-1 -- instead makes a numerically LARGER priority number win, for a spec that
+    explicitly declares that direction, e.g. "highest number first" / "max-heap"), breaking ties
+    between EQUAL priorities by INSERTION order (stable FIFO-among-ties, unaffected by
+    ``convention``) via a monotonic counter that only ever increases; ``peek()`` returns the same
+    value ``pop()`` would return, without removing it. Both ``pop()`` and ``peek()`` return
+    ``None`` on an empty queue."""
 
-    def __init__(self):
+    def __init__(self, convention: str = "min"):
         self._heap: "list[tuple[Any, int, Any]]" = []
         self._counter = 0
+        # TASK-12: a max-heap is a min-heap over the NEGATED priority -- storing `-priority`
+        # instead of `priority` when `convention == "max"` is the ONLY change needed for `heapq`
+        # to pop the numerically LARGEST priority first; the tie-break counter is untouched either
+        # way (insertion order is direction-independent).
+        self._sign = -1 if convention == "max" else 1
 
     def push(self, priority: Any, item: Any) -> None:
-        heapq.heappush(self._heap, (priority, self._counter, item))
+        heapq.heappush(self._heap, (self._sign * priority, self._counter, item))
         self._counter += 1
 
     def pop(self) -> Any:
@@ -345,9 +383,86 @@ class _PriorityQueueReferenceModel:
         return item
 
 
-def _priority_queue_reference() -> _PriorityQueueReferenceModel:
-    """Factory for a fresh :class:`_PriorityQueueReferenceModel`."""
-    return _PriorityQueueReferenceModel()
+def _priority_queue_reference(convention: str = "min") -> _PriorityQueueReferenceModel:
+    """Factory for a fresh :class:`_PriorityQueueReferenceModel` at the given ``convention``
+    (TASK-12, REQ-1: ``"min"`` -- the default, byte-identical to before -- or ``"max"``)."""
+    return _PriorityQueueReferenceModel(convention)
+
+
+# --- priority-queue CONVENTION detection (TASK-12, REQ-1: MEASURED false-negative on a legitimate
+# max-heap priority-queue spec) -----------------------------------------------------------------
+#
+# BUG (measured during the TASK-158/EXT-036 diagnosis): `_priority_queue_reference` always assumed
+# "a numerically SMALLER priority number wins" (min-heap), but a spec can legitimately declare the
+# OPPOSITE ("highest number first" / "max-heap"). The always-on ADT floor then DEMOTED a genuinely
+# correct max-heap build (`done=False`) because the reference model's assumed direction disagreed
+# with the build's own declared direction -- a false-negative, not a real bug. `pq_convention`
+# reads ONLY the VISIBLE spec text (never a hidden test -- Tenet 3, no leak) to tell which
+# direction a priority-queue spec declares.
+#
+# DEFAULT, mirroring `_ttl_convention`'s precedent exactly: "min" is -- and always has been -- this
+# module's ONE universal, already-proven default (every priority-queue build ever graded by this
+# oracle before TASK-12 assumed min). An absent spec, OR a spec that is simply SILENT about
+# direction (never says "max"/"max-heap"/"descending priority"/etc at all -- e.g. a spec that only
+# describes push/pop/peek without stating which number wins), both resolve to `"min"` --
+# byte-identical to the pre-TASK-12 behavior, NOT a "guess": this is exactly what already happened
+# for every priority-queue build graded before this task, so it changes nothing for a spec that
+# never contradicts it. `pq_convention` only resolves to `None` (truly AMBIGUOUS -- the ONE new,
+# CONSERVATIVE case, Tenet 3) when the spec text explicitly states BOTH directions at once
+# (self-contradictory, e.g. "runs as either a min-heap or a max-heap") -- a spec the oracle
+# genuinely cannot resolve safely either way. `pq_convention` resolves to `"max"` ONLY when the
+# spec explicitly, unambiguously states the max-heap direction and nothing to the contrary --
+# exactly the case the measured false-negative needed fixed.
+
+_PQ_MIN_RE = re.compile(
+    r"\bmin[- ]?heap\b"
+    r"|\bascending\s+(?:order\s+of\s+)?priority\b"
+    r"|\bnumerically\s+smallest\b"
+    r"|\b(?:smallest|lowest)\s+(?:number|value)\b[^.]{0,80}\b(?:highest|higher)\s+priority\b"
+    r"|\b(?:smaller|lower)\s+number\b[^.]{0,80}\b(?:highest|higher)\s+priority\b",
+    re.IGNORECASE,
+)
+_PQ_MAX_RE = re.compile(
+    r"\bmax[- ]?heap\b"
+    r"|\bdescending\s+(?:order\s+of\s+)?priority\b"
+    r"|\bnumerically\s+largest\b"
+    r"|\b(?:highest|largest)\s+number\b[^.]{0,20}\bfirst\b"
+    r"|\b(?:higher|larger)\s+number\b[^.]{0,80}\bhigher\s+priority\b",
+    re.IGNORECASE,
+)
+
+
+def pq_convention(spec: "str | None") -> "str | None":
+    """Detects which priority-queue ORDERING CONVENTION ``spec`` (the VISIBLE build spec text)
+    declares (TASK-12, REQ-1): ``"max"`` ONLY when the spec explicitly, unambiguously says a
+    numerically LARGER priority number wins (e.g. ``"max-heap"``, ``"descending priority"``, "the
+    highest number goes first", "a higher number means higher priority") AND does not ALSO state
+    the opposite. ``"min"`` -- this module's ONE pre-existing, already-proven universal default --
+    for everything else EXCEPT the one genuinely unsafe case: an ABSENT spec (``None``/empty, the
+    pre-TASK-12 calling convention), a spec that explicitly states the min-heap direction (e.g.
+    ``"min-heap"``, ``"ascending priority"``, "the smallest number has the highest priority"), and
+    a spec that is simply SILENT about direction (names neither) ALL resolve to ``"min"`` --
+    byte-identical to the pre-TASK-12 behavior in every one of those cases, never a new guess (that
+    silence was already the universal assumption before this task; this function only ever
+    ADDS correct recognition of an explicit ``"max"`` statement, it never subtracts the pre-existing
+    default). Returns ``None`` (AMBIGUOUS) ONLY when the spec text states BOTH directions at once
+    (self-contradictory, e.g. "runs as either a min-heap or a max-heap") -- the ONE case this
+    function genuinely cannot resolve safely either way; the caller (:func:`acceptance_check`)
+    treats that as "skip this check entirely" per this module's existing not-applicable
+    convention. Never raises -- any internal error also resolves to the safe ``"min"`` default."""
+    try:
+        text = spec or ""
+        if not text:
+            return "min"
+        is_min = bool(_PQ_MIN_RE.search(text))
+        is_max = bool(_PQ_MAX_RE.search(text))
+        if is_min and is_max:
+            return None
+        if is_max:
+            return "max"
+        return "min"
+    except Exception:
+        return "min"
 
 
 # --- STAGE 2c: reference model (ttl-store -- TASK-5's 3rd implemented ADT) --------------------
@@ -863,7 +978,8 @@ def _resolve_verbs(cls: str, spec: "str | None") -> "dict[str, str]":
 
 
 def _build_sequence(cls: str, seed: int, n: int, capacity: int,
-                     verbs: "dict[str, str] | None" = None) -> "tuple[list[str], list[str]]":
+                     verbs: "dict[str, str] | None" = None,
+                     pq_convention: str = "min") -> "tuple[list[str], list[str]]":
     """Shared sequence-builder (TASK-2, REQ-1): generates the seeded op sequence for ``cls`` via
     :func:`_seeded_ops`, applies every op IN ORDER to a fresh reference model (``lru`` and
     ``ring-buffer`` -- TASK-6 -- both use ``capacity``; ``priority-queue`` -- TASK-4 --,
@@ -874,8 +990,13 @@ def _build_sequence(cls: str, seed: int, n: int, capacity: int,
     optional, keyword-only) is the ``{canonical_verb: chosen_word}`` mapping from
     :func:`_resolve_verbs` -- when omitted (``None``, the default -- every pre-existing caller,
     including :func:`verify`, is unaffected) each canonical verb is used literally, byte-identical
-    to the pre-TASK-9 behavior.
-    Deterministic (same ``cls``/``seed``/``n``/``capacity``/``verbs`` -> byte-identical output).
+    to the pre-TASK-9 behavior. ``pq_convention`` (TASK-12, optional, keyword-only, default
+    ``"min"``) is ONLY consumed by the ``priority-queue`` branch -- it selects which direction
+    :func:`_priority_queue_reference` uses (see :func:`pq_convention` for how a caller derives this
+    from a spec); every other class ignores it entirely, and the default ``"min"`` keeps every
+    pre-existing caller (including :func:`verify`, which never passes it) byte-identical to before.
+    Deterministic (same ``cls``/``seed``/``n``/``capacity``/``verbs``/``pq_convention`` ->
+    byte-identical output).
     This is the ONE place the reference logic lives; both :func:`verify` (in-process differential
     drive) and :func:`acceptance_check` (bakes the same fixed lines into a standalone emitted
     script) call it -- never a second, drifting copy of the op-to-command/expected-value mapping.
@@ -895,7 +1016,7 @@ def _build_sequence(cls: str, seed: int, n: int, capacity: int,
     cmd_lines: "list[str]" = []
     expected_lines: "list[str]" = []
     if cls == "priority-queue":
-        pq_reference = _priority_queue_reference()
+        pq_reference = _priority_queue_reference(pq_convention)
         for op, args in ops:
             if op == "push":
                 priority, item = args
@@ -1267,7 +1388,19 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
     e.g. the ``kv-store-ttl-cli`` spec's ``ttl_seconds`` wording); only when the convention resolves
     to ``"real"`` does this function return :func:`_ttl_store_real_seconds_check`'s emission
     instead of the batch seeded-sequence drive below. An absent/tick-worded/ambiguous ``spec``
-    (every pre-TASK-10 caller) is unaffected -- the code below is untouched."""
+    (every pre-TASK-10 caller) is unaffected -- the code below is untouched.
+    TASK-12 (REQ-1, MEASURED priority-queue min/max convention false-negative): for ``cls ==
+    "priority-queue"``, ``spec`` is ALSO consulted by :func:`pq_convention` to tell which
+    numeric-priority direction the spec declares. An absent ``spec``, or a spec that is simply
+    SILENT about direction (every pre-TASK-12 caller, and every spec that never says "max"/
+    "max-heap"/"descending priority"/etc), resolves to ``"min"`` -- byte-identical to before, never
+    a new guess. A spec that EXPLICITLY states the max-heap direction drives
+    :func:`_build_sequence`'s reference model with ``"max"`` instead (a genuinely correct max-heap
+    build now passes -- the measured fix; a genuinely correct min-heap build still passes
+    unaffected). A spec that is self-contradictory (states BOTH directions at once) makes this
+    function return ``None`` -- SKIPPING the pq differential check entirely rather than risk
+    grading against the wrong direction (Tenet 3: a skipped check is honest, a wrong-convention
+    check is a false-negative)."""
     try:
         if not cls or cls not in _IMPLEMENTED_CLASSES:
             return None
@@ -1280,7 +1413,20 @@ def acceptance_check(entry: "str", cls: "str | None", *, seed: int = 1234,
         # absent/tick-worded/ambiguous, falls straight through to the EXISTING code UNCHANGED.
         if cls == "ttl-store" and _ttl_convention(spec) == "real":
             return _ttl_store_real_seconds_check(entry, verbs=verbs)
-        cmd_lines, expected_lines = _build_sequence(cls, seed, 24, capacity, verbs=verbs)
+        # TASK-12 (REQ-1, MEASURED priority-queue min/max convention false-negative):
+        # priority-queue is CONVENTION-AWARE from the visible spec text -- an absent spec, or one
+        # silent on direction, keeps the pre-existing "min" default (byte-identical); a spec that
+        # explicitly states "max" drives the reference model with that direction; a
+        # self-contradictory spec (states both) is a CONSERVATIVE no-op -- this check is skipped
+        # entirely rather than guess, never a wrong-convention false-negative. Every other class is
+        # unaffected.
+        resolved_pq_convention = "min"
+        if cls == "priority-queue":
+            resolved_pq_convention = pq_convention(spec)
+            if resolved_pq_convention is None:
+                return None
+        cmd_lines, expected_lines = _build_sequence(
+            cls, seed, 24, capacity, verbs=verbs, pq_convention=resolved_pq_convention)
         if not cmd_lines:
             return None
         entry_name = str(entry) if entry else ""
