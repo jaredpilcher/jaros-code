@@ -2808,3 +2808,58 @@ scaffold, fixing the measured gap where the built entrypoint never calls
 
 #### Implements
 - [REQ-48] Deterministic http.server SCAFFOLD repair — wire a recognized handler into a real serve loop
+
+### [TASK-62] Deterministic AGENT-LOOP SCAFFOLD repair — wire a correct tool-calling protocol boilerplate loop (REQ-49, owner directive 2026-07-09 -- first agent-class deterministic lever)
+
+Build the AGENT tool-call PARSE SCAFFOLD lever, the direct analog of TASK-61's `http.server`
+scaffold for the "agent" real-systems class. MEASURED via
+`.jaros-data/artifacts/realsys_agent.log` (the first on-Jetson agent build, 0/3 against
+`plain-tool-calling-agent`): gemma builds the agent LOGIC but mis-handles the mechanical OpenAI
+tool-call PARSING boilerplate -- built agents made 0 tool calls (didn't extract/loop-dispatch) or
+extracted the WRONG field (grabbed `tool_call_id` instead of the args).
+
+#### Steps
+1. Create `harness/agent_scaffold.py` with `spec_demands_tool_calling_agent(spec_text)` (detects
+   the `OPENAI_BASE_URL`/`JAROS_TOOL_URL`/"tool calling"/`tool_calls` conventions plus a
+   chat-completions round-trip) and `has_correct_agent_loop(modules)` — a generous, never-raising
+   heuristic scan over the built modules (combined) recognizing whether a correct
+   `JAROS_TOOL_URL`-addressed dispatch, `tool_calls` field read, `["function"]["name"]` extraction,
+   `json.loads(...arguments...)` decode, and `__JAROS_AGENT_FINAL__` sentinel are ALL already
+   present (the non-degrading no-op guard). Wrap in `# #EXT-036-REQ-49 Start`/`End` markers.
+2. In the same module, add `generate_agent_skeleton()` — deterministically returns the standard,
+   correct stdlib-only (`json`/`os`/`sys`/`urllib.request`) tool-calling agent-loop skeleton (the
+   exact shape proven correct by `tests/test_ext060_agent_task.py`'s `CORRECT_PLAIN_AGENT`/
+   `harness.real_systems_suite._AGENT_UNGUARDED_BASELINE_PY` fixtures): reads
+   `OPENAI_BASE_URL`/`JAROS_TOOL_URL` + the goal from `sys.argv[1]`, loops POSTing the message list
+   to `{OPENAI_BASE_URL}/chat/completions`, on a `tool_calls` response extracts
+   `["function"]["name"]` + `json.loads(["function"]["arguments"])`, POSTs to
+   `{JAROS_TOOL_URL}/<name>`, appends the observation and continues; on plain content, prints the
+   `__JAROS_AGENT_FINAL__...__END__` sentinel and exits 0.
+3. Add the public `apply_agent_scaffold(modules, spec_text, *, llm=None)` — fires ONLY when
+   `spec_demands_tool_calling_agent` is true AND `has_correct_agent_loop` is false; resolves the
+   entry filename via `harness.filename_contract.demanded_filenames` (falling back to `main.py`,
+   never reimplemented) and REPLACES it wholesale with `generate_agent_skeleton()`'s output (the
+   mechanical loop is fixed/standard boilerplate, so it is regenerated fresh rather than patched —
+   unlike REQ-48 there is no separable build-time judgement fragment worth preserving, since the
+   model's tool-choice judgement happens entirely at RUNTIME through the actual completions
+   responses). `llm` is accepted for call-site parity with `apply_http_service_scaffold` but is
+   intentionally unused. Never raises; returns a NEW dict + notes, never mutates `modules`.
+4. Wire `apply_agent_scaffold(built, spec, llm=llm)` into `harness/system_builder.py`'s
+   `build_system`, in the deterministic-repair seam right after the http.server scaffold repair
+   (`# #EXT-036-REQ-48 End`) and before the ASSEMBLE step, wrapped in
+   `# #EXT-036-REQ-49 Start`/`End` markers.
+5. Add offline tests `tests/test_ext036_agent_scaffold.py` (NO model/Jetson calls) reconstructing
+   gemma's measured broken shapes from `realsys_agent.log` (zero tool calls; wrong-field
+   extraction; an empty build) — the KEY test: apply the scaffold, then DRIVE the repaired agent
+   through `harness.agent_oracle.drive_agent`/`check_agent` against
+   `harness.real_systems_suite.PLAIN_AGENT_TASK`'s own scripted 2-tool-call-then-final oracle spec
+   and assert it PASSES (proves the scaffold produces a genuinely working tool-calling agent,
+   offline, the stub is the model). Also cover: no-op when a correct loop already exists (including
+   idempotency against the scaffold's own generated output); no-op when the spec is not this agent
+   contract; never raises on garbage input (None, non-dict modules, unparseable code, a spec of an
+   unexpected type).
+6. Run ONLY `python -m pytest tests/test_ext036_agent_scaffold.py -q` (offline); confirm green.
+   Update `.jarify/EXT-036/index.json` (REQ-49 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-49] Deterministic AGENT-LOOP SCAFFOLD repair — wire a correct tool-calling protocol boilerplate loop

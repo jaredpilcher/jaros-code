@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2177,3 +2177,57 @@ wired into a generated stdlib skeleton, actually binds `PORT` and passes a full
       end-to-end; a no-op when a real serve loop already exists; a no-op/safe outcome when the spec
       is not a web service or a Flask/FastAPI service is detected; never raising on garbage input.
       `tests/test_ext036_http_service_scaffold.py`.
+
+### [REQ-49] Deterministic AGENT-LOOP SCAFFOLD repair — wire a correct tool-calling protocol boilerplate loop
+
+MEASURED via `.jaros-data/artifacts/realsys_agent.log` (2026-07-09, the first on-Jetson agent
+build, 0/3 against `plain-tool-calling-agent`): gemma builds the AGENT LOGIC (the goal reasoning
+shape) but mis-handles the mechanical OpenAI tool-call PARSING boilerplate `harness/agent_oracle.py`
+pins as the injection contract -- 2 of 3 built agents made ZERO tool calls at all (no
+request/dispatch loop ever wired), and 1 of 3 extracted the WRONG JSON field for a tool's
+arguments (grabbed `tool_call_id` instead of `function.arguments`). This is the direct analog of
+the already-landed `http.server` scaffold repair (REQ-48): a TWO-PLANE fix where the model supplies
+the judgement (WHICH tool to call, decided entirely at RUNTIME through the actual chat-completions
+responses it sends -- never baked into build-time code) and a deterministic tool supplies the
+MECHANICAL protocol boilerplate (parse `tool_calls[].function.name` + `json.loads(.arguments)`,
+POST to `{JAROS_TOOL_URL}/<name>`, feed the observation back into the message list, loop, and emit
+the `__JAROS_AGENT_FINAL__...__END__` sentinel on termination).
+
+#### Acceptance Criteria
+- [x] `spec_demands_tool_calling_agent(spec_text)` detects a visible spec that demands the pinned
+      OpenAI-protocol tool-calling agent contract (`OPENAI_BASE_URL`/`JAROS_TOOL_URL`/"tool
+      calling"/`tool_calls` conventions AND a chat-completions round-trip), leak-free (reads only
+      the visible spec text), never raises.
+- [x] `has_correct_agent_loop(modules)` is a generous, never-raising heuristic scan recognizing
+      whether the built modules (combined) ALREADY correctly perform the full mechanical protocol:
+      a `JAROS_TOOL_URL`-addressed tool dispatch, a `tool_calls` field read, tool-name extraction
+      via `["function"]["name"]` (never a wrong sibling key), `json.loads(...)` applied to the
+      `arguments` field, and the `__JAROS_AGENT_FINAL__` sentinel -- the non-degrading guard so an
+      already-working agent (including one with extra task-specific logic layered on top) is never
+      touched.
+- [x] `generate_agent_skeleton()` deterministically returns the standard, correct tool-calling
+      agent-loop skeleton (stdlib-only: `json`/`os`/`sys`/`urllib.request`) -- reads
+      `OPENAI_BASE_URL`/`JAROS_TOOL_URL` and the goal from `sys.argv[1]`, loops POSTing the message
+      list to `{OPENAI_BASE_URL}/chat/completions`, on a `tool_calls` response extracts
+      `["function"]["name"]` + `json.loads(["function"]["arguments"])`, POSTs to
+      `{JAROS_TOOL_URL}/<name>`, appends the observation as a tool message and continues; on a
+      plain-content response, prints the `__JAROS_AGENT_FINAL__...__END__` sentinel and exits 0.
+- [x] `apply_agent_scaffold(modules, spec_text, *, llm=None)` is the public, non-degrading,
+      never-raising repair: fires ONLY when `spec_demands_tool_calling_agent` is true AND
+      `has_correct_agent_loop` is false; resolves the entry filename via
+      `harness.filename_contract.demanded_filenames` (falling back to `main.py`) and REPLACES it
+      wholesale with `generate_agent_skeleton()`'s output (the mechanical loop is fixed/standard,
+      so it is always generated fresh rather than patched); `llm` is accepted for call-site parity
+      with the sibling `http.server` scaffold but is intentionally unused (no separable build-time
+      judgement fragment exists here worth a retry over).
+- [x] Wired into `harness/system_builder.py`'s `build_system` deterministic-repair pass, immediately
+      after the `http.server` scaffold repair (REQ-48) and before the ASSEMBLE step, passing the
+      build's own `llm` through for API parity.
+- [x] Proven OFFLINE (no model/Jetson call) with tests covering: applying the scaffold to
+      RECONSTRUCTED measured-broken shapes (zero tool calls; wrong-field extraction; an empty
+      build) and then DRIVING the repaired agent through `harness.agent_oracle.drive_agent`/
+      `check_agent` against `harness.real_systems_suite.PLAIN_AGENT_TASK`'s own scripted
+      2-tool-call-then-final oracle spec asserts the repaired agent actually PASSES; a no-op when a
+      correct loop already exists (including idempotency on the scaffold's own generated output);
+      a no-op when the spec is not this agent contract; never raising on garbage input.
+      `tests/test_ext036_agent_scaffold.py`.

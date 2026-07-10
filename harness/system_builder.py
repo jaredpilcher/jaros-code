@@ -3304,6 +3304,24 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _http_scaffold_notes = apply_http_service_scaffold(built, spec, llm=llm)
     # #EXT-036-REQ-48 End
 
+    # #EXT-036-REQ-49 Start
+    # TASK-62: deterministic tool-calling AGENT-LOOP SCAFFOLD repair. MEASURED
+    # (`.jaros-data/artifacts/realsys_agent.log`, the first on-Jetson agent build, 0/3 against
+    # `plain-tool-calling-agent`): gemma builds the agent's LOGIC/goal-reasoning shape but
+    # mis-handles the mechanical OpenAI tool-call PARSING boilerplate -- built agents made ZERO
+    # tool calls (never wired the request/dispatch loop) or extracted the WRONG JSON field for a
+    # tool's arguments (grabbed `tool_call_id` instead of `function.arguments`). Wired in the same
+    # spot/pattern as the http.server scaffold repair immediately above -- additive, regex-based,
+    # never-raising, leak-free (only the visible `spec` text and the built modules are read), and
+    # NON-DEGRADING: a no-op whenever a correct tool_calls[].function.name +
+    # json.loads(.arguments) loop already exists or the spec isn't this agent contract. `llm` is
+    # passed through for call-site parity with the sibling scaffold above but is currently unused
+    # -- the mechanical loop this repair generates is fixed, standard boilerplate (see
+    # `harness/agent_scaffold.py`'s module docstring for why no clean-prompt retry is needed here).
+    from harness.agent_scaffold import apply_agent_scaffold
+    built, _agent_scaffold_notes = apply_agent_scaffold(built, spec, llm=llm)
+    # #EXT-036-REQ-49 End
+
     # 3. ASSEMBLE
     _beat("ASSEMBLE")  # #EXT-040-REQ-3
     try:
