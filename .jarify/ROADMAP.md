@@ -19,6 +19,14 @@ signal to look harder and generate the next horizon, never to stop.
 - **Relationship to `docs/GAP-MAP.md`:** GAP-MAP is the detailed **measured-findings appendix**
   (honest numbers, why each gap is what it is). This Roadmap is the organized forward plan that
   draws on it. GAP-MAP detail folds into this paradigm over time.
+- **Relationship to `docs/PRODUCTION-SYSTEMS-ATLAS.md`:** the Atlas is the **source-of-truth
+  completeness ledger** — the catalog of ~182 real production-system classes (across SaaS/devtools,
+  fintech/FinOps, edtech/health/e-commerce/logistics/media), each tagged with an oracle, difficulty,
+  create/modify, stdlib-buildability, and a status. **The real-systems NOW/NEXT horizon is pulled
+  FROM the Atlas** — it is the backlog this roadmap prioritizes against; the roadmap never invents a
+  class the Atlas doesn't hold, and **coverage (verified / total) is a first-class scoreboard signal.**
+  The canonical EXT-060 board is the execution surface; its verified roster IS the Atlas's `verified`
+  tier. Atlas coverage today ≈ **5 verified + 2 building / 182**.
 - **Item format:** `- **[<id|tag>]** <one line> — <priority> · <rationale / links to spec·REQ·GAP·#task>`
   where priority ∈ `high|med|low`. Sections carry status: NOW=in-flight, NEXT=planned-soon,
   LATER=planned-later, LANDED=recently-shipped trail, PARKED=deferred with a reason.
@@ -59,6 +67,12 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
 - Full test suite: **2440 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
+- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **5
+  verified + 2 building / 182** classes. Verified today = the utility/leaf FLOOR (retry-backoff-lib,
+  memoize-lib, ini-config-cli, file-organizer, csv-etl); the frontier = the first SaaS service rung
+  (REST+DB CRUD, building) + the agent cluster (agent-loop oracle, building). Rising `verified` under
+  honest oracles is progress; "mapped rows" is not. The lever is the SUBSTRATE (each new oracle flips
+  a whole sub-cluster buildable), not any single build.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
   19/19=100%). Sole miss: build_hard_lru_cache (a MISSING-DETERMINISTIC-TOOL gap — the pointer-bug in its
@@ -119,6 +133,76 @@ real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fal
 - **[modify suite — measuring; ratchet if it saturates]** modify tracking ~100% through the easy/medium/hard
   single-file tier; if the multifile tier also passes, ratchet the modify suite with harder classes (mirror
   the create ratchet). med
+
+### ★★ ATLAS-DRIVEN REAL-SYSTEMS HORIZON (pulled FROM `docs/PRODUCTION-SYSTEMS-ATLAS.md`, assembled 2026-07-09)
+
+The real-systems NOW/NEXT is now drawn straight from the Production-Systems Atlas. Every class below is
+stdlib-buildable, offline, $0, CREATE **and** MODIFY, graded by an existing oracle (HTTP/DB/FS/CLI/IMPORT)
+or a soon-to-land one, and lands on the canonical EXT-060 board (its verified roster IS the Atlas's
+`verified` tier). Simulated-only for providers (payments/cloud/IdP/SMTP = high-fidelity in-process mocks,
+never deployed — Tenet 2/3 clean). **The SUBSTRATE (the oracles) is the lever, not any single build** — so
+the class list and the oracle list below advance together; a class is only truly `NOW` once its oracle exists.
+
+**NOW/NEXT — real-systems CLASSES to build (ranked, each with its oracle):**
+1. **[S1 · REST CRUD API service — ✅ LANDED as a task, MEASURING on-Jetson]** HTTP+DB (`http.server` +
+   `sqlite3`), the reusable SaaS base. Create+modify pair on the EXT-060 board (REQ-9/REQ-10); first
+   on-Jetson pass@1 is the immediate next number. high.
+2. **[Auth pack — session/JWT-HS256/RBAC/password-reset/TOTP (S2–S5,S59)]** all stdlib `hmac`/`hashlib`;
+   HTTP + import-driver oracle (available today). high · the SaaS spine after CRUD.
+3. **[Multi-tenant row-scoping isolation (S6)]** HTTP+DB leak-probe oracle (a tenant must never read
+   another's rows). high · the **highest honesty value** class in SaaS — a genuine cross-tenant leak test.
+4. **[Idempotency store + pagination/filter/sort + soft-delete (S19/S20/S68)]** HTTP+DB; the ubiquitous
+   MODIFY surface. high · idempotency needs the idempotency-replay oracle (below).
+5. **[Rate limiter + quota (S7/S8)]** HTTP + **injectable-clock** oracle (needs only the fake-time oracle
+   below). med-high.
+6. **[Webhook receiver + outbound dispatcher (S13/S12)]** HTTP HMAC-signature verify + a fixture receiver
+   (in-process upstream that records deliveries). med-high.
+7. **[Job queue+worker + scheduler + retry/DLQ (S14–S16)]** DB + import-driver + injectable-clock (dead-letter
+   after N retries, scheduled fire on tick). med-high.
+8. **[Migration runner + audit log (S21/S22)]** DB schema versioning + **hash-chain** append-only audit
+   oracle. med.
+9. **[Catalog/cart/order CRUD (V1/V2/V5)]** HTTP+DB + the **state-machine** oracle (order lifecycle:
+   only legal transitions). med · the e-commerce base.
+10. **[Inventory + stock reservation (V6)]** the **conservation / no-oversell** oracle (`available+committed
+    ==on_hand`, never negative under a replayed op-script). med · the flagship conservation class.
+11. **[Money-math pack + double-entry ledger + wallet/transfers (F1–F4,F6,F24/F25)]** the **money-invariant**
+    (no-float/exact-cent) + **double-entry-balance** (Σdebits==Σcredits, balance==Σpostings) oracles — one
+    oracle grades an open-ended ledger. med · the fintech spine.
+12. **[Agent quartet — loop / tool-registry / agent-behind-API / loop-guard (A1–A4)]** the **agent-loop**
+    oracle (now available — a scripted stub-model + fake tools asserting over the resulting transcript). high ·
+    the highest-differentiation cluster, now unblocked.
+
+**NEW-ORACLE SUBSTRATE to land (ranked by classes-unblocked × reuse — the real lever, not any single build):**
+The Atlas build-order insight: **the first four oracles alone make ~55 classes honestly gradable across every
+vertical.** Every oracle is stdlib + offline; the honesty note is load-bearing (Tenet 3 — a low-fidelity oracle
+that always passes is worse than none). Each grades structural invariants over a replayed op-script, never a
+memorizable output string.
+- **[1 · agent-loop oracle — ✅ LANDED]** ~10 classes (A1–A10). Scripted stub-model + fake tools + assertions
+  over the transcript (which tool, what args, order, stopped at step-cap). Unblocks the agent quartet above.
+- **[2 · generic state-machine / lifecycle oracle — 🔧 BUILDING]** **~18–20 classes — highest reuse in the
+  Atlas.** Given a declared transition graph + an op-script, assert every transition taken was legal + terminal
+  invariants hold (order, shipment, RMA, prescription, claim, dispute, transcode-job, PaymentIntent, dunning,
+  chargeback, trade-lifecycle, subscription). high.
+- **[3 · double-entry-balance invariant oracle]** ~16 classes. Σdebits==Σcredits per txn AND balance==Σpostings
+  per account — best generality-per-oracle ratio; grades any open-ended ledger. high.
+- **[4 · conservation / no-oversell / allocation invariant oracle]** ~17 classes. Σparts==whole + quantity-ledger
+  never negative under a replayed (optionally concurrent) op-script. high.
+- **[5 · money-invariant (no-float / exact-cent) oracle]** ~7 classes, **universal** across fintech/e-comm/billing.
+  med-high · cheap, pairs with #3/#4.
+- **[6 · high-fidelity mock-payment-provider (stripe-mock-shape) oracle]** ~13 classes. Signed-fixture provider,
+  in-process, never deployed. med.
+- **[7 · injectable-clock / fake-time oracle]** ~10 classes. Deterministic time control for rate-limit/quota/
+  scheduler/retry/TTL/dunning. med · unblocks classes #5 and #7 above.
+- **[8 · idempotency-replay oracle]** ~9 classes. Same key/event twice → exactly one effect + identical response;
+  different key → new effect. med.
+- **[9 · hash-chain integrity / append-only-audit oracle]** ~6 classes. Recompute an append-only chain, detect any
+  mutated row; reuses jaros-code's own hash-chain discipline. med.
+- **[10 · multi-service fixture-upstream harness]** ~8 classes. ≥2 in-process HTTP upstreams + fault injection
+  (gateway, LB, circuit-breaker, registry, saga, OAuth-client↔IdP). med.
+- **[11 · SMTP-capture sink oracle]** ~4 classes (email/reset-email/dunning). low-med.
+- **[12 · concurrency / exactly-N oracle]** ~5 classes (flash-sale, last-unit, no-double-book/assign,
+  double-spend). low-med.
+- **[13 · SSE / WebSocket streaming-client oracle]** ~3 classes (realtime push, streaming agent responses). low.
 
 **★★ JETSON-UTILIZATION DOCTRINE (owner directive, 2026-07-07 — binds all velocity).** The ONE scarce
 resource is the Jetson (inference). To reach the Prime-Directive end-state as fast as possible: **maximize
