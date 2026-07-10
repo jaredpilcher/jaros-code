@@ -100,6 +100,44 @@ def detect_web_service(modules: "dict | None") -> "dict | None":
     return None
 
 
+# #EXT-036-REQ-47 Start
+_STDLIB_HTTP_IMPORT_RE = re.compile(
+    r"^\s*(?:from\s+http\.server\b|import\s+http\.server\b|from\s+socketserver\b|import\s+socketserver\b)",
+    re.M,
+)
+_STDLIB_HTTP_USAGE_RE = re.compile(r"\b(?:HTTPServer|ThreadingHTTPServer)\s*\(")
+
+
+def detect_stdlib_http_service(modules: "dict | None") -> "str | None":
+    """Best-effort, NEVER-RAISE scan of ``{filename: source}`` module SOURCES for a plain
+    ``http.server``/``socketserver`` (``HTTPServer``/``ThreadingHTTPServer``) service, with NO
+    Flask/FastAPI/Starlette import present (those route through :func:`detect_web_service`
+    instead).
+
+    Returns the entry FILENAME (e.g. ``"main.py"``) of the first module that both imports
+    ``http.server``/``socketserver`` and instantiates ``HTTPServer(...)``/
+    ``ThreadingHTTPServer(...)``. Returns ``None`` when no such service is detected, or on any
+    malformed input -- this function never raises.
+    """
+    try:
+        items = list((modules or {}).items())
+    except (AttributeError, TypeError):
+        return None
+    for name, code in items:
+        try:
+            if not name or not str(name).endswith(".py") or not code:
+                continue
+            src = str(code)
+            if _FASTAPI_IMPORT_RE.search(src) or _STARLETTE_IMPORT_RE.search(src) or _FLASK_IMPORT_RE.search(src):
+                continue
+            if _STDLIB_HTTP_IMPORT_RE.search(src) and _STDLIB_HTTP_USAGE_RE.search(src):
+                return Path(name).name
+        except Exception:
+            continue
+    return None
+# #EXT-036-REQ-47 End
+
+
 def _free_port() -> int:
     """Pick a FREE ephemeral localhost port: bind :0, read the OS-assigned port, close."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -196,6 +234,40 @@ def _launch(root: Path, service: dict, port: int, out_fh, err_fh, *,
             popen_kwargs["preexec_fn"] = preexec_fn
     return subprocess.Popen(cmd, **popen_kwargs)
 # #EXT-037-REQ-7 End
+
+
+# #EXT-036-REQ-47 Start
+def _launch_stdlib(root: Path, entry: str, port: int, out_fh, err_fh, *,
+                    env: "dict | None" = None, mem_mb: int = 512, cpu_budget_s: float = 120):
+    """Launch a plain stdlib ``http.server``/``socketserver`` service as a SCRIPT: ``python
+    <entry>`` in ``root``, with the child given ``PORT=<port>`` in its environment -- the
+    12-factor contract a stdlib service is expected to read via ``os.environ["PORT"]`` (there is
+    no ``--port`` CLI flag convention to launch it with, unlike uvicorn/flask). Reuses the same
+    scrubbed-environment (``harness.secure_exec._scrubbed_env``) and POSIX resource-cap
+    (``harness.secure_exec._make_preexec_fn``) conventions :func:`_launch` uses, so the process is
+    sandboxed identically."""
+    extra_env = {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": str(root) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    if isinstance(env, dict):
+        try:
+            extra_env.update({str(k): str(v) for k, v in env.items()})
+        except Exception:
+            pass
+    # PORT is the launch contract this function guarantees to the child -- never let a
+    # caller-supplied env override it with a stale/wrong value.
+    extra_env["PORT"] = str(port)
+    scrubbed_env = _scrubbed_env(extra_env)
+    cmd = [sys.executable, str(entry)]
+    popen_kwargs: dict = dict(cwd=str(root), stdout=out_fh, stderr=err_fh, env=scrubbed_env)
+    if sys.platform != "win32":
+        popen_kwargs["start_new_session"] = True
+        preexec_fn = _make_preexec_fn(mem_mb, cpu_budget_s)
+        if preexec_fn is not None:
+            popen_kwargs["preexec_fn"] = preexec_fn
+    return subprocess.Popen(cmd, **popen_kwargs)
+# #EXT-036-REQ-47 End
 
 
 def _subset(actual, expected) -> bool:
@@ -378,3 +450,110 @@ def serve_and_check(root, service: "dict | None", http_checks, *,
             except OSError:
                 pass
 # #EXT-036-REQ-22 End
+
+
+# #EXT-036-REQ-47 Start
+def serve_and_check_stdlib(root, entry: "str | None", http_checks, *,
+                            startup_timeout: float = 15, request_timeout: float = 5,
+                            env: "dict | None" = None, mem_mb: int = 512) -> dict:
+    """The stdlib analog of :func:`serve_and_check` -- for a service built on plain
+    ``http.server``/``socketserver`` (detected via :func:`detect_stdlib_http_service`), NOT a
+    Flask/FastAPI app. Launches ``python <entry>`` in ``root`` as a plain script (no ASGI/WSGI
+    server wrapper), on a FREE ephemeral localhost port passed via ``PORT=<port>`` in the child's
+    environment (the 12-factor "listen on $PORT" contract) since there is no uvicorn/flask-style
+    ``--port`` flag to launch a stdlib script with. Polls until the port actually binds, then runs
+    every check in ``http_checks`` against it as a REAL HTTP request via the SAME
+    :func:`_check_one`/:func:`_do_request` this module already uses for ``serve_and_check`` --
+    same ``http_check`` dict contract (``method``, ``path``, optional ``status``/
+    ``json_contains``/``body_contains``).
+
+    NEVER raises: any failure at any stage (missing/invalid ``entry``, bad ``root``, an
+    unlaunchable process, a server that never binds, a malformed check) is reported honestly as
+    ``ok: False`` with a diagnostic ``note`` -- never coerced to a pass. ALWAYS tears the server
+    process (and any descendants) down via :func:`_kill_tree` in a ``finally`` block, so a failed
+    or completed check run never leaves an orphaned process behind.
+
+    Returns ``{"ok": bool, "results": [per-check dicts], "note": str}`` -- the SAME shape
+    :func:`serve_and_check` returns -- where ``ok`` is True only when the server bound the port
+    AND every check in ``http_checks`` passed.
+    """
+    if not entry or not isinstance(entry, (str, os.PathLike)):
+        return {"ok": False, "results": [], "note": f"no stdlib entry to serve (got {entry!r})"}
+    try:
+        root_path = Path(root)
+    except TypeError:
+        return {"ok": False, "results": [], "note": f"invalid root: {root!r}"}
+    if not root_path.exists():
+        return {"ok": False, "results": [], "note": f"root does not exist: {root_path}"}
+    if not (root_path / entry).exists():
+        return {"ok": False, "results": [], "note": f"entry does not exist under root: {entry}"}
+
+    checks = list(http_checks) if isinstance(http_checks, (list, tuple)) else []
+
+    try:
+        port = _free_port()
+    except OSError as exc:
+        return {"ok": False, "results": [], "note": f"could not allocate a free port: {exc}"}
+
+    proc = None
+    out_fh = err_fh = None
+    out_path = err_path = None
+    try:
+        fd_out, out_path = tempfile.mkstemp(prefix="jcode_server_oracle_stdlib_out_")
+        fd_err, err_path = tempfile.mkstemp(prefix="jcode_server_oracle_stdlib_err_")
+        os.close(fd_out)
+        os.close(fd_err)
+        out_fh = open(out_path, "w", encoding="utf-8")
+        err_fh = open(err_path, "w", encoding="utf-8")
+        cpu_budget_s = float(startup_timeout) + float(request_timeout) * max(len(checks), 1) + 30
+        proc = _launch_stdlib(root_path, entry, port, out_fh, err_fh,
+                               env=env, mem_mb=mem_mb, cpu_budget_s=cpu_budget_s)
+    except Exception as exc:
+        for fh in (out_fh, err_fh):
+            try:
+                if fh:
+                    fh.close()
+            except Exception:
+                pass
+        _kill_tree(proc)
+        return {"ok": False, "results": [], "note": f"failed to launch stdlib service: {exc}"}
+
+    results: list[dict] = []
+    try:
+        if not _wait_for_port(port, proc, startup_timeout):
+            try:
+                out_fh.flush()
+                err_fh.flush()
+            except Exception:
+                pass
+            note = "server never bound the port within startup_timeout"
+            tail_out, tail_err = _tail(out_path), _tail(err_path)
+            if tail_out or tail_err:
+                note += f" -- stdout tail: {tail_out!r} stderr tail: {tail_err!r}"
+            return {"ok": False, "results": [], "note": note}
+
+        all_ok = True
+        for check in checks:
+            result = _check_one(port, check, request_timeout)
+            results.append(result)
+            all_ok = all_ok and bool(result.get("passed"))
+
+        note = "ok" if all_ok else "one or more http checks failed"
+        return {"ok": bool(all_ok), "results": results, "note": note}
+    except Exception as exc:
+        return {"ok": False, "results": results, "note": f"unexpected error: {exc}"}
+    finally:
+        _kill_tree(proc)
+        for fh in (out_fh, err_fh):
+            try:
+                if fh:
+                    fh.close()
+            except Exception:
+                pass
+        for p in (out_path, err_path):
+            try:
+                if p:
+                    os.remove(p)
+            except OSError:
+                pass
+# #EXT-036-REQ-47 End

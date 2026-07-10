@@ -2080,3 +2080,40 @@ modules, not a model re-call.
       the injected call matches `main`'s arity); a no-op when the demanded file is already present; a
       no-op/safe outcome when the entrypoint is ambiguous; correct `main()` vs `main(sys.argv[1:])`
       guard-call selection; never raising on unparseable code.
+
+### [REQ-47] Stdlib `http.server` launch+drive mode for the server oracle (DONE — EXT-036 TASK-60, 2026-07-09)
+
+**Owner directive (2026-07-09):** the next real-systems rung is SaaS/cloud Python systems (REST APIs,
+DB-backed services), starting with a stdlib REST API + SQLite service, graded HONESTLY by actually running
+it and hitting it over HTTP. MEASURED: `harness/server_oracle.py::serve_and_check` only knows how to launch
+a FastAPI/Starlette app via `uvicorn` or a Flask app via `flask run` (see `_launch`, keyed off
+`detect_web_service`'s ASGI/WSGI `kind`) — a plain stdlib `http.server`/`socketserver` service (no framework
+dependency at all) has neither an ASGI/WSGI app object nor a `uvicorn`/`flask` CLI entrypoint, so it cannot be
+launched or HTTP-verified by the existing oracle, and would silently fall back to the import-only smoke
+checklist exactly like the FastAPI hollow-pass gap REQ-22 fixed.
+
+#### Acceptance Criteria
+- [x] `harness/server_oracle.py::detect_stdlib_http_service(modules)` — best-effort, never-raise scan of
+  module SOURCES (`{filename: code}`) that returns the entry FILENAME (e.g. `"main.py"`) of the first module
+  using `http.server`/`socketserver` (`HTTPServer`/`ThreadingHTTPServer`) with NO Flask/FastAPI/Starlette
+  import present (those route through the existing `detect_web_service`), else `None`.
+- [x] `harness/server_oracle.py::serve_and_check_stdlib(root, entry, http_checks, *, startup_timeout,
+  request_timeout, env=None)` — the stdlib analog of `serve_and_check`: picks a FREE ephemeral localhost port
+  via the EXISTING `_free_port()`, launches the service as a plain SCRIPT (`python <entry>` in `root`) with
+  the child environment given `PORT=<port>` (the 12-factor "listen on `$PORT`" contract a stdlib service is
+  expected to read via `os.environ["PORT"]`, since there is no `--port` CLI flag convention for a bare
+  script), waits for the port via the EXISTING `_wait_for_port`, and drives every check via the EXISTING
+  `_check_one`/`_do_request` — the SAME `http_check` dict contract `serve_and_check` uses (`method`, `path`,
+  optional `status`/`json_contains`/`body_contains`).
+- [x] Returns the SAME result shape as `serve_and_check`: `{"ok": bool, "results": [per-check dicts], "note":
+  str}`.
+- [x] ALWAYS tears the launched process (and descendants) down via the EXISTING `_kill_tree` in a `finally`
+  block — no orphaned process on any path, pass or fail — proven with a precise no-orphan check (the exact
+  allocated port is bindable again immediately after teardown).
+- [x] NEVER raises: a missing/invalid `entry`, a bad `root`, an unlaunchable process, a server that never
+  binds, or a malformed check dict is always reported as `ok: False` with a diagnostic `note` (including a
+  stderr tail on a bind failure) — never coerced to a pass, never propagates an exception.
+- [x] Proven OFFLINE (no model/Jetson call): a HAND-WRITTEN stdlib fixture serving `GET /health` and a
+  `POST`/`GET /items` round-trip passes end-to-end; a broken fixture (wrong status/body) fails honestly; a
+  fixture that never binds fails with a note and leaves no orphan; garbage input (missing entry, non-dict
+  checks) never raises. `tests/test_ext036_server_oracle_stdlib.py`.

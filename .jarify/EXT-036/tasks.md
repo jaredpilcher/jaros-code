@@ -2713,3 +2713,49 @@ a `__main__` guard when needed.
 
 #### Implements
 - [REQ-46] Deterministic spec-demanded filename/entrypoint normalization
+
+### [TASK-60] Stdlib `http.server` launch+drive mode for the server oracle (REQ-47, owner directive 2026-07-09 -- SaaS/cloud real-systems rung)
+
+Add a launch+drive mode to `harness/server_oracle.py` for a plain stdlib `http.server`/
+`socketserver` REST service -- the first rung of the SaaS/cloud Python systems target (a stdlib
+REST API + SQLite service, graded HONESTLY over real HTTP). The existing `serve_and_check` only
+knows how to launch a FastAPI/Starlette app via `uvicorn` or a Flask app via `flask run`; a stdlib
+service has neither, so it needs its own launch path while REUSING every other oracle building
+block (port allocation, port-wait, request-driving, teardown) unchanged.
+
+#### Steps
+1. In `harness/server_oracle.py`, add `detect_stdlib_http_service(modules: dict | None) -> str |
+   None` -- best-effort, never-raise, mirrors `detect_web_service`'s scan style: returns the entry
+   FILENAME of the first module using `http.server`/`socketserver` (`HTTPServer`/
+   `ThreadingHTTPServer`) with no Flask/FastAPI/Starlette import present. Wrap in `#
+   #EXT-036-REQ-47 Start`/`End` markers.
+2. Add `_launch_stdlib(root, entry, port, out_fh, err_fh, *, env=None, mem_mb=512,
+   cpu_budget_s=120)` -- launches `python <entry>` in `root` as a plain script (NOT via
+   uvicorn/flask), with the child environment given `PORT=<port>` (the 12-factor "listen on
+   `$PORT`" contract), reusing the SAME `_scrubbed_env`/`_make_preexec_fn` sandboxing conventions
+   `_launch` already uses. Wrap in `# #EXT-036-REQ-47 Start`/`End` markers.
+3. Add the public `serve_and_check_stdlib(root, entry, http_checks, *, startup_timeout=15,
+   request_timeout=5, env=None, mem_mb=512) -> dict` -- the stdlib analog of `serve_and_check`:
+   picks a free port via the EXISTING `_free_port()`, launches via `_launch_stdlib`, waits via the
+   EXISTING `_wait_for_port`, drives each check via the EXISTING `_check_one`/`_do_request` (same
+   `http_check` dict contract: `method`/`path`/`status`/`json_contains`/`body_contains`), and
+   returns the SAME `{"ok", "results", "note"}` shape `serve_and_check` returns. ALWAYS tears the
+   process down via the EXISTING `_kill_tree` in a `finally` block; NEVER raises -- every failure
+   path (missing/invalid entry, bad root, unlaunchable process, never-binds, malformed check) is an
+   honest `ok: False` with a diagnostic note (stderr tail on a bind failure). Wrap in `#
+   #EXT-036-REQ-47 Start`/`End` markers.
+4. Add offline tests `tests/test_ext036_server_oracle_stdlib.py` (NO model/Jetson calls, launches
+   ONLY hand-written stdlib fixtures) covering: (a) a correct fixture serving `GET /health` and a
+   `POST`/`GET /items` round-trip -> `ok=True`, all checks pass; (b) a broken fixture (wrong
+   status/body) -> `ok=False` with a note; (c) a fixture that never binds -> `ok=False` with a note
+   and no orphan process (assert the EXACT allocated port, captured via a `_free_port` spy, is
+   bindable again right after teardown); (d) never raises on garbage input (missing entry, bad
+   root, non-dict checks); (e) `detect_stdlib_http_service` detects a stdlib service, returns
+   `None` when Flask is present or for a plain script, never raises on garbage input.
+5. Run ONLY `python -m pytest tests/test_ext036_server_oracle_stdlib.py -q` (offline); confirm
+   green. Do NOT touch `harness/real_systems_suite.py`, `harness/system_builder.py`,
+   `harness/datastore_oracle.py`, or `harness/service_provisioner.py` (owned elsewhere). Update
+   `.jarify/EXT-036/index.json` (REQ-47 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-47] Stdlib `http.server` launch+drive mode for the server oracle

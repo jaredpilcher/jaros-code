@@ -596,7 +596,7 @@
     {
       "file": "harness/server_oracle.py",
       "startLine": 61,
-      "endLine": 380
+      "endLine": 452
     }
   ],
   "REQ-5": [
@@ -742,6 +742,23 @@
       "file": "harness/episodic_memory.py",
       "startLine": 37,
       "endLine": 256
+    }
+  ],
+  "REQ-47": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 103,
+      "endLine": 138
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 239,
+      "endLine": 270
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 455,
+      "endLine": 559
     }
   ]
 }
