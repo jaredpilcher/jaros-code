@@ -2328,3 +2328,308 @@ INVOICE_AR_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(INVOICE_AR_TASK)
 # #EXT-060-REQ-22 End
+
+
+# #EXT-060-REQ-24 Start
+# TASK-19: a FOURTH LIFECYCLE-shaped task, in an SLA-tiered helpdesk vertical -- DISTINCT from
+# `TICKET_WORKFLOW_TASK` (REQ-20's plain support ticket): the defining behavior here is SLA-tier
+# ESCALATION (a ticket that breaches its response window is bumped to a higher-priority tier via
+# `escalate()`, legal ONLY from `"triaged"`), not just an assign/respond/resolve/close loop.
+# Graded by the ALREADY-LANDED "state_machine" oracle_kind dispatch REQ-13 lands (no new oracle
+# code: reuses `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine`
+# verbatim). The driven script exercises TWO distinct illegal transitions (escalating a
+# brand-new, never-triaged ticket, and closing a ticket that has never been resolved) so a build
+# that guards only ONE of those, or that lets any action fire from any state, is independently
+# caught.
+_HELPDESK_SLA_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named helpdesk.py, "
+    "using only the standard library, defining exactly one public class named `HelpdeskTicket` "
+    "modeling an SLA-tiered helpdesk support ticket -- distinct from a plain support ticket in "
+    "that a ticket is explicitly ESCALATED to a higher SLA tier when initial triage cannot "
+    "resolve it within that tier's response window. `HelpdeskTicket()` (no constructor "
+    "arguments) creates a new ticket whose initial state is the string `\"new\"`. The class "
+    "exposes a real Python `@property` named `state` that returns the ticket's current state as "
+    "one of the strings `\"new\"`, `\"triaged\"`, `\"escalated\"`, `\"waiting_customer\"`, "
+    "`\"resolved\"`, or `\"closed\"`. It defines exactly seven zero-argument action methods: "
+    "`triage()` moves the ticket from `\"new\"` to `\"triaged\"` (an agent has classified the "
+    "ticket and assigned its SLA tier); `escalate()` moves the ticket from `\"triaged\"` to "
+    "`\"escalated\"` (the ticket has breached its SLA response window and is bumped to a "
+    "higher-priority tier) -- `escalate()` is legal ONLY from `\"triaged\"`, never from `\"new\"` "
+    "or any other state; `wait_on_customer()` moves the ticket from EITHER `\"triaged\"` OR "
+    "`\"escalated\"` to `\"waiting_customer\"` (the agent is blocked waiting on more information "
+    "from the customer); `resume()` moves the ticket from `\"waiting_customer\"` back to "
+    "`\"triaged\"` (the customer has replied and normal-tier handling resumes); `resolve()` "
+    "moves the ticket from EITHER `\"triaged\"` OR `\"escalated\"` to `\"resolved\"` (the agent "
+    "has fixed the issue, at whichever SLA tier it was resolved); `close()` moves the ticket "
+    "from `\"resolved\"` to `\"closed\"`; `reopen()` moves the ticket from `\"closed\"` back to "
+    "`\"new\"` (a closed ticket is reopened and must go back through triage and SLA-tier "
+    "assignment from scratch). Each of these seven methods is legal ONLY from the exact source "
+    "state(s) named above; calling any of them from any OTHER current state (for example calling "
+    "`escalate()` on a brand-new ticket that has never been triaged, or calling `close()` on a "
+    "ticket that has never been resolved) must instead raise `ValueError` and must leave the "
+    "ticket's `state` COMPLETELY UNCHANGED -- no partial mutation before the raise."
+)
+
+HELPDESK_SLA_TASK = RealSystemTask(
+    name="helpdesk-ticket-sla-state-machine",
+    cls="helpdesk",
+    sentence=_HELPDESK_SLA_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "helpdesk",
+        "entity": "HelpdeskTicket",
+        "spec": {
+            "states": ["new", "triaged", "escalated", "waiting_customer", "resolved", "closed"],
+            "initial": "new",
+            "transitions": {
+                "new:triage": "triaged",
+                "triaged:escalate": "escalated",
+                "triaged:resolve": "resolved",
+                "escalated:resolve": "resolved",
+                "triaged:wait_on_customer": "waiting_customer",
+                "escalated:wait_on_customer": "waiting_customer",
+                "waiting_customer:resume": "triaged",
+                "resolved:close": "closed",
+                "closed:reopen": "new",
+            },
+            # Illegal escalate-from-"new" FIRST (must be rejected -- escalate() requires a prior
+            # triage()), then the legal triage, then an illegal close-from-"triaged" (never
+            # resolved -- must ALSO be rejected, a SECOND distinct illegal transition), then the
+            # full legal SLA-escalation path (triage -> escalate -> wait_on_customer -> resume ->
+            # resolve -> close -> reopen) back to "new".
+            "drive": [
+                {"action": "escalate", "expect": "reject"},
+                {"action": "triage", "expect": "accept"},
+                {"action": "close", "expect": "reject"},
+                {"action": "escalate", "expect": "accept"},
+                {"action": "wait_on_customer", "expect": "accept"},
+                {"action": "resume", "expect": "accept"},
+                {"action": "resolve", "expect": "accept"},
+                {"action": "close", "expect": "accept"},
+                {"action": "reopen", "expect": "accept"},
+            ],
+            "expect_final": "new",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(HELPDESK_SLA_TASK)
+# #EXT-060-REQ-24 End
+
+
+# #EXT-060-REQ-25 Start
+# TASK-20: a SECOND cli-exact CREATE task (the first since REQ-4's INI-query CLI), in an
+# elections/voting vertical -- graded by the ALREADY-LANDED cli-exact oracle (no new oracle code:
+# reuses `_grade_cli_exact` -> `harness.system_suite`'s `exact_stdout` check variant, the same
+# sandboxed/scrubbed-env subprocess convention every other black-box check in this codebase
+# already goes through). Every counting/printing rule (round-tally format, majority threshold,
+# elimination order, deterministic alphabetical tie-free ordering) is pinned in the sentence
+# itself so the oracle's expected stdout is fully DERIVED from that same visible contract -- no
+# hidden key, no reference implementation the model could not see. The seeded ballot fixture is
+# deliberately built so the FIRST-round plurality leader (`A`, 10 of 21 first-choice votes) LOSES
+# after `C` is eliminated and its second-choice votes transfer to `B` (proving real
+# instant-runoff transfer logic, not a plurality/most-first-choice-votes shortcut, which would
+# wrongly declare `A` the winner).
+_IRV_TALLY_SENTENCE = (
+    "Write a command-line program in a file named main.py that reads ranked-choice ballot data "
+    "from standard input and prints the winner of an instant-runoff (ranked-choice) election, "
+    "computed by successive elimination rounds. Each line of standard input is exactly one "
+    "voter's ballot: a comma-separated list of candidate names in ranked order, most-preferred "
+    "candidate first (for example `A,B,C` ranks `A` first, `B` second, `C` third); a ballot need "
+    "not rank every candidate. The program takes no command-line arguments. In EACH round: "
+    "tally, for every candidate still in the race, the number of ballots whose HIGHEST-ranked "
+    "remaining candidate (skipping any candidate already eliminated in an earlier round) is that "
+    "candidate; a ballot none of whose ranked candidates remain in the race any longer casts no "
+    "vote in that round (or in any later round). Print one line for that round of the exact form "
+    "`Round <N>: <name1>=<count1>, <name2>=<count2>, ...` -- every candidate still in the race "
+    "that round, listed in ALPHABETICAL order by name, separated by `\", \"`, followed by a "
+    "single newline. If any candidate's count that round is STRICTLY MORE than half of the sum "
+    "of every candidate's count that same round (a strict majority of the ballots still active "
+    "that round), that candidate has won: immediately print one final line of the exact form "
+    "`Winner: <name>` followed by a single newline, and print nothing further. Otherwise, no "
+    "candidate has a strict majority yet: eliminate the single candidate with the STRICTLY "
+    "FEWEST votes that round (the graded input never produces a tie for fewest), print one line "
+    "of the exact form `Eliminated: <name>` followed by a single newline, and proceed to tally "
+    "the next round with that candidate removed from the race."
+)
+
+# 21 ballots: 10 rank A first (then B), 6 rank B first (then C), 5 rank C first (then B). Round 1
+# plurality leader is A (10 votes) -- but A is NOT a majority of 21 (needs > 10.5), so no one
+# wins round 1. C is eliminated (fewest, 5 votes); C's ballots all transfer to their second
+# choice, B. Round 2: A=10, B=11 (6 original + 5 transferred) -- B now has a strict majority
+# (11 > 10.5) and wins, even though A led round 1's plurality.
+_IRV_TALLY_STDIN = ("A,B\n" * 10) + ("B,C\n" * 6) + ("C,B\n" * 5)
+_IRV_TALLY_EXPECTED_STDOUT = (
+    "Round 1: A=10, B=6, C=5\n"
+    "Eliminated: C\n"
+    "Round 2: A=10, B=11\n"
+    "Winner: B\n"
+)
+
+IRV_TALLY_TASK = RealSystemTask(
+    name="ranked-choice-irv-tally-cli",
+    cls="elections",
+    sentence=_IRV_TALLY_SENTENCE,
+    oracle_kind="cli-exact",
+    oracle_spec={
+        "argv": [],
+        "stdin": _IRV_TALLY_STDIN,
+        "expected_stdout": _IRV_TALLY_EXPECTED_STDOUT,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(IRV_TALLY_TASK)
+# #EXT-060-REQ-25 End
+
+
+# #EXT-060-REQ-26 Start
+# TASK-21: a THIRD "import" oracle_kind CREATE task (after REQ-3's retry-backoff and REQ-5's
+# memoize libraries), in a payroll/tax vertical -- graded by the ALREADY-LANDED "import"
+# oracle_kind dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+# `harness.import_driver.drive_import` verbatim). NO jurisdiction/bracket table is hardcoded
+# anywhere in the built module -- `brackets` is always supplied by the caller, exactly mirroring
+# the caller-supplied-config discipline `RETRY_BACKOFF_LIB_TASK` already established for its own
+# decorator parameters. The floor-division contribution rule (`(portion_cents * rate_percent) //
+# 100`) is pinned explicitly in the sentence so there is no floating-point rounding ambiguity --
+# every checked value below was hand-verified against that exact rule before being added to the
+# roster (see the module's own scratch verification in the task's commit).
+_TAX_WITHHOLDING_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "withholding.py, using only the standard library, defining exactly one public function "
+    "named `compute_withholding_cents` with the signature `compute_withholding_cents"
+    "(income_cents, brackets)`. `income_cents` is a non-negative integer, the employee's gross "
+    "pay for the period in an exact integer number of cents. `brackets` is a list of "
+    "two-element `[upper_bound_cents, rate_percent]` pairs, one per progressive tax bracket, "
+    "given in ASCENDING order by `upper_bound_cents`; each `rate_percent` is a positive integer "
+    "percentage rate that applies to the portion of `income_cents` that falls within that "
+    "bracket. The bracket boundaries are CUMULATIVE: the first bracket covers income from `0` "
+    "up to and including its own `upper_bound_cents`; each later bracket covers income ABOVE the "
+    "previous bracket's `upper_bound_cents` up to and including its own `upper_bound_cents`. The "
+    "LAST entry in `brackets` always has `upper_bound_cents` set to Python's `None`, meaning it "
+    "has no ceiling and covers all remaining income above the previous bracket's "
+    "`upper_bound_cents`. There is no hardcoded jurisdiction or bracket table anywhere in the "
+    "module -- `brackets` is always supplied by the caller. For each bracket, compute the "
+    "portion of `income_cents` that falls into that bracket's range (`0` when `income_cents` "
+    "does not reach that bracket's lower edge); that bracket's contribution to the withholding "
+    "is `(portion_cents * rate_percent) // 100`, using INTEGER FLOOR DIVISION (never "
+    "floating-point arithmetic or rounding). `compute_withholding_cents` returns the SUM of "
+    "every bracket's contribution as a single integer number of cents."
+)
+
+# [[upper_bound_cents, rate_percent], ...]: $0-$1,000.00 @ 10%, $1,000.00-$4,000.00 @ 20%,
+# above $4,000.00 (open-ended, `None`) @ 30%.
+_TAX_WITHHOLDING_BRACKETS = [[100000, 10], [400000, 20], [None, 30]]
+
+TAX_WITHHOLDING_TASK = RealSystemTask(
+    name="progressive-tax-withholding-lib",
+    cls="payroll",
+    sentence=_TAX_WITHHOLDING_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "withholding",
+        "api_calls": [
+            {"id": "zero", "target": "compute_withholding_cents",
+             "args": [0, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "boundary", "target": "compute_withholding_cents",
+             "args": [100000, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "mid", "target": "compute_withholding_cents",
+             "args": [225037, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "top", "target": "compute_withholding_cents",
+             "args": [500000, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+        ],
+        "checks": [
+            # zero income -> zero withholding.
+            {"kind": "returns_equals", "call_id": "zero", "expected": 0},
+            # income exactly AT the first bracket's boundary ($1,000.00): the whole $1,000.00 is
+            # taxed at 10% -> 10000 cents. A build with an off-by-one boundary (exclusive instead
+            # of inclusive) shortchanges this by 1 cent.
+            {"kind": "returns_equals", "call_id": "boundary", "expected": 10000},
+            # mid-second-bracket income ($2,250.37): 10000 (bracket 1) + (125037 * 20 // 100 =
+            # 25007) (bracket 2 portion) = 35007 cents.
+            {"kind": "returns_equals", "call_id": "mid", "expected": 35007},
+            # income above the top bracket's ceiling ($5,000.00): 10000 (bracket 1) + 60000
+            # (bracket 2, full $3,000.00 span at 20%) + 30000 (bracket 3, $1,000.00 overflow at
+            # 30%) = 100000 cents.
+            {"kind": "returns_equals", "call_id": "top", "expected": 100000},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(TAX_WITHHOLDING_TASK)
+# #EXT-060-REQ-26 End
+
+
+# #EXT-060-REQ-27 Start
+# TASK-22: a FOURTH "import" oracle_kind CREATE task, in a legal/court-filing vertical -- graded
+# by the ALREADY-LANDED "import" oracle_kind dispatch REQ-3 lands (no new oracle code: reuses
+# `_grade_import` -> `harness.import_driver.drive_import` verbatim). Fully deterministic: every
+# input (trigger date, day count, counting rule, the explicit holiday list) is passed in by the
+# caller -- nothing depends on "today", so no clock/injected-time seam is needed. Every checked
+# date below was independently hand-verified with `datetime.date` arithmetic before being added
+# to the roster (see the task's commit for the verification script).
+_COURT_DEADLINE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named deadline.py, "
+    "using only the standard library (the `datetime` module is allowed), defining exactly one "
+    "public function named `compute_deadline` with the signature `compute_deadline(trigger_date, "
+    "day_count, counting_rule, holidays)`. `trigger_date` is a string in ISO format "
+    "`\"YYYY-MM-DD\"`; `day_count` is a non-negative integer; `counting_rule` is exactly the "
+    "string `\"calendar\"` or the string `\"court\"`; `holidays` is a list of zero or more "
+    "ISO-format `\"YYYY-MM-DD\"` date strings, each an explicit non-court holiday -- there is no "
+    "built-in holiday calendar anywhere in the module, ONLY the dates the caller passes in "
+    "`holidays` are treated as holidays. Saturday and Sunday are ALWAYS non-court weekend days "
+    "(a fixed rule, never configurable). `compute_deadline` returns the computed filing deadline "
+    "as an ISO `\"YYYY-MM-DD\"` string, computed as follows. When `counting_rule` is "
+    "`\"calendar\"`: the RAW landing day is `trigger_date` plus exactly `day_count` calendar "
+    "days (every day counts, weekends and holidays included). When `counting_rule` is "
+    "`\"court\"`: starting from the day immediately AFTER `trigger_date`, walk forward one "
+    "calendar day at a time and count a day toward `day_count` ONLY when that day is NEITHER a "
+    "Saturday/Sunday NOR listed in `holidays`; the RAW landing day is the day on which the "
+    "`day_count`-th such counted day is reached. In BOTH cases, after computing the RAW landing "
+    "day, if that RAW landing day is itself a Saturday, a Sunday, or a date listed in "
+    "`holidays`, roll it forward one calendar day at a time -- skipping any further Saturday, "
+    "Sunday, or `holidays` date the exact same way -- until it lands on a day that is neither a "
+    "weekend day nor listed in `holidays`; that final day is the returned deadline."
+)
+
+COURT_DEADLINE_TASK = RealSystemTask(
+    name="court-deadline-date-math-lib",
+    cls="legal",
+    sentence=_COURT_DEADLINE_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "deadline",
+        "api_calls": [
+            # Baseline sanity: 3 calendar days from a Friday lands on a Monday -- no rolling
+            # needed, proves plain date arithmetic is correct before any weekend/holiday logic.
+            {"id": "baseline", "target": "compute_deadline",
+             "args": ["2027-01-01", 3, "calendar", []], "kwargs": {}},
+            # Calendar-day landing on a Saturday rolls forward across the whole weekend to the
+            # next Monday.
+            {"id": "sat_roll", "target": "compute_deadline",
+             "args": ["2027-01-01", 1, "calendar", []], "kwargs": {}},
+            # Court-day counting skips weekends AND an interior holiday (2027-01-05, a Tuesday)
+            # while counting toward day_count.
+            {"id": "court_skip", "target": "compute_deadline",
+             "args": ["2027-01-01", 3, "court", ["2027-01-05"]], "kwargs": {}},
+            # Holiday-adjacent edge: a calendar-rule landing day (2027-01-06, a Wednesday) that
+            # is itself listed as a holiday must still roll forward, even though it is not a
+            # weekend day.
+            {"id": "holiday_landing", "target": "compute_deadline",
+             "args": ["2027-01-01", 5, "calendar", ["2027-01-06"]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "baseline", "expected": "2027-01-04"},
+            {"kind": "returns_equals", "call_id": "sat_roll", "expected": "2027-01-04"},
+            {"kind": "returns_equals", "call_id": "court_skip", "expected": "2027-01-07"},
+            {"kind": "returns_equals", "call_id": "holiday_landing", "expected": "2027-01-07"},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(COURT_DEADLINE_TASK)
+# #EXT-060-REQ-27 End

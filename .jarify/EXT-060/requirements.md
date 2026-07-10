@@ -689,3 +689,146 @@ Task` gains an optional `base_sentence` field carrying the matching CREATE task'
       drawn from the CREATE roster's own sentences; the driver's `modify_system` call is verified
       to pass `spec_hint` via a monkeypatched stub; the roster size is unchanged (15 create + 6
       modify).
+
+### [REQ-24] Fourth LIFECYCLE CREATE task, in an SLA-tiered helpdesk vertical (helpdesk ticket, distinct from the plain-ticket class)
+
+A FOURTH held-out LIFECYCLE-shaped task, pulled from the production-systems atlas's top
+impact x buildability lists, graded by the ALREADY-LANDED `oracle_kind="state_machine"`
+dispatch REQ-13 lands (no new oracle code — reuses `_grade_state_machine` ->
+`harness.state_machine_oracle.grade_state_machine` verbatim). `HELPDESK_SLA_TASK`
+(`RealSystemTask`, `cls="helpdesk"`, `oracle_kind="state_machine"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `HelpdeskTicket`
+class in `helpdesk.py` — DISTINCT from `TICKET_WORKFLOW_TASK` (REQ-20's plain support ticket)
+because its defining behavior is SLA-tier ESCALATION (`escalate()`, legal ONLY from
+`"triaged"`, bumps the ticket to a higher-priority tier after an SLA-window breach), states
+`new`/`triaged`/`escalated`/`waiting_customer`/`resolved`/`closed`, action methods
+`triage()`/`escalate()`/`resolve()`/`wait_on_customer()`/`resume()`/`close()`/`reopen()` that
+mutate state along the legal SLA-escalation path, a real `state` property, and TWO distinct
+illegal transitions (escalating a brand-new, never-triaged ticket, and closing a ticket that has
+never been resolved) raising `ValueError` with state left unchanged.
+
+#### Acceptance Criteria
+- [x] `HELPDESK_SLA_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the SLA
+      helpdesk contract (filename `helpdesk.py`, the six states, the seven action methods and
+      their legal source state(s), the `ValueError`-on-illegal-transition + unchanged-state
+      contract, the `state` property) with every oracle-checked value (the states/transitions
+      table, the driven accept/reject script, `expect_final`) derivable from that same visible
+      sentence (no hidden key, no leak); the sentence names SLA tiers/escalation explicitly as
+      the distinguishing behavior from `TICKET_WORKFLOW_TASK`'s plain support ticket.
+- [x] The driven script exercises TWO distinct illegal transitions (rejected) alongside the full
+      legal SLA-escalation path — a build that guards only one of the two, or that allows either
+      illegal transition (in particular an unguarded `escalate()` reachable from `"new"`), is
+      caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `HelpdeskTicket` fixture is accepted by `grade_real_system_task(HELPDESK_SLA_TASK, ...)`; a
+      BROKEN fixture (allows an illegal transition, e.g. unguarded `escalate()`) is rejected; the
+      task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-25] Second cli-exact CREATE task, in an elections/voting vertical (ranked-choice instant-runoff tally)
+
+A SECOND held-out cli-exact-shaped task (the first since REQ-4's INI-query CLI), pulled from the
+production-systems atlas, graded by the ALREADY-LANDED `oracle_kind="cli-exact"` dispatch REQ-4
+lands (no new oracle code — reuses `_grade_cli_exact` -> `harness.system_suite`'s `exact_stdout`
+check variant verbatim). `IRV_TALLY_TASK` (`RealSystemTask`, `cls="elections"`,
+`oracle_kind="cli-exact"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+stdlib-only `main.py` CLI that reads ranked-choice ballots from standard input (one
+comma-separated ranked candidate list per line) and prints the instant-runoff winner after
+elimination rounds, with a pinned round-tally/elimination/majority-threshold print format. The
+seeded ballot fixture is built so the FIRST-round plurality leader LOSES after transfers,
+proving real IRV logic (not a plurality shortcut).
+
+#### Acceptance Criteria
+- [x] `IRV_TALLY_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the IRV CLI
+      contract (filename `main.py`, the stdin ballot format, the per-round tally print format,
+      the strict-majority win condition, the elimination print format, the alphabetical
+      candidate-ordering rule) with the oracle's `expected_stdout` fully derivable from that same
+      visible contract (no hidden key, no leak).
+- [x] The seeded ballot fixture (21 ballots: 10 `A,B`, 6 `B,C`, 5 `C,B`) makes the round-1
+      plurality leader (`A`, 10 first-choice votes) LOSE the election after `C` is eliminated and
+      its votes transfer to `B` — `expected_stdout` includes the full elimination-order printout
+      (`Round 1: ...`, `Eliminated: C`, `Round 2: ...`, `Winner: B`) so a build that implements
+      plain plurality (declares the round-1 leader the winner outright) is caught by an EXACT
+      stdout mismatch.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT IRV `main.py`
+      stub is accepted by `grade_real_system_task(IRV_TALLY_TASK, ...)`; a BROKEN stub that
+      implements plurality instead of IRV is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-26] Third import-oracle CREATE task, in a payroll/tax vertical (progressive bracket withholding)
+
+A THIRD held-out import-oracle-shaped task (after REQ-3's retry-backoff and REQ-5's memoize
+libraries), pulled from the production-systems atlas, graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code — reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `TAX_WITHHOLDING_TASK` (`RealSystemTask`,
+`cls="payroll"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file `compute_withholding_cents(income_cents, brackets)`
+function in `withholding.py` that computes progressive-bracket tax withholding in EXACT integer
+cents from a caller-supplied bracket table (no hardcoded jurisdiction), using an explicit
+integer-floor-division contribution rule to remove any rounding ambiguity.
+
+#### Acceptance Criteria
+- [x] `TAX_WITHHOLDING_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      withholding contract (filename `withholding.py`, the function signature, the
+      `[upper_bound_cents, rate_percent]` bracket shape including the open-ended `None`-ceiling
+      last bracket, the cumulative-boundary rule, the `(portion_cents * rate_percent) // 100`
+      floor-division contribution rule) with every oracle-checked value derivable from that same
+      visible sentence (no hidden key, no leak); `brackets` is always supplied by the caller —
+      no jurisdiction/bracket table is hardcoded anywhere in the contract.
+- [x] The driven checks cover: zero income (zero withholding), an income EXACTLY at a bracket
+      boundary, a MID-bracket income, and a TOP-bracket-overflow income (above every bracket's
+      ceiling) — each expected value hand-verified against the pinned floor-division rule before
+      being added to the roster; a build with an off-by-one bracket boundary is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `compute_withholding_cents` fixture is accepted by
+      `grade_real_system_task(TAX_WITHHOLDING_TASK, ...)`; a BROKEN fixture with an off-by-one
+      bracket boundary is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-27] Fourth import-oracle CREATE task, in a legal/court-filing vertical (deadline date math)
+
+A FOURTH held-out import-oracle-shaped task, pulled from the production-systems atlas, graded by
+the SAME ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code —
+reuses `_grade_import` -> `harness.import_driver.drive_import` verbatim). `COURT_DEADLINE_TASK`
+(`RealSystemTask`, `cls="legal"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file
+`compute_deadline(trigger_date, day_count, counting_rule, holidays)` function in `deadline.py`
+that computes a filing deadline from an explicit ISO trigger date, a day count, a `"calendar"` vs
+`"court"` counting rule, a fixed Saturday/Sunday weekend rule, and an explicit caller-supplied
+holiday list — rolling forward to the next non-weekend/non-holiday day when the computed landing
+day is a weekend or a holiday. Fully deterministic (every input is explicit; nothing depends on
+"today"), so no clock/injected-time oracle seam is needed.
+
+#### Acceptance Criteria
+- [x] `COURT_DEADLINE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      deadline-math contract (filename `deadline.py`, the function signature, the ISO date
+      format, the fixed Saturday/Sunday weekend rule, the caller-supplied `holidays` list with no
+      built-in holiday calendar, the `"calendar"` vs `"court"` counting-rule semantics, the
+      roll-forward-past-weekend/holiday landing rule) with every oracle-checked value derivable
+      from that same visible sentence (no hidden key, no leak).
+- [x] The driven checks cover: a baseline calendar computation with no rolling needed, a
+      calendar-day landing on a Saturday that rolls forward to the following Monday, a
+      court-day count that skips both weekends AND an explicit interior holiday, and a
+      calendar-day landing that falls exactly on an explicit (non-weekend) holiday and must still
+      roll forward — each expected date independently hand-verified with `datetime.date`
+      arithmetic before being added to the roster; a build that forgets to honor `holidays` at
+      all (only honors weekends) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `compute_deadline` fixture is accepted by `grade_real_system_task(COURT_DEADLINE_TASK,
+      ...)`; a BROKEN fixture that forgets to honor `holidays` is rejected; the task is a member
+      of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-24/25/26/27
+      tasks (length 15 -> 19).

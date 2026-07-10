@@ -612,3 +612,130 @@
 
 #### Implements
 - [REQ-23] Thread `spec_hint` from the real-systems MODIFY driver into `modify_system`
+
+### [TASK-19] Fourth LIFECYCLE CREATE task, in an SLA-tiered helpdesk vertical (REQ-24)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `HELPDESK_SLA_TASK` (`RealSystemTask`,
+   `cls="helpdesk"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a
+   stdlib-only single-file `HelpdeskTicket` class in `helpdesk.py` (states
+   `new`/`triaged`/`escalated`/`waiting_customer`/`resolved`/`closed`, action methods
+   `triage()`/`escalate()`/`resolve()`/`wait_on_customer()`/`resume()`/`close()`/`reopen()`,
+   with `escalate()` legal ONLY from `triaged` -- the SLA-tier-escalation behavior that
+   distinguishes it from `TICKET_WORKFLOW_TASK`'s plain support ticket). Reuse the
+   ALREADY-LANDED `_grade_state_machine` dispatch (REQ-13) -- no new oracle code. Avoid every
+   leaf-fingerprinting token (queue/cache/ttl/expire/stack/ring/buffer/memoize) in the sentence.
+2. `oracle_spec.spec` drives an illegal `escalate()` from `"new"` FIRST (reject), then the legal
+   `triage()`, then an illegal `close()` from `"triaged"` (reject, a SECOND distinct illegal
+   transition), then the full legal SLA-escalation path (`escalate` -> `wait_on_customer` ->
+   `resume` -> `resolve` -> `close` -> `reopen`) back to `expect_final="new"`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` +
+   post-build `build_path` check) + leak-free (every oracle-chosen value is derivable from the
+   visible sentence contract).
+4. Add `tests/test_ext060_atlas_wave1_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `HelpdeskTicket` fixture is accepted by `grade_real_system_task(HELPDESK_SLA_TASK, ...)`; a
+   BROKEN fixture (unguarded `escalate()`, legal from any state) is rejected; leaves-OFF holds
+   (`leaf_for_spec(HELPDESK_SLA_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave1_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-24 ranges, via
+   `jarify-manage-links`) and flip the REQ-24 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-24] Fourth LIFECYCLE CREATE task, in an SLA-tiered helpdesk vertical (helpdesk ticket, distinct from the plain-ticket class)
+
+### [TASK-20] Second cli-exact CREATE task, in an elections/voting vertical (REQ-25)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `IRV_TALLY_TASK` (`RealSystemTask`,
+   `cls="elections"`, `oracle_kind="cli-exact"`) with a contract-exact sentence for a
+   stdlib-only `main.py` CLI reading ranked-choice ballots from stdin (one comma-separated
+   ranked candidate list per line) and printing an instant-runoff tally: per-round
+   `Round <N>: <name>=<count>, ...` lines (candidates in alphabetical order), an
+   `Eliminated: <name>` line when no candidate has a strict majority that round, and a final
+   `Winner: <name>` line once one does. Reuse the ALREADY-LANDED `_grade_cli_exact` dispatch
+   (REQ-4) -- no new oracle code.
+2. Craft the seeded ballot fixture (21 ballots: 10 `A,B`, 6 `B,C`, 5 `C,B`) so the round-1
+   plurality leader (`A`, 10 votes) LOSES after `C` is eliminated and its votes transfer to `B`
+   (`B` wins with 11/21), and set `oracle_spec["expected_stdout"]` to the full exact
+   elimination-order printout (`Round 1: A=10, B=6, C=5`, `Eliminated: C`,
+   `Round 2: A=10, B=11`, `Winner: B`).
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free (every oracle-chosen
+   value is derivable from the visible sentence contract).
+4. Extend `tests/test_ext060_atlas_wave1_tasks.py` (same file TASK-19 creates, OFFLINE, no
+   model/Jetson): a CORRECT IRV `main.py` stub is accepted by
+   `grade_real_system_task(IRV_TALLY_TASK, ...)`; a BROKEN stub that implements plain plurality
+   (declares the round-1 leader the winner outright) is rejected; leaves-OFF holds
+   (`leaf_for_spec(IRV_TALLY_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave1_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-25 ranges, via
+   `jarify-manage-links`) and flip the REQ-25 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-25] Second cli-exact CREATE task, in an elections/voting vertical (ranked-choice instant-runoff tally)
+
+### [TASK-21] Third import-oracle CREATE task, in a payroll/tax vertical (REQ-26)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `TAX_WITHHOLDING_TASK` (`RealSystemTask`,
+   `cls="payroll"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `compute_withholding_cents(income_cents, brackets)` function in `withholding.py`
+   -- `brackets` is a caller-supplied list of `[upper_bound_cents, rate_percent]` pairs (last
+   entry's `upper_bound_cents` is `None`, open-ended), and each bracket's contribution is
+   `(portion_cents * rate_percent) // 100` (integer floor division, pinned explicitly so there
+   is no rounding ambiguity). No jurisdiction/bracket table is hardcoded anywhere in the module.
+   Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Pick a bracket table (`[[100000, 10], [400000, 20], [None, 30]]`) and four `api_calls`/
+   `checks` covering zero income, an income exactly at a bracket boundary, a mid-bracket income,
+   and a top-bracket-overflow income -- hand-verify every expected value against the pinned
+   floor-division rule (e.g. via a scratch Python script) before adding the task to the roster.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_atlas_wave1_tasks.py` (same file TASK-19/20 create, OFFLINE, no
+   model/Jetson): a CORRECT `compute_withholding_cents` fixture is accepted by
+   `grade_real_system_task(TAX_WITHHOLDING_TASK, ...)`; a BROKEN fixture with an off-by-one
+   bracket boundary (excludes the ceiling cent from its own bracket) is rejected; leaves-OFF
+   holds (`leaf_for_spec(TAX_WITHHOLDING_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave1_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-26 ranges, via
+   `jarify-manage-links`) and flip the REQ-26 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-26] Third import-oracle CREATE task, in a payroll/tax vertical (progressive bracket withholding)
+
+### [TASK-22] Fourth import-oracle CREATE task, in a legal/court-filing vertical (REQ-27)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `COURT_DEADLINE_TASK` (`RealSystemTask`,
+   `cls="legal"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `compute_deadline(trigger_date, day_count, counting_rule, holidays)` function in
+   `deadline.py` -- explicit ISO `trigger_date`, integer `day_count`, `"calendar"`/`"court"`
+   `counting_rule`, a fixed Saturday/Sunday weekend rule, and a caller-supplied `holidays` list
+   (no built-in holiday calendar); the raw landing day rolls forward past any trailing
+   weekend/holiday run to the next court day. Fully deterministic (no reliance on "today", no
+   clock oracle seam needed). Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no
+   new oracle code.
+2. Pick four `api_calls`/`checks`: a baseline calendar computation with no rolling, a
+   calendar-day landing on a Saturday rolling to the following Monday, a court-day count
+   skipping both weekends and an explicit interior holiday, and a calendar-day landing that
+   falls exactly on an explicit (non-weekend) holiday and must still roll forward --
+   independently hand-verify every expected date with `datetime.date` arithmetic (e.g. via a
+   scratch Python script) before adding the task to the roster.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_atlas_wave1_tasks.py` (same file TASK-19/20/21 create, OFFLINE, no
+   model/Jetson): a CORRECT `compute_deadline` fixture is accepted by
+   `grade_real_system_task(COURT_DEADLINE_TASK, ...)`; a BROKEN fixture that forgets to honor
+   `holidays` (only honors weekends) is rejected; leaves-OFF holds
+   (`leaf_for_spec(COURT_DEADLINE_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`; assert `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-24/25/26/27
+   tasks (length 15 -> 19).
+5. Run `python -m pytest tests/test_ext060_atlas_wave1_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; also confirm the two pre-existing hardcoded roster-size
+   assertions in `tests/test_ext060_ticket_booking_invoice.py` and
+   `tests/test_ext060_spec_hint.py` are updated to the new total of 19). Update
+   `.jarify/EXT-060/index.json` (REQ-27 ranges, via `jarify-manage-links`) and flip the REQ-27
+   acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-27] Fourth import-oracle CREATE task, in a legal/court-filing vertical (deadline date math)

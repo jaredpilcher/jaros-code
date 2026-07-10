@@ -277,7 +277,7 @@
     {
       "file": "tests/test_ext060_spec_hint.py",
       "startLine": 18,
-      "endLine": 150
+      "endLine": 152
     }
   ],
   "REQ-8": [
@@ -398,6 +398,54 @@
       "file": "tests/test_ext060_ticket_booking_invoice.py",
       "startLine": 246,
       "endLine": 345
+    }
+  ],
+  "REQ-24": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2333,
+      "endLine": 2418
+    },
+    {
+      "file": "tests/test_ext060_atlas_wave1_tasks.py",
+      "startLine": 53,
+      "endLine": 172
+    }
+  ],
+  "REQ-25": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2421,
+      "endLine": 2483
+    },
+    {
+      "file": "tests/test_ext060_atlas_wave1_tasks.py",
+      "startLine": 176,
+      "endLine": 288
+    }
+  ],
+  "REQ-26": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2486,
+      "endLine": 2562
+    },
+    {
+      "file": "tests/test_ext060_atlas_wave1_tasks.py",
+      "startLine": 292,
+      "endLine": 361
+    }
+  ],
+  "REQ-27": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2565,
+      "endLine": 2635
+    },
+    {
+      "file": "tests/test_ext060_atlas_wave1_tasks.py",
+      "startLine": 365,
+      "endLine": 459
     }
   ]
 }

@@ -131,12 +131,14 @@ def test_driver_passes_none_spec_hint_when_base_sentence_is_empty(monkeypatch):
 
 
 # --------------------------------------------------------------------------------------------
-# (d) the roster is unchanged by this task (15 create + 6 modify) -- this task only threads an
-# existing field through, it never adds/removes a roster task.
+# (d) the MODIFY roster is unchanged by this task -- this task only threads an existing field
+# through, it never adds/removes a MODIFY roster task. (The CREATE roster's size below reflects
+# whatever it is as of REQ-24/25/26/27's later additions -- this test only pins the MODIFY half,
+# which REQ-23 does not touch.)
 # --------------------------------------------------------------------------------------------
 
 def test_roster_size_unchanged():
-    assert len(REAL_SYSTEMS_TASKS) == 15
+    assert len(REAL_SYSTEMS_TASKS) == 19
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 6
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert names == {
