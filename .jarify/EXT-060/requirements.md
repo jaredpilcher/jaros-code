@@ -442,3 +442,47 @@ against nothing but its own growth.
       `backorder()` incorrectly mutates `available`/`reserved` is also rejected.
 - [x] Leaves-OFF enforced identically to every other MODIFY task (static
       `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-17] `oracle_kind="double_entry"` + first FINTECH-LEDGER CREATE task (double-entry balance)
+
+The canonical scoreboard's first FINTECH-shaped task, grading whether a build enforces the
+double-entry invariant under a driven posting sequence (an unbalanced journal entry — debits not
+equal to credits — must be rejected, not silently posted) — a class of real system (ledgers,
+journals, general-ledger accounts, wallets, escrow accounts, statements) EXT-059 REQ-9 built a
+dedicated deterministic oracle for but that had no representative task on this scoreboard yet. A
+`_grade_double_entry` grader wires the already-landed EXT-059 REQ-9 oracle
+(`harness/double_entry_oracle.py`'s `grade_double_entry`) into `grade_real_system_task` under a
+new `oracle_kind="double_entry"` dispatch — no new process-launch or driving mechanism, reusing
+that oracle verbatim. `DOUBLE_ENTRY_LEDGER_TASK` (`RealSystemTask`, `cls="ledger"`,
+`oracle_kind="double_entry"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+stdlib-only, single-file `Ledger` class in `ledger.py` over three named accounts (`cash`,
+`revenue`, `expense`), a `post(legs)` method that applies a balanced list of debit/credit legs to
+each account's exact-integer-cents balance, and raises `ValueError` (no mutation) when the legs
+are unbalanced (sum of debits != sum of credits) — the debits-equal-credits invariant always
+holds across every accepted entry.
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="double_entry"` to a new
+      `_grade_double_entry(oracle_spec, root, python_exe)` that maps `oracle_spec` (`{"module":
+      str, "entity": str, "spec": {...double-entry spec shape...}}`) to
+      `harness.double_entry_oracle.grade_double_entry(root, module=..., entity=..., spec=...,
+      python_exe=python_exe)`, returning `(accepted, note)`. NEVER raises (reuses
+      `double_entry_oracle`'s own never-raise contract) — a malformed spec, a missing entrypoint,
+      or a build that posts an unbalanced entry is an honest `(False, <reason>)`.
+- [x] `DOUBLE_ENTRY_LEDGER_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      ledger contract (filename `ledger.py`, the three named accounts, the `post(legs)`
+      debit/credit-leg contract, the `ValueError`-on-unbalanced-entry + unchanged-balances
+      contract, the three zero-argument balance readers) with every oracle-checked value (the
+      accounts, the driven balanced/unbalanced posting script and its expected balances,
+      `expect_final`) derivable from that same visible sentence (no hidden key, no leak).
+- [x] The driven script exercises BOTH an illegal unbalanced posting (rejected, every account
+      balance unchanged) and multiple legal balanced postings across all three accounts — a build
+      that only ever exercises the legal path, or that allows the unbalanced posting, or that
+      posts a balanced entry to the wrong side of an account, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Ledger`
+      fixture is accepted by `grade_real_system_task(DOUBLE_ENTRY_LEDGER_TASK, ...)`; a BROKEN
+      fixture (posts an unbalanced entry with no guard) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.

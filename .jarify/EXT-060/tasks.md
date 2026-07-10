@@ -381,3 +381,35 @@
 #### Implements
 - [REQ-15] `oracle_kind="conservation"` + first INVENTORY CREATE task (no-oversell reservation)
 - [REQ-16] First INVENTORY MODIFY task: add a non-oversell-safe `backorder()`
+
+### [TASK-12] `oracle_kind="double_entry"` + first FINTECH-LEDGER CREATE task (REQ-17)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, import `grade_double_entry` from
+   `harness.double_entry_oracle`. Add `_grade_double_entry(oracle_spec, root, python_exe)` that
+   maps `oracle_spec` (`{"module": str, "entity": str, "spec": {...double-entry spec shape...}}`)
+   to `grade_double_entry(root, module=oracle_spec["module"], entity=oracle_spec["entity"],
+   spec=oracle_spec["spec"], python_exe=python_exe)`, returning `(accepted, note)`; never raises.
+   Wire `oracle_kind == "double_entry"` into `grade_real_system_task`'s dispatch.
+2. Add `DOUBLE_ENTRY_LEDGER_TASK` (`RealSystemTask`, `cls="ledger"`,
+   `oracle_kind="double_entry"`) to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+   stdlib-only single-file `Ledger` class in `ledger.py` over three named accounts (`cash`,
+   `revenue`, `expense`), zero-argument `cash()`/`revenue()`/`expense()` readers, and a
+   `post(legs)` method applying a balanced list of debit/credit legs (debit adds, credit
+   subtracts) to each account's exact-integer-cents balance, raising `ValueError` with every
+   balance left unchanged when the legs are unbalanced. `oracle_spec.spec` drives an illegal
+   unbalanced posting (reject) first, then three legal balanced postings touching all three
+   accounts, ending on a concrete `expect_final`.
+3. Add `tests/test_ext060_double_entry_task.py` (OFFLINE, no model/Jetson, hand-written fixtures
+   only): (a) a CORRECT `Ledger` fixture is accepted by
+   `grade_real_system_task(DOUBLE_ENTRY_LEDGER_TASK, ...)`; (b) a BROKEN fixture (posts an
+   unbalanced entry with no guard) is rejected; (c) leaves-OFF
+   (`leaf_for_spec(DOUBLE_ENTRY_LEDGER_TASK.sentence) is None`) + the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_double_entry_task.py tests/test_ext060_real_systems_suite.py
+   tests/test_ext060_lifecycle_inventory.py -q`; confirm green (offline only -- do not run the
+   full suite). Update `.jarify/EXT-060/index.json` (REQ-17 ranges, via `jarify-manage-links`) and
+   flip the REQ-17 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-17] `oracle_kind="double_entry"` + first FINTECH-LEDGER CREATE task (double-entry balance)

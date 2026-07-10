@@ -90,6 +90,13 @@ from harness.state_machine_oracle import grade_state_machine
 from harness.conservation_oracle import grade_conservation
 # #EXT-060-REQ-15 End
 
+# #EXT-060-REQ-17 Start
+# TASK-12: reuse (not reimplement) the already-landed double-entry-balance oracle (EXT-059
+# REQ-9) for the first FINTECH-LEDGER-shaped ("double_entry" oracle_kind) grading path -- never
+# a new driving mechanism.
+from harness.double_entry_oracle import grade_double_entry
+# #EXT-060-REQ-17 End
+
 
 @dataclass
 class RealSystemTask:
@@ -186,6 +193,10 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
         if task.oracle_kind == "conservation":
             return _grade_conservation(spec, root, python_exe)
         # #EXT-060-REQ-15 End
+        # #EXT-060-REQ-17 Start
+        if task.oracle_kind == "double_entry":
+            return _grade_double_entry(spec, root, python_exe)
+        # #EXT-060-REQ-17 End
         return False, f"unknown oracle_kind: {task.oracle_kind!r}"
     except Exception as exc:  # never raise -- an honest diagnostic result instead
         return False, f"grade_real_system_task raised unexpectedly: {exc}"
@@ -460,6 +471,33 @@ def _grade_conservation(oracle_spec: dict, root: Any, python_exe: str) -> "tuple
         root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
     )
 # #EXT-060-REQ-15 End
+
+
+# #EXT-060-REQ-17 Start
+# TASK-12: the ``oracle_kind == "double_entry"`` grading path -- for a FINTECH-LEDGER-shaped
+# system (journal/general-ledger/wallet/escrow/etc.) where an UNBALANCED journal entry (debits
+# != credits) must be rejected, not silently posted. Wires (never reimplements)
+# ``harness.double_entry_oracle.grade_double_entry`` -- the scripted balanced/unbalanced posting
+# oracle already landed for EXT-059 REQ-9.
+def _grade_double_entry(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "double_entry"`` grading path: import ``oracle_spec["entity"]`` from
+    ``oracle_spec["module"]`` in a fresh sandboxed subprocess and drive it through
+    ``oracle_spec["spec"]``'s balanced/unbalanced posting script
+    (``harness.double_entry_oracle.grade_double_entry``), returning ``(accepted, note)``
+    UNMODIFIED from that oracle. Never raises: a malformed ``oracle_spec`` (missing ``module``/
+    ``entity``/``spec``) or any exception during grading is an honest ``(False, <reason>)`` --
+    ``grade_double_entry`` itself already never raises, this helper adds no exception-prone
+    logic of its own."""
+    module = oracle_spec.get("module")
+    if not isinstance(module, str) or not module.strip():
+        return False, f"oracle_spec missing/invalid required 'module' key: {module!r}"
+    entity = oracle_spec.get("entity")
+    if not isinstance(entity, str) or not entity.strip():
+        return False, f"oracle_spec missing/invalid required 'entity' key: {entity!r}"
+    return grade_double_entry(
+        root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
+    )
+# #EXT-060-REQ-17 End
 
 
 def _rates(results: "list[dict]") -> dict:
@@ -1811,3 +1849,72 @@ INVENTORY_ADD_BACKORDER_MODIFY = RealSystemModifyTask(
 
 REAL_SYSTEMS_MODIFY_TASKS.append(INVENTORY_ADD_BACKORDER_MODIFY)
 # #EXT-060-REQ-16 End
+
+
+# #EXT-060-REQ-17 Start
+# TASK-12: the FIRST FINTECH-LEDGER-shaped task -- a stdlib double-entry journal class over three
+# named accounts, graded by the new "double_entry" oracle_kind (an entity class driven through a
+# scripted balanced/unbalanced posting script via `harness.double_entry_oracle`, no real
+# model/Jetson call anywhere in this measurement). An unbalanced posting (debits != credits) must
+# raise ValueError and leave every account balance unchanged -- the honesty core
+# `double_entry_oracle` exists to catch (the debits-equal-credits invariant, not self-report).
+_LEDGER_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named ledger.py, "
+    "using only the standard library, defining exactly one public class named `Ledger` modeling "
+    "a double-entry journal over exactly three named accounts: `cash`, `revenue`, and `expense`. "
+    "`Ledger()` (no constructor arguments) creates a ledger where all three accounts start at a "
+    "balance of `0` (an exact integer number of cents). It exposes three zero-argument reader "
+    "methods, `cash()`, `revenue()`, and `expense()`, each returning that account's CURRENT "
+    "integer balance in cents. It defines exactly one method, `post(legs)`, taking one positional "
+    "argument -- a list of leg dicts, each either `{\"account\": <name>, \"debit\": <cents>}` or "
+    "`{\"account\": <name>, \"credit\": <cents>}`, where `<name>` is one of `cash`/`revenue`/"
+    "`expense` and `<cents>` is a positive integer. Posting a leg to an account with `debit` ADDS "
+    "that many cents to the account's balance; posting a leg with `credit` SUBTRACTS that many "
+    "cents from the account's balance. If the legs in one call to `post(legs)` are BALANCED (the "
+    "sum of every `debit` amount in the list equals the sum of every `credit` amount in the "
+    "list), `post(legs)` must apply EVERY leg to its account's balance and return normally. If "
+    "the legs are UNBALANCED (the sum of the `debit` amounts does not equal the sum of the "
+    "`credit` amounts), `post(legs)` must instead raise `ValueError` and leave EVERY account's "
+    "balance COMPLETELY UNCHANGED -- no partial posting of any leg from an unbalanced call."
+)
+
+DOUBLE_ENTRY_LEDGER_TASK = RealSystemTask(
+    name="double-entry-ledger",
+    cls="ledger",
+    sentence=_LEDGER_SENTENCE,
+    oracle_kind="double_entry",
+    oracle_spec={
+        "module": "ledger",
+        "entity": "Ledger",
+        "spec": {
+            "accounts": ["cash", "revenue", "expense"],
+            "initial": {"cash": 0, "revenue": 0, "expense": 0},
+            "post_method": "post",
+            # Unbalanced entry FIRST (debit cash 5000, credit revenue 4000 -- off by 1000 cents,
+            # must be rejected), then three balanced entries: a $100 cash sale, a $30 cash
+            # expense payment, and a $20 cash sale, landing on cash=9000, revenue=-12000,
+            # expense=3000 (debit-positive/credit-negative sign convention, so the ledger-wide
+            # sum of every accepted entry's legs -- and hence every account's final balance --
+            # always nets to what its own legs predict).
+            "drive": [
+                {"legs": [{"account": "cash", "debit": 5000},
+                          {"account": "revenue", "credit": 4000}],
+                 "expect": "reject"},
+                {"legs": [{"account": "cash", "debit": 10000},
+                          {"account": "revenue", "credit": 10000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "expense", "debit": 3000},
+                          {"account": "cash", "credit": 3000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "cash", "debit": 2000},
+                          {"account": "revenue", "credit": 2000}],
+                 "expect": "accept"},
+            ],
+            "expect_final": {"cash": 9000, "revenue": -12000, "expense": 3000},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(DOUBLE_ENTRY_LEDGER_TASK)
+# #EXT-060-REQ-17 End
