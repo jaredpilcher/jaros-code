@@ -504,7 +504,9 @@ def test_validation_retry_task_is_leaves_off_and_a_roster_member():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_three_new_tasks():
-    assert len(REAL_SYSTEMS_TASKS) == 22  # was 19 (REQ-24..27), +3 (REQ-28/29/30)
+    # bumped 22 -> 26: EXT-060 REQ-31/32/33/34 (tests/test_ext060_atlas_wave2_tasks.py) added
+    # four more CREATE tasks after this module's own REQ-28/29/30 landed.
+    assert len(REAL_SYSTEMS_TASKS) == 26  # was 19 (REQ-24..27), +3 (REQ-28/29/30), +4 (REQ-31..34)
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "account-lockout-backoff-lib" in names
     assert "llm-output-parser-lib" in names

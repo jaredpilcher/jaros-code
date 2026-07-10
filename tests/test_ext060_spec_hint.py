@@ -138,9 +138,10 @@ def test_driver_passes_none_spec_hint_when_base_sentence_is_empty(monkeypatch):
 # --------------------------------------------------------------------------------------------
 
 def test_roster_size_unchanged():
-    # bumped 19 -> 22: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py) added three
-    # more CREATE tasks after this module's own REQ-23 landed.
-    assert len(REAL_SYSTEMS_TASKS) == 22
+    # bumped 19 -> 22 -> 26: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py) added
+    # three more CREATE tasks after this module's own REQ-23 landed, then REQ-31..34
+    # (tests/test_ext060_atlas_wave2_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 26
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 6
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert names == {

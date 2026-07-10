@@ -843,3 +843,138 @@
 
 #### Implements
 - [REQ-30] Second agent/LLM-infrastructure CREATE task, a schema-validation-retry loop
+
+### [TASK-26] Third import-oracle CREATE task, in a backup/ops vertical (GFS retention pruning) (REQ-31)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `GFS_RETENTION_TASK` (`RealSystemTask`,
+   `cls="backup"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `compute_keep_dates(snapshots, keep_daily, keep_weekly, keep_monthly)` function in
+   `gfs_retention.py` implementing a Grandfather-Father-Son retention policy: the union of a
+   DAILY tier (the `keep_daily` most-recent dates kept outright), a WEEKLY tier (the newest
+   snapshot in each of the `keep_weekly` most-recent distinct ISO calendar weeks), and a MONTHLY
+   tier (the newest snapshot in each of the `keep_monthly` most-recent distinct calendar months),
+   deduplicated, sorted ascending. Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) --
+   no new oracle code.
+2. Craft a 15-date fixture (shuffled input order) spanning three calendar months with several
+   dates sharing the same ISO week or calendar month; hand-verify the exact expected keep-set for
+   a concrete policy (via a scratch Python script computing the same grouping rule) before adding
+   the task to the roster. Add a second `api_calls`/`checks` entry exercising the
+   fewer-snapshots-than-the-policy-asks edge case (every tier requested larger than the available
+   count -- expect every date kept, no error, no padding).
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free (every oracle-chosen value is derivable from the visible
+   sentence contract).
+4. Add `tests/test_ext060_atlas_wave2_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `compute_keep_dates` fixture is accepted by `grade_real_system_task(GFS_RETENTION_TASK, ...)`;
+   a BROKEN fixture that ignores the policy and keeps every snapshot is rejected; leaves-OFF
+   holds (`leaf_for_spec(GFS_RETENTION_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave2_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-31 ranges, via
+   `jarify-manage-links`) and flip the REQ-31 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-31] Third import-oracle CREATE task, in a backup/ops vertical (Grandfather-Father-Son retention pruning)
+
+### [TASK-27] Fourth import-oracle CREATE task, in a devtools/CI vertical (CI job-matrix expansion) (REQ-32)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `CI_MATRIX_TASK` (`RealSystemTask`, `cls="devtools"`,
+   `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only single-file
+   `expand_matrix(matrix, exclude=None, include=None)` function in `ci_matrix.py` that expands a
+   CI job matrix into its full cross product (axes iterated in ascending alphabetical order, the
+   alphabetically-last axis cycling fastest), removing any combo matching ALL of AT LEAST ONE
+   `exclude` entry's axis:value pairs (a subset-of-axes match), then appending every `include`
+   entry verbatim. Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle
+   code.
+2. Hand-verify (via a scratch `itertools.product` computation) a 2x3 matrix with one full-axis
+   `exclude` entry plus one `include` entry, and a second matrix whose `exclude` entry names only
+   a subset of its axes (proving subset-match removes every matching combo); add both as
+   `api_calls`/`checks` entries, plus a third exercising the bare `=None` defaults (no
+   `exclude`/`include` supplied at all).
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_atlas_wave2_tasks.py` (same file TASK-26 creates, OFFLINE, no
+   model/Jetson): a CORRECT `expand_matrix` fixture is accepted by
+   `grade_real_system_task(CI_MATRIX_TASK, ...)`; a BROKEN fixture that computes the correct
+   cross product but never applies `exclude` is rejected; leaves-OFF holds
+   (`leaf_for_spec(CI_MATRIX_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave2_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-32 ranges, via
+   `jarify-manage-links`) and flip the REQ-32 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-32] Fourth import-oracle CREATE task, in a devtools/CI vertical (CI job-matrix expansion)
+
+### [TASK-28] Second `oracle_kind="service"` CREATE task, in a web vertical (URL shortener) (REQ-33)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `URL_SHORTENER_TASK` (`RealSystemTask`, `cls="web"`,
+   `oracle_kind="service"`) with a contract-exact sentence for a stdlib REST/SQLite URL-shortener
+   `main.py` (`http.server` + `sqlite3` + `json`, `PORT` env var, `data.db` SQLite file): `POST
+   /links` creates a shortened link, responding 201 with `{"code": ..., "url": ...}` (the code is
+   the link's SQLite autoincrement id in decimal-string form); `GET /links/<code>` returns the
+   stored mapping or 404; `GET /r/<code>` redirects (301 + `Location` header set to the original
+   url) for a known code, or 404 for an unknown one. Reuse the ALREADY-LANDED `_grade_service`
+   dispatch (REQ-9) -- no new oracle code.
+2. Read `harness/server_oracle.py`'s `_do_request` first: its plain `urllib.request.urlopen`
+   client transparently FOLLOWS a real 3xx response (no way to observe `status == 301`) and its
+   `http_check` dict has no response-header assertion at all -- so do NOT exercise `GET
+   /r/<code>` for a KNOWN code (it would make the check client dereference the arbitrary
+   submitted url, an unverifiable/hermeticity-hazardous request); only exercise it for an
+   UNKNOWN code (a plain 404, never followed). Verify the redirect TARGET instead via the `GET
+   /links/<code>` 200 `json_contains` check. Use `.invalid`-TLD urls in the fixture http_checks
+   (RFC 2606-reserved, guaranteed non-resolving) as defense-in-depth.
+3. `oracle_spec.http_checks` drives two `POST`s, a `GET /links/<code>` mapping check, a `GET
+   /links/<unknown>` 404, and a `GET /r/<unknown>` 404; `oracle_spec.db` asserts both created
+   rows persisted in `data.db` (`min_rows: 2`, both items left undeleted so this is honestly
+   satisfiable).
+4. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Extend `tests/test_ext060_atlas_wave2_tasks.py` (same file TASK-26/27 create, OFFLINE, no
+   model/Jetson): a CORRECT stdlib URL-shortener fixture is accepted by
+   `grade_real_system_task(URL_SHORTENER_TASK, ...)`, including the independent db assertion; a
+   BROKEN fixture whose `GET /links/<code>` lookup is dead (always 404s) is rejected; leaves-OFF
+   holds (`leaf_for_spec(URL_SHORTENER_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+6. Run `python -m pytest tests/test_ext060_atlas_wave2_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-33 ranges, via
+   `jarify-manage-links`) and flip the REQ-33 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-33] Second `oracle_kind="service"` CREATE task, in a web vertical (stdlib REST/SQLite URL shortener)
+
+### [TASK-29] Second `oracle_kind="clock"` CREATE task, in an auth vertical (access-token validity window) (REQ-34)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `TOKEN_VALIDITY_TASK` (`RealSystemTask`,
+   `cls="auth"`, `oracle_kind="clock"`) with a contract-exact sentence for a stdlib-only
+   single-file `TokenIssuer` class in `tokens.py`, constructed with a keyword-named zero-argument
+   clock callable `now_fn` it must consult for EVERY time decision: `issue(name)` returns a
+   token id (pinned, for testability, to be exactly `name` itself) valid for exactly 900 seconds
+   per `now_fn`; `check(token)` returns `True` strictly within that window and `False` at or
+   after it, and once `False` for a token, every later `check` for that same token also stays
+   `False`. Reuse the ALREADY-LANDED `_grade_clock` dispatch (REQ-28) -- no new oracle code. Say
+   "valid for 900 seconds"/"elapsed", never "expires" (avoids the verified `ttl-store` leaf's
+   keyword fingerprint, mirroring REQ-28's own note).
+2. Hand-walk (e.g. via a scratch Python script) a timeline: issue at `t=0`; `check` at `t=899`
+   (still valid, `True`); `check` at `t=900` (the exact boundary, `False`); `check` at `t=3600`
+   (a large jump, still `False`, proving the SAME token stays invalid rather than re-validating).
+   Call `harness.clock_oracle.validate_spec` on the resulting spec and confirm `(True, "ok")`
+   before adding the task to the roster.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_atlas_wave2_tasks.py` (same file TASK-26/27/28 create, OFFLINE, no
+   model/Jetson): a CORRECT `TokenIssuer` fixture is accepted by
+   `grade_real_system_task(TOKEN_VALIDITY_TASK, ...)`; a BROKEN fixture that never invalidates a
+   token is rejected; `harness.clock_oracle.validate_spec(TOKEN_VALIDITY_TASK.oracle_spec["spec"])`
+   reports `(True, "ok")`; leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`; assert
+   `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-31/32/33/34 tasks (length 22 -> 26).
+5. Run `python -m pytest tests/test_ext060_atlas_wave2_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; also confirm the four pre-existing hardcoded roster-size
+   assertions in `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_clock_agent_
+   tasks.py`, `tests/test_ext060_ticket_booking_invoice.py`, and `tests/test_ext060_spec_hint.py`
+   are updated to the new total of 26). Update `.jarify/EXT-060/index.json` (REQ-34 ranges, via
+   `jarify-manage-links`) and flip the REQ-34 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-34] Second `oracle_kind="clock"` CREATE task, in an auth vertical (access-token validity window)

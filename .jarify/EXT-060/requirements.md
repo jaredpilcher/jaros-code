@@ -952,3 +952,145 @@ model returns an INVALID payload on its first call, then a VALID one on the retr
       round-trips; a BROKEN fixture that never retries on an invalid first attempt is rejected; the
       task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the three
       REQ-28/29/30 tasks (length 19 -> 22).
+
+### [REQ-31] Third import-oracle CREATE task, in a backup/ops vertical (Grandfather-Father-Son retention pruning)
+
+A THIRD held-out import-oracle-shaped task pulled from the atlas's top impact x buildability
+lists, graded by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle
+code -- reuses `_grade_import` -> `harness.import_driver.drive_import` verbatim).
+`GFS_RETENTION_TASK` (`RealSystemTask`, `cls="backup"`, `oracle_kind="import"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file
+`compute_keep_dates(snapshots, keep_daily, keep_weekly, keep_monthly)` function in
+`gfs_retention.py` implementing a Grandfather-Father-Son (GFS) backup retention policy -- the
+union of a DAILY tier (the N most-recent dates kept outright), a WEEKLY tier (the newest snapshot
+in each of the M most-recent distinct ISO calendar weeks), and a MONTHLY tier (the newest
+snapshot in each of the K most-recent distinct calendar months), deduplicated so a date
+qualifying for more than one tier appears only once in the returned, sorted keep-list.
+
+#### Acceptance Criteria
+- [x] `GFS_RETENTION_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the GFS
+      retention contract (filename `gfs_retention.py`, the function signature, the ISO-date input
+      format, the DAILY/WEEKLY/MONTHLY tier definitions including the exact ISO-week and
+      calendar-month grouping rules, the union/dedup/sorted-output contract, the fewer-than-
+      requested-count fallback) with every oracle-checked value derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] A 15-date fixture spanning three calendar months (several dates sharing the same ISO week
+      or calendar month) drives the primary check, with every expected kept date hand-verified
+      (via a scratch computation of the exact same grouping rule) before being added to the
+      roster; a SECOND check exercises the "fewer snapshots than the policy asks" edge case (a
+      policy requesting more of each tier than exist, expecting every available date kept, no
+      error, no fabricated date); a build that ignores the policy and keeps every snapshot is
+      caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `compute_keep_dates` fixture is accepted by `grade_real_system_task(GFS_RETENTION_TASK,
+      ...)`; a BROKEN fixture that keeps every snapshot regardless of policy is rejected; the task
+      is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-32] Fourth import-oracle CREATE task, in a devtools/CI vertical (CI job-matrix expansion)
+
+A FOURTH held-out import-oracle-shaped task, graded by the SAME ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code -- reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `CI_MATRIX_TASK` (`RealSystemTask`,
+`cls="devtools"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file `expand_matrix(matrix, exclude=None, include=None)`
+function in `ci_matrix.py` that expands a CI job-matrix configuration (an axis-name -> list-of-
+values dict) into the full deterministic cross product of job dicts, honoring an `exclude` list
+(dicts naming a SUBSET of axes whose matching combos are removed) and an `include` list (extra
+job dicts appended verbatim, after exclusion).
+
+#### Acceptance Criteria
+- [x] `CI_MATRIX_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the matrix-
+      expansion contract (filename `ci_matrix.py`, the function signature and its `=None`
+      defaults, the deterministic axis-ordering rule -- axes iterated in ascending alphabetical
+      order with the alphabetically-last axis cycling fastest -- the subset-of-axes `exclude`
+      semantics, the verbatim-append `include` semantics applied AFTER exclusion) with every
+      oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] The driven checks hand-verify (via a scratch `itertools.product` computation) a 2x3 matrix
+      with one full-axis `exclude` entry plus one `include` entry, AND a second matrix whose
+      `exclude` entry names only a SUBSET of its axes (proving subset-match removes every matching
+      combo, not just an exact full-axis match); a build that computes the correct cross product
+      but never applies `exclude` is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `expand_matrix` fixture is accepted by `grade_real_system_task(CI_MATRIX_TASK, ...)`; a
+      BROKEN fixture that computes the cross product but ignores `exclude` is rejected; the task
+      is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-33] Second `oracle_kind="service"` CREATE task, in a web vertical (stdlib REST/SQLite URL shortener)
+
+The canonical scoreboard's SECOND genuinely-SaaS-shaped task (the first since REQ-9's items CRUD
+service), graded by the ALREADY-LANDED `oracle_kind="service"` dispatch REQ-9 lands (no new
+oracle code -- reuses `_grade_service` -> `harness.server_oracle.serve_and_check_stdlib` plus the
+independent post-teardown SQLite row assertion verbatim). `URL_SHORTENER_TASK` (`RealSystemTask`,
+`cls="web"`, `oracle_kind="service"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence
+for a stdlib REST/SQLite URL-shortener `main.py` (`http.server` + `sqlite3` + `json`, `PORT` env
+var, `data.db` SQLite file): `POST /links` creates a shortened link and returns 201 with its
+`code` (the link's SQLite autoincrement id, decimal-string form) and `url`; `GET /links/<code>`
+returns the stored mapping or 404; `GET /r/<code>` redirects to the original url (301 + a
+`Location` header) for a known code, or 404 for an unknown one.
+
+#### Acceptance Criteria
+- [x] `URL_SHORTENER_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      URL-shortener contract (filename `main.py`, stdlib-only, `PORT` env var, `data.db` SQLite
+      file, the `code`-is-the-decimal-autoincrement-id convention, the `POST /links`/
+      `GET /links/<code>`/`GET /r/<code>` semantics + status codes including the `Location`
+      header on a successful redirect, persistence across restarts) with every oracle-checked
+      value derivable from that same visible sentence (no hidden key, no leak).
+- [x] `oracle_spec.http_checks` drives two `POST`s, a `GET /links/<code>` verifying the stored
+      mapping, a `GET /links/<unknown-code>` 404, and a `GET /r/<unknown-code>` 404 -- the
+      redirect endpoint is deliberately NOT exercised for a KNOWN code, because
+      `harness/server_oracle.py`'s plain `urllib.request.urlopen` HTTP client transparently
+      FOLLOWS a real 3xx response (it has no way to observe `status == 301`, nor does its
+      `http_check` dict support a response-header assertion at all) -- checking a known code's
+      redirect would make the oracle's own HTTP client dereference the arbitrary submitted URL,
+      an unverifiable and hermeticity-hazardous request in a sandboxed/no-egress subprocess; the
+      redirect TARGET is instead independently verified via the `GET /links/<code>` check.
+      `oracle_spec.db` asserts both created rows persisted in `data.db`.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT stdlib
+      URL-shortener fixture is accepted by `grade_real_system_task(URL_SHORTENER_TASK, ...)`,
+      including the independent db assertion; a BROKEN fixture whose `GET /links/<code>` lookup
+      is dead (always 404s, even for a code just created) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-34] Second `oracle_kind="clock"` CREATE task, in an auth vertical (access-token validity window)
+
+The canonical scoreboard's SECOND TIME-DEPENDENT task (the first since REQ-28's account
+lockout/backoff), graded by the ALREADY-LANDED `oracle_kind="clock"` dispatch REQ-28 lands (no
+new oracle code -- reuses `_grade_clock` -> `harness.clock_oracle.grade_clock` verbatim).
+`TOKEN_VALIDITY_TASK` (`RealSystemTask`, `cls="auth"`, `oracle_kind="clock"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `TokenIssuer`
+class in `tokens.py`, constructed with a keyword-named zero-argument clock callable (`now_fn`) it
+must consult for EVERY time decision -- `issue(name)` returns a token id valid for exactly 900
+seconds per `now_fn`; `check(token)` returns `True` strictly within that 900-second window and
+`False` at or after it, and once `False` for a token because its window has elapsed, every later
+`check` for that same token also stays `False`.
+
+#### Acceptance Criteria
+- [x] `TOKEN_VALIDITY_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      token-validity contract (filename `tokens.py`, the `TokenIssuer(now_fn)` constructor's
+      `now_fn` keyword contract explicitly stating the zero-argument-callable/injected-clock
+      requirement, the `issue(name)`/`check(token)` semantics, the exact 900-second window, the
+      never-revalidates-once-elapsed rule) with every oracle-checked value (the timeline's
+      `at`/`call`/`args`/`expect` entries) derivable from that same visible sentence (no hidden
+      key, no leak); the sentence says a token "is valid for 900 seconds" / its window has
+      "elapsed", never "expires" (avoiding the verified `ttl-store` leaf's keyword fingerprint).
+- [x] The driven timeline exercises an 899-second reading (still valid, `True`), the exact
+      900-second boundary (no longer valid, `False`), and a large 3600-second jump on the SAME
+      token (still `False`, proving the token never re-validates once its window has elapsed) --
+      `harness.clock_oracle.validate_spec` reports `(True, "ok")` for the task's own spec.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `TokenIssuer`
+      fixture is accepted by `grade_real_system_task(TOKEN_VALIDITY_TASK, ...)`; a BROKEN fixture
+      that never invalidates a token (valid forever once issued) is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four
+      REQ-31/32/33/34 tasks (length 22 -> 26).

@@ -2936,3 +2936,303 @@ VALIDATION_RETRY_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(VALIDATION_RETRY_TASK)
 # #EXT-060-REQ-30 End
+
+
+# #EXT-060-REQ-31 Start
+# TASK-26: a THIRD import-oracle-shaped CREATE task from the atlas's top impact x buildability
+# lists, in a NEW backup/ops vertical -- a Grandfather-Father-Son (GFS) backup retention pruning
+# library -- graded by the ALREADY-LANDED "import" oracle_kind dispatch REQ-3 lands (no new
+# oracle code -- reuses `_grade_import` -> `harness.import_driver.drive_import` verbatim). Every
+# expected value below was hand-verified via a scratch computation of the exact same
+# daily/weekly/monthly grouping rule the sentence pins (see the task's commit) before being added
+# to the roster.
+_GFS_RETENTION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "gfs_retention.py, using only the standard library, defining exactly one public function "
+    "`compute_keep_dates(snapshots, keep_daily, keep_weekly, keep_monthly)` implementing a "
+    "Grandfather-Father-Son (GFS) backup retention policy. `snapshots` is a list of ISO-format "
+    "(`YYYY-MM-DD`) date strings, one per day a backup snapshot exists, in any order, with no "
+    "duplicate dates; `keep_daily`/`keep_weekly`/`keep_monthly` are non-negative integers. The "
+    "function returns a new list of the ISO date strings that must be KEPT under the policy, "
+    "sorted in ascending order with no duplicate entries, computed as the UNION of three tiers "
+    "(a date belonging to more than one tier appears only once in the returned list): (1) the "
+    "DAILY tier keeps the `keep_daily` most-recent dates from `snapshots` outright (by calendar "
+    "date order); (2) the WEEKLY tier groups `snapshots` by ISO calendar week (the "
+    "`(iso_year, iso_week)` pair Python's `datetime.date.isocalendar()` reports -- a week runs "
+    "Monday through Sunday), orders the distinct weeks that contain at least one snapshot from "
+    "most-recent to least-recent, takes the `keep_weekly` most-recent of those weeks, and from "
+    "EACH of those weeks keeps only the single newest snapshot date within that week; (3) the "
+    "MONTHLY tier groups `snapshots` by calendar month (the `(year, month)` pair), orders the "
+    "distinct months that contain at least one snapshot from most-recent to least-recent, takes "
+    "the `keep_monthly` most-recent of those months, and from EACH of those months keeps only "
+    "the single newest snapshot date within that month. When `keep_daily`/`keep_weekly`/"
+    "`keep_monthly` is larger than the number of dates/distinct weeks/distinct months actually "
+    "available, that tier simply keeps everything it has (never an error, never a padded or "
+    "fabricated date)."
+)
+
+# 15 snapshot dates spanning three calendar months (May/June/July 2024), spaced 5 days apart so
+# several fall in the SAME ISO week or SAME calendar month (hand-verified isocalendar()/month
+# groupings via a scratch script before being pinned here): weeks 19/21/24/26 each hold TWO of
+# these dates, and May/June/July each hold several -- exactly what exercises the "keep only the
+# newest in each bucket" rule. Passed in intentionally SHUFFLED order to also prove the build
+# sorts by calendar date itself rather than trusting input order.
+_GFS_SNAPSHOTS_SHUFFLED = [
+    "2024-06-05", "2024-05-11", "2024-07-10", "2024-05-01", "2024-06-15", "2024-05-26",
+    "2024-06-30", "2024-05-16", "2024-06-20", "2024-05-06", "2024-07-05", "2024-05-31",
+    "2024-06-10", "2024-05-21", "2024-06-25",
+]
+# keep_daily=3 -> {07-10, 07-05, 06-30} outright. keep_weekly=4 -> the 4 most-recent distinct
+# ISO weeks (28, 27, 26, 25) newest-per-week: week28->07-10 (dup daily), week27->07-05 (dup
+# daily), week26 (06-25/06-30)->06-30 (dup daily), week25 (06-20 only)->06-20 (NEW, unique to
+# the weekly tier). keep_monthly=3 -> the 3 most-recent distinct months (July/June/May)
+# newest-per-month: July->07-10 (dup), June->06-30 (dup), May (05-01..05-31)->05-31 (NEW, unique
+# to the monthly tier). Union, sorted: exactly the 5 dates below -- proving BOTH tiers'
+# independent grouping logic AND the multi-tier-overlap dedup rule in one driven call.
+_GFS_EXPECTED_KEEP = [
+    "2024-05-31", "2024-06-20", "2024-06-30", "2024-07-05", "2024-07-10",
+]
+
+GFS_RETENTION_TASK = RealSystemTask(
+    name="backup-retention-gfs-pruning-lib",
+    cls="backup",
+    sentence=_GFS_RETENTION_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "gfs_retention",
+        "api_calls": [
+            {"id": "gfs_main", "target": "compute_keep_dates",
+             "args": [_GFS_SNAPSHOTS_SHUFFLED, 3, 4, 3], "kwargs": {}},
+            # fewer-than-policy edge case: only 3 snapshots exist at all, but every tier asks
+            # for 10 -- a correct build simply keeps all 3 (no error, no padding).
+            {"id": "gfs_fewer_than_policy", "target": "compute_keep_dates",
+             "args": [["2024-01-03", "2024-01-01", "2024-01-02"], 10, 10, 10], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "gfs_main", "expected": _GFS_EXPECTED_KEEP},
+            {"kind": "returns_equals", "call_id": "gfs_fewer_than_policy",
+             "expected": ["2024-01-01", "2024-01-02", "2024-01-03"]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(GFS_RETENTION_TASK)
+# #EXT-060-REQ-31 End
+
+
+# #EXT-060-REQ-32 Start
+# TASK-27: a FOURTH import-oracle-shaped CREATE task, in a devtools/CI vertical -- a CI job-
+# matrix expansion library -- graded by the SAME ALREADY-LANDED "import" oracle_kind dispatch
+# REQ-3 lands (no new oracle code -- reuses `_grade_import` -> `harness.import_driver.drive_import`
+# verbatim). Every expected value below was hand-verified via a scratch `itertools.product`
+# computation of the exact same axis-ordering/exclude/include rule the sentence pins (see the
+# task's commit) before being added to the roster.
+_CI_MATRIX_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "ci_matrix.py, using only the standard library, defining exactly one public function "
+    "`expand_matrix(matrix, exclude=None, include=None)` that expands a continuous-integration "
+    "job matrix configuration into the full list of job dicts. `matrix` is a dict mapping an "
+    "axis name (a string, e.g. `\"os\"`) to a list of that axis's possible values; `exclude` "
+    "(defaulting to an empty list when omitted or `None`) is a list of dicts, each naming a "
+    "SUBSET of the matrix's axes (as few as one axis, up to all of them) with a specific value "
+    "for each named axis; `include` (defaulting to an empty list when omitted or `None`) is a "
+    "list of extra, ready-made job dicts. The function computes the full cross product of "
+    "`matrix`'s axes -- iterating the axis NAMES in ascending alphabetical (string-sorted) "
+    "order, with the alphabetically LAST axis's values cycling fastest (exactly the ordering "
+    "`itertools.product(*[matrix[axis] for axis in sorted(matrix)])` produces, each combination "
+    "turned into a `{axis_name: value, ...}` dict) -- then REMOVES from that cross product "
+    "every generated job dict that matches ALL of the axis:value pairs named by AT LEAST ONE "
+    "`exclude` entry (an exclude entry naming only one axis removes every job whose value on "
+    "that one axis matches, regardless of its value on any other axis), preserving the relative "
+    "order of the jobs that remain, and finally APPENDS every entry of `include` verbatim, "
+    "unchanged and in the given order, to the end of that filtered list (an `include` entry is "
+    "never expanded, never deduplicated against an existing job, and is unaffected by "
+    "`exclude`). Returns the resulting list of job dicts."
+)
+
+CI_MATRIX_TASK = RealSystemTask(
+    name="ci-job-matrix-expansion-lib",
+    cls="devtools",
+    sentence=_CI_MATRIX_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "ci_matrix",
+        "api_calls": [
+            # 2x3 matrix + 1 exclude (full-axis match) + 1 include (verbatim append).
+            {"id": "full_matrix", "target": "expand_matrix",
+             "args": [
+                 {"os": ["linux", "windows"], "python": ["3.9", "3.10", "3.11"]},
+                 [{"os": "windows", "python": "3.9"}],
+                 [{"os": "macos", "python": "3.11", "extra": "beta"}],
+             ], "kwargs": {}},
+            # a SUBSET-of-axes exclude (names only "os") removes BOTH matching combos --
+            # catches a build that only implements a full-axis-match exclude.
+            {"id": "subset_exclude", "target": "expand_matrix",
+             "args": [
+                 {"os": ["linux", "windows"], "python": ["3.9", "3.10"]},
+                 [{"os": "windows"}],
+                 [],
+             ], "kwargs": {}},
+            # zero-argument-default exercise (EXT-036 REQ-45-style): `exclude`/`include` never
+            # supplied at all, relying entirely on the `=None` defaults.
+            {"id": "defaults_only", "target": "expand_matrix",
+             "args": [{"env": ["dev", "prod"]}], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "full_matrix", "expected": [
+                {"os": "linux", "python": "3.9"}, {"os": "linux", "python": "3.10"},
+                {"os": "linux", "python": "3.11"}, {"os": "windows", "python": "3.10"},
+                {"os": "windows", "python": "3.11"},
+                {"os": "macos", "python": "3.11", "extra": "beta"},
+            ]},
+            {"kind": "returns_equals", "call_id": "subset_exclude", "expected": [
+                {"os": "linux", "python": "3.9"}, {"os": "linux", "python": "3.10"},
+            ]},
+            {"kind": "returns_equals", "call_id": "defaults_only", "expected": [
+                {"env": "dev"}, {"env": "prod"},
+            ]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(CI_MATRIX_TASK)
+# #EXT-060-REQ-32 End
+
+
+# #EXT-060-REQ-33 Start
+# TASK-28: the canonical scoreboard's SECOND genuinely-SaaS-shaped "service" oracle_kind task (the
+# first since REQ-9's items CRUD service) -- a stdlib REST/SQLite URL-shortener -- graded by the
+# ALREADY-LANDED "service" oracle_kind dispatch REQ-9 lands (no new oracle code -- reuses
+# `_grade_service` -> `harness.server_oracle.serve_and_check_stdlib` + the independent post-
+# teardown SQLite row assertion verbatim). TWO measured limitations of `_do_request`'s plain
+# `urllib.request.urlopen` client rule out grading the redirect endpoint for a KNOWN code
+# directly: (1) `harness/server_oracle.py`'s `http_check` dict has no assertion for a response
+# HEADER at all (only `status`/`json_contains`/`body_contains`/`json_body`, see that module's own
+# docstring), so a `Location` value can never be checked; (2) MORE fundamentally, `urlopen`
+# transparently FOLLOWS a real 3xx response (it has no way to observe `status == 301` either) --
+# so even a bare status check on `GET /r/<known-code>` would make the check client dereference
+# the arbitrary submitted URL, which is both unverifiable (the followed response has nothing to
+# do with this service) and a hermeticity hazard in a sandboxed/no-egress subprocess. Per this
+# requirement's own design note, the redirect TARGET is instead independently verified via the
+# `GET /links/<code>` 200 `json_contains` check, and the redirect endpoint is exercised ONLY for
+# an UNKNOWN code (`GET /r/999` -> 404, which never triggers a follow) -- the `Location`
+# header/`301` contract is still pinned in full in the sentence (the built service must implement
+# it correctly), it is simply not independently re-verifiable by this particular black-box oracle.
+_URL_SHORTENER_SENTENCE = (
+    "Write a Python web service in a file named main.py using only the standard library "
+    "(http.server + sqlite3 + json). On startup it listens on the TCP port given by the PORT "
+    "environment variable and stores data in a SQLite database file named data.db in the "
+    "current directory (create the table if missing). It implements a URL-shortener API over a "
+    "`links` resource, each link having an integer id (autoincrement) and the original `url` "
+    "string it points to: `POST /links` with a JSON body `{\"url\": ...}` creates a new "
+    "shortened link and responds 201 with a JSON body `{\"code\": ..., \"url\": ...}` -- the "
+    "`code` is that link's newly assigned SQLite autoincrement `id`, converted to its plain "
+    "decimal string form and used as nothing else (the first link ever created gets code "
+    "`\"1\"`, the second gets code `\"2\"`, and so on -- never any other encoding, hashing, "
+    "prefix, or randomness). `GET /links/<code>` responds 200 with that link's stored mapping "
+    "as JSON `{\"code\": ..., \"url\": ...}` when `<code>` matches a previously created link's "
+    "code, or 404 (with no meaningful body) when it does not. `GET /r/<code>` responds with "
+    "HTTP status 301 and a `Location` response header set to exactly that link's original `url` "
+    "when `<code>` matches a previously created link's code (redirecting a visitor to the "
+    "original URL), or 404 (with no meaningful body) when it does not. Data must persist in "
+    "data.db across process restarts."
+)
+
+URL_SHORTENER_TASK = RealSystemTask(
+    name="url-shortener-http-service",
+    cls="web",
+    sentence=_URL_SHORTENER_SENTENCE,
+    oracle_kind="service",
+    oracle_spec={
+        "entry": "main.py",
+        "http_checks": [
+            # ".invalid" is the RFC 2606-reserved TLD that is guaranteed never to resolve --
+            # defense-in-depth so even an accidental follow-through can never reach a real host.
+            {"method": "POST", "path": "/links", "json_body": {"url": "https://example.invalid/a"},
+             "status": 201, "json_contains": {"code": "1", "url": "https://example.invalid/a"}},
+            {"method": "POST", "path": "/links", "json_body": {"url": "https://example.invalid/b"},
+             "status": 201, "json_contains": {"code": "2", "url": "https://example.invalid/b"}},
+            {"method": "GET", "path": "/links/1", "status": 200,
+             "json_contains": {"code": "1", "url": "https://example.invalid/a"}},
+            {"method": "GET", "path": "/links/999", "status": 404},
+            # the redirect endpoint IS exercised, but only for an UNKNOWN code -- a plain 404
+            # response, never a 3xx the http_check client would transparently follow (see the
+            # module-level note above for why a KNOWN code's redirect is never directly checked).
+            {"method": "GET", "path": "/r/999", "status": 404},
+        ],
+        "db": {"path": "data.db", "min_rows": 2},
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(URL_SHORTENER_TASK)
+# #EXT-060-REQ-33 End
+
+
+# #EXT-060-REQ-34 Start
+# TASK-29: a SECOND TIME-DEPENDENT ("clock" oracle_kind) CREATE task (the first since REQ-28's
+# account lockout/backoff) -- an access-token validity-window issuer, in the auth vertical --
+# graded by the ALREADY-LANDED `oracle_kind="clock"` dispatch REQ-28 lands (no new oracle code --
+# reuses `_grade_clock` -> `harness.clock_oracle.grade_clock` verbatim). The sentence pins the
+# `now_fn` injected-clock contract explicitly (mirroring REQ-28's `LOCKOUT_BACKOFF_TASK`) and
+# deliberately says a token "is valid for 900 seconds" / its window has "elapsed", never
+# "expires" -- that token trips `harness.adt_oracle`'s `ttl-store` keyword fingerprint and would
+# falsely classify this unrelated auth class as the verified `ttl-store` leaf, breaking
+# leaves-OFF (the exact same avoidance REQ-28's own module-level note already documents).
+_TOKEN_VALIDITY_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named tokens.py, "
+    "using only the standard library, defining exactly one public class named `TokenIssuer` "
+    "modeling an access-token issuer. `TokenIssuer(now_fn)` accepts exactly one argument, the "
+    "keyword `now_fn`: a zero-argument callable that returns the current time as an integer "
+    "number of epoch seconds. The class must determine EVERY time-based decision by calling "
+    "`now_fn()` at the moment it needs to know the current time -- it must never read the real "
+    "system clock (`time.time()`, `datetime.datetime.now()`, or any other wall-clock source) "
+    "for any purpose. It exposes exactly two methods: `issue(name)` (`name`: a string "
+    "identifying the token's owner), which creates a new access token that is valid for exactly "
+    "900 seconds starting from the `now_fn()` reading recorded at the moment `issue` is called, "
+    "and returns that token's id -- for testability, the returned token id is EXACTLY the "
+    "`name` string passed in, unchanged (issuing a second token for the SAME `name` simply "
+    "replaces the previously issued token for that name with a fresh 900-second window starting "
+    "from the new `now_fn()` reading); and `check(token)` (`token`: an id previously returned by "
+    "`issue`), which returns `True` when `token` was issued by this same `TokenIssuer` instance "
+    "and the current `now_fn()` reading is still strictly less than 900 seconds after the "
+    "`now_fn()` reading recorded when that token was issued, and returns `False` in every other "
+    "case -- including a `token` this instance never issued, and a token whose 900-second "
+    "validity window has elapsed (the current `now_fn()` reading is 900 seconds or more after "
+    "issuance). Once `check(token)` returns `False` for a given token because its 900-second "
+    "window has elapsed, EVERY later `check(token)` call for that same token must also return "
+    "`False` -- a token whose window has elapsed never becomes valid again."
+)
+
+TOKEN_VALIDITY_TASK = RealSystemTask(
+    name="access-token-validity-window-lib",
+    cls="auth",
+    sentence=_TOKEN_VALIDITY_SENTENCE,
+    oracle_kind="clock",
+    oracle_spec={
+        "module": "tokens",
+        "entity": "TokenIssuer",
+        "spec": {
+            "clock_param": "now_fn",
+            "construct_args": [],
+            "construct_kwargs": {},
+            # Hand-walked timeline: issue at t=0; t=899 is still inside the 900s window (True);
+            # t=900 is the exact boundary (False -- "strictly less than 900" excludes it); t=3600
+            # is a large jump well past the window, proving the SAME token stays False once its
+            # window has elapsed rather than somehow re-validating.
+            "timeline": [
+                {"at": 0, "call": "issue", "args": ["alice"], "expect": {"returns": "alice"}},
+                {"at": 899, "call": "check", "args": ["alice"], "expect": {"returns": True}},
+                {"at": 900, "call": "check", "args": ["alice"], "expect": {"returns": False}},
+                {"at": 3600, "call": "check", "args": ["alice"], "expect": {"returns": False}},
+            ],
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(TOKEN_VALIDITY_TASK)
+# #EXT-060-REQ-34 End
