@@ -14,6 +14,8 @@ implementation:
   - tests/test_ext059_agent_oracle.py
   - harness/state_machine_oracle.py
   - tests/test_ext059_state_machine_oracle.py
+  - harness/conservation_oracle.py
+  - tests/test_ext059_conservation_oracle.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -154,3 +156,36 @@ if every legal transition also works.
 
 **Follow-up (not built here):** a service-based variant driving transitions over HTTP via
 `harness/server_oracle.py`'s launch/request lifecycle instead of `import_driver`.
+
+### [REQ-8] Conservation / no-oversell invariant oracle (`conservation_oracle`)
+
+A deterministic, model-free verifier that grades whether a built system preserves a CONSERVED
+quantity (inventory stock, WMS bin counts, refund/return balances, loyalty points, escrow, wallet
+balances) under a driven operation sequence -- unblocks ~17 classes across verticals. The honesty
+core: operations that would VIOLATE conservation (oversell more units than available, overdraw a
+balance, double-spend) must be REJECTED, not silently allowed.
+
+#### Acceptance Criteria
+- [x] `harness/conservation_oracle.py` accepts a declarative spec (`quantities` -- named zero-arg
+      entity reader methods; `initial` -- a dict of quantity name -> starting value; a `drive`
+      script of ops (`action` + `args`/`kwargs` + `expect: "accept"|"reject"`, each `accept` op
+      declaring `deltas` per quantity that must sum to zero -- the conservation law encoded
+      structurally in the spec); `expect_final` -- the modeled quantities at the end), then drives a
+      built class-based entity (reusing `harness.import_driver.drive_import`, import-only, no
+      reimplementation) through the script.
+- [x] Each `expect:"accept"` op must succeed AND every quantity reader must read back the
+      shadow-tracked value after applying that op's deltas (so the conserved total never silently
+      drifts); each `expect:"reject"` op (would oversell/overdraw/double-spend) must be REFUSED
+      (raise) with every quantity reader UNCHANGED -- an operation that would violate conservation
+      but is silently allowed is a FAILURE, not a pass.
+- [x] The final quantities after the whole script must match `expect_final`.
+- [x] Never raises: a missing/uncallable entity, a crashing fixture, or a malformed spec (including
+      an internally inconsistent spec whose declared deltas do not sum to zero) is an honest
+      `ok=False`/`accepted=False` with a diagnostic note.
+- [x] Tests prove a correct inventory-reservation fixture passes, a fixture that ALLOWS overselling
+      beyond available stock is CAUGHT (`accepted=False`) -- the flagship honesty test, a fixture
+      that silently loses/creates units on a legal op fails, a fixture reaching the wrong final
+      quantities fails, and the oracle never raises on a crashing/garbage fixture.
+
+**Follow-up (not built here):** a concurrent/interleaved-ops variant and an HTTP-service-driven
+variant.

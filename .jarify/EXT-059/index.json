@@ -58,5 +58,17 @@
       "startLine": 11,
       "endLine": 264
     }
+  ],
+  "REQ-8": [
+    {
+      "file": "harness/conservation_oracle.py",
+      "startLine": 1,
+      "endLine": 307
+    },
+    {
+      "file": "tests/test_ext059_conservation_oracle.py",
+      "startLine": 11,
+      "endLine": 356
+    }
   ]
 }

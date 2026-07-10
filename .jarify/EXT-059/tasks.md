@@ -142,3 +142,54 @@ allowed.
 
 #### Implements
 - [REQ-7] State-machine / lifecycle oracle (`state_machine_oracle`)
+
+### [TASK-6] Build the conservation / no-oversell invariant oracle (`harness/conservation_oracle.py`)
+
+A deterministic, model-free verifier that grades whether a built system preserves a CONSERVED
+quantity under a driven operation sequence -- the #4 highest-leverage substrate gap (unblocks
+inventory stock reservation, WMS bins, returns/refunds, loyalty points, escrow, wallet-balance
+classes). The honesty core: operations that would VIOLATE conservation (oversell, overdraw,
+double-spend) must be REJECTED, not silently allowed.
+
+#### Steps
+1. Create `harness/conservation_oracle.py` defining the declarative spec shape: `quantities` (list
+   of named zero-arg entity reader methods, e.g. `available`/`reserved`), `initial` (dict of
+   quantity name -> starting numeric value), a `drive` script (ordered list of `{"action",
+   "args": [...], "kwargs": {...}, "expect": "accept"|"reject", "deltas": {...}}` ops, where
+   `deltas` is required on `accept` ops and must sum to zero across `quantities` -- the
+   conservation law encoded structurally in the spec), and `expect_final` (dict of quantity name
+   -> ending numeric value). Mirror `harness/state_machine_oracle.py`'s shadow-tracking approach
+   (there over a symbolic state; here over a numeric per-quantity dict) and its module docstring
+   style.
+2. Implement `grade_conservation(root, *, module, entity, spec, python_exe=None, timeout=...,
+   mem_mb=512) -> (accepted: bool, note: str)`: build one `harness.import_driver.drive_import`
+   `api_calls` list that (a) constructs the entity once, (b) for each drive-script op calls the
+   action then reads every quantity reader back, (c) after the whole script, reads every quantity
+   one more time -- reusing `drive_import`'s sandboxed-subprocess launch, sentinel protocol, and
+   `_kill_tree` teardown as-is (no reimplementation of `harness/import_driver.py`).
+3. Render the `checks` list purely in Python before driving (no subprocess call in this step): walk
+   `drive` tracking a shadow quantities-dict from `spec['initial']`; for each `expect:"accept"` op
+   assert the action call did NOT raise AND every quantity reader equals the shadow value after
+   applying that op's `deltas`; for each `expect:"reject"` op assert the action call DID raise
+   (`spec.get('reject_exception', 'ValueError')` by default) AND every quantity reader equals the
+   UNCHANGED shadow value from before the op -- an operation that would violate conservation but is
+   silently allowed is a caught FAILURE, not a pass; assert the final shadow quantities equal
+   `expect_final`.
+4. Add `validate_spec(spec) -> (bool, note)` (checks `quantities`/`initial`/`drive`/`expect_final`
+   shape, including that every `accept` op's `deltas` sum to zero and every `reject` op declares no
+   `deltas`) BEFORE anything is driven, and wrap the whole grading path in a top-level try/except so
+   `grade_conservation` NEVER raises -- any malformed spec, uncallable entity, or crashing/garbage
+   fixture is an honest `(False, note)`.
+5. Add `tests/test_ext059_conservation_oracle.py` (offline, hand-written fixtures, no model call):
+   (a) a CORRECT inventory-reservation fixture (initial stock N; `reserve`/`release` ops; REJECTS a
+   reservation exceeding available stock; conserves units across `available`+`reserved`) passes;
+   (b) a BROKEN fixture that ALLOWS overselling (reserves beyond available stock without raising) is
+   caught (`accepted=False`) -- the flagship honesty test; (c) a fixture that silently LOSES or
+   CREATES units on a legal op (invariant violated after an `accept` op) fails; (d) a fixture
+   reaching the wrong final quantities fails; (e) the oracle never raises on a crashing/garbage
+   fixture or spec. Run only `python -m pytest tests/test_ext059_conservation_oracle.py -q`.
+6. Update `.jarify/EXT-059/index.json` (via `jarify-manage-links`) mapping REQ-8 to the new file
+   ranges; `requirements.md` status stays `partial` (REQ-4/REQ-5 remain open).
+
+#### Implements
+- [REQ-8] Conservation / no-oversell invariant oracle (`conservation_oracle`)
