@@ -2644,3 +2644,34 @@ Give the modify path the repair loop the build path already has, so a regression
 
 #### Implements
 - [REQ-44] Modify path — bounded, regression-gated NEW-BEHAVIOR repair loop
+
+### [TASK-58] Deterministic signature-contract repair — restore a documented default parameter (REQ-45)
+
+Fix the MEASURED retry/backoff-lib 0/3: gemma's built function has correct logic but drops a
+documented default parameter, so the spec's own primary usage raises TypeError. Add a deterministic
+AST repair (analog of the import-resolver / guard-index repairs) that restores it from the visible spec.
+
+#### Steps
+1. Reuse the validated prototype `.jaros-data/sigcontract_probe.py`'s `documented_defaults`/
+   `repair_signature_defaults` logic as the starting point for a new module
+   `harness/signature_contract.py` exposing `documented_defaults(spec_text)`,
+   `repair_signature_defaults(code, documented)`, and a new thin helper
+   `apply_signature_contract(modules: dict[str, str], spec_text: str) -> tuple[dict, list[str]]` that
+   maps the repair across a modules dict (returns a new dict, never mutates the input) and returns
+   `(possibly-updated modules, notes)`.
+2. Wire `apply_signature_contract` into `harness/system_builder.py`'s `build_system`, as a
+   deterministic pass over `built` using `spec`, in the SAME style/seam as the import-resolver
+   (EXT-035-REQ-3) and guard-index (EXT-036-REQ-39) repairs -- right after those, before the ASSEMBLE
+   step -- wrapped in `# #EXT-036-REQ-45 Start`/`End` markers.
+3. Add offline tests `tests/test_ext036_signature_contract.py` (no model/Jetson calls) covering: (a)
+   gemma's exact bad `retry()` source + the retry spec's documented signature -> repaired source has
+   the default and `exec`+`retry(times=3)` works; (b) no-op when the built signature already has the
+   documented default (idempotent, `changed=False`); (c) a documented default whose insertion would be
+   illegal (a bare param follows) -> no change, no crash; (d) a function not documented in the spec ->
+   untouched.
+4. Run ONLY `python -m pytest tests/test_ext036_signature_contract.py -q` (offline); confirm green.
+   Update `.jarify/EXT-036/index.json` (REQ-45 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-45] Deterministic signature-contract repair — restore a documented default parameter gemma's
+  build silently dropped

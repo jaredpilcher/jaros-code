@@ -3258,6 +3258,18 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         built[_mod_name] = repair_guard_index_mismatch(built[_mod_name])
     # #EXT-036-REQ-39 End
 
+    # #EXT-036-REQ-45 Start
+    # TASK-58: deterministic signature-contract repair. MEASURED
+    # (`.jaros-data/sigcontract_probe.py`): a built function can have CORRECT LOGIC but DROP a
+    # documented default parameter (e.g. gemma's retry() drops `exceptions=Exception`), so the
+    # spec's own primary usage raises TypeError at call time. Wired in the same spot/pattern as
+    # the import-resolver and guard-index repairs above -- additive, AST-only, never-raising,
+    # leak-free (the default value text comes only from `spec`, the visible build spec, never a
+    # hidden oracle/test): a no-op for any spec/module without this exact defect shape.
+    from harness.signature_contract import apply_signature_contract
+    built, _sig_contract_notes = apply_signature_contract(built, spec)
+    # #EXT-036-REQ-45 End
+
     # 3. ASSEMBLE
     _beat("ASSEMBLE")  # #EXT-040-REQ-3
     try:

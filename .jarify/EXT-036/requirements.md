@@ -2005,3 +2005,35 @@ preserves regression AND passes strictly more new-behavior checks.
       new-behavior-passing by the repair loop and kept; an edit whose retry would regress is reverted;
       an already-fully-working edit is not repaired (byte-identical). `tests/test_ext036_system_repair.py`
       + `tests/test_ext036_system_builder.py` stay green.
+
+### [REQ-45] Deterministic signature-contract repair — restore a documented default parameter gemma's build silently dropped
+
+MEASURED via `.jaros-data/sigcontract_probe.py` (2026-07-08/09) on the retry/backoff-lib real-system
+task, currently pass@1 0/3: gemma writes a library function with CORRECT LOGIC but DROPS a documented
+default parameter -- it emits `def retry(times, exceptions):` while the visible build spec documents
+the signature in backticks as `retry(times, exceptions=Exception)`, and the spec's own primary usage
+`@retry(times=3)` then raises `TypeError: retry() missing 1 required positional argument: 'exceptions'`.
+This is analogous to the existing deterministic import-resolver (EXT-035 REQ-3) / entrypoint-not-listed
+(REQ-1) / guard-index (REQ-39) repairs already wired into `build_system` -- a deterministic AST-level
+fix for a specific, provably-safe defect shape, not a model re-call. The prototype's
+`repair_signature_defaults` applied to gemma's actual retry.py source makes `retry(times=3)` work --
+confirmed via the full import-driver oracle (`accepted=True`).
+
+#### Acceptance Criteria
+- [ ] Documented-default extraction: a `documented_defaults(spec_text)` helper parses backtick-quoted
+      `name(params)` signatures containing at least one `param=default` from the visible spec text, via
+      `ast`, and returns `{func: {param: default_src}}`; malformed signatures are skipped, never raise.
+- [ ] Repair transform: a `repair_signature_defaults(code, documented)` helper adds a
+      documented-but-missing default to each matching top-level function def via AST (`ast.unparse` +
+      `ast.fix_missing_locations`), ONLY when doing so keeps the signature legal (no bare parameter
+      after a defaulted one); returns the code unchanged with a note if the code doesn't parse; never
+      removes/alters an existing default; returns `(new_code, changed, notes)`.
+- [ ] Wired into `harness/system_builder.py`'s `build_system` deterministic-repair pass over the built
+      modules (same seam/style as the import-resolver / guard-index repairs), using the build's own
+      spec text, before the acceptance checklist is composed.
+- [ ] Leak-free (Tenet 3): the added default value comes only from the visible build spec text, never
+      from a hidden oracle/test/reference implementation.
+- [ ] Proven OFFLINE (no model/Jetson call) with tests covering: gemma's actual bad `retry()`
+      reproduction is repaired and the documented usage then works; an already-correct signature is a
+      no-op (idempotent, `changed=False`); a documented default whose insertion would be illegal is
+      left unchanged, never raising; a function not documented in the spec is untouched.
