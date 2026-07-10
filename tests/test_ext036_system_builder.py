@@ -438,6 +438,53 @@ def _isolate_sessions_dir(tmp_path, monkeypatch):
     yield
 
 
+# #EXT-036-REQ-13 Start
+# Task #147 test-hygiene fix: this file's plain /buildsystem CLI-wiring tests are NOT about
+# REQ-13 escalation (that behavior has its own dedicated, properly-stubbed coverage in
+# test_ext036_escalate.py / test_ext036_buildsystem_escalate.py), but `cmd_buildsystem` always
+# calls the REGISTRY-DRIVEN `harness.cli._buildsystem_escalation_config()` to decide plain
+# `build_system` vs. `build_system_escalating`. On this checkout the on-disk model registry
+# genuinely reports measured coverage for the complex-system-build-specialist class (see
+# `.jaros-data/config/models/qwen2.5-coder-7b.json`), so a fake `build_system` result with
+# `done=False` (e.g. `test_cli_buildsystem_reports_shipped_done_unmet` below) silently took the
+# escalating path and invoked the REAL `_http_swap("http://192.168.1.183:8001")` -- swapping the
+# PHYSICAL Jetson's served model from gemma-4-e2b to qwen2.5-coder-7b and back, contaminating
+# any concurrent measurement (reproduced twice, 2026-07-09/10).
+#
+# Fix at the seam, not production behavior: both `_buildsystem_escalation_config` and
+# `_http_swap` are already injectable (module-level attributes `cmd_buildsystem`/
+# `build_system_escalating` resolve at call time), so no production code changes. Force
+# escalation OFF by default for every test in this file (matching this file's own stated
+# "OFFLINE -- no live model" intent), and additionally replace `_http_swap` with a
+# raise-if-reached guard so any future test here that forgets to stub escalation fails loudly
+# offline instead of silently reaching the real Jetson.
+@pytest.fixture(autouse=True)
+def _no_real_jetson_swap(monkeypatch):
+    """Guard for every test in this file: `_buildsystem_escalation_config` defaults to "not
+    configured" (byte-identical to the plain `build_system` path this file actually tests), and
+    `_http_swap` is replaced with a stub that raises if ever reached unstubbed -- a test that
+    genuinely wants to exercise escalation must explicitly `monkeypatch.setattr(...)` both back
+    (mirroring `test_ext036_buildsystem_escalate.py`'s pattern), which none of this file's tests
+    do today."""
+    import harness.cli as cli_mod
+    import harness.collaborative_solve as collab_mod
+
+    monkeypatch.setattr(cli_mod, "_buildsystem_escalation_config", lambda: None)
+
+    def _raise_if_real_swap(manager_url):
+        raise AssertionError(
+            f"test-hygiene guard (task #147): an unstubbed real _http_swap({manager_url!r}) "
+            "was reached from an offline test in tests/test_ext036_system_builder.py -- stub "
+            "harness.cli._buildsystem_escalation_config and/or "
+            "harness.collaborative_solve._http_swap before exercising escalation; a real "
+            "Jetson swap must never happen from an offline test run."
+        )
+
+    monkeypatch.setattr(collab_mod, "_http_swap", _raise_if_real_swap)
+    yield
+# #EXT-036-REQ-13 End
+
+
 def test_cli_buildsystem_reports_shipped_done_unmet(tmp_path, monkeypatch):
     from harness.cli import JcodeCli
 
@@ -459,6 +506,49 @@ def test_cli_buildsystem_reports_shipped_done_unmet(tmp_path, monkeypatch):
     assert "some check" in out
     assert "helper.py" in out and "cli.py" in out
     assert seen["spec"] == "a tiny CLI that adds two numbers"
+
+
+# #EXT-036-REQ-13 Start
+def test_no_real_jetson_swap_reached_without_explicit_stub(tmp_path, monkeypatch):
+    """Task #147 proof: restore the REAL `_buildsystem_escalation_config` (undoing the autouse
+    `_no_real_jetson_swap` guard's override above) to confirm this checkout's on-disk model
+    registry genuinely reports escalation as CONFIGURED for the complex-system-build-specialist
+    class -- the exact condition under which the historical bug fired a real HTTP swap against
+    the physical Jetson (http://192.168.1.183:8001) from this file's `done=False` fixture data.
+    With the fix in place, dispatching /buildsystem in that state reaches the still-guarded
+    `_http_swap` stub and RAISES *before* any network call is made -- proving no network I/O
+    occurs, rather than silently completing a real swap the way the unfixed test did."""
+    import harness.cli as cli_mod
+    from harness.cli import _buildsystem_escalation_config as real_escalation_config
+    from harness.cli import JcodeCli
+
+    monkeypatch.chdir(tmp_path)
+    # Undo only the escalation-config half of the autouse guard, keep the `_http_swap` half
+    # guarding for real -- so we prove the *swap* itself never happens, not that config lookup
+    # is skipped.
+    monkeypatch.setattr(cli_mod, "_buildsystem_escalation_config", real_escalation_config)
+
+    config = real_escalation_config()
+
+    def fake_build_system(spec, root, *, llm=None, runtime=None):
+        return {"modules": {"helper.py": "code"}, "shipped": True, "done": False,
+                "unmet": ["some check"], "plan": {"entrypoint": "helper.py"}, "note": "NOT DONE"}
+
+    monkeypatch.setattr("harness.system_builder.build_system", fake_build_system)
+    cli = JcodeCli()
+
+    if config is not None:
+        # This checkout's registry reports coverage (the historical-bug condition) -- the
+        # escalating path is taken, reaches the guarded `_http_swap`, and must raise there
+        # instead of performing a real POST to the physical Jetson.
+        with pytest.raises(AssertionError, match="test-hygiene guard"):
+            cli.dispatch("/buildsystem a tiny CLI that adds two numbers")
+    else:
+        # Escalation genuinely not configured on this checkout -- no swap seam is reachable at
+        # all, so plain build_system is used and the call must complete normally.
+        out = cli.dispatch("/buildsystem a tiny CLI that adds two numbers")
+        assert "shipped" in out
+# #EXT-036-REQ-13 End
 
 
 def test_cli_buildsystem_usage_message_on_empty_arg(tmp_path, monkeypatch):
