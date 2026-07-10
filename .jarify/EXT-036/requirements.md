@@ -2337,3 +2337,81 @@ honored, takes precedence over every older per-draw recognition path.
   `find_route_function` correctly ignores wrong-arity and nested `route` defs; the prompt-injection
   seam is verified directly against `_build_module`. `tests/test_ext036_routing_contract.py`, plus no
   regression in `tests/test_ext036_http_service_scaffold.py` / `tests/test_ext036_port_coercion.py`.
+
+### [REQ-52] Wire the deterministic repair chain into the MODIFY path (DONE — EXT-036 TASK-65, 2026-07-10)
+
+MEASURED MOTIVATION: the build path runs a deterministic repair chain (`apply_signature_contract`
+~system_builder.py:3317, `apply_port_coercion` ~3352, `apply_http_service_scaffold` ~3371,
+`apply_agent_scaffold` ~3389, plus the REQ-51 routing-contract prompt guidance in `_build_module`)
+over every module it BUILDS — and the SaaS CREATE class improved 0/3 -> 1/3 across these levers.
+But `modify_system` (system_builder.py:4193+) ran NONE of them: when a modification regenerates a
+module (e.g. rewrite `api.py`/`main.py` to add PUT), gemma re-introduces the same mechanical
+protocol bugs (str-PORT, broken serve loop, dropped signature defaults) and nothing repaired them.
+Measured: `rest-put-modify` stuck at 0/3 while CREATE improved. Every repair is idempotent +
+non-degrading by construction, and `modify_system` already has a REGRESSION GATE (REQ-14) + a
+new-behavior gate that reject any candidate that breaks existing behavior — so applying the repair
+chain to the regenerated module set is safe end-to-end.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_apply_deterministic_repairs(modules, spec_text, *, llm=None) ->
+  dict` runs, in the SAME order the build path applies them: `apply_signature_contract` ->
+  `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_agent_scaffold`, tolerating
+  each repair's own return shape (`apply_port_coercion` returns a plain dict; the other three
+  return a `(dict, notes)` tuple — unpacked exactly the way the build path already does). Never
+  raises — any internal failure (import error, unexpected exception) returns `modules` completely
+  UNCHANGED. Deliberately EXCLUDES `apply_filename_contract` from the chain — a rename is safe at
+  CREATE time (nothing yet depends on the chosen filename) but NOT at MODIFY time, where a rename
+  could break an EXISTING system's already-agreed-upon import/entrypoint expectations (a sibling
+  module, the caller, or the regression-gate oracle itself may already reference the CURRENT
+  filename).
+- [x] `modify_system` calls `_apply_deterministic_repairs` on EVERY candidate module set it
+  produces before that set is assembled for the regression gate: (a) the main regenerate/
+  build-new-module seam (scoped to exactly `changed_names + added_names` — the modules the
+  ASSEMBLE step actually (re)writes to disk, so every repaired byte stays reachable by the
+  existing `pre_mod`/`added_names` revert path if the regression gate later rejects the
+  modification); (b) the REQ-44 `_modify_newbehavior_repair` bounded repair loop, applied to each
+  round's freshly-regenerated candidate module(s) before that round is written/checked, so a
+  repair round can't reintroduce the same mechanical protocol bug the round it's replacing had.
+- [x] `modify_system` gains an optional `spec_hint: str | None = None` parameter (default
+  `None`, fully backward-compatible — no existing caller passes it). The http/agent scaffold
+  repairs key on spec TEXT keywords (`spec_demands_stdlib_http_service`/
+  `spec_demands_tool_calling_agent`) to decide whether they apply at all; a modification's OWN
+  `mod_sentence` may name an HTTP method+path (e.g. "Add a `PUT /items/<id>` endpoint...")
+  without repeating those indicator words — MEASURED: `spec_demands_stdlib_http_service` on the
+  real `rest-sqlite-items-put-modify` suite task's `mod_sentence` alone returns `False` (no
+  "REST"/"web service"/"http.server"/"PORT environment variable" indicator, only the endpoint
+  pattern). When a caller has the original build spec/sentence in scope, it can pass it as
+  `spec_hint` (combined with `mod_sentence`, `spec_hint` first) so the repair chain's
+  spec-detection sees it too. HONEST SCOPE: `harness/real_systems_suite.py` (read-only for this
+  task; not modified) does not carry an original build sentence for its hand-written
+  `RealSystemModifyTask.start_system` fixtures, so its live call does not yet pass `spec_hint` —
+  that wiring is an explicit follow-up, not claimed done here.
+- [x] The build path (`build_system`, ~system_builder.py:3317-3390) is left UNTOUCHED — its
+  repair-chain order interleaves `apply_filename_contract` between `apply_signature_contract` and
+  `apply_port_coercion`, which is NOT identical to the modify-path chain (filename-contract
+  deliberately excluded), so refactoring it to share `_apply_deterministic_repairs` would require
+  either a behavior change or a second helper — out of scope; duplication is accepted, safety
+  first.
+- [x] Optional REQ-51 routing-contract PROMPT-level guidance (`_routing_contract_guidance`) is
+  NOT injected into `modify_system`'s own regeneration prompts (`MODIFY_MODULE_PROMPT`/
+  `NEW_MODULE_PROMPT`) — unlike `_build_module`'s single `BUILD_PROMPT` seam, there is no ONE
+  clean prompt-assembly seam here (two prompt templates, three call sites: the main regenerate
+  loop, `_build_new_module`, and the REQ-44 repair round's regenerate call), so wiring it in would
+  require a broader refactor than this task's scope permits. Not required for correctness: the
+  SCAFFOLD half (`apply_http_service_scaffold`'s `find_route_function` precedence) is a purely
+  deterministic AST recognition + replacement, independent of any prompt-level guidance, and is
+  proven to fire on a MODIFY-regenerated `route()` module without it.
+- [x] Proven OFFLINE (no model/Jetson call): `tests/test_ext036_modify_repair_seam.py` — (a) a
+  modify-regenerated module reintroducing the measured str-PORT bug is repaired (`int(port)` at
+  the bind site) and genuinely RUNS a real `serve_and_check_stdlib` round-trip; (b) a
+  modify-regenerated candidate carrying a top-level `route()` function alongside a broken model
+  serve loop is scaffolded (REQ-51 precedence fires) via `spec_hint`, and genuinely RUNS a real
+  POST/GET/DELETE round-trip; (c) a non-http modification is a byte-identical pass-through (the
+  chain is a genuine no-op for plain code); (d) `_apply_deterministic_repairs` never raises on
+  garbage (`None`, a non-dict, unparseable module code); (e) the REQ-14 regression gate still
+  REJECTS a genuinely-regressing modification with the repair chain wired in (reverted, byte-
+  identical to the pre-modification content). No regression in
+  `tests/test_ext036_routing_contract.py` / `tests/test_ext036_port_coercion.py` /
+  `tests/test_ext036_http_service_scaffold.py` / `tests/test_ext036_agent_scaffold.py` /
+  `tests/test_ext036_system_builder.py` / `tests/test_ext036_modify.py` /
+  `tests/test_ext036_modify_add.py` / `tests/test_ext036_system_repair.py` (191 passed).

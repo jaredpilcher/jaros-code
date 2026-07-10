@@ -4101,6 +4101,7 @@ def _modify_newbehavior_repair(
         modules: dict, changed_names: list, root: Path, mod_sentence: str,
         baseline_checks: list, baseline_passing: set, new_checks: list, llm, *,
         max_rounds: int = MAX_MODIFY_NEWBEHAVIOR_ROUNDS, runtime: "object | None" = None,
+        spec_text: "str | None" = None,
 ) -> tuple[dict, bool, bool]:
     """Bounded, regression-gated NEW-BEHAVIOR repair loop for ``modify_system`` (REQ-44) -- the
     modify-path analog of the build path's ``_repair_system``. Only ever called once the edit
@@ -4110,6 +4111,11 @@ def _modify_newbehavior_repair(
     new-behavior output (``_new_behavior_repair_request``), re-assembles onto ``root`` (the
     same jailed-write path), then re-runs BOTH the baseline/regression checks and the
     new-behavior checks.
+
+    ``spec_text`` (REQ-52, TASK-65): optional, default ``None`` (falls back to ``mod_sentence``)
+    -- passed straight through to ``_apply_deterministic_repairs``, which this loop now runs
+    over each round's freshly-regenerated candidate module(s) before writing/checking them, so a
+    repair round can't reintroduce the same mechanical protocol bug the round it's replacing had.
 
     NON-DEGRADING BY CONSTRUCTION (REQ-14 is never weakened): a round is KEPT only when it
     still passes EVERY baseline/regression check AND passes STRICTLY MORE new-behavior checks
@@ -4149,6 +4155,19 @@ def _modify_newbehavior_repair(
                 round_changed.append(name)
             if not round_changed:
                 break   # no valid regeneration this round -- nothing to try, stop
+
+            # #EXT-036-REQ-52 Start
+            # TASK-65: repair the SAME mechanical protocol bugs the build path fixes, applied to
+            # THIS round's freshly-regenerated candidate module(s), before they are written to
+            # disk and checked below. Idempotent/non-degrading; a no-op for a spec/module
+            # without the exact defect shape.
+            _round_candidates = {name: round_modules[name] for name in round_changed}
+            _round_repaired = _apply_deterministic_repairs(
+                _round_candidates, spec_text or mod_sentence, llm=llm)
+            for _name in round_changed:
+                if _name in _round_repaired:
+                    round_modules[_name] = _round_repaired[_name]
+            # #EXT-036-REQ-52 End
 
             written: list = []
             escape = None
@@ -4190,8 +4209,54 @@ def _modify_newbehavior_repair(
 # #EXT-036-REQ-44 End
 
 
+# #EXT-036-REQ-52 Start
+# TASK-65 (REQ-52): wire the build path's deterministic repair CHAIN into the MODIFY path.
+# MEASURED MOTIVATION: `modify_system` regenerates a module the SAME way `build_system` builds
+# one (`_regenerate_module`/`_build_new_module` reuse the same syntax-gate/repair loop
+# `_build_module` uses), so a regeneration can reintroduce the SAME mechanical protocol bugs the
+# build path already fixes for CREATE -- a str-typed PORT at the bind site (REQ-50), a broken
+# http.server serve loop (REQ-48/51), a mishandled agent tool-call loop (REQ-49), a dropped
+# signature default (REQ-45) -- but until this task NOTHING repaired them on the MODIFY path
+# (measured: `rest-put-modify` stuck at 0/3 while the CREATE class improved 0/3 -> 1/3 on these
+# same levers). Every repair below is idempotent + non-degrading BY CONSTRUCTION (proven in its
+# own dedicated test suite), and `modify_system` already re-runs its FULL regression gate
+# (REQ-14) after every candidate module set this touches -- so applying the chain here is safe
+# end-to-end even when a repair turns out unneeded for a given draw.
+def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | None",
+                                  *, llm=None) -> "dict[str, str]":
+    """Run the build path's deterministic repair chain, in the SAME order `build_system` applies
+    it, over an arbitrary CANDIDATE ``{name: code}`` module set: `apply_signature_contract` ->
+    `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_agent_scaffold`.
+
+    Deliberately EXCLUDES `apply_filename_contract` -- a rename is safe at CREATE time (nothing
+    yet depends on the chosen filename) but NOT at MODIFY time, where a rename could break an
+    EXISTING system's already-agreed-upon import/entrypoint expectations (a sibling module, the
+    caller, or the regression-gate oracle itself may already reference the CURRENT filename).
+
+    Tolerates each repair's own return shape (`apply_port_coercion` returns a plain dict;
+    the other three return a `(dict, notes)` tuple) by unpacking exactly the way the build path
+    already does. Returns a NEW dict (never mutates ``modules``). Never raises -- on ANY
+    internal failure (an import error, an unexpected exception from a repair) returns ``modules``
+    completely UNCHANGED, so a repair-chain defect can never itself cause work to be lost."""
+    fallback = modules if isinstance(modules, dict) else {}
+    try:
+        result = dict(modules) if isinstance(modules, dict) else {}
+        from harness.signature_contract import apply_signature_contract
+        result, _sig_notes = apply_signature_contract(result, spec_text)
+        from harness.port_coercion import apply_port_coercion
+        result = apply_port_coercion(result)
+        from harness.http_service_scaffold import apply_http_service_scaffold
+        result, _http_notes = apply_http_service_scaffold(result, spec_text, llm=llm)
+        from harness.agent_scaffold import apply_agent_scaffold
+        result, _agent_notes = apply_agent_scaffold(result, spec_text, llm=llm)
+        return result
+    except Exception:
+        return dict(fallback)
+# #EXT-036-REQ-52 End
+
+
 def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=None,
-                   runtime: "object | None" = None) -> dict:
+                   runtime: "object | None" = None, spec_hint: "str | None" = None) -> dict:
     """Modify an EXISTING system (``modules``: ``{name: code}``) from a one-sentence change
     request, regression-gated (REQ-14). NEVER raises — any stage failure or a modification
     that regresses existing behavior returns ``applied=False`` with a diagnostic ``note``.
@@ -4208,6 +4273,10 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
          ``_identify_new_modules``) whether the change needs an entirely NEW module that
          doesn't already exist; any clearly-named new module(s) (bounded, ambiguity-guarded)
          are built from scratch (``_build_new_module``, the SAME syntax-gate/repair loop).
+      2.5. (REQ-52, TASK-65) DETERMINISTIC REPAIR — ``_apply_deterministic_repairs`` runs the
+         build path's repair chain (signature-contract / port-coercion / http-service-scaffold /
+         agent-scaffold) over exactly the just-regenerated/just-added module(s), fixing the SAME
+         mechanical protocol bugs the build path already fixes for CREATE, before assembly.
       3. ASSEMBLE the modified module(s) AND any newly-added module(s) onto ``root``.
       4. REGRESSION GATE (the honesty core, mirrors TASK-5's ``_repair_system`` revert): the
          baseline-passing checks are re-run; if ANY of them now fails (or the deterministic
@@ -4238,9 +4307,23 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     modified-module assembly and its half-written revert, the regression-gate revert, and any
     newly-added module's write, REQ-35). ``runtime=None`` (the default) is unchanged from
     before this parameter existed.
+
+    ``spec_hint`` (REQ-52, TASK-65): optional, default ``None`` -- fully backward compatible.
+    The deterministic http/agent scaffold repairs (REQ-48/49/51) key on spec TEXT keywords
+    (e.g. "REST"/"http.server"/"JAROS_TOOL_URL") to decide whether they apply at all; a
+    modification's OWN ``mod_sentence`` may name an HTTP method+path ("Add a `PUT
+    /items/<id>` endpoint...") without repeating those words. When the caller has the
+    ORIGINAL build spec/sentence in scope, pass it as ``spec_hint`` so the repair chain's
+    spec-detection sees it too (combined with ``mod_sentence``, ``spec_hint`` first). When
+    omitted (today's only real caller, ``harness.real_systems_suite``, does not carry an
+    original sentence for a hand-written ``start_system`` fixture), the repair chain's spec
+    text is ``mod_sentence`` alone -- byte-identical to before this parameter existed.
     """
     root = Path(root)
     modules = dict(modules or {})
+    # #EXT-036-REQ-52 Start
+    _repair_spec_text = f"{spec_hint}\n\n{mod_sentence}" if spec_hint else mod_sentence
+    # #EXT-036-REQ-52 End
     if llm is None:
         try:
             from harness.coding_loop import build_llm
@@ -4320,6 +4403,22 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     if not changed_names and not added_names:
         return _modify_result(modules=modules, applied=False,
                                note="modification produced no syntactically valid change — no change made")
+
+    # #EXT-036-REQ-52 Start
+    # 2.5. DETERMINISTIC REPAIR (TASK-65): fix the SAME mechanical protocol bugs the build path
+    # already fixes (str-typed PORT / broken http.server serve loop / mishandled agent tool-call
+    # loop / dropped signature default), applied to exactly the module(s) just REGENERATED/ADDED
+    # this call -- BEFORE they are assembled for the REGRESSION GATE below. Scoped to exactly
+    # `changed_names + added_names` (never the rest of `modules`, which the ASSEMBLE step below
+    # never rewrites): keeps every repaired byte reachable by the existing pre_mod/added_names
+    # revert path if the regression gate later rejects this modification.
+    _candidate_names = list(dict.fromkeys(changed_names + added_names))
+    _repaired_candidates = _apply_deterministic_repairs(
+        {name: modules[name] for name in _candidate_names}, _repair_spec_text, llm=llm)
+    for _name in _candidate_names:
+        if _name in _repaired_candidates:
+            modules[_name] = _repaired_candidates[_name]
+    # #EXT-036-REQ-52 End
 
     # 3. ASSEMBLE the modified module(s) and any newly-ADDED module(s).
     # #EXT-037-REQ-1 Start
@@ -4411,7 +4510,11 @@ def modify_system(modules: dict, mod_sentence: str, root: "str | Path", *, llm=N
     if new_checks and not new_behavior_ok and changed_names:
         modules, new_behavior_ok, repaired = _modify_newbehavior_repair(
             modules, changed_names, root, mod_sentence, baseline_checks, baseline_passing,
-            new_checks, llm, runtime=runtime)
+            new_checks, llm, runtime=runtime,
+            # #EXT-036-REQ-52 Start
+            spec_text=_repair_spec_text,
+            # #EXT-036-REQ-52 End
+        )
     # #EXT-036-REQ-44 End
 
     note = "applied — existing behavior preserved"
