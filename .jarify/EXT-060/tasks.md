@@ -82,3 +82,34 @@
 
 #### Implements
 - [REQ-5] Memoize/cache decorator library task graded by the existing import_driver oracle
+
+### [TASK-5] File-organizer-by-extension CLI task wired to the existing fs oracle (REQ-6)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `FILE_ORGANIZER_TASK` (a `RealSystemTask`, `oracle_kind
+   ="fs"`) with a contract-exact sentence for a single-file `main.py` program that takes one
+   command-line argument (a directory path) and, for every regular file directly inside that
+   directory (never recursing into subdirectories), moves it into a subdirectory of that same
+   directory named after the file's lowercased extension without the leading dot (preserving the
+   file's own name/case), or into a subdirectory named `noext` when the file has no extension; it
+   prints nothing on success and exits 0. Wire it via the ALREADY-LANDED `"fs"` oracle dispatch
+   (`_grade_fs` -> `harness/fs_oracle.py`'s `seed_tree` + `run_and_inspect`) -- no new oracle code.
+   Seed a subdirectory containing files with a lowercase extension, an uppercase extension, another
+   extension, and no extension; `argv` passes that seeded subdirectory's path; `checks` assert each
+   file landed at its expected per-extension (or `noext`) path with unchanged bytes AND that the
+   original path is now absent.
+2. Add it to `REAL_SYSTEMS_TASKS` (append after the existing memoize task, outside any existing
+   REQ-tagged block). Keep leaves-OFF enforced (same two checks as the other tasks -- static
+   `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen path is
+   derivable from the visible sentence contract).
+3. Add `tests/test_ext060_file_organizer.py` (OFFLINE, no Jetson/model): a hand-authored CORRECT
+   `main.py` stub passes the fs-oracle grading; a WRONG stub (e.g. does not lowercase the
+   extension directory, or recurses into subdirectories, or leaves the originals in place) is
+   caught; leaves-OFF holds (`leaf_for_spec` returns `None` for the sentence); the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_file_organizer.py tests/test_ext060*.py -q`; confirm
+   green. Update `.jarify/EXT-060/index.json` (REQ-6 ranges) + check REQ-6 boxes in
+   requirements.md.
+
+#### Implements
+- [REQ-6] File-organizer-by-extension CLI task graded by the existing fs oracle

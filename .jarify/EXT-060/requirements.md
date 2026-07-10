@@ -87,3 +87,28 @@ beyond REQ-3's `retry.py`).
       spy); a stub that never caches (always calls through) is caught.
 - [x] Leaves-OFF enforced identically to REQ-2/REQ-3/REQ-4 (static `leaf_for_spec` + post-build
       `build_path` check); no oracle leak; added to `REAL_SYSTEMS_TASKS`.
+
+### [REQ-6] File-organizer-by-extension CLI task graded by the existing fs oracle
+
+A 5th held-out real-systems task, in a NEW domain -- a file-organizer CLI -- graded by the EXISTING
+`fs_oracle` (no new oracle code, mirrors REQ-2's `"fs"` dispatch). A single-file `main.py` program
+takes one command-line argument (a directory path) and moves every regular file directly inside
+that directory (never recursing into subdirectories) into a subdirectory of that same directory
+named after the file's lowercased extension with no leading dot (e.g. `report.TXT` -> `txt/
+report.TXT`, preserving the file's own name and case); a file with no extension is moved into a
+subdirectory named `noext`. It prints nothing on success and exits 0.
+
+#### Acceptance Criteria
+- [x] The task's sentence fully specifies the CLI contract (single directory argv, non-recursive
+      immediate-children-only scope, lowercased-extension-without-dot subdirectory naming, the
+      `noext` fallback for extensionless files, filename preserved unchanged, silent/exit-0 on
+      success) with every oracle-checked path derivable from that same visible contract (no hidden
+      key) and no leaf-library name-drop.
+- [x] Graded by the existing `fs_oracle` (`grade_real_system_task` `oracle_kind="fs"`): a seeded
+      directory with mixed-extension files (including an uppercase-extension file and a file with
+      no extension) is correctly reorganized into per-lowercased-extension subdirectories plus
+      `noext`, independently re-verified against the resulting tree; a build that fails to
+      lowercase the extension, recurses into subdirectories, or leaves the originals in place is
+      caught.
+- [x] Leaves-OFF enforced identically to REQ-2/REQ-3/REQ-4/REQ-5 (static `leaf_for_spec` +
+      post-build `build_path` check); no oracle leak; added to `REAL_SYSTEMS_TASKS`.

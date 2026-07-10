@@ -537,3 +537,67 @@ MEMOIZE_LIB_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(MEMOIZE_LIB_TASK)
 # #EXT-060-REQ-5 End
+
+
+# #EXT-060-REQ-6 Start
+# TASK-5: the file-organizer-by-extension CLI task -- a 5th held-out real-systems task, in a NEW
+# domain (a filesystem-organizing utility, not a data-pipeline or a library), graded by the
+# ALREADY-LANDED fs oracle (no new oracle code: reuses `_grade_fs` -> `harness.fs_oracle`'s
+# `seed_tree` + `run_and_inspect`, exactly REQ-2's `"fs"` dispatch path). Every rule (single argv
+# directory, non-recursive immediate-children-only scope, lowercased-extension-without-dot
+# subdirectory naming, the `noext` fallback, filename preserved unchanged, silent/exit-0 on
+# success) is pinned in the sentence itself so the oracle's expected post-tree is fully DERIVED
+# from that same visible contract -- no hidden key, no reference implementation the model could
+# not see, and no leaf-library name-drop (kept as plain prose, per the sentence-authoring
+# convention every other task in this module already follows).
+_FILE_ORGANIZER_SENTENCE = (
+    "Write a command-line program in a file named main.py that takes one command-line argument: "
+    "a path to a directory. For every regular file directly inside that directory (do not recurse "
+    "into subdirectories), it moves the file into a subdirectory (created if needed, inside that "
+    "same directory) named after the file's lowercased extension WITHOUT the leading dot (e.g. "
+    "`report.TXT` -> `txt/report.TXT`); a file with no extension (no dot in its name, or a name "
+    "beginning with a dot and no other dot) is moved into a subdirectory named `noext`. The file's "
+    "own name is preserved. It prints nothing on success and exits 0. Use only the Python standard "
+    "library."
+)
+
+# Seeded input directory: a lowercase-extension file, an uppercase-extension file (same extension
+# family as the lowercase one, so a correct build must LOWERCASE the destination directory name
+# rather than reusing the file's own extension casing verbatim), a different extension, and a
+# no-extension file -- so a build that forgets to lowercase, recurses, or leaves originals in
+# place is independently catchable.
+_FILE_ORGANIZER_SEED = [
+    {"path": "indir/a.txt", "bytes": "A"},
+    {"path": "indir/b.TXT", "bytes": "B"},
+    {"path": "indir/c.md", "bytes": "C"},
+    {"path": "indir/d", "bytes": "D"},
+]
+
+FILE_ORGANIZER_TASK = RealSystemTask(
+    name="file-organizer-by-extension-cli",
+    cls="fs-utility",
+    sentence=_FILE_ORGANIZER_SENTENCE,
+    oracle_kind="fs",
+    oracle_spec={
+        "seed": _FILE_ORGANIZER_SEED,
+        "entrypoint": "main.py",
+        "argv": ["indir"],
+        "checks": [
+            {"kind": "path_exists", "path": "indir/txt/a.txt"},
+            {"kind": "file_bytes_equal", "path": "indir/txt/a.txt", "bytes": "A"},
+            {"kind": "path_absent", "path": "indir/a.txt"},
+            {"kind": "path_exists", "path": "indir/txt/b.TXT"},
+            {"kind": "file_bytes_equal", "path": "indir/txt/b.TXT", "bytes": "B"},
+            {"kind": "path_absent", "path": "indir/b.TXT"},
+            {"kind": "path_exists", "path": "indir/md/c.md"},
+            {"kind": "file_bytes_equal", "path": "indir/md/c.md", "bytes": "C"},
+            {"kind": "path_absent", "path": "indir/c.md"},
+            {"kind": "path_exists", "path": "indir/noext/d"},
+            {"kind": "file_bytes_equal", "path": "indir/noext/d", "bytes": "D"},
+            {"kind": "path_absent", "path": "indir/d"},
+        ],
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(FILE_ORGANIZER_TASK)
+# #EXT-060-REQ-6 End

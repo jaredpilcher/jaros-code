@@ -68,5 +68,17 @@
       "startLine": 13,
       "endLine": 156
     }
+  ],
+  "REQ-6": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 542,
+      "endLine": 603
+    },
+    {
+      "file": "tests/test_ext060_file_organizer.py",
+      "startLine": 13,
+      "endLine": 151
+    }
   ]
 }
