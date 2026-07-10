@@ -26,7 +26,7 @@ signal to look harder and generate the next horizon, never to stop.
   FROM the Atlas** — it is the backlog this roadmap prioritizes against; the roadmap never invents a
   class the Atlas doesn't hold, and **coverage (verified / total) is a first-class scoreboard signal.**
   The canonical EXT-060 board is the execution surface; its verified roster IS the Atlas's `verified`
-  tier. Atlas coverage today ≈ **5 verified + 2 building / 182**.
+  tier. Atlas coverage today ≈ **9 verified + 1 building / 182** (top-4 invariant oracles all LANDED).
 - **Item format:** `- **[<id|tag>]** <one line> — <priority> · <rationale / links to spec·REQ·GAP·#task>`
   where priority ∈ `high|med|low`. Sections carry status: NOW=in-flight, NEXT=planned-soon,
   LATER=planned-later, LANDED=recently-shipped trail, PARKED=deferred with a reason.
@@ -67,12 +67,15 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
 - Full test suite: **2440 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
-- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **5
-  verified + 2 building / 182** classes. Verified today = the utility/leaf FLOOR (retry-backoff-lib,
-  memoize-lib, ini-config-cli, file-organizer, csv-etl); the frontier = the first SaaS service rung
-  (REST+DB CRUD, building) + the agent cluster (agent-loop oracle, building). Rising `verified` under
-  honest oracles is progress; "mapped rows" is not. The lever is the SUBSTRATE (each new oracle flips
-  a whole sub-cluster buildable), not any single build.
+- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **9
+  verified + 1 building / 182** classes (was 5+2). Verified = the utility/leaf FLOOR (retry-backoff-lib,
+  memoize-lib, ini-config-cli, file-organizer, csv-etl) **PLUS the first four invariant-oracle-graded
+  service rungs now green 3/3 on the board: double-entry-ledger, subscription-lifecycle-state-machine,
+  wallet-no-overdraw, agent-loop**; the frontier = the first SaaS REST+DB CRUD rung (building/measuring).
+  ★ THE SUBSTRATE LEVER PAID OFF (2026-07-09): the Atlas's **top-4 highest-reuse oracles are ALL LANDED**
+  (agent-loop, state-machine, double-entry, conservation) — together making ~55 mapped classes honestly
+  gradable — so coverage now grows fast by adding classes that reuse them. Rising `verified` under honest
+  oracles is progress; "mapped rows" is not.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
   19/19=100%). Sole miss: build_hard_lru_cache (a MISSING-DETERMINISTIC-TOOL gap — the pointer-bug in its
@@ -143,6 +146,14 @@ or a soon-to-land one, and lands on the canonical EXT-060 board (its verified ro
 never deployed — Tenet 2/3 clean). **The SUBSTRATE (the oracles) is the lever, not any single build** — so
 the class list and the oracle list below advance together; a class is only truly `NOW` once its oracle exists.
 
+**★ RE-PRIORITIZED 2026-07-09 (top-4 oracles LANDED):** the oracles for the state-machine / conservation /
+double-entry / agent clusters all exist now, and the FIRST rung of each is green 3/3 on the board
+(double-entry-ledger, subscription-lifecycle-state-machine, wallet-no-overdraw, agent-loop). So the highest
+impact×tractability move is **GROW the board with MORE classes that reuse these now-live oracles** — each is
+independent-oracle-verified coverage at near-zero new-substrate cost. The scaffold split is the steering
+rule: pure-LOGIC classes (ledger/lifecycle/conservation math) green readily; mechanical-PROTOCOL classes
+(HTTP/agent) need their deterministic scaffold (both now landed).
+
 **NOW/NEXT — real-systems CLASSES to build (ranked, each with its oracle):**
 1. **[S1 · REST CRUD API service — ✅ LANDED as a task, MEASURING on-Jetson]** HTTP+DB (`http.server` +
    `sqlite3`), the reusable SaaS base. Create+modify pair on the EXT-060 board (REQ-9/REQ-10); first
@@ -161,34 +172,67 @@ the class list and the oracle list below advance together; a class is only truly
    after N retries, scheduled fire on tick). med-high.
 8. **[Migration runner + audit log (S21/S22)]** DB schema versioning + **hash-chain** append-only audit
    oracle. med.
-9. **[Catalog/cart/order CRUD (V1/V2/V5)]** HTTP+DB + the **state-machine** oracle (order lifecycle:
-   only legal transitions). med · the e-commerce base.
-10. **[Inventory + stock reservation (V6)]** the **conservation / no-oversell** oracle (`available+committed
-    ==on_hand`, never negative under a replayed op-script). med · the flagship conservation class.
-11. **[Money-math pack + double-entry ledger + wallet/transfers (F1–F4,F6,F24/F25)]** the **money-invariant**
-    (no-float/exact-cent) + **double-entry-balance** (Σdebits==Σcredits, balance==Σpostings) oracles — one
-    oracle grades an open-ended ledger. med · the fintech spine.
-12. **[Agent quartet — loop / tool-registry / agent-behind-API / loop-guard (A1–A4)]** the **agent-loop**
-    oracle (now available — a scripted stub-model + fake tools asserting over the resulting transcript). high ·
-    the highest-differentiation cluster, now unblocked.
+9. **[MORE state-machine lifecycles (oracle LIVE 1a93f29) — NOW, highest-reuse]** the state-machine oracle
+   already greened subscription-lifecycle 3/3; harvest its ~18–20-class breadth: **ticket/support workflow
+   (open→triaged→resolved→closed), job/task-queue states (queued→running→done/failed/DLQ), document-approval
+   (draft→review→approved/rejected), order lifecycle (V5), shipment/fulfillment (V13/V26), RMA/returns (V28),
+   dispute (V34/F35)**. high · one landed oracle unlocks a whole cluster — best coverage-per-effort now.
+10. **[MORE conservation / no-oversell classes (oracle LIVE e81464d) — NOW]** wallet-no-overdraw is green
+    3/3; extend to **inventory + stock reservation (V6, `available+committed==on_hand`), seat/ticket booking
+    no-double-book (V7-shape), warehouse-bin Σbin==on_hand (V36), points-ledger ≥0 (V52), invoice total==Σlines
+    (F20)**. med-high · the flagship conservation cluster, oracle already proven.
+11. **[MORE double-entry / money classes (oracle LIVE 71c2ec5) — NOW]** double-entry-ledger is green 3/3;
+    extend to **transfers/P2P (F25), escrow hold-release (F55/V33), refunds ledger-reversal (F13), invoicing/
+    AR-AP (F20)**, and pair with the NEXT **money-invariant** oracle (#5 substrate) for the money-math pack
+    (F1–F4). med · the fintech spine, one oracle grades all.
+12. **[Agent quartet — loop / tool-registry / agent-behind-API / loop-guard (A1–A4) — loop GREEN 3/3, EXTEND]**
+    the **agent-loop** oracle + the tool_calls-parse scaffold (f77080a) already flipped the agent LOOP class
+    0/3→3/3; extend to the rest of the quartet: **tool-registry+dispatch (A2), agent-behind-an-API `/chat`
+    (A3, needs the HTTP scaffold too — both landed), ReAct step-cap/loop-guard (A4)**. high · the
+    highest-differentiation cluster, now genuinely unblocked + first rung proven.
+13. **[★ LangGraph agent-behind-an-API track (A8-shape) — NEW substrate item, owner directive: modern
+    frameworks + agent under an API]** build a state-graph agent (LangGraph-shape) served behind an HTTP
+    `/chat` endpoint, graded by an **agent-loop-oracle variant that drives a real LangGraph app** (scripted
+    stub-model as the LLM backend — NEVER a paid model, Tenet 2; fake tools; assert orchestration over the
+    transcript). Requires the supervised-autonomy dep-install path (isolated venv + vetted allowlist + size
+    cap + uninstall-to-reclaim) for `langgraph`, and combining the now-landed HTTP + agent scaffolds. high ·
+    dogfoods the agent-systems North Star with a real modern framework; the built app's LLM backend points at
+    LOCAL Gemma/stub, never egress.
+
+**NARROW THE SaaS-SERVICE RESIDUAL (REST-CRUD ~1/3 on-Jetson) — NOW, the one weak green-frontier rung:**
+The REST+DB CRUD service class (S1, the reusable SaaS base) is on the board but measures shaky (~1/3) —
+the LOGIC/protocol split says this is the mechanical-protocol tail, not reasoning. Two candidate deterministic
+levers, both honest (the service oracle is a REAL checkable oracle — run the app + real HTTP + independent DB
+re-read, so selection/repair here is NOT the best-of-k-blind-spot trap): **(a) best-of-k on the REAL service
+oracle** (legit precisely because the oracle is behavior-checkable, unlike the semantic-ordering classes where
+best-of-k was net-negative); **(b) a DB-init robustness repair** (gemma per-draw omits `CREATE TABLE`
+before insert / mis-wires the sqlite path — a deterministic schema-init/entrypoint repair, sibling of the
+existing datastore-init fixes). high · turns the first SaaS rung from shaky to reliably green + validates the
+HTTP scaffold on the CRUD class.
 
 **NEW-ORACLE SUBSTRATE to land (ranked by classes-unblocked × reuse — the real lever, not any single build):**
 The Atlas build-order insight: **the first four oracles alone make ~55 classes honestly gradable across every
 vertical.** Every oracle is stdlib + offline; the honesty note is load-bearing (Tenet 3 — a low-fidelity oracle
 that always passes is worse than none). Each grades structural invariants over a replayed op-script, never a
 memorizable output string.
+**★ TOP-4 SUBSTRATE COMPLETE (2026-07-09):** oracles #1–#4 below — the four the Atlas ranks as unblocking
+the most classes (~55 across every vertical) — are ALL LANDED. The substrate frontier now moves DOWN this
+list to #5+ (money-invariant, mock-payment, injectable-clock, idempotency, hash-chain, multi-service, …).
 - **[1 · agent-loop oracle — ✅ LANDED]** ~10 classes (A1–A10). Scripted stub-model + fake tools + assertions
   over the transcript (which tool, what args, order, stopped at step-cap). Unblocks the agent quartet above.
-- **[2 · generic state-machine / lifecycle oracle — 🔧 BUILDING]** **~18–20 classes — highest reuse in the
-  Atlas.** Given a declared transition graph + an op-script, assert every transition taken was legal + terminal
-  invariants hold (order, shipment, RMA, prescription, claim, dispute, transcode-job, PaymentIntent, dunning,
-  chargeback, trade-lifecycle, subscription). high.
-- **[3 · double-entry-balance invariant oracle]** ~16 classes. Σdebits==Σcredits per txn AND balance==Σpostings
-  per account — best generality-per-oracle ratio; grades any open-ended ledger. high.
-- **[4 · conservation / no-oversell / allocation invariant oracle]** ~17 classes. Σparts==whole + quantity-ledger
-  never negative under a replayed (optionally concurrent) op-script. high.
-- **[5 · money-invariant (no-float / exact-cent) oracle]** ~7 classes, **universal** across fintech/e-comm/billing.
-  med-high · cheap, pairs with #3/#4.
+  ★ The agent tool_calls-parse build scaffold (f77080a) FLIPPED the agent class 0/3→3/3 on-Jetson.
+- **[2 · generic state-machine / lifecycle oracle — ✅ LANDED (1a93f29)]** **~18–20 classes — highest reuse in
+  the Atlas.** Given a declared transition graph + an op-script, assert every transition taken was legal +
+  terminal invariants hold (order, shipment, RMA, prescription, claim, dispute, transcode-job, PaymentIntent,
+  dunning, chargeback, trade-lifecycle, subscription). First board rung: subscription-lifecycle-state-machine 3/3.
+- **[3 · double-entry-balance invariant oracle — ✅ LANDED (71c2ec5)]** ~16 classes. Σdebits==Σcredits per txn
+  AND balance==Σpostings per account — best generality-per-oracle ratio; grades any open-ended ledger. First
+  board rung: double-entry-ledger 3/3 (f3c2f7e).
+- **[4 · conservation / no-oversell / allocation invariant oracle — ✅ LANDED (e81464d)]** ~17 classes.
+  Σparts==whole + quantity-ledger never negative under a replayed (optionally concurrent) op-script. First
+  board rung: wallet-no-overdraw 3/3 (6cbe59f).
+- **[5 · money-invariant (no-float / exact-cent) oracle — 🔜 NEXT substrate target]** ~7 classes, **universal**
+  across fintech/e-comm/billing. med-high · cheap, pairs with #3/#4; the top of the remaining substrate list.
 - **[6 · high-fidelity mock-payment-provider (stripe-mock-shape) oracle]** ~13 classes. Signed-fixture provider,
   in-process, never deployed. med.
 - **[7 · injectable-clock / fake-time oracle]** ~10 classes. Deterministic time control for rate-limit/quota/
@@ -468,16 +512,16 @@ externally-brokered distributed systems, true wall-clock daemons. **The decisive
 VERIFICATION SUBSTRATE, not the model — most of these tasks cannot even be *scored honestly* today.** The
 ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
 
-- **[C1 oracle substrate — BLOCKER, unlocks ~30 tasks, top-of-NOW next]** (new spec) — small deterministic
-  verifiers, no model call: **(a) `fs_oracle.py`** seed-tree→run-sandboxed→independent byte-for-byte tree
-  inspection (~14 tasks: all of B, file-organizer, csv-join, codegen, SSG); **(b) exact-stdout-equality +
-  rc-aware + is-empty** check variants in `system_suite` (today substring-contains only; ~10 tasks);
-  **(c) HTTP `http_check` growth** (request bodies, custom headers, Set-Cookie/Location capture, ordered
-  token-threading sequence runner; ~5 web tasks); **(d) `fixture_server`** oracle (oracle hosts server, built
-  code is the client; ~4 scraping tasks); **(e) `import_driver`** (import built module in fresh subprocess,
-  exercise pinned public API; ~6 library tasks). **high** · nothing on the broadened bar is honestly
-  measurable without it — Phase-0 = C1(a)+(b) is the immediately-shippable first slice (~18 stdlib tasks,
-  domains A+B+L-easy/med).
+- **[C1 oracle substrate (EXT-059) — ✅ CORE SLICES LANDED, residual (c)/(d) remain]** small deterministic
+  verifiers, no model call: **(a) `fs_oracle.py` ✅ LANDED** seed-tree→run-sandboxed→independent byte-for-byte
+  tree inspection (~14 tasks: all of B, file-organizer, csv-join, codegen, SSG); **(b) exact-stdout-equality +
+  rc-aware + is-empty check variants ✅ LANDED (EXT-059 REQ-2, 0dd1851)** in `system_suite` (was substring-
+  contains only; ~10 tasks); **(e) `import_driver` ✅ LANDED (EXT-059 REQ-3, 5b2dc81)** import built module in
+  fresh subprocess, exercise pinned public API (~6 library tasks). **Residual:** **(c) HTTP `http_check` growth**
+  (request bodies ✅ landed via EXT-060 `json_body`; custom headers, Set-Cookie/Location capture, ordered
+  token-threading sequence runner remain; ~5 web tasks) + **(d) `fixture_server`** oracle (oracle hosts server,
+  built code is the client; ~4 scraping tasks) — both Phase-2-web-tier, tracked with C5 egress. med · the
+  breadth-instrument substrate is now mostly unblocked; C1(c)/(d) are the web-tier tail.
 - **[C2 execution-feedback self-repair — biggest per-task lift]** (aligns with the deterministic-toolset
   mission) — run the built system, capture the REAL traceback/stderr/failed-assertion, feed back for a
   targeted deterministic repair, re-run (bounded). **high** · lifts EVERY task; attacks the "prints plausibly
@@ -668,6 +712,38 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ VERIFICATION SUBSTRATE TOP-TIER COMPLETE — all 4 highest-reuse atlas oracles now LANDED (2026-07-09)]**
+  the four oracles the Atlas ranks as unblocking the most classes (§4) are all shipped, pure-stdlib +
+  offline + never-raises, each grading STRUCTURAL INVARIANTS over a replayed op-script (leak-proof,
+  non-memorizable — Tenet 3): **(1) fs_oracle** (seed-tree→run-sandboxed→independent byte-for-byte tree
+  inspection); **(2) generic state-machine / lifecycle oracle (1a93f29)** — declared transition graph +
+  op-script → assert every transition legal + terminal invariants (the Atlas's HIGHEST-reuse oracle,
+  ~18–20 classes: order/shipment/RMA/prescription/claim/dispute/subscription/dunning/…); **(3)
+  conservation / no-oversell / allocation invariant oracle (e81464d)** — Σparts==whole + quantity-ledger
+  never-negative under a replayed op-script (~17 classes: inventory/allocation/payout/points/…); **(4)
+  double-entry-balance invariant oracle (71c2ec5)** — Σdebits==Σcredits per txn AND balance==Σpostings per
+  account, one oracle grades any open-ended ledger (~16 classes). EXT-059 design.md synced (6950918). The
+  Atlas insight realized: **these four alone make ~55 classes across every vertical honestly gradable** —
+  the substrate lever, not any single build.
+- **[★★ BOTH PROTOCOL-SCAFFOLD LEVERS LANDED — the two-plane thesis at the class level (2026-07-09)]** the
+  measured split (pure-LOGIC classes green readily; mechanical-PROTOCOL classes need a deterministic
+  scaffold) drove two deterministic build-plane prosthetics: **(a) HTTP-service scaffold (27c7899)** — a
+  deterministic `http.server` request-loop skeleton so the model fills in handlers instead of re-deriving
+  the boilerplate socket/routing loop; **(b) agent tool-call-parse scaffold (f77080a)** — a deterministic
+  tool_calls parser/dispatch skeleton for the agent-loop class. ★ The agent scaffold **FLIPPED the agent
+  class 0/3 → 3/3 (measured on-Jetson)** — a mechanical-protocol failure converted to a reliable pass by a
+  deterministic tool, NOT a bigger model (the deterministic-toolset thesis, memory
+  [[jaros-code-deterministic-toolset-mission]]).
+- **[★★ EXT-060 CANONICAL BOARD GREW 9→12 CREATE (+6 MODIFY = 18 classes) — first atlas-oracle-graded rungs (2026-07-09)]**
+  three new atlas classes joined the canonical scoreboard, each green 3/3 on-Jetson under a NEWLY-LANDED
+  invariant oracle (no leaf, no leak): **double-entry-ledger [fintech] 3/3 (f3c2f7e)** graded by the
+  double-entry oracle; **subscription-lifecycle-state-machine [SaaS]** graded by the state-machine oracle +
+  **wallet-no-overdraw [fintech]** graded by the conservation/non-negative-balance oracle (both 6cbe59f).
+  These are the first board rungs pulled straight from the Atlas's `mapped` tier and graded by the top-4
+  oracles above — the substrate→class→board pipeline working end-to-end. Confirms the measured pattern:
+  **pure-LOGIC classes (order-lifecycle, double-entry-ledger) green readily 3/3; mechanical-PROTOCOL classes
+  (SaaS http.server loop, agent tool_calls parse) need the deterministic scaffolds** — the two-plane thesis
+  reproduced at the class level.
 - **[★ FIRST SaaS RUNG — EXT-060 REQ-9/REQ-10, TASK-8 (2026-07-09)]** the canonical scoreboard's first
   genuinely-SaaS-shaped tasks: a NEW `oracle_kind="service"` in `grade_real_system_task` grades a real
   stdlib REST API (`http.server` + `sqlite3` + `json`, no framework) by (a) launching it as a real
