@@ -44,5 +44,17 @@
       "startLine": 268,
       "endLine": 334
     }
+  ],
+  "REQ-4": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 414,
+      "endLine": 458
+    },
+    {
+      "file": "tests/test_ext060_ini_query.py",
+      "startLine": 13,
+      "endLine": 141
+    }
   ]
 }

@@ -47,3 +47,20 @@ with NO real wall-clock sleep.
 - [x] Graded by `import_driver` with an injected clock/sleep: a fail-twice-then-succeed callable wrapped
       by `retry(times=3)` returns the success and is called exactly 3 times, using no real sleep; a broken
       retry (wrong count, or gives up early) FAILS. Leaves-OFF (no leaf may count as a pass); no oracle leak.
+
+### [REQ-4] INI-section config-query CLI task graded by the existing cli-exact oracle
+
+A third held-out real-systems task -- an INI-section config-query CLI -- graded by the EXISTING
+cli-exact exact-stdout oracle (`grade_real_system_task` `oracle_kind="cli-exact"`, reused from
+`harness/system_suite.py`'s `exact_stdout` check variant, no new oracle). Leaves-OFF enforced
+identically to the other two tasks; added to `REAL_SYSTEMS_TASKS`.
+
+#### Acceptance Criteria
+- [x] The task's sentence fully specifies the CLI contract (INI section/key parsing rules, exactly
+      two argv args: section then key, exact stdout value + trailing newline, nonzero exit + no
+      output when absent) with oracle-chosen argv/stdin/expected_stdout values echoed by the
+      contract (no hidden key).
+- [x] Graded by the existing cli-exact oracle (`grade_real_system_task` `oracle_kind="cli-exact"`):
+      a correct INI-parsing CLI's exact stdout is verified; a wrong value/extra output is caught.
+- [x] Leaves-OFF enforced (same two checks as REQ-1/REQ-2/REQ-3: static `leaf_for_spec` + post-build
+      `build_path` check); no oracle leak into the build prompt.

@@ -409,3 +409,50 @@ RETRY_BACKOFF_LIB_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS: "list[RealSystemTask]" = [CSV_GROUPBY_ETL_TASK, RETRY_BACKOFF_LIB_TASK]
 # #EXT-060-REQ-3 End
+
+
+# #EXT-060-REQ-4 Start
+# TASK-3: the INI-section config-query CLI task -- a third held-out real-systems task, graded by
+# the ALREADY-LANDED cli-exact oracle (no new oracle code: reuses `_grade_cli_exact` ->
+# `harness.system_suite`'s `exact_stdout` check variant, the same sandboxed/scrubbed-env
+# subprocess convention every other black-box check in this codebase already goes through). Every
+# parsing rule (section/key line shape, whitespace stripping, absent-key/-section exit behavior)
+# is pinned in the sentence itself so the oracle's expected stdout is fully DERIVED from that same
+# visible contract -- no hidden key, no reference implementation the model could not see.
+_INI_SECTION_QUERY_SENTENCE = (
+    "Write a command-line program in a file named main.py that reads an INI-format configuration "
+    "file from standard input and takes exactly two command-line arguments: a section name and a "
+    "key name. It parses the INI text (sections are lines like `[section]`; within a section, keys "
+    "are lines like `key = value` or `key=value`, values may have surrounding whitespace that must "
+    "be stripped). It prints, to standard output, exactly the value of the given key inside the "
+    "given section, followed by a single trailing newline, and nothing else. If the section or key "
+    "is absent it prints nothing and exits with a nonzero status."
+)
+
+# Seeded INI text: two sections both defining a `port` key with DIFFERENT values, so a correct
+# build must resolve the key WITHIN the named section, not just the first/last occurrence of the
+# key anywhere in the file (a build that ignores section scoping would read `port` from whichever
+# section it encounters -- last, `db` -> 5432 -- or first, `server` -> 8080 by coincidence; the
+# oracle only accepts the value that is actually correct for the requested `server` section).
+_INI_SECTION_QUERY_STDIN = (
+    "[server]\n"
+    "host = localhost\n"
+    "port = 8080\n"
+    "[db]\n"
+    "port = 5432\n"
+)
+
+INI_SECTION_QUERY_TASK = RealSystemTask(
+    name="ini-section-query-cli",
+    cls="config-cli",
+    sentence=_INI_SECTION_QUERY_SENTENCE,
+    oracle_kind="cli-exact",
+    oracle_spec={
+        "argv": ["server", "port"],
+        "stdin": _INI_SECTION_QUERY_STDIN,
+        "expected_stdout": "8080\n",
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INI_SECTION_QUERY_TASK)
+# #EXT-060-REQ-4 End

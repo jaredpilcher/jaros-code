@@ -34,3 +34,24 @@
 
 #### Implements
 - [REQ-3] Retry/backoff decorator library task graded by import_driver
+
+### [TASK-3] INI-section config-query CLI task wired to the existing cli-exact oracle (REQ-4)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `INI_SECTION_QUERY_TASK` (a `RealSystemTask`, `oracle_kind
+   ="cli-exact"`) with a contract-exact sentence for a single-file `main.py` that reads an INI-format
+   config file from standard input and takes exactly two command-line arguments (a section name, then
+   a key name), prints the value of that key inside that section followed by a single trailing
+   newline and nothing else, or prints nothing and exits nonzero if the section or key is absent.
+   Wire it via the EXISTING cli-exact grading path (`_grade_cli_exact` / `_run_check_variant`'s
+   `exact_stdout` check) -- no new oracle code.
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as the other tasks --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (the oracle-chosen argv/stdin/
+   expected_stdout values are all derivable from the visible sentence contract).
+3. Add `tests/test_ext060_ini_query.py` (OFFLINE, no Jetson): a hand-authored CORRECT `main.py` stub
+   passes the cli-exact grading; a WRONG one (wrong value or extra output) fails.
+4. Run `python -m pytest tests/test_ext060_ini_query.py tests/test_ext060*.py -q`; confirm green.
+   Update `.jarify/EXT-060/index.json` (REQ-4 ranges) + check REQ-4 boxes in requirements.md.
+
+#### Implements
+- [REQ-4] INI-section config-query CLI task graded by the existing cli-exact oracle
