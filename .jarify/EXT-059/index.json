@@ -1,4 +1,28 @@
 {
+  "REQ-6": [
+    {
+      "file": "harness/agent_oracle.py",
+      "startLine": 67,
+      "endLine": 598
+    },
+    {
+      "file": "tests/test_ext059_agent_oracle.py",
+      "startLine": 10,
+      "endLine": 381
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/import_driver.py",
+      "startLine": 48,
+      "endLine": 528
+    },
+    {
+      "file": "tests/test_ext059_import_driver.py",
+      "startLine": 9,
+      "endLine": 279
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/fs_oracle.py",
@@ -21,18 +45,6 @@
       "file": "harness/system_suite.py",
       "startLine": 138,
       "endLine": 233
-    }
-  ],
-  "REQ-3": [
-    {
-      "file": "harness/import_driver.py",
-      "startLine": 48,
-      "endLine": 528
-    },
-    {
-      "file": "tests/test_ext059_import_driver.py",
-      "startLine": 9,
-      "endLine": 279
     }
   ]
 }

@@ -10,6 +10,8 @@ implementation:
   - tests/test_ext059_check_variants.py
   - harness/import_driver.py
   - tests/test_ext059_import_driver.py
+  - harness/agent_oracle.py
+  - tests/test_ext059_agent_oracle.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -88,3 +90,37 @@ next — so auth/session/shortener web tasks are gradeable.
 - [ ] Redirects can be asserted (status + `Location`) without being auto-followed.
 - [ ] Tests prove a cookie/token round-trip sequence passes for a correct server and fails when the
       server ignores the credential; existing FastAPI/Flask serve-and-check remains green.
+
+### [REQ-6] Agent-loop oracle (`agent_oracle`)
+
+A deterministic, model-free verifier that grades a built AGENT's ORCHESTRATION, not its reasoning:
+agent systems (multi-step tool-calling loops -- jaros-code itself is one) are now a high-priority
+real-system class, and today's black-box CLI/import/HTTP oracles have no way to grade one honestly.
+An agent's REASONING is non-deterministic, but its CONTROL FLOW is deterministic given a FIXED
+model -- so this oracle injects a SCRIPTED stub model server + a controlled tool sandbox, drives a
+goal through the built agent's real loop, and asserts the resulting ordered tool-call sequence and
+termination.
+
+#### Acceptance Criteria
+- [x] `harness/agent_oracle.py` hosts a local, scripted, OpenAI-compatible chat-completions stub
+      server (stdlib `http.server`) that serves canned assistant turns (tool-call or final-answer)
+      in sequence, plus a controlled tool-sandbox endpoint that records every tool invocation the
+      built agent makes (name + args, in order) and returns a canned observation.
+- [x] `drive_agent(root, entry, *, script, tools, goal, env=None, max_steps=..., startup_timeout=...,
+      python_exe=...)` points the built agent at the stub via the pinned `OPENAI_BASE_URL`/
+      `MODEL_URL` env-var contract (the cloud-standard OpenAI-compatible convention -- the SAME
+      seam a real build points at the local Jetson llama.cpp endpoint), runs it as a real
+      subprocess, and returns the ordered captured tool-calls, the agent's final answer, the step
+      count, and whether the loop terminated cleanly -- NEVER raises, ALWAYS tears the stub server
+      down in a `finally` block, and leaves no orphaned process or listening port.
+- [x] `check_agent(result, *, expect_tool_calls, expect_final_contains=None, expect_terminated=True)`
+      is a pure, never-raise grader asserting the captured tool-call sequence (name + args) matches
+      expectations, the loop terminated (didn't hit `max_steps`), and the final answer contains the
+      expected text.
+- [x] Tests prove a correct hand-written agent fixture passes (a multi-step tool-call-then-final
+      loop, with the tool's observation threaded back into the loop) and a broken fixture (wrong
+      tool call, or one that never terminates) is caught by `check_agent`; `drive_agent` never
+      raises on a crashing or hanging agent and leaves the stub port free afterward.
+
+**Follow-up (not built here):** a Jaros-flavor extension that additionally asserts two-plane
+Decision-emission and `jaros replay` byte-identical determinism for built agents.

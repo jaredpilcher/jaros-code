@@ -31,6 +31,15 @@ broadened-suite task definitions that consume them are a separate, follow-on spe
      +----------------+--------- all reuse the sandbox (secure_exec) + _free_port/_kill_tree --------+
                                         |
                             independent observable, NO model call
+
+                                  agent_oracle (REQ-6) -- a DIFFERENT axis: grades ORCHESTRATION
+                                        |
+     oracle HOSTS a scripted OpenAI-compatible stub-model server (fixed "reasoning") + a
+     controlled tool-sandbox endpoint; the built AGENT is the CLIENT/loop under test -- injected
+     via the pinned OPENAI_BASE_URL/MODEL_URL + JAROS_TOOL_URL env-var seam (same seam a real
+     build points at the Jetson llama.cpp endpoint); asserts the ORDERED tool-call sequence +
+     clean termination, never the model's intelligence -- reuses secure_exec's sandboxed launch +
+     server_oracle._kill_tree, same as every oracle above
 ```
 
 ## Key design decisions

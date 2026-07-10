@@ -64,3 +64,38 @@ public API â€” for the reusable-library task class (import-and-call, not stdinâ†
 
 #### Implements
 - [REQ-3] Import-driver oracle (`import_driver`)
+
+### [TASK-4] Build the agent-loop oracle (`harness/agent_oracle.py`)
+
+Grades a built AGENT's ORCHESTRATION (not its reasoning) so agent systems -- a high-priority real-
+system class, including jaros-code itself -- can be honestly verified: inject a scripted stub model
++ controlled tool sandbox, drive a goal, and assert the tool-call sequence + termination.
+
+#### Steps
+1. Create `harness/agent_oracle.py` with a local stdlib `http.server` stub that serves scripted
+   OpenAI-compatible `/v1/chat/completions` responses (tool-call or final-answer turns, in order)
+   and a `/tool/<name>` endpoint that records every tool invocation (name + args, in order) and
+   returns a canned observation -- the injection seam is the pinned `OPENAI_BASE_URL`/`MODEL_URL`
+   env-var contract (the built agent reads its model endpoint from there; its tools hit the tool-
+   sandbox endpoint via `JAROS_TOOL_URL`; the goal is passed as `argv[1]`).
+2. Add `drive_agent(root, entry, *, script, tools, goal, env=None, max_steps=..., startup_timeout=...,
+   python_exe=...) -> dict` that starts the stub on an ephemeral localhost port, launches
+   `python <entry> <goal>` sandboxed (reusing `secure_exec._scrubbed_env`/`_make_preexec_fn` and
+   `server_oracle._kill_tree`), waits bounded by `timeout`/`max_steps`, and returns
+   `{"ok", "tool_calls", "final", "steps", "terminated", "note", "port"}`. ALWAYS tears the stub
+   server down (`shutdown()` + `server_close()`) and kills the agent process tree in a `finally`
+   block; never raises.
+3. Add `check_agent(result, *, expect_tool_calls, expect_final_contains=None, expect_terminated=True)
+   -> (bool, note)` -- a pure, never-raise grader over the captured evidence (ordered tool-call
+   name+args match, termination, final-answer substring).
+4. Add `tests/test_ext059_agent_oracle.py`: a correct hand-written agent fixture (loops against the
+   stub, invokes tools, feeds observations back, prints a final sentinel) passes via `check_agent`;
+   a broken fixture (wrong tool call) is caught; `drive_agent` never raises on a crashing/hanging
+   agent and leaves the stub port free afterward; a multi-step script exercises the loop +
+   observation-feedback; max_steps enforcement is proven. Offline only (no real model). Run only
+   `python -m pytest tests/test_ext059_agent_oracle.py -q`.
+5. Update `.jarify/EXT-059/index.json` (via `jarify-manage-links`) mapping REQ-6 to the new file
+   ranges; `requirements.md` status stays `partial` (REQ-4/REQ-5 remain open).
+
+#### Implements
+- [REQ-6] Agent-loop oracle (`agent_oracle`)
