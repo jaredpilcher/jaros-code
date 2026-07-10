@@ -1,7 +1,7 @@
 # Production-Systems Atlas — jaros-code Completeness Ledger
 
 **Status:** living planning artifact (a coverage ledger, like `docs/GAP-MAP.md`) — **NOT product code.**
-**Last assembled:** 2026-07-09 · **Wave-1 OSS-decomposition expansion:** 2026-07-10 (§3.4, +73 classes) · **Wave-2 selfhosted-ecosystem expansion:** 2026-07-10 (§3.5, +50) · **Wave-3 industry-vertical expansion:** 2026-07-10 (§3.6, +60 — six NEW verticals) · **Wave-4 infra/integration pattern layer:** 2026-07-10 (§3.7, +33) · **Wave-5 agent-cluster expansion:** 2026-07-10 (§3.1 A11–A40, +30) · **Wave-6 not-covered-backlog sweep:** 2026-07-10 (§3.8, +57) · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below) + read-only GitHub/OSS product research (§3.4 provenance note).
+**Last assembled:** 2026-07-09 · **Wave-1 OSS-decomposition expansion:** 2026-07-10 (§3.4, +73 classes) · **Wave-2 selfhosted-ecosystem expansion:** 2026-07-10 (§3.5, +50) · **Wave-3 industry-vertical expansion:** 2026-07-10 (§3.6, +60 — six NEW verticals) · **Wave-4 infra/integration pattern layer:** 2026-07-10 (§3.7, +33) · **Wave-5 agent-cluster expansion:** 2026-07-10 (§3.1 A11–A40, +30) · **Wave-6 not-covered-backlog sweep:** 2026-07-10 (§3.8, +57) · **Wave-7 engineering-blog mining:** 2026-07-10 (§3.9, +21) · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below) + read-only GitHub/OSS product research (§3.4 provenance note).
 
 ---
 
@@ -47,8 +47,9 @@ deployed — Tenet 2/3 clean.
 | Wave-4 infra/integration pattern additions (§3.7, 2026-07-10) | **+33** (44 staged − 11 drops vs wave-1 G-rows + S-rows; see §3.7 dedupe record) |
 | Wave-5 agent-cluster additions (§3.1 A11–A40, 2026-07-10) | **+30** (all 30 staged survived final dedupe; stager pre-dropped 18 near-dups) |
 | Wave-6 not-covered-backlog additions (§3.8, 2026-07-10) | **+57** (63 staged − 6 cross-wave drops; stager pre-dropped 16 vs G-rows) |
-| **Distinct production-system classes** | **≈ 485** |
-| Stdlib-buildable-now (zero deps, offline) | **≈ 478 / 485 (~98%)** |
+| Wave-7 engineering-blog additions (§3.9, 2026-07-10) | **+21** (EB1–EB21; all 21 staged survived final dedupe — the stager pre-dropped ~35 vs the full atlas, the heaviest overlap of any wave, as predicted) |
+| **Distinct production-system classes** | **≈ 506** |
+| Stdlib-buildable-now (zero deps, offline) | **≈ 499 / 506 (~98%)** |
 | Needs a 3rd-party dep (all have a stdlib/simulated path) | **~7** (CAMT/OFX/MT940 parse, NACHA validator, real broker, Postgres/Redis wire, DKIM full RSA sign (X40 — canonicalization itself is stdlib) — Docker-backed oracles exist) |
 
 ### 2.2 Per-vertical / cluster counts
@@ -74,6 +75,7 @@ deployed — Tenet 2/3 clean.
 | **Wave-4 pattern layer** — identity/authz 6 · API surface 7 · webhooks/eventing 2 · jobs/incidents 2 · data movement 5 · billing/compliance-ops 4 · config/secrets/runtime 7 | **33** | §3.7 (wave 4) |
 | **Wave-5 agent-cluster extension** — orchestration shapes 9 · model-I/O 5 · memory/context 2 · RAG decomposed 3 · guardrails/economics 5 · agent ops/platform 6 | **30** | §3.1 A11–A40 (wave 5) |
 | **Wave-6 backlog sweep** — chat/NLU 3 · object-storage internals 2 · deep billing 2 · CI/CD+registries 5 · ATS 1 · genealogy 2 · maps/GPS 3 · IoT 2 · NVR 2 · DNS/VPN 3 · groupware/CalDAV 3 · CRM 4 · mail stack 3 · e-books/ILS 3 · backup 3 · GTFS transit 2 · payroll 3 · construction 3 · hospitality 2 · telecom BSS 2 · manufacturing MES 2 · emergency CAD 2 | **57** | §3.8 (wave 6) |
+| **Wave-7 engineering-blog mining** — collab/sync-engine 6 (Figma/Linear/Notion/Slack/Discord) · traffic/infra 4 (Cloudflare/GitHub/Stripe/Segment) · marketplace/mobility 5 (Uber/Airbnb/DoorDash/Shopify) · comms/media/payroll 6 (Twilio/Netflix/Spotify/Dropbox/Gusto-class) | **21** | §3.9 (wave 7) |
 
 ### 2.3 Status breakdown (current reality)
 
@@ -83,7 +85,7 @@ Status values: **unmapped** → **mapped** → **on-roadmap** → **building** �
 |---|---|---|
 | **verified** (utility tier — real, but being demoted as "toys-are-the-floor") | 5 | retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl (≈ atlas class **S45 ETL**) |
 | **building** | 1 | **REST+DB CRUD service** (create+modify — first SaaS rung; service oracle just landed) |
-| **mapped** | ≈ 479 | everything else in this atlas (incl. 73 wave-1 G-rows §3.4, 50 wave-2 SH-rows §3.5, 60 wave-3 W-rows §3.6, 33 wave-4 P-rows §3.7, 30 wave-5 A11–A40, 57 wave-6 X-rows §3.8) |
+| **mapped** | ≈ 500 | everything else in this atlas (incl. 73 wave-1 G-rows §3.4, 50 wave-2 SH-rows §3.5, 60 wave-3 W-rows §3.6, 33 wave-4 P-rows §3.7, 30 wave-5 A11–A40, 57 wave-6 X-rows §3.8, 21 wave-7 EB-rows §3.9) |
 | on-roadmap | 0 (roadmap owns this; assigned as classes are promoted from §5/§6) | — |
 | unmapped | 0 (this atlas is the completeness boundary; new discoveries append here) | — |
 
@@ -92,7 +94,7 @@ memoize/retry). It is **real but demoted** — those are the FLOOR, not the fron
 the first **service** rung (REST+DB CRUD, `building`) and the **agent** cluster — whose gate has
 **lifted: the agent-loop oracle is LANDED** (`harness/agent_oracle.py`, commit `2ee7efa`, validated
 by the plain-tool-calling-agent class measuring 3/3), making A1–A40's agent-loop-gradable rows
-**gradable TODAY**. Coverage today ≈ **5 verified + 1 building / 485** — the number this ledger
+**gradable TODAY**. Coverage today ≈ **5 verified + 1 building / 506** — the number this ledger
 exists to move.
 
 ### 2.4 Reconciliation notes (dedupe)
@@ -812,6 +814,81 @@ control protocols, LoRaWAN network servers, ham/SDR, hotel channel-manager (OTA)
 hardware integration, the NVR video pipeline itself (ffmpeg-bound — only its metadata/retention
 logic is mapped), real crypto mail signing (DKIM full RSA needs a dep).
 
+### 3.9 Wave-7 engineering-blog-mining additions (2026-07-10)
+
+**Provenance:** read-only mining of real-company engineering blogs + architecture write-ups
+(Figma multiplayer, Linear sync engine, Notion block model, Slack reminders, Discord
+permissions/lazy-guilds, Cloudflare Waiting Room, GitHub merge queue, Stripe/brandur idempotency
+keys, Segment Protocols, Uber H3/surge, Airbnb availability rules, DoorDash menu configuration,
+Shopify/Instacart order editing, Twilio segments/E.164, Netflix buffer-based ABR, Spotify balanced
+shuffle, Dropbox block sync, DOL/Gusto-class FLSA overtime; Datadog/Plaid/Pinterest researched and
+yielded **zero** new rows — fully subsumed). This wave overlaps prior waves the most, as predicted:
+the stager dropped **~35 candidates** as dups with per-row nearest-neighbor notes (record below);
+final merge dedupe against the full §3.1–§3.8 atlas confirmed every survivor and dropped **0 more**.
+**All rows: status = `mapped`, stdlib = yes, CREATE+MODIFY.** Unusually rich in
+deterministic-algebra classes gradable TODAY on the existing import-driver oracle.
+
+| ID | Class | Vertical/Category | Tier | C/M | Oracle | Example task sentence | Source |
+|---|---|---|---|---|---|---|---|
+| EB1 | Per-property last-writer-wins object sync (server-ordered map of object×property → latest value; concurrent edits to different properties both survive; same property → server order wins; late-joiner snapshot equals replay) | SaaS-collab/multiplayer-sync | 3 | C+M | IMPORT (convergence property: replay two clients' interleaved edit streams in different arrival orders → identical final document) | Build a design-document sync server where two editors changing different properties of the same shape both keep their change, changing the same property keeps whichever the server received last, and a client joining late receives exactly the state every other client has. | Figma "How Figma's multiplayer technology works" — ≠G56: G56 is text OT/CRDT convergence; this is the object-property LWW register map Figma chose INSTEAD of text CRDTs |
+| EB2 | Op-log delta sync engine (server-assigned monotonic sync-id per workspace; client bootstraps a snapshot then catches up from last-synced-id; offline local mutations held pending, acknowledged or rebased on reconnect; LWW per field) | SaaS-collab/client-sync | 3 | C+M | IMPORT+DB (kill client mid-stream, reconnect from lastSyncId → no gaps/dupes; offline edits reconcile) | Build a workspace sync service where a client that was offline for an hour submits its held edits, pulls every change since its last recorded sync number, and ends byte-identical to a client that never disconnected. | Linear "Scaling the Linear Sync Engine" + wzhudev reverse-engineering — ≠SH-N1: file-level two-replica reconcile; this is the server-authoritative incremental op-log contract |
+| EB3 | Block-tree document engine (everything-is-a-block: typed blocks with ordered child pointers; move/indent/outdent re-parent subtrees; cycle refusal; subtree duplicate and archive/restore keep order and depth) | SaaS-collab/document-model | 3 | C+M | IMPORT (tree invariants: single parent, order preserved, no cycles, restore == pre-archive tree) | Build a page store where indenting a paragraph makes it a child of the block above, moving a block carries its whole subtree, duplicating a section copies every descendant in order, and any operation that would make a block its own ancestor is refused. | Notion "The data model behind Notion's flexibility" — ≠V3 (static course tree) / ≠SH-W1 (page revisions): the op surface (move/indent/duplicate/restore over one uniform block type) is the class |
+| EB4 | Natural-language reminder-time parser ("in 2 hours", "tomorrow at 2pm", "next Friday", "every weekday at 9am", "first Monday of every month" → concrete fire time or recurrence rule; ambiguous input → clarify error, never silent failure) | SaaS-collab/scheduling-NL | 2 | C+M | IMPORT (phrase→timestamp fixture tables vs a fixed injectable now) + NEW:clock (firing) | Build a reminder command that turns phrases like "in 45 minutes", "tomorrow at 9", and "every other Thursday" into exact scheduled times from a fixed current time, and answers with a clarification error for a phrase it cannot parse. | Slack /remind + reminders.add API — ≠G28/X33: those expand formal RRULEs; this parses human phrases INTO them |
+| EB5 | Layered permission-overwrite resolution (base = union of role bitmasks; then @everyone channel overwrite, then union-of-role overwrites, then member overwrite; deny before allow within each layer; admin bypass; computed-permissions API) | SaaS-collab/authorization | 2 | C+M | IMPORT (decision-table fixtures: role/channel/member overwrite combos → exact effective bitmask) | Build a channel-permission resolver where a role-level deny of viewing is re-granted by another role's channel allow, a member-specific deny beats everything, and the resolver returns the exact effective permission set for any member in any channel. | Discord permissions docs + Statbot deep-dive — ≠SH-W4 (hierarchy inheritance w/ overrides) / ≠P3 (relationship graph) / ≠P4 (attribute policies): ordered bitmask layers with per-layer deny-then-allow is a fourth, distinct authz algebra |
+| EB6 | Windowed member-list range subscription (client subscribes to visible index ranges of a huge sorted list; server answers SYNC snapshots per range and emits INSERT/UPDATE/DELETE index ops as membership or sort position changes; client applying ops == server list) | SaaS-collab/list-sync | 3 | C+M | IMPORT (op-sequence fixtures: apply emitted ops to the client copy → equals server's sorted list for the subscribed window) | Build a member-directory service where a client subscribed to rows 0–99 of an alphabetically sorted list receives exactly the operations needed to keep that window correct as people join, leave, and change display names — and never receives updates for rows it did not subscribe to. | Discord "lazy guilds" gateway protocol (discord-api-docs #582) — ≠S55 (transport) / ≠EB2 (whole-workspace op-log): the windowed-range projection contract is the class |
+| EB7 | Virtual waiting room (arrival-minute cohort buckets; oldest cohort admitted first as capacity slots free; admitted session token valid N minutes; position + estimated-wait answers; abandoned slots re-issued; never more than N active) | SaaS-infra/admission-control | 3 | C+M | NEW:conservation (≤N active at all times) + NEW:clock + NEW:FIFO-fairness (older cohort never admitted after a newer one) | Build an admission gate for a product-drop page that lets at most 200 visitors shop at once, holds everyone else in a line grouped by arrival minute, admits the oldest group first as shoppers leave, and tells each waiting visitor their position and estimated wait. | Cloudflare "How Waiting Room makes queueing decisions" — ≠V57 (backorder allocation) / ≠V58 (exactly-N sale): admission control over live sessions with fairness cohorts is the class |
+| EB8 | Merge-train coordinator (PRs enter an ordered train; each is tested against target + everything ahead; batch up to K; a failing batch bisects, ejects the culprit, re-tests survivors; passing head fast-forwards the target branch) | DevTools/ci-cd | 3 | C+M | CLI+FS + NEW:state-machine (simulated check-runner fixture; assert exact test-target compositions, bisect sequence, final branch order) | Build a merge coordinator where three approved changes are each validated against the main branch plus the changes ahead of them, a failure in the middle change removes only it from the train, and the remaining two land in order without re-testing from scratch. | GitHub "How GitHub uses merge queue…" + Mergify speculative checks — ≠S63 (single-pipeline stages) / ≠X12 (matrix expansion): the speculative train/bisect protocol is the class |
+| EB9 | Recovery-point request executor (multi-step API request whose local DB writes are grouped into atomic phases between foreign-state mutations; a named recovery point persists on the idempotency key after each phase; a retry resumes at the recorded point so the external call happens exactly once; a completer sweeps stuck requests) | SaaS-infra/request-reliability | 3 | C+M | NEW:idempotency-replay + NEW:workflow-replay (kill mid-request between phases, retry same key → exactly one external effect, identical final response) + DB | Build a ride-booking endpoint that records a checkpoint after reserving locally and after charging the payment fixture, so a client retry after a crash between the two never double-charges and always drives the request to the same completed response. | brandur.org "Implementing Stripe-like Idempotency Keys in Postgres" + Stripe idempotency blog — ≠S19 (cached-response replay) / ≠G32 (event-history replay engine): named-checkpoint resume WITHIN one API request is the pattern |
+| EB10 | Tracking-plan enforcement gateway (per-event-type schemas; violation handling modes per source: block unplanned events, strip unplanned properties, or pass-with-flag; violations forwarded to a violations sink as events; counts by type reportable) | SaaS-analytics/data-governance | 2 | C+M | HTTP+DB+IMPORT (event fixtures → exact accepted/blocked/stripped outcome per mode + exact violations report) | Build an event gateway that drops events not named in the source's tracking plan, removes properties the plan does not define, forwards a description of every violation to a separate audit endpoint, and reports violation counts by event type. | Segment Protocols docs (schema-configuration, forward-violations) — ≠P14 (request 422 validation) / ≠P18 (destination fan-out): the per-source enforcement MODES + violations sink is the class |
+| EB11 | Hierarchical hex-grid spatial index (lat/lng → cell id at a resolution; cell → neighbors and k-rings; coarse cell → children; polygon → covering cell set; same-cell and adjacency answers without geometry at solve time) | Logistics-geo/spatial-index | 3 | C+M | IMPORT (fixture tables: point→cell, k-ring sets, polygon covers; adjacency-symmetry property) | Build a grid indexer that assigns every pickup coordinate to a hexagonal cell, lists the cells within two rings of it, and returns the exact set of cells covering a delivery zone polygon. | Uber "H3: Uber's Hexagonal Hierarchical Spatial Index" — ≠V40: point-in-polygon lookup there; discretized grid algebra (cells/rings/covers) here |
+| EB12 | Surge multiplier engine (per-zone open-demand vs available-supply ratio → stepped multiplier from a table; smoothing/hysteresis so the multiplier moves at most one step per tick; city cap; a rider's quoted multiplier locked for M minutes) | Marketplace/dynamic-pricing | 3 | C+M | IMPORT (ratio→step fixture tables) + NEW:clock (tick smoothing, quote lock) | Build a zone-pricing service that recomputes each zone's price multiplier every minute from waiting requests versus free drivers, never jumps more than one step at a time, and honors a rider's quoted multiplier for five minutes even if the zone price rises. | Uber H3/surge write-ups — ≠F53 (static tiered pricing) / ≠V12 (discounts): the supply-demand-driven stepped multiplier with hysteresis + quote lock is the class |
+| EB13 | Stay-availability rule engine (nightly calendar; min/max stay by check-in day; advance-notice window with same-day cut-off hour; preparation nights blocked around each booking; availability window of N months; answers "can these dates be booked?" with the exact violated rule) | Marketplace-travel/booking-rules | 3 | C+M | IMPORT + NEW:clock (date-range→decision fixture tables from a fixed now) | Build a listing-availability checker that refuses a two-night request when Friday check-ins require three nights, blocks the night after every departure for cleaning, refuses same-day requests after the 3pm cut-off, and names which rule failed. | Airbnb availability settings + preparation-time docs — ≠W52 (overlap-only lease conflict) / ≠V7 (slot double-book): the composable nightly rule gates are the class |
+| EB14 | Option-group product configuration engine (items own modifier groups with min/max selections; nested modifier groups one level down; each option carries an up-charge; K-cheapest-selected-free rules; item price == base + Σ selected options; invalid combinations refused with the violated group) | E-comm-delivery/product-config | 2 | C+M | IMPORT (selection→exact-price and accept/reject fixture tables) | Build a menu-item configurator where a burrito requires exactly one protein, allows up to three toppings of which the cheapest is free, lets a chosen salsa carry a light/regular/extra sub-choice, and prices the final item exactly. | DoorDash menu-configuration reference + Toast modifier-group docs — ≠V1 (flat catalog) / ≠V12 (discount math): the constrained option-group selection algebra is the class |
+| EB15 | Post-order amendment and substitution settlement (edit a placed order: add/remove/substitute items with customer approve/reject per substitution; totals, tax and inventory recomputed; delta settled as an extra charge or refund; invariant: final charge == Σ final line items and every cent of the difference is accounted) | E-comm/order-amendment | 3 | C+M | NEW:conservation + NEW:state-machine (amendment log legal; charge/refund delta exact) + DB | Build an order-amendment service where an out-of-stock item is swapped for an approved substitute and one item is removed, the customer is refunded exactly the difference, inventory reflects the final lines, and the order's charge history reconciles to the delivered total. | Shopify order-editing docs + Instacart replacements flow — ≠V28 (post-delivery returns) / ≠F13 (payment-side refund): amending the LIVE order with delta settlement is the class |
+| EB16 | SMS segmentation calculator (GSM-7 vs UCS-2 auto-detection incl. extension-table double-width chars; 160/70 single vs 153/67 concatenated with data headers; per-message segment count + per-segment breakdown; smart-encoding substitutions of lookalike unicode) | SaaS-comms/messaging-math | 2 | C+M | IMPORT (message→encoding/segment-count/split-offset fixture tables) | Build a message-cost estimator that reports a 320-character plain message as three segments, the same message with one emoji as five, and shows exactly where each segment splits. | Twilio "What the heck is a segment?" + GSM-7/UCS-2 glossary docs |
+| EB17 | Phone-number normalization and validation (national digits + country rules → E.164; trunk-prefix stripping; length/prefix validity per fixture country table; national/international/E.164 formatting; invalid numbers rejected with reason) | SaaS-comms/identity-normalization | 2 | C+M | IMPORT (number×country → normalized/formatted/reject fixture tables) | Build a phone normalizer that turns "(303) 555-0142" dialed in the US into +13035550142, strips the leading zero from a UK national number, and rejects a nine-digit US number with the reason. | Twilio lookup/E.164 practice (libphonenumber-shape, fixture-table subset) — not previously in the atlas despite being in every signup flow |
+| EB18 | Adaptive-rendition selector (rendition ladder + per-segment size table; pick next segment's rendition from seconds-of-video-downloaded thresholds with an up/down hysteresis band; startup phase uses recent throughput; property: never picks a rendition predicted to stall playback) | Media/streaming-logic | 3 | C+M | IMPORT (scripted throughput/playhead traces → exact rendition choice sequence; no-stall property) | Build a playback rendition chooser that steps quality down before the downloaded seconds run out, steps up only after the reserve crosses a higher threshold so it never flaps, and never rebuffers on the given network trace. | Netflix/Stanford "A Buffer-Based Approach to Rate Adaptation" (SIGCOMM '14) — ≠V43 (manifest/entitlement): the deterministic selection policy is the class |
+| EB19 | Spread shuffle (seeded playlist shuffle that distributes same-artist tracks as evenly as possible: per-artist offsets + jitter; deterministic for a seed; property: no two same-artist tracks adjacent whenever the multiset allows it) | Media/ordering-ux | 2 | C+M | IMPORT (seeded determinism + spacing property + permutation-validity check) | Build a playlist shuffler that, given four songs each from three artists and a seed, always produces the same order, uses every song exactly once, and never plays the same artist twice in a row. | Spotify "How to shuffle songs?" (balanced shuffle, ex-Fisher-Yates) — ≠V18 (playlist storage): the constrained-permutation algorithm is the class |
+| EB20 | Content-addressed block store with dedupe (files split into fixed-size blocks, each stored once under its digest; upload negotiation returns only the missing block digests; per-block reference counts; unreferenced-block sweep; file content hash == digest of concatenated block digests; byte-exact reconstruction) | Files-storage/content-addressing | 3 | C+M | FS+IMPORT + NEW:conservation (Σ refcounts consistent; sweep removes exactly the unreferenced; reconstruct byte-equal) | Build a file store where saving a second file that shares most blocks with an existing one transfers only the new blocks, deleting one file never breaks the other, and a sweep afterward removes exactly the blocks no file references. | Dropbox "Streaming File Synchronization" + content-hash reference — ≠G54 (resumable assembly) / ≠X5 (multipart completion contract) / ≠X65 (manifest diff): dedupe + refcount GC is the class |
+| EB21 | Blended-overtime calculator (one workweek at multiple hourly rates: regular rate == total straight-time earnings ÷ total hours; overtime premium == 0.5 × regular rate × hours over 40 — never 1.5 re-paying straight time; nondiscretionary bonus folds into the regular rate; exact cents) | HR-payroll/wage-compliance | 2 | C+M | IMPORT (timesheet→exact-pay fixture tables incl. the classic 1.5× double-pay trap as a must-fail case) | Build a weekly pay calculator for an employee who worked 30 hours at $20 and 15 at $28, paying the overtime premium on the weighted-average rate so the total comes out exact to the cent — and prove it rejects the naive rate-at-time-of-overtime answer. | 29 CFR §778.115 + DOL Fact Sheet #23 (the Gusto-class payroll component) — ≠G40 (component arithmetic) / ≠X44 (tax brackets) / ≠X66 (garnishment caps): the FLSA regular-rate weighting is its own exact-math class |
+
+**Dedupe record (Tenet 3 — ~35 candidates researched and dropped by the stager, verified at merge;
+target row in parens).** **Stripe:** token-bucket rate-limiter suite (=S7) · API version transform
+chain (=P13) · webhook signing + timestamp tolerance (=F14/S13) · money-movement double-entry
+ledger (=F6) · Radar rule-based fraud scoring (=F32) · payout reconciliation (=F19). **Slack:**
+channels + threads (=G17) · unread counts (=G18) · durable job queue (=S14/S16) · workspace export
+(=S67) · per-method tiered API rate limits (=S7 MODIFY) · message-ts dedupe (≈S19/S13+EB2).
+**Figma:** presence (=G19; cursor broadcast ⊂ S55) · file version history (=G55). **Notion:**
+block-tree permission inheritance (=SH-W4) · comments (≈V44/G17). **Linear:** per-team sequential
+issue IDs (=W41) · issue dependency graph (=G71). **Discord:** snowflake IDs (=P41) · read states
+(=G18) · slowmode (=S7-shape). **Cloudflare:** sliding-window rate-limit approximation (=S7) · DNS
+zones (=X29) · conditional writes (=S69). **Uber:** dispatch/matching (=V38) · fare card math
+(=F53-shape; GPS-trace part =X24) · trip receipts (=F54/S38). **Netflix:** circuit breaker (=S52)
+· A/B cell allocation (=S49) · download license windows (=V16+clock). **Dropbox:** sync change
+planner (=G53) · chunked resumable upload (=G54) · shared-namespace mounts (too thin beyond
+SH-W4+G53 — dropped for honesty). **Shopify:** flash-sale exactly-N (=V58) · checkout holds
+(=G31) · metafields (=G61) · idempotent checkout (=S19/EB9). **Segment:** collection+fan-out
+(=P18) · message-id dedupe (=S13/SH-FR3). **Twilio:** delivery-status callback lifecycle
+(≈V13-shape) · STOP/HELP opt-out (=P33) · OTP verify (≈S59+S7). **Gusto-class:** PTO accrual
+(=G41) · withholding brackets (=X44) · pay-schedule generation (=SH-BU3+W42) · garnishment
+stacking (=X66). **Instacart:** shopper batching (=V37/V38) · ML replacement suggestion (out of
+scope — only the deterministic approval/settlement workflow kept, merged into EB15). **DoorDash:**
+ETA estimation (ML, out) · dasher assignment (=V38). **Airbnb:** payments idempotency (=S19/EB9)
+· payments ledger (=F6) · smart pricing (ML, out). **Spotify:** royalty split (=W29) ·
+collaborative playlists (=G56/V18). **Zero-row companies (fully subsumed):** **Pinterest** (feed
+ranking ML-bound), **Datadog** (=G7/G8/G9, pipelines ≈G35+P43), **Plaid** (delta-sync ≈S47+P10+P27
+composition; webhook JWT =F14; institution health =G51).
+
+**Oracle-demand signal from this wave (surviving rows):** **import-driver exact-fixture tables
++10** (EB4, EB5, EB11–EB14, EB16–EB19, EB21 — unusually rich in deterministic-algebra classes
+gradable TODAY) · **convergence-property import grading +3** (EB1, EB2, EB6 — the same shape G56
+already uses) · injectable-clock +4 (EB4 firing, EB7 admission ticks, EB12 quote lock, EB13
+cut-offs) · conservation +4 (EB7 ≤N active, EB14 price==base+Σ, EB15 charge==Σ lines, EB20
+refcounts/sweep) · state-machine +3 (EB8 train, EB9 phases, EB15 amendment log) ·
+idempotency-replay/workflow-replay +1 (EB9 — strengthens §4 #18) · FIFO-fairness +1 (EB7, the
+same oracle V57 already wants) · concurrency +1 (EB7/EB8 under simultaneous arrivals). **No new
+oracle KIND needed — the 7th consecutive wave confirming the §4 convergence finding.**
+
 ---
 
 ## 4. RANKED NEW-ORACLE SUBSTRATE — the lever
@@ -822,30 +899,34 @@ all three slices (a class that needs two oracles is counted under each). Every o
 offline**; the honesty note is load-bearing (Tenet 3) — a low-fidelity oracle that always passes is
 worse than none.
 
-> **⭐ CONVERGENCE FINDING (2026-07-10, waves 1–6 merged):** six independent research waves —
-> OSS-product decomposition, the selfhosted ecosystem, six new industry verticals, the
-> infra/pattern layer, the agent stack, and the 24-cluster leftover backlog — needed **NO new
-> oracle KIND** beyond this table (the only two additions, #18 workflow-replay-determinism and
-> #19 process-lifecycle probe, are small refinements of existing replay/HTTP grading, and every
-> other one of the ~230 newly staged rows graded onto the existing vocabulary). **The substrate
-> vocabulary is complete in kind; the remaining work is demand-ranked instances.** Final merged
-> demand: **injectable-clock ~66 wave votes** (w1 17 · w2 11 · w3 12 · w4 10 · w6 16; ~75 total
-> consumers with the original ~10) — **decisively the next oracle, ALREADY BEING BUILT as EXT-059
-> REQ-10 `clock_oracle`** · state-machine +~45 new (≈70 total, biggest absolute count) ·
-> conservation +~40 (≈57 total) · import-driver fixture tables +~60 (existing oracle — just write
-> fixtures) · **agent-loop LANDED, unlocks ~27 rows** (A1–A40's AGENT-gradable set) ·
-> multi-service-fixture rising (~15) · double-entry ≈21 · streaming-client ~5.
+> **⭐ CONVERGENCE FINDING (2026-07-10, waves 1–7 merged):** **seven consecutive** independent
+> research waves — OSS-product decomposition, the selfhosted ecosystem, six new industry
+> verticals, the infra/pattern layer, the agent stack, the 24-cluster leftover backlog, and
+> real-company engineering-blog mining — needed **NO new oracle KIND** beyond this table (the
+> only two additions, #18 workflow-replay-determinism and #19 process-lifecycle probe, are small
+> refinements of existing replay/HTTP grading, and every other one of the ~250 newly staged rows
+> graded onto the existing vocabulary). **The substrate vocabulary is complete in kind; the
+> remaining work is demand-ranked instances.** Final merged demand: **injectable-clock ~70 wave
+> votes** (w1 17 · w2 11 · w3 12 · w4 10 · w6 16 · w7 4; ~79 total consumers with the original
+> ~10) — **decisively the next oracle, ALREADY BEING BUILT as EXT-059 REQ-10 `clock_oracle`** ·
+> state-machine +~48 new (≈73 total, biggest absolute count) · conservation +~44 (≈61 total) ·
+> import-driver fixture tables +~70 (existing oracle — just write fixtures; wave 7 alone added
+> +10 plus 3 convergence-property gradings) · **agent-loop LANDED, unlocks ~27 rows** (A1–A40's
+> AGENT-gradable set) · multi-service-fixture rising (~15) · double-entry ≈21 · streaming-client
+> ~5 · FIFO-fairness +1 (EB7 joins V57) · idempotency/workflow-replay +1 (EB9). **Wave-7's top
+> gradable-TODAY board candidates:** EB9 recovery-point executor, EB5 permission-overwrite
+> resolution, EB21 blended overtime, EB16 SMS segments, EB14 option-group configurator.
 
 | Rank | Oracle | ~Classes unblocked | Stdlib? | What it is / honesty note |
 |---|---|---|---|---|
 | **1** | **Agent-loop oracle** `[LANDED — harness/agent_oracle.py, commit 2ee7efa; validated by the plain-tool-calling-agent class 3/3]` | **~27** (A1–A10 + 17 of A11–A40, gradable **today**) | yes | Scripted **stub-model** (replays a canned tool-call/final sequence) + **fake tools** that record calls + assertions over the resulting **transcript** (which tool, what args, order, stopped at step-cap). The most differentiated cluster, fully verifiable with **no network / no paid model**. Honesty: assert the *orchestration actually happened*, not that prose "looks agentic." |
-| **2** | **Generic state-machine / lifecycle oracle** | **~70 post-merge (largest absolute count: +18 w3, +17 w6, +4 w2, +2 w4, +4 w5)** | yes | Given a declared transition graph + an op-script through HTTP/DB, assert every transition taken was **legal** and terminal invariants hold. Covers order, shipment, fulfillment, RMA, prescription, claim, dispute, comment-moderation, transcode-job, appointment, PaymentIntent, dunning, chargeback, trade-lifecycle, subscription. **Highest reuse in the atlas.** Honesty: leak-proof — grades structure, not memorizable strings. |
+| **2** | **Generic state-machine / lifecycle oracle** | **~73 post-merge (largest absolute count: +18 w3, +17 w6, +4 w2, +2 w4, +4 w5, +3 w7)** | yes | Given a declared transition graph + an op-script through HTTP/DB, assert every transition taken was **legal** and terminal invariants hold. Covers order, shipment, fulfillment, RMA, prescription, claim, dispute, comment-moderation, transcode-job, appointment, PaymentIntent, dunning, chargeback, trade-lifecycle, subscription. **Highest reuse in the atlas.** Honesty: leak-proof — grades structure, not memorizable strings. |
 | **3** | **Double-entry balance invariant oracle** | **~21 post-merge (+ W29/W44/W50/W60, P35)** | yes | For any ledger: Σdebits==Σcredits per txn AND balance==Σpostings per account. One oracle grades an **open-ended** ledger implementation → best generality-per-oracle ratio. Covers F6–9, F13, F19, F24–25, F29, F55–56, F59, V33 escrow, V52 points. |
-| **4** | **Conservation / no-oversell / allocation invariant oracle** | **~57 post-merge (+13 w3, +13 w6, +6 w2, +6 w1, +2 w5, +1 w4)** | yes | Σparts==whole and quantity ledger never negative under a replayed (optionally concurrent) op-script: allocation pennies, invoice totals, payout net==gross−fees, `available+committed==on_hand`, `Σbin==on_hand`, refund≤paid, points≥0, cost-alloc Σ==bill. Covers F2, F19–20, F31, F36, F42–43, F50, F54 + V6, V28, V36, V52, V57. |
+| **4** | **Conservation / no-oversell / allocation invariant oracle** | **~61 post-merge (+13 w3, +13 w6, +6 w2, +6 w1, +2 w5, +1 w4, +4 w7)** | yes | Σparts==whole and quantity ledger never negative under a replayed (optionally concurrent) op-script: allocation pennies, invoice totals, payout net==gross−fees, `available+committed==on_hand`, `Σbin==on_hand`, refund≤paid, points≥0, cost-alloc Σ==bill. Covers F2, F19–20, F31, F36, F42–43, F50, F54 + V6, V28, V36, V52, V57. |
 | **5** | **Money-invariant checker (no-float / exact-cent)** | ~7 (grades every money-touching class) | yes | Static+dynamic: assert **no `float` ever touched a monetary value**, results exact to the minor unit, currency-consistent ops only. Cheap, universal, catches the #1 real money bug. Unblocks/hardens F1–5, F53, F56. |
 | **6** | **High-fidelity mock-payment-provider (stripe-mock-shape)** | ~13 | yes | Offline HTTP server mirroring Stripe's official `stripe-mock`: PaymentIntent lifecycle incl. 3DS `requires_action`→`succeeded`, idempotency-key replay (one effect), HMAC-signed webhooks, decline/error codes, refund/partial, retry-after. Unlocks F12–19, F35, F57, S41, V25. Honesty: **a `{"status":"succeeded"}` stub is a Tenet-3 trap — the mock's fidelity IS the test's validity.** |
-| **7** | **Injectable-clock / fake-time harness** `[BUILDING — EXT-059 REQ-10 clock_oracle]` | **~75 post-merge — THE SINGLE MOST-DEMANDED ORACLE (~66 wave votes: w1 17 · w2 11 · w3 12 · w4 10 · w6 16, on top of the original ~10). DECISIVELY THE NEXT ORACLE TO BUILD — and it is already being built.** | yes | Build accepts an injectable clock (env/module-seam/`?now=` hook) so the grader advances time deterministically: rate-limiter refill, scheduler fire, TTL expiry, token expiry, dunning/backoff timers — plus the merged waves' statutory deadlines, grace windows, withholding intervals, renewals, retention ladders, SLA timers, hold releases, greylist delays, no-show fees. Without it, timing is only real-`sleep`-gradable → slow+flaky. The regulated/prosumer/pattern tiers all run on the clock even when their apps are otherwise time-poor. |
-| **8** | **Idempotency-replay oracle** | ~9 | yes | Apply same key/event twice → exactly one effect + identical response; different key → new effect. Unblocks F11, F14–16, F21–23, S19, V56 (overlaps mock-payment but independently useful). |
+| **7** | **Injectable-clock / fake-time harness** `[BUILDING — EXT-059 REQ-10 clock_oracle]` | **~79 post-merge — THE SINGLE MOST-DEMANDED ORACLE (~70 wave votes: w1 17 · w2 11 · w3 12 · w4 10 · w6 16 · w7 4, on top of the original ~10). DECISIVELY THE NEXT ORACLE TO BUILD — and it is already being built.** | yes | Build accepts an injectable clock (env/module-seam/`?now=` hook) so the grader advances time deterministically: rate-limiter refill, scheduler fire, TTL expiry, token expiry, dunning/backoff timers — plus the merged waves' statutory deadlines, grace windows, withholding intervals, renewals, retention ladders, SLA timers, hold releases, greylist delays, no-show fees. Without it, timing is only real-`sleep`-gradable → slow+flaky. The regulated/prosumer/pattern tiers all run on the clock even when their apps are otherwise time-poor. |
+| **8** | **Idempotency-replay oracle** | ~10 (+EB9 w7) | yes | Apply same key/event twice → exactly one effect + identical response; different key → new effect. Unblocks F11, F14–16, F21–23, S19, V56, EB9 (overlaps mock-payment but independently useful). |
 | **9** | **Hash-chain integrity + append-only audit / access-control oracle** | ~6 | yes | Recompute an append-only chain, detect any mutated row (tamper-evident); assert every PHI/PII access logged, log immutable, denied-without-consent holds. Reuses jaros-code's own hash-chain discipline. Unblocks F10, F29, F35, S22, V23 (HIPAA), RBAC hardening. |
 | **10** | **Multi-service fixture-upstream harness** | **~15 post-merge (rising: +5 w2 — dead-link checker, conditional-GET poller, dashboard tiles, TLS watcher — monitoring is its killer category; +A37 gateway, +X15 proxy registry)** | yes | Start ≥2 in-process HTTP upstreams, wire URLs via env, drive an end-to-end flow with **fault injection**. Unblocks S50 gateway, S51 LB, S52 circuit-breaker, S53 registry, S65 SDK-vs-server, S57 OAuth-client↔IdP, S70 saga, S60 dist-lock. Generalizes the HTTP oracle to N cooperating processes. |
 | **11** | **SMTP-capture sink oracle** | ~4 | yes | In-process SMTP sink (`aiosmtpd`/`smtpd`-style) capturing sent mail → assert recipient/subject/rendered body/idempotent send. Unblocks S30 email, S4 reset-email, F23 dunning email, V-notifications. |
@@ -854,24 +935,25 @@ worse than none.
 | **14** | **Feasibility / cost-bound oracle (optimization)** | ~3 | yes | For VRP/route/dispatch/time-window: assert the solution is **feasible** (capacity/windows/no-double-assign) AND cost ≤ a held-out bound (or within ε of brute-forced optimum on small instances). Avoids grading NP-hard on a single gold answer. Unblocks V37, V38, V39. |
 | **15** | **Matching / price-time-priority oracle** | ~3 | yes | Best-price-first + FIFO-at-price + filled-qty conservation + non-crossed book, deterministic fills for a fixture sequence. Unblocks F38, F39, V32. |
 | **16** | **Protocol-conformance oracle (OIDC / LTI 1.3 / FHIR REST)** | ~5 | yes | Drive a simulated counterparty (IdP / FHIR client), assert protocol-correct handshake (signed JWT/nonce/PKCE, FHIR read/search/`_history`/validate). Unblocks S56, S57, S58, V59, V60. Higher effort; simulate the peer in-process. |
-| **17** | **Rule-engine exact-output fixtures** (mostly reuse import-driver) | **~65 post-merge** | yes | Deterministic input→exact-output tables for tax, grade weighting, coupon totals, claim adjudication, reference-range flags — plus the merged waves' rating tables, deadline math, tax brackets, GFS pruning, interval math, semver resolution, canonicalization vectors (+17 w3, +24 w6, +16 w5). Not new code — **fixture tables** over the existing import-driver oracle. A business-day/holiday-calendar fixture (W14/W42) is the one recurring table to write once. |
-| **18** | **Workflow-replay-determinism oracle** *(wave-4 proposal — NEW kind)* | ~3 (G32 Temporal-shape; stronger honest grader for S70 saga + V42 job-DAG) | yes | Kill a durable-workflow run mid-flight, restart, assert **exactly-once activity effects + an identical final state** from the event history. Jaros already has replay-determinism DNA (`jaros replay`) — cheap to build, high honesty value. |
+| **17** | **Rule-engine exact-output fixtures** (mostly reuse import-driver) | **~75 post-merge** | yes | Deterministic input→exact-output tables for tax, grade weighting, coupon totals, claim adjudication, reference-range flags — plus the merged waves' rating tables, deadline math, tax brackets, GFS pruning, interval math, semver resolution, canonicalization vectors (+17 w3, +24 w6, +16 w5) — plus wave-7's decision-table cluster (+10: permission bitmasks, SMS segments, E.164, hex-grid algebra, surge steps, stay rules, option-group pricing, ABR traces, spread shuffle, blended overtime) and its 3 convergence-property gradings (EB1/EB2/EB6, the G56 shape). Not new code — **fixture tables** over the existing import-driver oracle. A business-day/holiday-calendar fixture (W14/W42) is the one recurring table to write once. |
+| **18** | **Workflow-replay-determinism oracle** *(wave-4 proposal — NEW kind)* | ~4 (G32 Temporal-shape; stronger honest grader for S70 saga + V42 job-DAG; +EB9 Stripe recovery points, w7) | yes | Kill a durable-workflow run mid-flight, restart, assert **exactly-once activity effects + an identical final state** from the event history. Jaros already has replay-determinism DNA (`jaros replay`) — cheap to build, high honesty value. |
 | **19** | **Process-lifecycle probe** *(wave-4 proposal — NEW kind)* | ~1 direct (P16) + hardens every HTTP row's MODIFY surface | yes | SIGTERM a running service; assert readiness flips before intake stops, in-flight requests complete, hard deadline enforced. Small build. |
 | — | **Narrow format oracles** (NACHA fixed-width, proration/period, accounting-equation A==L+E, order-book already at #15, **period-lock** — F29 GL close, SH-T4 timesheet lock, X50 payroll retro) | 1–3 each | yes | Small, each unlocks 1–3: F26, F21, F30/F54, F29/SH-T4/X50. Build opportunistically when their parent class is scheduled. |
 | — | **Prometheus-exposition + structured-log parser** (light) | 2 | yes | Tiny parsers so S24 metrics / S25 logging assert on `# TYPE`/counter lines + JSON records. Sharpens observability verification. |
 | — | **Cloud-emulator harness** (moto / official emulators, simulated only) | escape hatch | dep | For S3/SQS/DynamoDB-shape tasks wanting real SDK surfaces without egress. Lower priority than the stdlib path; documented as the "cloud-shaped" escape hatch, Tenet-2 clean. |
 
-**Build order (max coverage per unit effort — re-ranked 2026-07-10 after the wave-2/3/4/5/6
+**Build order (max coverage per unit effort — re-ranked 2026-07-10 after the wave-2/3/4/5/6/7
 merge):** agent-loop `[LANDED]` → **injectable-clock `[BUILDING — EXT-059 REQ-10 clock_oracle]`**
-(decisively next: ~66 wave votes, ~75 total consumers) → **state-machine** (~70) →
-**conservation** (~57) → **double-entry** (~21) → money-invariant + rule-engine fixtures (cheap —
-fixture tables over existing import-driver, ~65 consumers) → **multi-service harness** (moved up:
-~15, monitoring cluster) → mock-payment → idempotency-replay + hash-chain/audit →
-workflow-replay-determinism + process-lifecycle probe (small wave-4 proposals, #18/#19) →
-SMTP-sink → concurrency → streaming → feasibility → matching → protocol (~7 incl. Google-Reader
-facade + ActivityPub-lite). **Clock + state-machine + conservation alone flip well over 150 of
-the 485 classes to honestly gradable; with the landed agent-loop and the existing HTTP/DB/FS/CLI/
-IMPORT oracles, the majority of the atlas is then reachable.**
+(decisively next: ~70 wave votes, ~79 total consumers) → **state-machine** (~73) →
+**conservation** (~61) → **double-entry** (~21) → money-invariant + rule-engine fixtures (cheap —
+fixture tables over existing import-driver, ~75 consumers; wave 7's decision-table cluster is the
+richest gradable-today seam) → **multi-service harness** (moved up: ~15, monitoring cluster) →
+mock-payment → idempotency-replay + hash-chain/audit → workflow-replay-determinism +
+process-lifecycle probe (small wave-4 proposals, #18/#19; EB9 strengthens both) → SMTP-sink →
+concurrency → streaming → feasibility → matching → protocol (~7 incl. Google-Reader facade +
+ActivityPub-lite). **Clock + state-machine + conservation alone flip well over 150 of the 506
+classes to honestly gradable; with the landed agent-loop and the existing HTTP/DB/FS/CLI/IMPORT
+oracles, the majority of the atlas is then reachable.**
 
 ---
 
@@ -924,7 +1006,7 @@ today plus the four soon-to-land invariant oracles.
 - **Every oracle grades structural invariants over a replayed op-script**, never a memorizable output
   string — the model cannot fake it by branching on a known task. Optimization classes grade on
   **feasibility + cost-bound**, never a single gold solution.
-- **The `verified` tier is honest and small (5 utility + 1 building / 485).** The utility tier is the
+- **The `verified` tier is honest and small (5 utility + 1 building / 506).** The utility tier is the
   FLOOR being demoted; the frontier is the first service rung and the agent cluster (whose oracle is
   now LANDED). Moving `verified` up — by landing the ranked oracles in §4, clock first — is the
   whole game.
