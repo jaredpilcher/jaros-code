@@ -112,3 +112,60 @@ subdirectory named `noext`. It prints nothing on success and exits 0.
       caught.
 - [x] Leaves-OFF enforced identically to REQ-2/REQ-3/REQ-4/REQ-5 (static `leaf_for_spec` +
       post-build `build_path` check); no oracle leak; added to `REAL_SYSTEMS_TASKS`.
+
+### [REQ-7] MODIFY half: RealSystemModifyTask + run_real_systems_modify_suite, leaves-OFF, independent-oracle-graded
+
+EXT-060 becomes THE canonical real-systems scoreboard by adding its second half: MODIFYING an
+already-working real system from a one-sentence change request, graded exactly as strictly as the
+CREATE half. A `RealSystemModifyTask` dataclass (name, cls, `start_system` dict of the known-good
+baseline modules, `mod_sentence`, `oracle_kind`, `oracle_spec` reusing the SAME declarative oracle
+shape as `RealSystemTask`) plus a `run_real_systems_modify_suite(tasks, llm)` runner that: (1) asserts
+leaves-OFF statically via `leaf_for_spec(task.mod_sentence) is None` before ever calling the model; (2)
+writes `start_system` to an isolated temp root and calls `harness.system_builder.modify_system(modules,
+mod_sentence, root, llm=llm)`; (3) grades the modified tree ONLY when `applied` is True, via the SAME
+independent oracle dispatcher used by the CREATE half (`grade_real_system_task` — no new oracle code,
+fs/cli-exact/import reused verbatim); (4) reports per-class pass@1 in the same `{"results": [...],
+"aggregate": {...}}` shape as `run_real_systems_suite`. Two concrete MODIFY tasks seed
+`REAL_SYSTEMS_MODIFY_TASKS`: (a) the retry/backoff library gains an optional `base_delay=0.1` keyword
+parameter, graded by the import_driver oracle; (b) the INI config-query CLI gains an optional
+`--default VALUE` fallback for an absent section/key, graded by the cli-exact oracle. Every
+oracle-checked value in both tasks' `oracle_spec` derives from the visible `mod_sentence` (no leak).
+
+#### Acceptance Criteria
+- [x] `RealSystemModifyTask` carries name, cls, start_system, mod_sentence, oracle_kind, oracle_spec
+      (declarative, same shape as REQ-1's `RealSystemTask` oracle_spec).
+- [x] `run_real_systems_modify_suite` asserts leaves-OFF (`leaf_for_spec(task.mod_sentence) is None`)
+      before calling `modify_system`; grades ONLY when `applied` is True; grades via the EXISTING
+      `grade_real_system_task` dispatcher (no new oracle code); NEVER raises — any stage failure is an
+      honest `accepted=False`.
+- [x] Two concrete MODIFY tasks are added to `REAL_SYSTEMS_MODIFY_TASKS`: the retry/backoff
+      `base_delay` addition (import_driver-graded) and the INI `--default VALUE` fallback addition
+      (cli-exact-graded); every oracle-chosen value is derivable from the visible mod_sentence contract
+      (no hidden key, no leak).
+- [x] Offline-testable: a hand-authored CORRECT post-modification module passes the independent oracle;
+      a hand-authored WRONG one (doesn't implement the change) is caught.
+
+### [REQ-8] Unified canonical scoreboard runner
+
+A single entrypoint that runs BOTH halves (CREATE via `run_real_systems_suite`, MODIFY via
+`run_real_systems_modify_suite`) and reports ONE headline number: per-half pass@1 plus the combined
+total pass@1 = `(create passes + modify passes) / (total create + modify tasks)`. Implemented as
+`harness.real_systems_suite.run_canonical_scoreboard(*, llm, create_tasks=None, modify_tasks=None,
+python_exe=None) -> dict` returning `{"create": {...}, "modify": {...}, "combined": {"n": int, "passed":
+int, "pass_rate": float}}`, plus a killable subprocess-per-build runner script (mirroring the existing
+`.jaros-data/realsys_build_one.py` + `.jaros-data/realsys_killable.py` pattern so a pathological
+build/modify draw can't wedge the whole scoreboard run) that prints the single headline "CANONICAL
+real-systems: create X/A, modify Y/B, total (X+Y)/(A+B)".
+
+#### Acceptance Criteria
+- [x] `run_canonical_scoreboard` runs both halves and returns a dict with `create`, `modify`, and
+      `combined` (n/passed/pass_rate) keys; NEVER raises (per-task failures are already absorbed by
+      each half's own runner).
+- [x] The combined pass_rate is exactly (create passed + modify passed) / (create n + modify n),
+      guarding division-by-zero when both halves are empty.
+- [x] A killable subprocess-per-build runner script exists reusing the existing per-build
+      subprocess-with-timeout-and-kill pattern (`.jaros-data/realsys_build_one.py` /
+      `.jaros-data/realsys_killable.py`), extended (or a sibling script) to cover both CREATE and
+      MODIFY tasks and print the single canonical headline.
+- [x] Offline-testable: `run_canonical_scoreboard` is importable and its aggregation is correct given a
+      stub llm returning a fixed correct module/modification (no real Jetson call in the test).

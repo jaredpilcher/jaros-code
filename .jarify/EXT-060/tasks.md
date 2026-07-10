@@ -113,3 +113,87 @@
 
 #### Implements
 - [REQ-6] File-organizer-by-extension CLI task graded by the existing fs oracle
+
+### [TASK-6] MODIFY half wired to modify_system + the existing independent oracles (REQ-7)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a `RealSystemModifyTask` dataclass (name, cls,
+   start_system: dict, mod_sentence: str, oracle_kind: str, oracle_spec: dict) and a
+   `run_real_systems_modify_suite(tasks=None, *, llm=None, python_exe=None) -> dict` runner
+   that, per task in an isolated temp root: (a) statically asserts `leaf_for_spec(task.
+   mod_sentence) is None` (leaves-OFF, scored a failure without calling the model if it
+   fires); (b) calls `harness.system_builder.modify_system(dict(task.start_system), task.
+   mod_sentence, root, llm=llm)`; (c) when `applied` is True, grades the resulting tree via
+   the EXISTING `grade_real_system_task(task, root, python_exe=python_exe)` dispatcher
+   (duck-typed -- no new oracle code, no `RealSystemTask` wrapping needed); (d) never raises,
+   returns the same `{"results": [...], "aggregate": {...}}` shape as
+   `run_real_systems_suite` (reuse the existing `_rates`/`_aggregate` helpers).
+2. Add `RETRY_BASE_DELAY_MODIFY_TASK` (oracle_kind `"import"`): `start_system` = a
+   hand-authored correct baseline `retry.py` (matching the original REQ-3 contract:
+   `retry(times, exceptions=Exception)`), `mod_sentence` asks for an added optional
+   `base_delay=0.1` keyword parameter used as the sleep duration between attempts,
+   `oracle_spec` reuses the SAME check kinds as `RETRY_BACKOFF_LIB_TASK`'s oracle_spec
+   (`returns_equals`/`call_count`/`expected_sleep_calls`) but with an `api_call` that
+   explicitly passes `base_delay` (e.g. `{"times": 3, "base_delay": 0.05}`) to `retry(...)`
+   so an unmodified/incorrect module (that doesn't accept the new kwarg) is caught via the
+   resulting call-chain exception cascade.
+3. Add `INI_DEFAULT_FLAG_MODIFY_TASK` (oracle_kind `"cli-exact"`): `start_system` = a
+   hand-authored correct baseline `main.py` (matching the original REQ-4 INI-section-query
+   contract), `mod_sentence` asks for an added optional `--default VALUE` fallback (invoked
+   as `python main.py <section> <key> --default VALUE`) that prints VALUE + newline and
+   exits 0 when the section/key is absent (existing 2-arg behavior unchanged when
+   `--default` is not supplied), `oracle_spec` picks an absent key with `--default` supplied
+   and pins the exact expected stdout.
+4. Add both tasks to a new `REAL_SYSTEMS_MODIFY_TASKS` list (module-level, alongside the
+   existing `REAL_SYSTEMS_TASKS`).
+5. Add `tests/test_ext060_modify_suite.py` (OFFLINE, no Jetson/model): for EACH of the 2
+   modify tasks, hand-write a CORRECT post-modification module and assert
+   `grade_real_system_task` accepts it against a temp root seeded with that module;
+   hand-write a WRONG one (doesn't implement the change) and assert it's rejected; assert
+   `leaf_for_spec(task.mod_sentence) is None` for both tasks (leaves-OFF holds); assert both
+   tasks are members of `REAL_SYSTEMS_MODIFY_TASKS`. Also add ONE test that drives
+   `run_real_systems_modify_suite` end-to-end with a stub llm (same
+   `.complete(LlmRequest)->.text` canned-response convention as
+   `tests/test_ext036_modify.py`'s `_CannedModifyLlm`, routed by the "MODIFICATION
+   TARGET"/"APPLY MODIFICATION"/"SYNTAX ERROR"/"ACCEPTANCE CHECKS" prompt-substring
+   convention) that returns the CORRECT post-modification module content, and assert the
+   suite reports `accepted=True` for that task.
+6. Run `python -m pytest tests/test_ext060_modify_suite.py tests/test_ext060*.py -q`;
+   confirm green. Update `.jarify/EXT-060/index.json` (REQ-7 ranges, via
+   `jarify-manage-links`) + the REQ-7 acceptance boxes are already checked in
+   requirements.md (jarify-manage-specs pass already did this).
+
+#### Implements
+- [REQ-7] MODIFY half: RealSystemModifyTask + run_real_systems_modify_suite, leaves-OFF, independent-oracle-graded
+
+### [TASK-7] Unified canonical scoreboard runner (REQ-8)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `run_canonical_scoreboard(*, llm=None,
+   create_tasks=None, modify_tasks=None, python_exe=None) -> dict` that calls
+   `run_real_systems_suite(create_tasks, llm=llm, python_exe=python_exe)` and
+   `run_real_systems_modify_suite(modify_tasks, llm=llm, python_exe=python_exe)`, and
+   returns `{"create": <create suite result>, "modify": <modify suite result>, "combined":
+   {"n": int, "passed": int, "pass_rate": float}}` where combined n/passed/pass_rate are
+   computed from both halves' results lists (division-by-zero guarded -- pass_rate 0.0 when
+   n==0). Never raises.
+2. Add a killable canonical runner script `.jaros-data/realsys_canonical.py` that reuses
+   (imports, does not duplicate) `.jaros-data/realsys_build_one.py`'s per-task subprocess
+   pattern for BOTH the CREATE tasks (`REAL_SYSTEMS_TASKS`) and the new MODIFY tasks
+   (`REAL_SYSTEMS_MODIFY_TASKS`) -- add a sibling `.jaros-data/realsys_modify_one.py`
+   (mirrors `realsys_build_one.py` but drives `run_real_systems_modify_suite` for one named
+   modify task) for the modify side's per-task subprocess isolation -- with the same
+   per-task wall-clock kill (`taskkill /F /T`) as `.jaros-data/realsys_killable.py`, and
+   prints the single headline "CANONICAL real-systems: create X/A, modify Y/B, total
+   (X+Y)/(A+B)" at the end.
+3. Add `tests/test_ext060_canonical_scoreboard.py` (OFFLINE, no Jetson/model): monkeypatching
+   `run_real_systems_suite`/`run_real_systems_modify_suite` with fake per-task results proves
+   `run_canonical_scoreboard`'s aggregation arithmetic is correct (combined
+   n/passed/pass_rate match the two halves' totals) including the empty-halves
+   division-by-zero-guarded case.
+4. Run `python -m pytest tests/test_ext060_canonical_scoreboard.py tests/test_ext060*.py -q`;
+   confirm green. Update `.jarify/EXT-060/index.json` (REQ-8 ranges, via
+   `jarify-manage-links`).
+
+#### Implements
+- [REQ-8] Unified canonical scoreboard runner

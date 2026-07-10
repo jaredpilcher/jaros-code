@@ -1,24 +1,41 @@
 {
-  "REQ-3": [
+  "REQ-7": [
     {
       "file": "harness/real_systems_suite.py",
       "startLine": 46,
-      "endLine": 52
+      "endLine": 50
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 104,
-      "endLine": 107
+      "startLine": 612,
+      "endLine": 844
+    },
+    {
+      "file": "tests/test_ext060_modify_suite.py",
+      "startLine": 14,
+      "endLine": 318
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 52,
+      "endLine": 58
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 144,
-      "endLine": 184
+      "startLine": 110,
+      "endLine": 113
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 337,
-      "endLine": 411
+      "startLine": 150,
+      "endLine": 190
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 343,
+      "endLine": 417
     },
     {
       "file": "tests/test_ext060_real_systems_suite.py",
@@ -30,7 +47,7 @@
     {
       "file": "harness/real_systems_suite.py",
       "startLine": 36,
-      "endLine": 265
+      "endLine": 271
     },
     {
       "file": "tests/test_ext060_real_systems_suite.py",
@@ -41,15 +58,15 @@
   "REQ-2": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 268,
-      "endLine": 334
+      "startLine": 274,
+      "endLine": 340
     }
   ],
   "REQ-4": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 414,
-      "endLine": 458
+      "startLine": 420,
+      "endLine": 464
     },
     {
       "file": "tests/test_ext060_ini_query.py",
@@ -60,8 +77,8 @@
   "REQ-5": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 461,
-      "endLine": 539
+      "startLine": 467,
+      "endLine": 545
     },
     {
       "file": "tests/test_ext060_memoize.py",
@@ -72,13 +89,25 @@
   "REQ-6": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 542,
-      "endLine": 603
+      "startLine": 548,
+      "endLine": 609
     },
     {
       "file": "tests/test_ext060_file_organizer.py",
       "startLine": 13,
       "endLine": 151
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 847,
+      "endLine": 876
+    },
+    {
+      "file": "tests/test_ext060_canonical_scoreboard.py",
+      "startLine": 13,
+      "endLine": 97
     }
   ]
 }

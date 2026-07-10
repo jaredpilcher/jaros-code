@@ -105,6 +105,10 @@ real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fal
   persistence, a job-queue service, an ETL pipeline, a reusable library w/ tests, a stateful protocol server —
   each with an honest behavioral oracle, measured with NO leaves so the number reflects GENUINE capability. Being
   designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard classes become the FLOOR.
+- **[EXT-060 canonical scoreboard — FIRST ON-JETSON MEASUREMENT, NOW]** run
+  `.jaros-data/realsys_canonical.py` live on the Jetson to get the FIRST honest combined pass@1 (5 create +
+  2 modify = 7 tasks) for the new canonical scoreboard -- the number to trend from here forward. high ·
+  immediate follow-up to REQ-7/REQ-8.
 - **[first real-system probe — RUNNING]** build a real stdlib HTTP REST API from one sentence; build_system
   serve-and-checks it (starts server, drives HTTP). No API leaf → tests genuine capability. Result pending.
 - **[GENERIC capability mechanisms — NEXT, from the workflow plan]** decompose → cross-module coherence →
@@ -421,6 +425,11 @@ ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
   weight the ★ leaf-resistant discriminators as the honest signal. **high** · the North-Star capability
   instrument that replaces the saturated daily-driver at the top of the curve. Phased rollout:
   Phase-0 A+B+L (C1a+b), Phase-1 H+D+F (C1e), Phase-2 K+J+I (C1c+d, C5), Phase-3 M + dep variants (C4+C3+C6).
+- **[EXT-060 roster growth toward ~90%-of-Python breadth]** grow BOTH halves of the now-canonical
+  scoreboard: add more CREATE classes from the ~66-task Python-breadth taxonomy (per
+  [[jaros-code-python-breadth-program]]) and more MODIFY tasks (mirroring the create roster's domain
+  spread -- ETL, fs-utility, config-cli, more library classes), always independently oracle-graded, roster
+  only ever GROWS. med-high · keeps EXT-060's combined pass@1 the honest, non-saturating tracked number.
 
 - **[research-augmented-planning lift measurement]** EXT-038 REQ-4 landed the WIRING
   (`enable_research=True`); whether it actually LIFTS the real-library-systems-tier accept rate is
@@ -573,6 +582,22 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ EXT-060 IS NOW THE CANONICAL real-systems SCOREBOARD — REQ-7/REQ-8, TASK-6/TASK-7 landed (2026-07-09)]**
+  Stopped the real-systems scoreboard drift (owner directive): EXT-060 is now THE ONE tracked real-systems
+  number, with TWO HALVES -- CREATE (`run_real_systems_suite`, 5 tasks) + a NEW MODIFY half
+  (`run_real_systems_modify_suite`, 2 tasks: retry/backoff gains an optional `base_delay` param graded by
+  `import_driver`, the INI config-query CLI gains an optional `--default VALUE` fallback graded by
+  `cli-exact`) -- a fixed, only-ever-GROWING roster, every task independently oracle-graded (fs re-read /
+  sandbox import / exact stdout, reusing the SAME `grade_real_system_task` dispatcher for both halves, no
+  new oracle code, no self-acceptance, no leaf). A new unified entrypoint,
+  `harness.real_systems_suite.run_canonical_scoreboard`, runs both halves and reports ONE combined pass@1 =
+  (create passes + modify passes)/(total), plus a killable subprocess-per-task runner
+  (`.jaros-data/realsys_canonical.py` + `.jaros-data/realsys_modify_one.py`, mirroring the existing
+  `realsys_build_one.py`/`realsys_killable.py` pattern). **`harness/system_suite.py`'s creation suite,
+  `harness/modification_suite.py`, and `harness/daily_driver.py` are now DEMOTED to regression checks /
+  task-shape feeders -- they are NOT the tracked North-Star number anymore; EXT-060's combined pass@1 is.**
+  56 new offline tests green (86 total EXT-060+adjacent), no regression. Offline-only this pass (no live
+  Jetson measurement of the new MODIFY tasks yet -- that's the immediate NEXT step).
 - **[★ CAPABILITY: json-path creation class GREENED 0/3→3/3 — EXT-058 (cc4c2d4 + ce07ab1, 2026-07-08)]** a
   stdin-JSON dotted-path query tool gemma can't build (writes a crashing resolver). Greened via a verified
   json-path leaf + a usage-probe hardening fix (the leaf crashed on no-args, so build_system's usage check

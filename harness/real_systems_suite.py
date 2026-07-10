@@ -43,6 +43,12 @@ from harness.graph_dsl import leaf_for_spec
 from harness.system_builder import build_system
 from harness.system_suite import _run_check_variant
 
+# #EXT-060-REQ-7 Start
+# TASK-6: the MODIFY half reuses (not reimplements) `harness.system_builder.modify_system` --
+# the SAME regression-gated modify-from-a-sentence pipeline EXT-036 REQ-14 already landed.
+from harness.system_builder import modify_system
+# #EXT-060-REQ-7 End
+
 # #EXT-060-REQ-3 Start
 # TASK-2: reuse (not reimplement) the deterministic import-and-call oracle (EXT-059 REQ-3) for the
 # reusable-library ("import" oracle_kind) grading path -- never a fresh subprocess convention.
@@ -601,3 +607,270 @@ FILE_ORGANIZER_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(FILE_ORGANIZER_TASK)
 # #EXT-060-REQ-6 End
+
+
+# #EXT-060-REQ-7 Start
+# TASK-6: the MODIFY half -- EXT-060 becomes the CANONICAL two-half real-systems scoreboard by
+# measuring not just CREATE (a real system from a sentence) but MODIFY (an already-working real
+# system changed from a one-sentence change request), graded exactly as strictly as CREATE: an
+# independent, execution-plane, leak-free oracle -- never the model's own self-acceptance.
+@dataclass
+class RealSystemModifyTask:
+    """One held-out MODIFY-from-a-sentence real-systems task. ``start_system`` is the
+    known-good baseline (``{filename: source}``) the modification starts from; ``mod_sentence``
+    is the one-sentence change request driving ``harness.system_builder.modify_system``.
+    ``oracle_kind``/``oracle_spec`` are the SAME declarative shape :class:`RealSystemTask` uses
+    -- deliberately, so the CREATE half's independent oracle dispatcher (
+    :func:`grade_real_system_task`) grades a *modified* tree with zero new oracle code (duck
+    typing: that dispatcher only ever reads ``task.oracle_kind``/``task.oracle_spec``)."""
+
+    name: str
+    cls: str
+    start_system: dict
+    mod_sentence: str
+    oracle_kind: str
+    oracle_spec: dict = field(default_factory=dict)
+
+
+def _run_one_modify_task(task: "RealSystemModifyTask", *, llm: Any, python_exe: str) -> dict:
+    """Modify + grade ONE task in an isolated temp root, enforcing leaves-OFF at the same
+    STATIC point the CREATE half enforces it (``leaf_for_spec(task.mod_sentence)`` -- a mod
+    sentence that fingerprints a verified leaf's contract is a suite-scoping defect and is
+    scored a failure without ever calling ``modify_system``, so this never risks a spurious
+    model call for a misscoped task). Grades ONLY when ``modify_system`` reports ``applied``
+    True -- an unapplied (reverted) modification is honestly scored a failure, never graded as
+    if it had happened. Never raises: any exception at any stage is an honest
+    ``accepted=False`` with a diagnostic ``note``."""
+    rec = {"name": task.name, "cls": task.cls, "accepted": False, "applied": False,
+           "leaf_fired": False, "note": ""}
+    try:
+        pre_leaf = leaf_for_spec(task.mod_sentence)
+        if pre_leaf is not None:
+            rec["leaf_fired"] = True
+            rec["note"] = (f"leaves-OFF violation: leaf_for_spec matched {pre_leaf!r} for a "
+                            "real-systems MODIFY spec -- scored as a failure (Tenet 3), "
+                            "modify_system call skipped")
+            return rec
+
+        with tempfile.TemporaryDirectory(prefix="real_sys_modify_suite_") as tmp:
+            root = Path(tmp)
+            result = modify_system(dict(task.start_system or {}), task.mod_sentence, root, llm=llm)
+            if not isinstance(result, dict):
+                rec["note"] = "modify_system returned a non-dict result"
+                return rec
+
+            rec["applied"] = bool(result.get("applied"))
+            if not rec["applied"]:
+                rec["note"] = result.get("note") or "modification not applied"
+                return rec
+
+            # Grade the ALREADY-MODIFIED tree via the SAME independent oracle dispatcher the
+            # CREATE half uses -- `grade_real_system_task` only ever reads `task.oracle_kind`/
+            # `task.oracle_spec`, so a `RealSystemModifyTask` grades with zero new oracle code.
+            accepted, note = grade_real_system_task(task, root, python_exe=python_exe)
+            rec["accepted"] = bool(accepted)
+            rec["note"] = note
+            return rec
+    except Exception as exc:  # never raise -- one bad task never aborts the whole suite
+        rec["note"] = f"modify suite run raised unexpectedly: {exc}"
+        return rec
+
+
+def run_real_systems_modify_suite(tasks: "list[RealSystemModifyTask] | None" = None, *,
+                                   llm: Any = None, python_exe: "str | None" = None) -> dict:
+    """Run the leaves-OFF real-systems MODIFY suite: for each task, modify the declared
+    ``start_system`` via ``harness.system_builder.modify_system(modules, mod_sentence, root,
+    llm=llm)`` (leak-free -- the modify call sees only ``task.mod_sentence``, never
+    ``task.oracle_spec``), assert the leaf path stayed OFF, and grade ONLY the tasks whose
+    modification was actually ``applied``, by the task's own black-box oracle (reusing
+    :func:`grade_real_system_task` -- no new oracle code). Returns ``{"results": [...],
+    "aggregate": {"overall": {...}, "by_cls": {...}}}`` in the exact same shape as
+    :func:`run_real_systems_suite`. Defaults to :data:`REAL_SYSTEMS_MODIFY_TASKS` when
+    ``tasks`` is ``None``.
+
+    NEVER raises: any per-task failure is recorded as that task's ``accepted=False`` and the
+    suite continues to the next task."""
+    tasks = REAL_SYSTEMS_MODIFY_TASKS if tasks is None else tasks
+    python_exe = python_exe or sys.executable or "python"
+    results = [_run_one_modify_task(task, llm=llm, python_exe=python_exe) for task in tasks]
+    return {"results": results, "aggregate": _aggregate(results)}
+
+
+# TASK-6 (REQ-7): MODIFY task (a) -- add an optional `base_delay` keyword parameter to the
+# retry/backoff library, graded by the ALREADY-LANDED import_driver oracle (no new oracle
+# code). `start_system` is a hand-authored CORRECT baseline `retry.py` matching REQ-3's
+# original contract exactly (`retry(times, exceptions=Exception)`); the mod sentence's only
+# ask is the new optional parameter + its role as the sleep duration -- every detail the
+# oracle checks (parameter name, default, that it is now an accepted keyword) is derivable
+# from that same visible sentence.
+_RETRY_BASELINE_PY = (
+    "import time\n\n\n"
+    "def retry(times, exceptions=Exception):\n"
+    "    def decorator(fn):\n"
+    "        def wrapper(*args, **kwargs):\n"
+    "            attempt = 0\n"
+    "            while True:\n"
+    "                attempt += 1\n"
+    "                try:\n"
+    "                    return fn(*args, **kwargs)\n"
+    "                except exceptions:\n"
+    "                    if attempt >= times:\n"
+    "                        raise\n"
+    "                    time.sleep(0.1)\n"
+    "        return wrapper\n"
+    "    return decorator\n"
+)
+
+_RETRY_BASE_DELAY_MOD_SENTENCE = (
+    "Modify retry.py so that `retry(times, exceptions=Exception, base_delay=0.1)` accepts an "
+    "ADDITIONAL optional keyword parameter named `base_delay`, with a default value of `0.1`, "
+    "and uses that value as the duration passed to `time.sleep(...)` between each failed "
+    "attempt (instead of any previously hardcoded duration). Every other existing aspect of "
+    "its behavior -- accepting the same `times`/`exceptions` parameters, calling the wrapped "
+    "callable, sleeping exactly once between each failed attempt, returning the first "
+    "successful attempt's value immediately, and re-raising the final attempt's exception "
+    "when every attempt fails -- is completely unchanged."
+)
+
+RETRY_BASE_DELAY_MODIFY_TASK = RealSystemModifyTask(
+    name="retry-backoff-base-delay-modify",
+    cls="library-modify",
+    start_system={"retry.py": _RETRY_BASELINE_PY},
+    mod_sentence=_RETRY_BASE_DELAY_MOD_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "retry",
+        # `base_delay` is explicitly passed here -- a module that did NOT adopt the new
+        # optional keyword raises TypeError on this very call, which cascades through
+        # `decorated`/`result` (see harness/import_driver.py's `_bindings` chain) and fails
+        # the `returns_equals` check below; a module that adopted it behaves exactly like
+        # RETRY_BACKOFF_LIB_TASK's own oracle otherwise.
+        "api_calls": [
+            {"id": "make_decorator", "target": "retry", "args": [],
+             "kwargs": {"times": 3, "base_delay": 0.05}},
+            {"id": "decorated", "target": "make_decorator",
+             "args": [{"__jaros_ref__": "flaky"}], "kwargs": {}},
+            {"id": "result", "target": "decorated", "args": [], "kwargs": {}},
+        ],
+        "injected": {
+            "clock": True,
+            "spies": {
+                "flaky": {"return_value": "success", "raise_exception": "ValueError",
+                          "raise_count": 2},
+            },
+        },
+        "checks": [
+            {"kind": "returns_equals", "call_id": "result", "expected": "success"},
+            {"kind": "call_count", "spy": "flaky", "expected": 3},
+        ],
+        "expected_sleep_calls": 2,
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+
+# TASK-6 (REQ-7): MODIFY task (b) -- add an optional `--default VALUE` fallback to the
+# INI-section config-query CLI, graded by the ALREADY-LANDED cli-exact oracle (no new oracle
+# code). `start_system` is a hand-authored CORRECT baseline `main.py` matching REQ-4's
+# original contract exactly (exactly two argv args, nonzero exit + no output when absent).
+_INI_QUERY_BASELINE_PY = (
+    "import sys\n\n\n"
+    "def parse_ini(text):\n"
+    "    sections = {}\n"
+    "    current = None\n"
+    "    for line in text.splitlines():\n"
+    "        line = line.strip()\n"
+    "        if not line:\n"
+    "            continue\n"
+    "        if line.startswith('[') and line.endswith(']'):\n"
+    "            current = line[1:-1]\n"
+    "            sections.setdefault(current, {})\n"
+    "            continue\n"
+    "        if current is not None and '=' in line:\n"
+    "            key, _, value = line.partition('=')\n"
+    "            sections[current][key.strip()] = value.strip()\n"
+    "    return sections\n\n\n"
+    "def main():\n"
+    "    if len(sys.argv) != 3:\n"
+    "        sys.exit(1)\n"
+    "    section, key = sys.argv[1], sys.argv[2]\n"
+    "    sections = parse_ini(sys.stdin.read())\n"
+    "    if section in sections and key in sections[section]:\n"
+    "        print(sections[section][key])\n"
+    "        return\n"
+    "    sys.exit(1)\n\n\n"
+    "if __name__ == '__main__':\n"
+    "    main()\n"
+)
+
+_INI_DEFAULT_FLAG_MOD_SENTENCE = (
+    "Modify main.py so that it ALSO accepts two additional optional trailing command-line "
+    "arguments, `--default` followed by a VALUE (i.e. it may be invoked as `python main.py "
+    "<section> <key> --default VALUE`, four arguments total, in addition to the existing "
+    "exactly-two-argument form). When invoked with `--default VALUE` and the requested "
+    "section or key is ABSENT from the INI text, it prints VALUE followed by a single "
+    "trailing newline and exits 0 (instead of printing nothing and exiting nonzero). When "
+    "the section and key ARE both present, the found value is printed exactly as before and "
+    "`--default VALUE` (if supplied) is ignored. When `--default VALUE` is NOT supplied, "
+    "behavior for an absent section/key is completely unchanged (print nothing, exit "
+    "nonzero); any other argument count is still rejected (print nothing, exit nonzero)."
+)
+
+# Absent key ("missing") with `--default fallback` supplied -- the baseline (unmodified)
+# main.py would print nothing and exit nonzero for this input; a correct modification prints
+# exactly "fallback\n".
+_INI_DEFAULT_FLAG_STDIN = (
+    "[server]\n"
+    "host = localhost\n"
+    "port = 8080\n"
+)
+
+INI_DEFAULT_FLAG_MODIFY_TASK = RealSystemModifyTask(
+    name="ini-section-query-default-flag-modify",
+    cls="config-cli-modify",
+    start_system={"main.py": _INI_QUERY_BASELINE_PY},
+    mod_sentence=_INI_DEFAULT_FLAG_MOD_SENTENCE,
+    oracle_kind="cli-exact",
+    oracle_spec={
+        "argv": ["server", "missing", "--default", "fallback"],
+        "stdin": _INI_DEFAULT_FLAG_STDIN,
+        "expected_stdout": "fallback\n",
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS: "list[RealSystemModifyTask]" = [
+    RETRY_BASE_DELAY_MODIFY_TASK, INI_DEFAULT_FLAG_MODIFY_TASK,
+]
+# #EXT-060-REQ-7 End
+
+
+# #EXT-060-REQ-8 Start
+# TASK-7: the UNIFIED CANONICAL SCOREBOARD -- runs BOTH halves and reports ONE headline
+# number, the combined pass@1. This is the entrypoint the ROADMAP/governance loop reports
+# from going forward; the CREATE-only `run_real_systems_suite` and the new MODIFY-only
+# `run_real_systems_modify_suite` remain independently callable (e.g. for the killable
+# per-task subprocess runners), but neither is "the number" on its own anymore.
+def _combined_rate(create_results: "list[dict]", modify_results: "list[dict]") -> dict:
+    n = len(create_results) + len(modify_results)
+    passed = (sum(1 for r in create_results if r.get("accepted")) +
+              sum(1 for r in modify_results if r.get("accepted")))
+    return {"n": n, "passed": passed, "pass_rate": (passed / n) if n else 0.0}
+
+
+def run_canonical_scoreboard(*, llm: Any = None,
+                              create_tasks: "list[RealSystemTask] | None" = None,
+                              modify_tasks: "list[RealSystemModifyTask] | None" = None,
+                              python_exe: "str | None" = None) -> dict:
+    """Run BOTH halves of the canonical real-systems scoreboard (CREATE via
+    :func:`run_real_systems_suite`, MODIFY via :func:`run_real_systems_modify_suite`) and
+    report the ONE tracked headline number alongside each half's own breakdown. Returns
+    ``{"create": <run_real_systems_suite result>, "modify": <run_real_systems_modify_suite
+    result>, "combined": {"n": int, "passed": int, "pass_rate": float}}`` -- ``combined`` is
+    ``(create passes + modify passes) / (create n + modify n)``, guarded against
+    division-by-zero (``pass_rate`` is ``0.0`` when both halves are empty). NEVER raises: each
+    half's own runner already absorbs every per-task failure."""
+    create = run_real_systems_suite(create_tasks, llm=llm, python_exe=python_exe)
+    modify = run_real_systems_modify_suite(modify_tasks, llm=llm, python_exe=python_exe)
+    combined = _combined_rate(create.get("results") or [], modify.get("results") or [])
+    return {"create": create, "modify": modify, "combined": combined}
+# #EXT-060-REQ-8 End
