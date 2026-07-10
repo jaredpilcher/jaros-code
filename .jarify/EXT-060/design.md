@@ -152,3 +152,52 @@ half's dispatch): a scripted oracle with only tool-call turns (never a final tur
 baseline agent loop forever (caught honestly as non-termination, never a test hang, by
 `agent_oracle.drive_agent`'s own `max_steps`/`timeout` bounds), while a GUARDED agent stops and prints
 the gave-up final message once it hits its pinned step count N.
+
+## The LIFECYCLE + INVENTORY rungs (REQ-13/REQ-14/REQ-15/REQ-16): `oracle_kind="state_machine"`/`"conservation"`
+
+Two more real-world SYSTEM SHAPES that EXT-059 built dedicated honesty-core oracles for (illegal
+transitions rejected, oversell rejected) but that had no representative task on this scoreboard yet.
+Both dispatches compose the ALREADY-LANDED EXT-059 REQ-7/REQ-8 oracles verbatim — no new process-launch,
+driving, or grading mechanism, exactly the "grade the OBSERVED accept/reject behavior, never the
+model's own claim" discipline every other `_grade_*` helper already follows:
+
+```text
+   ORDER_LIFECYCLE_TASK.sentence          ORDER_ADD_REFUND_MODIFY.mod_sentence
+   INVENTORY_TASK.sentence                INVENTORY_ADD_BACKORDER_MODIFY.mod_sentence
+                |                                       |
+          build_system(...)                    modify_system(start_system, ...)
+                |                                       |
+                +-------------------+-------------------+
+                                    |
+                      grade_real_system_task(task, root)
+              oracle_kind="state_machine" | "conservation"
+                                    |
+        +---------------------------+---------------------------+
+        |                                                        |
+   _grade_state_machine(spec, root, python_exe)      _grade_conservation(spec, root, python_exe)
+        |                                                        |
+   harness.state_machine_oracle.grade_state_machine   harness.conservation_oracle.grade_conservation
+   (EXT-059 REQ-7, unchanged: drives an entity CLASS   (EXT-059 REQ-8, unchanged: drives an entity
+    via import_driver through a legal+illegal          CLASS via import_driver through legal+illegal
+    transition script, asserts every illegal            ops, asserts every quantity matches its
+    transition raised + left state unchanged)           declared per-op delta, oversell rejected)
+        |                                                        |
+        +---------------------------+---------------------------+
+                                    |
+                        (accepted, note) -- never raises,
+                        same shape every other oracle_kind returns
+```
+
+`ORDER_LIFECYCLE_TASK` (CREATE, `cls="lifecycle"`) pins a stdlib `Order` class in `order.py` (states
+created/paid/shipped/delivered/cancelled, `pay()`/`ship()`/`deliver()`/`cancel()`, a `state` property,
+`ValueError` on any illegal transition). `ORDER_ADD_REFUND_MODIFY` (MODIFY, `cls="lifecycle-modify"`)
+reuses that same dispatch with zero new oracle code: the mod sentence adds a `refund()` transition
+legal only from `delivered`.
+
+`INVENTORY_TASK` (CREATE, `cls="inventory"`) pins a stdlib `Inventory` class in `inventory.py`
+(constructor takes initial stock, `reserve(qty)`/`release(qty)`, `available()`/`reserved()` readers,
+`ValueError` on an oversell attempt, units conserved). `INVENTORY_ADD_BACKORDER_MODIFY` (MODIFY,
+`cls="inventory-modify"`) reuses that same dispatch with zero new oracle code: the mod sentence adds a
+`backorder(qty)` method that records demand beyond available WITHOUT disturbing `available`/`reserved`
+conservation — the extended `quantities` list lets the conservation oracle's own reader-vs-shadow check
+independently prove the addition is safe.

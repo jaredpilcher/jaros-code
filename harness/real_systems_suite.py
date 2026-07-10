@@ -76,6 +76,20 @@ SERVICE_DEFAULT_REQUEST_TIMEOUT_S = 5.0
 from harness.agent_oracle import check_agent, drive_agent, final_turn, tool_call_turn
 # #EXT-060-REQ-11 End
 
+# #EXT-060-REQ-13 Start
+# TASK-10: reuse (not reimplement) the already-landed state-machine/lifecycle oracle (EXT-059
+# REQ-7) for the first LIFECYCLE-shaped ("state_machine" oracle_kind) grading path -- never a new
+# driving mechanism.
+from harness.state_machine_oracle import grade_state_machine
+# #EXT-060-REQ-13 End
+
+# #EXT-060-REQ-15 Start
+# TASK-11: reuse (not reimplement) the already-landed conservation/no-oversell oracle (EXT-059
+# REQ-8) for the first INVENTORY-shaped ("conservation" oracle_kind) grading path -- never a new
+# driving mechanism.
+from harness.conservation_oracle import grade_conservation
+# #EXT-060-REQ-15 End
+
 
 @dataclass
 class RealSystemTask:
@@ -130,6 +144,17 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
       sandbox (``harness.agent_oracle.drive_agent``) and grades the ORDERED tool-call sequence it
       actually made, never its reasoning (``harness.agent_oracle.check_agent``) -- for a
       multi-step, tool-calling AGENT system (no CLI/stdout/HTTP-service contract at all).
+    - ``"state_machine"``: ``task.oracle_spec`` is ``{"module": str, "entity": str, "spec":
+      {...state-machine spec shape...}}``. Imports the built ``entity`` class from ``module`` in a
+      fresh sandboxed subprocess and drives it through the spec's legal/illegal transition script
+      (``harness.state_machine_oracle.grade_state_machine``) -- for a LIFECYCLE-shaped system (an
+      illegal transition must be rejected, not silently allowed).
+    - ``"conservation"``: ``task.oracle_spec`` is ``{"module": str, "entity": str, "spec":
+      {...conservation spec shape...}}``. Imports the built ``entity`` class from ``module`` in a
+      fresh sandboxed subprocess and drives it through the spec's legal/illegal operation script
+      (``harness.conservation_oracle.grade_conservation``) -- for a CONSERVATION-shaped system (an
+      operation that would oversell/overdraw a conserved quantity must be rejected, not silently
+      allowed).
 
     Returns ``(accepted, note)``. NEVER RAISES: an unknown ``oracle_kind``, a malformed
     ``oracle_spec``, or any exception during grading is an honest ``(False, <reason>)`` -- never a
@@ -153,6 +178,14 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
         if task.oracle_kind == "agent":
             return _grade_agent(spec, root, python_exe)
         # #EXT-060-REQ-11 End
+        # #EXT-060-REQ-13 Start
+        if task.oracle_kind == "state_machine":
+            return _grade_state_machine(spec, root, python_exe)
+        # #EXT-060-REQ-13 End
+        # #EXT-060-REQ-15 Start
+        if task.oracle_kind == "conservation":
+            return _grade_conservation(spec, root, python_exe)
+        # #EXT-060-REQ-15 End
         return False, f"unknown oracle_kind: {task.oracle_kind!r}"
     except Exception as exc:  # never raise -- an honest diagnostic result instead
         return False, f"grade_real_system_task raised unexpectedly: {exc}"
@@ -374,6 +407,59 @@ def _grade_agent(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, 
         return False, f"{note} (drive_agent note: {result.get('note')!r})"
     return True, result.get("note") or "ok"
 # #EXT-060-REQ-11 End
+
+
+# #EXT-060-REQ-13 Start
+# TASK-10: the ``oracle_kind == "state_machine"`` grading path -- for a LIFECYCLE-shaped system
+# (order/shipment/fulfillment/etc.) where an ILLEGAL transition must be rejected, not silently
+# allowed. Wires (never reimplements) ``harness.state_machine_oracle.grade_state_machine`` -- the
+# scripted legal/illegal transition oracle already landed for EXT-059 REQ-7.
+def _grade_state_machine(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "state_machine"`` grading path: import ``oracle_spec["entity"]`` from
+    ``oracle_spec["module"]`` in a fresh sandboxed subprocess and drive it through
+    ``oracle_spec["spec"]``'s legal/illegal transition script
+    (``harness.state_machine_oracle.grade_state_machine``), returning ``(accepted, note)``
+    UNMODIFIED from that oracle. Never raises: a malformed ``oracle_spec`` (missing ``module``/
+    ``entity``/``spec``) or any exception during grading is an honest ``(False, <reason>)`` --
+    ``grade_state_machine`` itself already never raises, this helper adds no exception-prone logic
+    of its own."""
+    module = oracle_spec.get("module")
+    if not isinstance(module, str) or not module.strip():
+        return False, f"oracle_spec missing/invalid required 'module' key: {module!r}"
+    entity = oracle_spec.get("entity")
+    if not isinstance(entity, str) or not entity.strip():
+        return False, f"oracle_spec missing/invalid required 'entity' key: {entity!r}"
+    return grade_state_machine(
+        root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
+    )
+# #EXT-060-REQ-13 End
+
+
+# #EXT-060-REQ-15 Start
+# TASK-11: the ``oracle_kind == "conservation"`` grading path -- for a CONSERVATION-shaped system
+# (inventory reservation/wallet balances/etc.) where an operation that would oversell/overdraw a
+# conserved quantity must be rejected, not silently allowed. Wires (never reimplements)
+# ``harness.conservation_oracle.grade_conservation`` -- the scripted legal/illegal operation
+# oracle already landed for EXT-059 REQ-8.
+def _grade_conservation(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "conservation"`` grading path: import ``oracle_spec["entity"]`` from
+    ``oracle_spec["module"]`` in a fresh sandboxed subprocess and drive it through
+    ``oracle_spec["spec"]``'s legal/illegal operation script
+    (``harness.conservation_oracle.grade_conservation``), returning ``(accepted, note)``
+    UNMODIFIED from that oracle. Never raises: a malformed ``oracle_spec`` (missing ``module``/
+    ``entity``/``spec``) or any exception during grading is an honest ``(False, <reason>)`` --
+    ``grade_conservation`` itself already never raises, this helper adds no exception-prone logic
+    of its own."""
+    module = oracle_spec.get("module")
+    if not isinstance(module, str) or not module.strip():
+        return False, f"oracle_spec missing/invalid required 'module' key: {module!r}"
+    entity = oracle_spec.get("entity")
+    if not isinstance(entity, str) or not entity.strip():
+        return False, f"oracle_spec missing/invalid required 'entity' key: {entity!r}"
+    return grade_conservation(
+        root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
+    )
+# #EXT-060-REQ-15 End
 
 
 def _rates(results: "list[dict]") -> dict:
@@ -1418,3 +1504,310 @@ AGENT_ADD_STEP_GUARD_MODIFY = RealSystemModifyTask(
 
 REAL_SYSTEMS_MODIFY_TASKS.append(AGENT_ADD_STEP_GUARD_MODIFY)
 # #EXT-060-REQ-12 End
+
+
+# #EXT-060-REQ-13 Start
+# TASK-10: the FIRST LIFECYCLE-shaped task -- a stdlib order state machine, graded by the new
+# "state_machine" oracle_kind (an entity class driven through a scripted legal/illegal transition
+# script via `harness.state_machine_oracle`, no real model/Jetson call anywhere in this
+# measurement). Illegal transitions (ship before pay, cancel after delivery) must raise ValueError
+# and leave state unchanged -- the honesty core `state_machine_oracle` exists to catch.
+_ORDER_LIFECYCLE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named order.py, "
+    "using only the standard library, defining exactly one public class named `Order` modeling an "
+    "order lifecycle state machine. `Order()` (no constructor arguments) creates a new order whose "
+    "initial state is the string `\"created\"`. The class exposes a real Python `@property` named "
+    "`state` that returns the order's current state as one of the strings `\"created\"`, "
+    "`\"paid\"`, `\"shipped\"`, `\"delivered\"`, or `\"cancelled\"`. It defines exactly four "
+    "zero-argument action methods: `pay()` moves the order from `\"created\"` to `\"paid\"`; "
+    "`ship()` moves it from `\"paid\"` to `\"shipped\"`; `deliver()` moves it from `\"shipped\"` to "
+    "`\"delivered\"`; `cancel()` moves it from `\"created\"` to `\"cancelled\"`. Each of these four "
+    "methods is legal ONLY from the exact source state named above; calling any of them from any "
+    "OTHER current state (for example calling `ship()` before `pay()` has been called, or calling "
+    "`cancel()` after the order has been delivered) must instead raise `ValueError` and must leave "
+    "the order's `state` COMPLETELY UNCHANGED -- no partial mutation before the raise."
+)
+
+# The order.py baseline used both as ORDER_ADD_REFUND_MODIFY's known-good `start_system` and (in
+# tests/test_ext060_lifecycle_inventory.py) as the hand-authored CORRECT fixture proving the
+# "state_machine" oracle_kind grades ORDER_LIFECYCLE_TASK honestly. Matches ORDER_LIFECYCLE_TASK's
+# contract exactly (no `refund()` -- that is what ORDER_ADD_REFUND_MODIFY adds).
+_ORDER_BASELINE_PY = (
+    "class Order:\n"
+    "    _TRANSITIONS = {\n"
+    "        (\"created\", \"pay\"): \"paid\",\n"
+    "        (\"paid\", \"ship\"): \"shipped\",\n"
+    "        (\"shipped\", \"deliver\"): \"delivered\",\n"
+    "        (\"created\", \"cancel\"): \"cancelled\",\n"
+    "    }\n"
+    "\n"
+    "    def __init__(self):\n"
+    "        self._state = \"created\"\n"
+    "\n"
+    "    @property\n"
+    "    def state(self):\n"
+    "        return self._state\n"
+    "\n"
+    "    def _transition(self, action):\n"
+    "        key = (self._state, action)\n"
+    "        if key not in self._TRANSITIONS:\n"
+    "            raise ValueError(f\"illegal transition: {action} from {self._state}\")\n"
+    "        self._state = self._TRANSITIONS[key]\n"
+    "\n"
+    "    def pay(self):\n"
+    "        self._transition(\"pay\")\n"
+    "\n"
+    "    def ship(self):\n"
+    "        self._transition(\"ship\")\n"
+    "\n"
+    "    def deliver(self):\n"
+    "        self._transition(\"deliver\")\n"
+    "\n"
+    "    def cancel(self):\n"
+    "        self._transition(\"cancel\")\n"
+)
+
+ORDER_LIFECYCLE_TASK = RealSystemTask(
+    name="order-lifecycle-state-machine",
+    cls="lifecycle",
+    sentence=_ORDER_LIFECYCLE_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "order",
+        "entity": "Order",
+        "spec": {
+            "states": ["created", "paid", "shipped", "delivered", "cancelled"],
+            "initial": "created",
+            "transitions": {
+                "created:pay": "paid",
+                "paid:ship": "shipped",
+                "shipped:deliver": "delivered",
+                "created:cancel": "cancelled",
+            },
+            # Illegal ship-before-pay FIRST (must be rejected), then the full legal path to
+            # "delivered", then an illegal cancel-after-delivered (must also be rejected) -- both
+            # the honesty core (illegal transitions refused) and the legal path are exercised.
+            "drive": [
+                {"action": "ship", "expect": "reject"},
+                {"action": "pay", "expect": "accept"},
+                {"action": "ship", "expect": "accept"},
+                {"action": "deliver", "expect": "accept"},
+                {"action": "cancel", "expect": "reject"},
+            ],
+            "expect_final": "delivered",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(ORDER_LIFECYCLE_TASK)
+# #EXT-060-REQ-13 End
+
+
+# #EXT-060-REQ-14 Start
+# TASK-10: the first LIFECYCLE-shaped MODIFY task -- add a `refund()` transition to the order
+# state machine above. Graded by the SAME "state_machine" oracle_kind dispatcher REQ-13 lands -- no
+# new oracle code, mirroring how REQ-7/REQ-10/REQ-12's MODIFY tasks reuse their CREATE half's
+# oracle dispatch verbatim.
+_ORDER_ADD_REFUND_MOD_SENTENCE = (
+    "Modify order.py so that `Order` ALSO supports a new zero-argument action method named "
+    "`refund()`. Calling `refund()` while the order's current state is `\"delivered\"` moves it to "
+    "a NEW state, the string `\"refunded\"` (extend the existing `state` property so it can also "
+    "report `\"refunded\"`). Calling `refund()` from ANY state other than `\"delivered\"` "
+    "(including `\"refunded\"` itself) must instead raise `ValueError` and must leave the order's "
+    "`state` COMPLETELY UNCHANGED, exactly like every other illegal transition. Every other "
+    "existing aspect of its behavior -- the `pay()`/`ship()`/`deliver()`/`cancel()` methods, their "
+    "exact legal source states, the `ValueError`-on-illegal-transition-with-unchanged-state "
+    "contract, and the `state` property -- is completely unchanged."
+)
+
+ORDER_ADD_REFUND_MODIFY = RealSystemModifyTask(
+    name="order-lifecycle-add-refund-modify",
+    cls="lifecycle-modify",
+    start_system={"order.py": _ORDER_BASELINE_PY},
+    mod_sentence=_ORDER_ADD_REFUND_MOD_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "order",
+        "entity": "Order",
+        "spec": {
+            "states": ["created", "paid", "shipped", "delivered", "cancelled", "refunded"],
+            "initial": "created",
+            "transitions": {
+                "created:pay": "paid",
+                "paid:ship": "shipped",
+                "shipped:deliver": "delivered",
+                "created:cancel": "cancelled",
+                "delivered:refund": "refunded",
+            },
+            # Regression of the original illegal ship-before-pay check, THEN a NEW illegal refund
+            # from an earlier (non-"delivered") state, THEN the full legal path to "delivered",
+            # THEN the new legal refund transition -- a module that never added `refund()` at all
+            # fails immediately (AttributeError cascades through drive_import's own checks); a
+            # module that added it UNGUARDED (legal from any state) fails the earlier illegal-
+            # refund check.
+            "drive": [
+                {"action": "ship", "expect": "reject"},
+                {"action": "refund", "expect": "reject"},
+                {"action": "pay", "expect": "accept"},
+                {"action": "ship", "expect": "accept"},
+                {"action": "deliver", "expect": "accept"},
+                {"action": "refund", "expect": "accept"},
+            ],
+            "expect_final": "refunded",
+        },
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(ORDER_ADD_REFUND_MODIFY)
+# #EXT-060-REQ-14 End
+
+
+# #EXT-060-REQ-15 Start
+# TASK-11: the FIRST INVENTORY-shaped task -- a stdlib single-SKU stock-reservation class, graded
+# by the new "conservation" oracle_kind (an entity class driven through a scripted legal/illegal
+# operation script via `harness.conservation_oracle`, no real model/Jetson call anywhere in this
+# measurement). An oversell attempt must raise ValueError and leave every quantity unchanged --
+# the honesty core `conservation_oracle` exists to catch.
+_INVENTORY_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named inventory.py, "
+    "using only the standard library, defining exactly one public class named `Inventory` "
+    "modeling single-SKU stock reservation. `Inventory(initial_stock)` (exactly one positional "
+    "constructor argument, a non-negative integer) creates stock tracking for one SKU whose "
+    "`available` units start at `initial_stock` and whose `reserved` units start at `0`. It "
+    "exposes two zero-argument reader methods, `available()` and `reserved()`, each returning the "
+    "current integer value of that quantity. It defines two methods that each take one positional "
+    "integer argument, `qty`: `reserve(qty)` moves `qty` units from `available` to `reserved` "
+    "(decreasing `available` by `qty` and increasing `reserved` by `qty`) -- but if `qty` is "
+    "GREATER than the CURRENT `available` count (an oversell), it must instead raise `ValueError` "
+    "and leave BOTH `available` and `reserved` COMPLETELY UNCHANGED; `release(qty)` moves `qty` "
+    "units back from `reserved` to `available` (increasing `available` by `qty` and decreasing "
+    "`reserved` by `qty`). The total of `available` plus `reserved` must never change across any "
+    "successful call -- units are only ever moved between the two, never created or destroyed."
+)
+
+# The inventory.py baseline used both as INVENTORY_ADD_BACKORDER_MODIFY's known-good
+# `start_system` and (in tests/test_ext060_lifecycle_inventory.py) as the hand-authored CORRECT
+# fixture proving the "conservation" oracle_kind grades INVENTORY_TASK honestly. Matches
+# INVENTORY_TASK's contract exactly (no `backorder()` -- that is what
+# INVENTORY_ADD_BACKORDER_MODIFY adds).
+_INVENTORY_BASELINE_PY = (
+    "class Inventory:\n"
+    "    def __init__(self, initial_stock):\n"
+    "        self._available = initial_stock\n"
+    "        self._reserved = 0\n"
+    "\n"
+    "    def available(self):\n"
+    "        return self._available\n"
+    "\n"
+    "    def reserved(self):\n"
+    "        return self._reserved\n"
+    "\n"
+    "    def reserve(self, qty):\n"
+    "        if qty > self._available:\n"
+    "            raise ValueError(f\"cannot reserve {qty}: only {self._available} available\")\n"
+    "        self._available -= qty\n"
+    "        self._reserved += qty\n"
+    "\n"
+    "    def release(self, qty):\n"
+    "        if qty > self._reserved:\n"
+    "            raise ValueError(f\"cannot release {qty}: only {self._reserved} reserved\")\n"
+    "        self._reserved -= qty\n"
+    "        self._available += qty\n"
+)
+
+INVENTORY_TASK = RealSystemTask(
+    name="inventory-no-oversell-reservation",
+    cls="inventory",
+    sentence=_INVENTORY_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "inventory",
+        "entity": "Inventory",
+        "spec": {
+            "quantities": ["available", "reserved"],
+            "initial": {"available": 100, "reserved": 0},
+            "construct_args": [100],
+            # Illegal oversell FIRST (150 of 100 -- must be rejected), then a legal reserve (30)
+            # and a legal release (10), landing on available=80, reserved=20.
+            "drive": [
+                {"action": "reserve", "args": [150], "expect": "reject"},
+                {"action": "reserve", "args": [30], "expect": "accept",
+                 "deltas": {"available": -30, "reserved": 30}},
+                {"action": "release", "args": [10], "expect": "accept",
+                 "deltas": {"available": 10, "reserved": -10}},
+            ],
+            "expect_final": {"available": 80, "reserved": 20},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INVENTORY_TASK)
+# #EXT-060-REQ-15 End
+
+
+# #EXT-060-REQ-16 Start
+# TASK-11: the first INVENTORY-shaped MODIFY task -- add a `backorder()` method to the inventory
+# class above that records demand beyond available WITHOUT ever touching `available`/`reserved`
+# (never oversells committed stock). Graded by the SAME "conservation" oracle_kind dispatcher
+# REQ-15 lands -- no new oracle code, mirroring how REQ-7/REQ-10/REQ-12/REQ-14's MODIFY tasks reuse
+# their CREATE half's oracle dispatch verbatim. `spec["quantities"]` is extended with a mirrored
+# pair (`backordered`/`backorder_credit`, always summing to exactly 0) so the conservation law
+# (every accept op's deltas sum to zero across ALL declared quantities) stays satisfiable while
+# still independently proving `available`/`reserved` are left completely undisturbed by
+# `backorder()` -- the mirror pair is fully pinned in the visible mod_sentence, no oracle leak.
+_INVENTORY_BACKORDER_MOD_SENTENCE = (
+    "Modify inventory.py so that `Inventory` ALSO supports a method `backorder(qty)` (one "
+    "positional integer argument) that records demand for `qty` units that could not be filled "
+    "from current stock. Calling `backorder(qty)` must NEVER change `available` or `reserved` in "
+    "any way -- it only records the extra demand, and it never raises (it always succeeds, for "
+    "any nonnegative `qty`), so committed stock (already-reserved units) can never be oversold by "
+    "it. To make that demand visible and independently checkable, the class must ALSO expose two "
+    "new zero-argument reader methods that always move together as an exact mirror pair: "
+    "`backordered()`, which starts at `0` and increases by `qty` on every `backorder(qty)` call "
+    "(the running total of unfilled demand), and `backorder_credit()`, which starts at `0` and "
+    "DECREASES by `qty` on every `backorder(qty)` call, so `backordered()` plus "
+    "`backorder_credit()` is always exactly `0` (proving the demand is only ever recorded, never "
+    "allowed to silently create or destroy units). Every other existing aspect of `Inventory`'s "
+    "behavior -- `reserve(qty)`/`release(qty)`, the oversell-rejection contract, and the "
+    "`available()`/`reserved()` readers -- is completely unchanged."
+)
+
+INVENTORY_ADD_BACKORDER_MODIFY = RealSystemModifyTask(
+    name="inventory-add-backorder-modify",
+    cls="inventory-modify",
+    start_system={"inventory.py": _INVENTORY_BASELINE_PY},
+    mod_sentence=_INVENTORY_BACKORDER_MOD_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "inventory",
+        "entity": "Inventory",
+        "spec": {
+            "quantities": ["available", "reserved", "backordered", "backorder_credit"],
+            "initial": {"available": 100, "reserved": 0, "backordered": 0, "backorder_credit": 0},
+            "construct_args": [100],
+            # Regression of the original illegal oversell + legal reserve, THEN a NEW
+            # `backorder(20)` op whose deltas touch ONLY the mirror pair (proving available/
+            # reserved are left untouched), THEN the original legal release -- a module that never
+            # added `backorder()`/`backordered()`/`backorder_credit()` at all fails immediately
+            # (AttributeError cascades through drive_import's own checks); a module whose
+            # `backorder()` incorrectly mutates available/reserved fails the post-op reader check.
+            "drive": [
+                {"action": "reserve", "args": [150], "expect": "reject"},
+                {"action": "reserve", "args": [30], "expect": "accept",
+                 "deltas": {"available": -30, "reserved": 30}},
+                {"action": "backorder", "args": [20], "expect": "accept",
+                 "deltas": {"backordered": 20, "backorder_credit": -20}},
+                {"action": "release", "args": [10], "expect": "accept",
+                 "deltas": {"available": 10, "reserved": -10}},
+            ],
+            "expect_final": {
+                "available": 80, "reserved": 20, "backordered": 20, "backorder_credit": -20,
+            },
+        },
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(INVENTORY_ADD_BACKORDER_MODIFY)
+# #EXT-060-REQ-16 End

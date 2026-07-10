@@ -297,3 +297,148 @@ stop, print the final marker with a message indicating it gave up, then exit 0")
       a hang in the test itself).
 - [x] Leaves-OFF enforced identically to every other MODIFY task (static
       `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-13] `oracle_kind="state_machine"` + first LIFECYCLE CREATE task (order state machine)
+
+The canonical scoreboard's first LIFECYCLE-shaped task, grading whether a build enforces a legal state
+machine (illegal transitions rejected, not silently allowed) — a class of real system (order/
+shipment/fulfillment/RMA/subscription, etc.) EXT-059 REQ-7 built a dedicated deterministic oracle for
+but that had no representative task on this scoreboard yet. A `_grade_state_machine` grader wires the
+already-landed EXT-059 REQ-7 oracle (`harness/state_machine_oracle.py`'s `grade_state_machine`) into
+`grade_real_system_task` under a new `oracle_kind="state_machine"` dispatch — no new process-launch or
+driving mechanism, reusing that oracle verbatim (the same "never trusts the built module's own claims,
+only its observed accept/reject behavior" discipline every other `_grade_*` helper already follows).
+`ORDER_LIFECYCLE_TASK` (`RealSystemTask`, `cls="lifecycle"`, `oracle_kind="state_machine"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `Order` class in
+`order.py` with states `created`/`paid`/`shipped`/`delivered`/`cancelled`, action methods
+`pay()`/`ship()`/`deliver()`/`cancel()` that mutate state along the legal path
+(`created→paid→shipped→delivered`, and `created→cancelled`), a real `state` property, and an illegal
+transition (e.g. shipping before payment, or cancelling after delivery) raising `ValueError` with state
+left unchanged.
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="state_machine"` to a new `_grade_state_machine
+      (oracle_spec, root, python_exe)` that maps `oracle_spec` (`{"module": str, "entity": str, "spec":
+      {...state-machine spec shape...}}`) to `harness.state_machine_oracle.grade_state_machine(root,
+      module=..., entity=..., spec=..., python_exe=python_exe)`, returning `(accepted, note)`. NEVER
+      raises (reuses `state_machine_oracle`'s own never-raise contract) — a malformed spec, a missing
+      entrypoint, or a build that allows an illegal transition is an honest `(False, <reason>)`.
+- [x] `ORDER_LIFECYCLE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the lifecycle
+      contract (filename `order.py`, the five states, the four action methods and their legal
+      transitions, the `ValueError`-on-illegal-transition + unchanged-state contract, the `state`
+      property) with every oracle-checked value (the states/transitions table, the driven
+      accept/reject script, `expect_final`) derivable from that same visible sentence (no hidden key,
+      no leak).
+- [x] The driven script exercises BOTH an illegal transition (rejected before any legal op, e.g.
+      shipping an unpaid order) and the full legal path to `delivered`, plus a second illegal transition
+      after reaching the terminal legal state (e.g. cancelling a delivered order) — a build that only
+      ever exercises the legal path, or that allows even one illegal transition, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Order` fixture is
+      accepted by `grade_real_system_task(ORDER_LIFECYCLE_TASK, ...)`; a BROKEN fixture (allows an
+      illegal transition, e.g. `ship()` with no guard) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-14] First LIFECYCLE MODIFY task: add a `refund()` transition
+
+The canonical scoreboard's first LIFECYCLE-shaped MODIFY task, mirroring how REQ-7/REQ-10/REQ-12 reuse
+their CREATE half's oracle dispatch with zero new oracle code. `ORDER_ADD_REFUND_MODIFY`
+(`RealSystemModifyTask`, `cls="lifecycle-modify"`, `oracle_kind="state_machine"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline `Order` matching
+REQ-13's original contract exactly (no `refund()`); `mod_sentence` asks for an added `refund()`
+transition legal ONLY from the `delivered` state (moving it to a new `refunded` state) and illegal
+(raising `ValueError`, state unchanged) from every other state.
+
+#### Acceptance Criteria
+- [x] `ORDER_ADD_REFUND_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="state_machine"` dispatcher REQ-13 lands (no new oracle code, reusing
+      `grade_real_system_task` exactly as REQ-7/REQ-10/REQ-12's MODIFY tasks reuse their CREATE half's
+      dispatch).
+- [x] `mod_sentence` pins the new `refund()` transition's exact legal source state (`delivered`) and
+      target state (`refunded`), and its illegal-elsewhere behavior; every oracle-checked value in
+      `oracle_spec` (the extended states/transitions table, a driven script exercising `refund()` both
+      legally from `delivered` and illegally from an earlier state, plus a regression walk of the
+      original legal/illegal transitions from REQ-13) is derivable from that same visible `mod_sentence`
+      (no hidden key, no leak).
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a hand-authored CORRECT
+      post-modification `Order` fixture (baseline + guarded `refund()`) is accepted; the UNMODIFIED
+      baseline (no `refund()` method at all) is rejected by the new checks; a fixture that adds an
+      UNGUARDED `refund()` (legal from any state) is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-15] `oracle_kind="conservation"` + first INVENTORY CREATE task (no-oversell reservation)
+
+The canonical scoreboard's first CONSERVATION-shaped task, grading whether a build preserves a
+conserved quantity under a driven operation sequence (no unit created, destroyed, or oversold) — a
+class of real system (inventory stock reservation, wallet/escrow balances, loyalty points, WMS bin
+transfers, etc.) EXT-059 REQ-8 built a dedicated deterministic oracle for but that had no
+representative task on this scoreboard yet. A `_grade_conservation` grader wires the already-landed
+EXT-059 REQ-8 oracle (`harness/conservation_oracle.py`'s `grade_conservation`) into
+`grade_real_system_task` under a new `oracle_kind="conservation"` dispatch — no new process-launch or
+driving mechanism, reusing that oracle verbatim. `INVENTORY_TASK` (`RealSystemTask`, `cls="inventory"`,
+`oracle_kind="conservation"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+stdlib-only, single-file `Inventory` class in `inventory.py` constructed with an initial per-SKU stock
+count, `reserve(qty)`/`release(qty)` methods that move units between an `available` and a `reserved`
+quantity, zero-argument `available()`/`reserved()` readers, and `reserve(qty)` raising `ValueError`
+(no mutation) when `qty` exceeds what is currently available — units are always conserved
+(`available + reserved` never changes across any legal operation).
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="conservation"` to a new `_grade_conservation
+      (oracle_spec, root, python_exe)` that maps `oracle_spec` (`{"module": str, "entity": str, "spec":
+      {...conservation spec shape...}}`) to `harness.conservation_oracle.grade_conservation(root,
+      module=..., entity=..., spec=..., python_exe=python_exe)`, returning `(accepted, note)`. NEVER
+      raises (reuses `conservation_oracle`'s own never-raise contract) — a malformed spec, a missing
+      entrypoint, or a build that oversells is an honest `(False, <reason>)`.
+- [x] `INVENTORY_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the inventory contract
+      (filename `inventory.py`, the constructor's initial-stock argument, `reserve(qty)`/`release(qty)`
+      semantics, the `ValueError`-on-oversell-attempt + unchanged-quantities contract, the
+      `available()`/`reserved()` readers) with every oracle-checked value (the initial stock, the driven
+      accept/reject script and its per-op deltas, `expect_final`) derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] The driven script exercises BOTH an illegal oversell reservation (rejected, quantities unchanged)
+      and legal reserve/release operations with their declared per-quantity deltas — a build that only
+      ever exercises the legal path, or that allows the oversell, or that silently loses/creates units
+      on a legal op, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Inventory` fixture
+      is accepted by `grade_real_system_task(INVENTORY_TASK, ...)`; a BROKEN fixture (allows an
+      oversell, e.g. `reserve()` with no guard) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-16] First INVENTORY MODIFY task: add a non-oversell-safe `backorder()`
+
+The canonical scoreboard's first CONSERVATION-shaped MODIFY task, mirroring how REQ-7/REQ-10/REQ-12/
+REQ-14 reuse their CREATE half's oracle dispatch with zero new oracle code. `INVENTORY_ADD_BACKORDER_
+MODIFY` (`RealSystemModifyTask`, `cls="inventory-modify"`, `oracle_kind="conservation"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline `Inventory` matching
+REQ-15's original contract exactly (no `backorder()`); `mod_sentence` asks for an added `backorder(qty)`
+method that records demand beyond what is currently available WITHOUT ever reducing `available` below
+zero and WITHOUT disturbing the existing `available`/`reserved` conservation — i.e. `backorder()` never
+oversells committed stock, it only tracks a separate backorder-demand quantity that itself is conserved
+against nothing but its own growth.
+
+#### Acceptance Criteria
+- [x] `INVENTORY_ADD_BACKORDER_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="conservation"` dispatcher REQ-15 lands (no new oracle code, reusing
+      `grade_real_system_task` exactly as REQ-7/REQ-10/REQ-12/REQ-14's MODIFY tasks reuse their CREATE
+      half's dispatch).
+- [x] `mod_sentence` pins the new `backorder(qty)` method's exact contract (records demand beyond
+      available, never mutates `available`/`reserved` themselves, exposes the recorded backorder demand
+      via a new zero-argument reader); `oracle_spec.spec["quantities"]` is extended with that new
+      backorder-demand quantity (with a zero-sum-safe delta convention — a `backorder()` op's own
+      `deltas` entry for the new quantity nets against a matching entry so the conservation law still
+      holds structurally) so the oracle's own per-op reader-vs-shadow check independently proves the
+      addition leaves `available`/`reserved` conservation undisturbed while still recording backorder
+      growth; every oracle-checked value is derivable from the visible `mod_sentence`.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a hand-authored CORRECT
+      post-modification `Inventory` fixture (baseline + `backorder()`) is accepted; the UNMODIFIED
+      baseline (no `backorder()` method at all) is rejected by the new checks; a fixture whose
+      `backorder()` incorrectly mutates `available`/`reserved` is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.

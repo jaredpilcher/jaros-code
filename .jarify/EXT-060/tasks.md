@@ -292,3 +292,92 @@
 #### Implements
 - [REQ-11] `oracle_kind="agent"` + first plain-Python AGENT-SYSTEM CREATE task
 - [REQ-12] First AGENT-SYSTEM MODIFY task: add a maximum-steps guard
+
+### [TASK-10] `oracle_kind="state_machine"` + first LIFECYCLE CREATE+MODIFY tasks (REQ-13, REQ-14)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, import `grade_state_machine` from
+   `harness.state_machine_oracle`. Add `_grade_state_machine(oracle_spec, root, python_exe)` that
+   maps `oracle_spec` (`{"module": str, "entity": str, "spec": {...state-machine spec shape...}}`)
+   to `grade_state_machine(root, module=oracle_spec["module"], entity=oracle_spec["entity"],
+   spec=oracle_spec["spec"], python_exe=python_exe)`, returning `(accepted, note)`; never raises.
+   Wire `oracle_kind == "state_machine"` into `grade_real_system_task`'s dispatch.
+2. Add `ORDER_LIFECYCLE_TASK` (`RealSystemTask`, `cls="lifecycle"`, `oracle_kind="state_machine"`)
+   to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only single-file `Order` class in
+   `order.py` (states `created`/`paid`/`shipped`/`delivered`/`cancelled`,
+   `pay()`/`ship()`/`deliver()`/`cancel()`, a real `state` property, `ValueError` raised on any
+   illegal transition with state left unchanged). `oracle_spec.spec` drives: `ship` from `created`
+   (reject), `pay` (accept -> `paid`), `ship` (accept -> `shipped`), `deliver` (accept ->
+   `delivered`), `cancel` from `delivered` (reject); `expect_final="delivered"`.
+3. Add `ORDER_ADD_REFUND_MODIFY` (`RealSystemModifyTask`, `cls="lifecycle-modify"`,
+   `oracle_kind="state_machine"`) to `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored
+   CORRECT baseline `Order` matching step 2's contract exactly (no `refund()`); `mod_sentence` asks
+   for an added `refund()` transition legal ONLY from `delivered` (moving to a new `refunded`
+   state) and illegal (raising `ValueError`, state unchanged) from every other state.
+   `oracle_spec.spec`'s `states`/`transitions` are extended with `refunded` + the `delivered:refund`
+   transition; the drive script walks the full legal path to `delivered`, then exercises the legal
+   `refund` (accept -> `refunded`), plus regresses an illegal `refund` attempted from an earlier
+   state (e.g. `paid`) in a SEPARATE drive entry, and regresses the original illegal
+   `ship`-before-`pay` check.
+4. Add `tests/test_ext060_lifecycle_inventory.py` (OFFLINE, no model/Jetson, hand-written fixtures
+   only): (a) a CORRECT `Order` fixture is accepted by
+   `grade_real_system_task(ORDER_LIFECYCLE_TASK, ...)`; (b) a BROKEN fixture (an illegal transition
+   allowed, e.g. unguarded `ship()`) is rejected; (c) leaves-OFF
+   (`leaf_for_spec(ORDER_LIFECYCLE_TASK.sentence) is None`) + the task is a member of
+   `REAL_SYSTEMS_TASKS`; (d) the MODIFY task's oracle accepts a hand-written CORRECT
+   guarded-`refund()` fixture and rejects both the unmodified baseline (no `refund()`) and an
+   UNGUARDED `refund()` fixture (legal from any state); `ORDER_ADD_REFUND_MODIFY` is a member of
+   `REAL_SYSTEMS_MODIFY_TASKS` with `leaf_for_spec(mod_sentence) is None`.
+5. Run `python -m pytest tests/test_ext060_lifecycle_inventory.py
+   tests/test_ext060_real_systems_suite.py -q`; confirm green (offline only -- do not run the full
+   suite). Update `.jarify/EXT-060/index.json` (REQ-13/REQ-14 ranges, via `jarify-manage-links`) and
+   flip the REQ-13/REQ-14 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-13] `oracle_kind="state_machine"` + first LIFECYCLE CREATE task (order state machine)
+- [REQ-14] First LIFECYCLE MODIFY task: add a `refund()` transition
+
+### [TASK-11] `oracle_kind="conservation"` + first INVENTORY CREATE+MODIFY tasks (REQ-15, REQ-16)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, import `grade_conservation` from
+   `harness.conservation_oracle`. Add `_grade_conservation(oracle_spec, root, python_exe)` that maps
+   `oracle_spec` (`{"module": str, "entity": str, "spec": {...conservation spec shape...}}`) to
+   `grade_conservation(root, module=oracle_spec["module"], entity=oracle_spec["entity"],
+   spec=oracle_spec["spec"], python_exe=python_exe)`, returning `(accepted, note)`; never raises.
+   Wire `oracle_kind == "conservation"` into `grade_real_system_task`'s dispatch.
+2. Add `INVENTORY_TASK` (`RealSystemTask`, `cls="inventory"`, `oracle_kind="conservation"`) to
+   `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only single-file `Inventory` class in
+   `inventory.py` (constructor takes an initial per-SKU stock count, `reserve(qty)`/`release(qty)`
+   methods, zero-argument `available()`/`reserved()` readers, `reserve(qty)` raising `ValueError`
+   with quantities left unchanged when `qty` exceeds what is available, units conserved).
+   `oracle_spec.spec` drives an illegal oversell `reserve` (reject), then a legal `reserve` and a
+   legal `release` each with declared per-quantity `deltas`, ending on a concrete `expect_final`.
+3. Add `INVENTORY_ADD_BACKORDER_MODIFY` (`RealSystemModifyTask`, `cls="inventory-modify"`,
+   `oracle_kind="conservation"`) to `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored
+   CORRECT baseline `Inventory` matching step 2's contract exactly (no `backorder()`);
+   `mod_sentence` asks for an added `backorder(qty)` method that records demand beyond available
+   WITHOUT ever mutating `available`/`reserved`, exposing the recorded demand via a new
+   zero-argument reader (e.g. `backordered()`). `oracle_spec.spec["quantities"]` is extended with
+   that new backorder-demand quantity; a `backorder()` op's `deltas` entry touches ONLY the new
+   quantity (never `available`/`reserved`), so the conservation oracle's own per-op
+   reader-vs-shadow check independently proves the addition leaves `available`/`reserved`
+   conservation undisturbed while still recording backorder growth.
+4. Extend `tests/test_ext060_lifecycle_inventory.py` (same file TASK-10 creates, OFFLINE, no
+   model/Jetson): (a) a CORRECT `Inventory` fixture is accepted by
+   `grade_real_system_task(INVENTORY_TASK, ...)`; (b) a BROKEN fixture (allows an oversell, e.g.
+   unguarded `reserve()`) is rejected; (c) leaves-OFF
+   (`leaf_for_spec(INVENTORY_TASK.sentence) is None`) + the task is a member of
+   `REAL_SYSTEMS_TASKS`; (d) the MODIFY task's oracle accepts a hand-written CORRECT `backorder()`
+   fixture and rejects both the unmodified baseline (no `backorder()`) and a fixture whose
+   `backorder()` incorrectly mutates `available`/`reserved`; `INVENTORY_ADD_BACKORDER_MODIFY` is a
+   member of `REAL_SYSTEMS_MODIFY_TASKS` with `leaf_for_spec(mod_sentence) is None`.
+5. Run `python -m pytest tests/test_ext060_lifecycle_inventory.py
+   tests/test_ext060_real_systems_suite.py -q`; confirm green (offline only -- do not run the full
+   suite). Update `.jarify/EXT-060/index.json` (REQ-15/REQ-16 ranges, via `jarify-manage-links`) and
+   flip the REQ-15/REQ-16 acceptance boxes + `status` toward `covered` if REQ-13 through REQ-16 are
+   all fully met.
+
+#### Implements
+- [REQ-15] `oracle_kind="conservation"` + first INVENTORY CREATE task (no-oversell reservation)
+- [REQ-16] First INVENTORY MODIFY task: add a non-oversell-safe `backorder()`
