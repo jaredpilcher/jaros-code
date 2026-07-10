@@ -121,6 +121,13 @@ BUILT systems stays. (c) STORAGE is tight — prefer in-process mocks, check dis
 artifacts. (d) REGULAR NTFY every tick (never silent; quiet hours 02:00–07:59 America/Denver → morning
 digest). (e) A 2nd inference node (this laptop, CPU/llama.cpp, thread-capped, same model+quant, best
 overnight) can roughly double throughput — wire the runner to target whichever node is free.
+(f) **CLAUDE TOKENS ARE NOT A CONSTRAINT — USE AS MANY AS YOU NEED (owner directive, 2026-07-09):** the
+owner has purchased ample tokens ("we literally couldn't use it all up") for MY (Claude Code) operation,
+so do NOT self-throttle orchestration. Run FULL parallelism, delegate heavily to sub-agents to keep the
+main context lean, spawn as many builders/architects/researchers/measurements as the work warrants, and
+never trim or skip work to "save tokens." This is ORTHOGONAL to the $0 tenet: the SYSTEM WE BUILD still
+runs at $0 (local Gemma only, no paid/cloud inference, cloud simulated) — that is untouched. Only MY
+orchestration cost is uncapped; the product's inference cost stays zero, always.
 
 **10. THE SELF-SUSTAINING GOVERNANCE LOOP.** The `jarify-governance-loop` runs continuously (~5-min
 self-re-arm): read the roadmap, work its top NOW item through Jarify, extend the atlas via Discovery,
