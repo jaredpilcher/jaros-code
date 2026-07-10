@@ -1,38 +1,74 @@
 {
-  "REQ-6": [
+  "REQ-7": [
     {
-      "file": "harness/agent_oracle.py",
-      "startLine": 67,
-      "endLine": 598
+      "file": "tests/test_ext059_state_machine_oracle.py",
+      "startLine": 11,
+      "endLine": 264
     },
     {
-      "file": "tests/test_ext059_agent_oracle.py",
-      "startLine": 10,
-      "endLine": 381
+      "file": "harness/state_machine_oracle.py",
+      "startLine": 1,
+      "endLine": 250
     }
   ],
   "REQ-3": [
     {
-      "file": "harness/import_driver.py",
-      "startLine": 48,
-      "endLine": 528
-    },
-    {
       "file": "tests/test_ext059_import_driver.py",
       "startLine": 9,
       "endLine": 279
+    },
+    {
+      "file": "harness/import_driver.py",
+      "startLine": 48,
+      "endLine": 528
     }
   ],
   "REQ-1": [
     {
-      "file": "harness/fs_oracle.py",
-      "startLine": 46,
-      "endLine": 367
-    },
-    {
       "file": "tests/test_ext059_fs_oracle.py",
       "startLine": 10,
       "endLine": 251
+    },
+    {
+      "file": "harness/fs_oracle.py",
+      "startLine": 46,
+      "endLine": 367
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": "tests/test_ext059_double_entry_oracle.py",
+      "startLine": 11,
+      "endLine": 347
+    },
+    {
+      "file": "harness/double_entry_oracle.py",
+      "startLine": 1,
+      "endLine": 381
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "tests/test_ext059_conservation_oracle.py",
+      "startLine": 11,
+      "endLine": 356
+    },
+    {
+      "file": "harness/conservation_oracle.py",
+      "startLine": 1,
+      "endLine": 307
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": "tests/test_ext059_agent_oracle.py",
+      "startLine": 10,
+      "endLine": 381
+    },
+    {
+      "file": "harness/agent_oracle.py",
+      "startLine": 67,
+      "endLine": 598
     }
   ],
   "REQ-2": [
@@ -45,30 +81,6 @@
       "file": "harness/system_suite.py",
       "startLine": 138,
       "endLine": 233
-    }
-  ],
-  "REQ-7": [
-    {
-      "file": "harness/state_machine_oracle.py",
-      "startLine": 1,
-      "endLine": 250
-    },
-    {
-      "file": "tests/test_ext059_state_machine_oracle.py",
-      "startLine": 11,
-      "endLine": 264
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": "harness/conservation_oracle.py",
-      "startLine": 1,
-      "endLine": 307
-    },
-    {
-      "file": "tests/test_ext059_conservation_oracle.py",
-      "startLine": 11,
-      "endLine": 356
     }
   ]
 }

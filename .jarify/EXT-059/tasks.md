@@ -193,3 +193,58 @@ double-spend) must be REJECTED, not silently allowed.
 
 #### Implements
 - [REQ-8] Conservation / no-oversell invariant oracle (`conservation_oracle`)
+
+### [TASK-7] Build the double-entry-balance invariant oracle (`harness/double_entry_oracle.py`)
+
+A deterministic, model-free verifier that grades whether a built accounting system preserves the
+double-entry invariant -- the #4 (last) of the atlas's top-four highest-leverage oracles (unblocks
+~16 fintech/accounting classes: ledgers, journals, GL, wallets, escrow, statements). The honesty
+core: an UNBALANCED entry (debits != credits) must be REJECTED, and total debits == total credits
+always.
+
+#### Steps
+1. Create `harness/double_entry_oracle.py` defining the declarative spec shape: `accounts` (list
+   of named zero-arg entity reader methods, each returning an exact integer-cents signed balance),
+   `initial` (dict of account name -> starting integer-cents balance), `post_method` (the posting
+   method name, default `"post"`), a `drive` script (ordered list of `{"legs": [...],
+   "expect": "accept"|"reject", "args": [...], "kwargs": {...}}` ops, where each leg is a
+   `{"account", "debit"|"credit"}` dict in integer cents; an `accept` op's legs must sum to zero
+   once translated to signed per-account deltas -- Sigma(debits)==Sigma(credits) encoded
+   structurally in the spec, mirroring `conservation_oracle`'s `deltas`-sum-to-zero law -- and a
+   `reject` op's legs must NOT sum to zero), and `expect_final` (dict of account name -> ending
+   integer-cents balance). Mirror `harness/conservation_oracle.py`'s shadow-tracking approach and
+   module docstring style exactly.
+2. Implement `grade_double_entry(root, *, module, entity, spec, python_exe=None, timeout=...,
+   mem_mb=512) -> (accepted: bool, note: str)`: build one `harness.import_driver.drive_import`
+   `api_calls` list that (a) constructs the entity once, (b) for each drive-script op calls the
+   posting method with its `legs` (as one plain JSON-list positional argument) then reads every
+   account reader back, (c) after the whole script, reads every account one more time -- reusing
+   `drive_import`'s sandboxed-subprocess launch, sentinel protocol, and `_kill_tree` teardown as-is
+   (no reimplementation of `harness/import_driver.py`).
+3. Render the `checks` list purely in Python before driving (no subprocess call in this step): walk
+   `drive` tracking a shadow per-account balance dict from `spec['initial']`; for each
+   `expect:"accept"` op assert the posting call did NOT raise AND every account reader equals the
+   shadow value after applying that entry's signed leg deltas; for each `expect:"reject"` op assert
+   the posting call DID raise (`spec.get('reject_exception', 'ValueError')` by default) AND every
+   account reader equals the UNCHANGED shadow value from before the op -- an unbalanced entry that
+   is silently posted is a caught FAILURE, not a pass; assert the final shadow balances equal
+   `expect_final`.
+4. Add `validate_spec(spec) -> (bool, note)` (checks `accounts`/`initial`/`post_method`/`drive`/
+   `expect_final` shape, including that every `accept` op's legs balance and every `reject` op's
+   legs do NOT balance, and that every money value -- `initial`/leg amounts/`expect_final` -- is a
+   plain integer number of cents, never `float`/`bool`) BEFORE anything is driven, and wrap the
+   whole grading path in a top-level try/except so `grade_double_entry` NEVER raises -- any
+   malformed spec, uncallable entity, or crashing/garbage fixture is an honest `(False, note)`.
+5. Add `tests/test_ext059_double_entry_oracle.py` (offline, hand-written fixtures, no model call):
+   (a) a CORRECT two-account ledger fixture (balanced entries post correctly; balances land exact
+   integer cents) passes; (b) a BROKEN fixture that ACCEPTS an unbalanced entry (no balance guard
+   at all) is caught (`accepted=False`) -- the flagship honesty test; (c) a fixture with wrong
+   balance math (double-applies a leg's delta) fails; (d) a fixture that violates the ledger-wide
+   debits==credits invariant (silently drops credit legs, creating money) fails; (e) the oracle
+   never raises on a crashing/garbage fixture or spec. Run only
+   `python -m pytest tests/test_ext059_double_entry_oracle.py -q`.
+6. Update `.jarify/EXT-059/index.json` (via `jarify-manage-links`) mapping REQ-9 to the new file
+   ranges; `requirements.md` status stays `partial` (REQ-4/REQ-5 remain open).
+
+#### Implements
+- [REQ-9] Double-entry-balance invariant oracle (`double_entry_oracle`)

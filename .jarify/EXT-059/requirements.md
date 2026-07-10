@@ -16,6 +16,8 @@ implementation:
   - tests/test_ext059_state_machine_oracle.py
   - harness/conservation_oracle.py
   - tests/test_ext059_conservation_oracle.py
+  - harness/double_entry_oracle.py
+  - tests/test_ext059_double_entry_oracle.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -189,3 +191,46 @@ balance, double-spend) must be REJECTED, not silently allowed.
 
 **Follow-up (not built here):** a concurrent/interleaved-ops variant and an HTTP-service-driven
 variant.
+
+### [REQ-9] Double-entry-balance invariant oracle (`double_entry_oracle`)
+
+A deterministic, model-free verifier that grades whether a built accounting system preserves the
+DOUBLE-ENTRY invariant (ledgers, journals, general-ledger accounts, wallets, escrow accounts,
+statements -- unblocks ~16 fintech/accounting classes, the #4 and last of the atlas's top-four
+highest-leverage oracles). The honesty core: an entry whose debit legs and credit legs do not sum
+to the same total (an UNBALANCED entry) must be REJECTED, not silently posted, and total debits
+must always equal total credits.
+
+#### Acceptance Criteria
+- [x] `harness/double_entry_oracle.py` accepts a declarative spec (`accounts` -- named zero-arg
+      entity reader methods each returning an exact integer-cents signed balance; `initial` -- a
+      dict of account name -> starting integer-cents balance; `post_method` -- the posting method
+      name; a `drive` script of journal-entry ops (`legs` -- each a `{"account", "debit"|"credit"}`
+      dict in integer cents -- plus `expect: "accept"|"reject"`, where every `accept` op's legs
+      must sum to zero once translated to signed per-account deltas -- Sigma(debits)==Sigma(credits)
+      encoded structurally in the spec -- and every `reject` op's legs must NOT sum to zero);
+      `expect_final` -- the modeled account balances at the end), then drives a built class-based
+      entity (reusing `harness.import_driver.drive_import`, import-only, no reimplementation)
+      through the script.
+- [x] Each `expect:"accept"` op must post without raising AND every account reader must read back
+      the shadow-tracked exact-cents balance after applying that entry's signed leg deltas; each
+      `expect:"reject"` op (a genuinely UNBALANCED entry) must be REFUSED (raise) with every account
+      reader UNCHANGED -- an unbalanced entry that is silently posted is a FAILURE, not a pass.
+- [x] Money is exact: every spec value (`initial`/leg amounts/`expect_final`) must be a plain
+      integer number of cents, never `float`/`bool` -- so a built entity that drifts into float
+      arithmetic internally is caught by the resulting exact-equality mismatch.
+- [x] The final account balances after the whole script must match `expect_final`; because every
+      accepted entry's legs balance, the ledger-wide invariant (Sigma of all debit legs across the
+      whole script equals Sigma of all credit legs) holds structurally and is verified dynamically
+      via the same per-account balance checks.
+- [x] Never raises: a missing/uncallable entity, a crashing fixture, or a malformed spec (including
+      an `accept` op whose legs don't balance, or a `reject` op whose legs DO balance) is an honest
+      `ok=False`/`accepted=False` with a diagnostic note.
+- [x] Tests prove a correct two-account ledger fixture passes, a fixture that ACCEPTS an unbalanced
+      entry is CAUGHT (`accepted=False`) -- the flagship honesty test, a fixture with wrong balance
+      math (double-applies a leg) fails, a fixture that violates the ledger-wide debits==credits
+      invariant (silently drops credit legs) fails, and the oracle never raises on a crashing/
+      garbage fixture.
+
+**Follow-up (not built here):** a running `total_debits()`/`total_credits()` reader-pair variant, a
+multi-currency variant, and an HTTP-service-driven variant.
