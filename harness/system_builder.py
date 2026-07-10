@@ -932,6 +932,7 @@ System spec: {spec}
 This module's responsibility: {resp}
 It MUST define exactly these (matching signatures): {sigs}
 {ledger}
+{routing}
 {deps}
 Output ONLY the Python code for {name} (no markdown fences, no prose)."""
 
@@ -1022,6 +1023,50 @@ def _build_interface_ledger(plan: "dict | None") -> str:
 # #EXT-036-REQ-41 End
 
 
+# #EXT-036-REQ-51 Start
+# TASK-64: the PROMPT half of the stdlib-http-service ROUTING CONTRACT (the SCAFFOLD half
+# lives in `harness/http_service_scaffold.py`). MEASURED (4 code-dumped draws,
+# `.jaros-data/artifacts/saas_diag.log` + the port-coercion/scaffold repairs above): even
+# once the SERVICE LOGIC is correct, gemma's hand-rolled `http.server` PROTOCOL code is
+# unstable per draw (a plain function passed where a handler CLASS is required, a
+# hallucinated `request.end_positive()`, a missing serve loop, a str-typed PORT) -- extraction
+# repairs can't chase every per-draw shape. The two-plane fix: CONTRACT the model's output
+# instead. For a spec demanding a stdlib `http.server` service, every per-module build prompt
+# gets this short, imperative instruction: the service-logic module exposes EXACTLY a pure
+# `route(method, path, body) -> (status, body)` function and writes NO protocol code at all
+# (no http.server/socketserver/socket, no serve loop, no reading PORT) -- the deterministic
+# scaffold (`harness.http_service_scaffold.apply_http_service_scaffold`) then ALWAYS wires a
+# generated, correct `BaseHTTPRequestHandler`/`HTTPServer` driver around whatever `route()` it
+# finds, so the model never has to get the protocol boilerplate right at all.
+ROUTING_CONTRACT_GUIDANCE = (
+    "ROUTING CONTRACT for this stdlib http.server web service: this module's service logic "
+    "MUST expose EXACTLY one function:\n"
+    "    def route(method: str, path: str, body: dict | None) -> tuple[int, dict | list | None]:\n"
+    "It is a PURE function -- given the HTTP method, the URL path, and the parsed JSON request "
+    "body (or None), it returns (status_code, json_serializable_body_or_None). Do NOT import or "
+    "use http.server, socketserver, socket, BaseHTTPRequestHandler, or write ANY serve loop -- "
+    "and do NOT read the PORT environment variable. A separate deterministic component owns ALL "
+    "HTTP protocol (binding the port, parsing requests, writing responses); you own ONLY routing "
+    "and business logic via route()."
+)
+
+
+def _routing_contract_guidance(spec: "str | None") -> str:
+    """REQ-51: for a spec demanding a stdlib ``http.server`` web service (see
+    ``harness.http_service_scaffold.spec_demands_stdlib_http_service``), return the ROUTING
+    CONTRACT instruction text (:data:`ROUTING_CONTRACT_GUIDANCE`) to inject into every
+    per-module build prompt. Returns ``""`` for any non-http-service spec -- a byte-identical
+    no-op, the same degrade-gracefully shape as :func:`_build_interface_ledger`. Never raises."""
+    try:
+        from harness.http_service_scaffold import spec_demands_stdlib_http_service
+        if spec_demands_stdlib_http_service(spec):
+            return ROUTING_CONTRACT_GUIDANCE
+    except Exception:
+        pass
+    return ""
+# #EXT-036-REQ-51 End
+
+
 def _build_module(spec: str, m: dict, built: dict, llm, *,
                    max_repair: int = MAX_REPAIR_ATTEMPTS,
                    # #EXT-036-REQ-41 Start
@@ -1046,9 +1091,12 @@ def _build_module(spec: str, m: dict, built: dict, llm, *,
     # #EXT-036-REQ-41 Start
     ledger = _build_interface_ledger(plan) if plan else ""
     # #EXT-036-REQ-41 End
+    # #EXT-036-REQ-51 Start
+    routing = _routing_contract_guidance(spec)
+    # #EXT-036-REQ-51 End
     code = _strip_fences(_call(llm, BUILD_PROMPT.format(
         name=name, spec=spec, resp=m.get("responsibility", ""), sigs=sigs,
-        ledger=ledger, deps=deps),
+        ledger=ledger, routing=routing, deps=deps),
         max_tokens=BUILD_MAX_TOKENS))
     ok, err = syntax_ok(code)
     for _ in range(max_repair):

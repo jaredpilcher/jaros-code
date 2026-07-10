@@ -2912,3 +2912,75 @@ correctly no-ops (`has_real_serve_loop=True`); the ONLY defect is the missing `i
 
 #### Implements
 - [REQ-50] Deterministic PORT int-coercion repair — fix a str-typed port at the server bind site
+
+### [TASK-64] The stdlib-HTTP-service ROUTING CONTRACT (REQ-51, owner directive 2026-07-09 -- the two-plane thesis applied at the PROMPT level for the SaaS service tier)
+
+MEASURED MOTIVATION (4 code-dumped draws, `.jaros-data/artifacts/saas_diag.log` + the port-coercion/
+scaffold repairs REQ-45/46/48/50): gemma builds correct DB/business logic but its hand-rolled
+`http.server` PROTOCOL is UNSTABLE per draw -- an `api.py` with `handle_request(request,
+db_manager)` (passing a FUNCTION where `TCPServer` needs a handler CLASS, hallucinating
+`request.end_positive()`), an earlier `handle_request(method, path, data) -> (status, body)`, an
+`api_handler.py` that failed the syntax gate, plus a str-PORT crash (now fixed by REQ-50). Post-PORT-
+lever both SaaS classes still measured 0/3 ("http checks failed"). CONCLUSION: extraction can't
+chase per-draw shapes; instead CONTRACT the model's output and let the deterministic plane own ALL
+protocol.
+
+#### Steps
+1. In `harness/http_service_scaffold.py`, add `find_route_function(modules: dict) -> dict | None`:
+   an AST scan of `{filename: source}` module sources for a TOP-LEVEL `def route(...)` with EXACTLY
+   3 parameters and no `*args`, ignoring a wrong-arity `route` def and a `route` def NESTED inside a
+   class or another function (only `tree.body`, never `ast.walk`). Returns `{"module": <stem>,
+   "kind": "function", "class": None, "callable": "route"}` for the first match, or `None`. Never
+   raises. Wrap in `# #EXT-036-REQ-51 Start`/`End` markers.
+2. In `harness/http_service_scaffold.py`, add `generate_route_skeleton(handler, *, same_module,
+   existing_code=None) -> str`: a deterministic `BaseHTTPRequestHandler`/`HTTPServer` driver whose
+   `do_GET`/`do_POST`/`do_PUT`/`do_DELETE`/`do_PATCH` parse the method/path/JSON body, call
+   `route(method, path, body)`, write the returned status + JSON body (empty body forced for a 204
+   regardless of the returned body value, correct `Content-Length` header always), and read `PORT`
+   via `os.environ.get("PORT", "8000")` under `if __name__ == "__main__":`. `same_module=True`
+   strips the model's own `if __name__ == "__main__":` block(s) first (a helper `_strip_main_guard`,
+   AST-based, byte-identical when there's nothing to strip) and appends the driver; otherwise a
+   fresh module is generated that imports `route` from `handler['module']`. Wrap in
+   `# #EXT-036-REQ-51 Start`/`End` markers.
+3. Wire `find_route_function` into `apply_http_service_scaffold` with TOP PRECEDENCE, checked right
+   after the existing Flask/FastAPI `detect_web_service` no-op guard and BEFORE the
+   `has_real_serve_loop` guard: when a `route()` is recognized, `generate_route_skeleton` is wired
+   at the spec-demanded entrypoint filename, UNCONDITIONALLY REPLACING whatever entrypoint/serve-
+   loop code the model emitted there (broken OR already a real serve loop -- `has_real_serve_loop`
+   is deliberately bypassed on THIS path only). When no `route()` is found, fall through to the
+   PRE-EXISTING precedence unchanged (`has_real_serve_loop` no-op > `find_dispatch_handler` skeleton
+   > clean-prompt retry > no-op). Never mutates the input dict; never raises. Wrap in
+   `# #EXT-036-REQ-51 Start`/`End` markers.
+4. In `harness/system_builder.py`, add `ROUTING_CONTRACT_GUIDANCE` (the fixed instruction text: the
+   exact `def route(method: str, path: str, body: dict | None) -> tuple[int, dict | list | None]:`
+   contract, a ban on `http.server`/`socketserver`/`socket`/any serve loop, a ban on reading `PORT`)
+   and `_routing_contract_guidance(spec) -> str`, which returns that text when `spec` demands a
+   stdlib `http.server` service (`harness.http_service_scaffold.spec_demands_stdlib_http_service`,
+   imported locally to avoid a module-load-time dependency) and `""` otherwise. Never raises. Wrap
+   in `# #EXT-036-REQ-51 Start`/`End` markers, placed just before `_build_module` (the same spot the
+   REQ-41 interface ledger lives).
+5. Add a `{routing}` placeholder to `BUILD_PROMPT` (between the existing `{ledger}` and `{deps}`
+   placeholders) and wire `routing = _routing_contract_guidance(spec)` into `_build_module`'s
+   `BUILD_PROMPT.format(...)` call, wrapped in `# #EXT-036-REQ-51 Start`/`End` markers around the
+   new call/variable (the placeholder line itself, inside the triple-quoted `BUILD_PROMPT` string,
+   cannot carry an inline comment marker -- same precedent as REQ-41's `{ledger}` addition).
+6. Add offline tests `tests/test_ext036_routing_contract.py` (NO model/Jetson calls) covering: (a)
+   PROMPT half -- `_routing_contract_guidance` returns the contract text for an http-service spec
+   and `""` for a non-http spec; `_build_module` exercised directly with a stub `llm` shows the
+   contract text present in the http-service-spec module prompt and absent in the non-http-spec
+   module prompt; (b) `find_route_function` finds a `route()` across modules, ignores wrong-arity
+   (too few/too many params, `*args`) and nested (class method, closure) `route` defs, never raises
+   on garbage; (c) a hand-written CORRECT `route()` module, once scaffolded, actually RUNS and
+   passes a real `serve_and_check_stdlib` round-trip (POST 201, GET 200, DELETE 204, GET-after-
+   delete 404) end-to-end; (d) the SAME scaffold REPLACES a broken model serve loop (the measured
+   `TCPServer(("", port), handler_function)` shape) when a `route()` exists elsewhere, and the
+   repaired tree passes the same serve check; (e) non-degrading -- no `route()` + an already-correct
+   serve loop is byte-identical, a non-http spec is unchanged, garbage input never raises.
+7. Run `python -m pytest tests/test_ext036_routing_contract.py -q` (offline); confirm green. Also
+   run `python -m pytest tests/test_ext036_http_service_scaffold.py tests/test_ext036_port_coercion.py -q`
+   (no regression) and `python -c "import ast; ast.parse(open('harness/system_builder.py').read())"`
+   / `python -c "import harness.system_builder, harness.http_service_scaffold"` (clean). Update
+   `.jarify/EXT-036/index.json` (REQ-51 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-51] The stdlib-HTTP-service ROUTING CONTRACT — two-plane thesis applied at the PROMPT level for the SaaS service tier

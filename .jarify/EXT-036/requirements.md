@@ -2273,3 +2273,67 @@ repairs: a mechanical AST pass over the built modules, never a model re-call.
   are recognized and coerced; idempotency on an already-`int(...)`/int-literal port; never raises
   on garbage/unparseable input; `apply_port_coercion` over a multi-module dict changes only the
   offending module. `tests/test_ext036_port_coercion.py`.
+
+### [REQ-51] The stdlib-HTTP-service ROUTING CONTRACT — two-plane thesis applied at the PROMPT level for the SaaS service tier (DONE — EXT-036 TASK-64, 2026-07-10)
+
+MEASURED MOTIVATION (4 code-dumped draws, `.jaros-data/artifacts/saas_diag.log` + the port-coercion/
+scaffold repairs already landed as REQ-45/46/48/50): gemma builds CORRECT DB/business logic but its
+hand-rolled `http.server` PROTOCOL is UNSTABLE per draw — draw shapes seen: `api.py` with
+`handle_request(request, db_manager)` (passing a FUNCTION where `TCPServer` needs a handler CLASS,
+hallucinating `request.end_positive()`), an earlier `handle_request(method, path, data) -> (status,
+body)`, an `api_handler.py` that failed the syntax gate, plus a str-PORT crash (fixed by REQ-50's
+port-coercion repair). Post-PORT-lever both canonical SaaS classes still measured 0/3 ("http checks
+failed"). CONCLUSION: extraction can't chase every per-draw shape; instead CONTRACT the model's
+output and let the deterministic plane own ALL protocol — the same two-plane thesis (Tenet 1) already
+proven at the tool/agent level, applied here at the PROMPT level for the stdlib SaaS service tier.
+
+Two halves:
+(A) PROMPT half — every per-module build prompt, for a spec demanding a stdlib `http.server`
+service, is told to expose EXACTLY a pure `def route(method: str, path: str, body: dict | None) ->
+tuple[int, dict | list | None]:` function and write NO protocol code (no `http.server`/
+`socketserver`/`socket`/serve loop, no reading `PORT`).
+(B) SCAFFOLD half — the deterministic scaffold ALWAYS recognizes a top-level `route()` and wires a
+generated, correct `BaseHTTPRequestHandler`/`HTTPServer` driver around it, REPLACING whatever
+entrypoint/serve-loop code the model emitted (broken OR already-working) — the routing contract, once
+honored, takes precedence over every older per-draw recognition path.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py`'s `_routing_contract_guidance(spec)` returns the fixed
+  `ROUTING_CONTRACT_GUIDANCE` instruction text (the exact `def route(method: str, path: str, body:
+  dict | None) -> tuple[int, dict | list | None]:` contract, a ban on `http.server`/`socketserver`/
+  `socket`/any serve loop, and a ban on reading `PORT`) when `spec` demands a stdlib `http.server`
+  service (`harness.http_service_scaffold.spec_demands_stdlib_http_service`), and `""` for any
+  non-http-service spec or malformed input. Never raises.
+- [x] Wired into `_build_module`'s `BUILD_PROMPT` assembly (the same seam that already injects the
+  REQ-41 interface ledger) so EVERY per-module build prompt for an http-service spec carries the
+  routing contract — verified by exercising `_build_module` directly with a stub `llm` that records
+  the prompt it received: the contract text is present for an http-service spec's module prompt and
+  absent for a non-http-service spec's module prompt.
+- [x] `harness/http_service_scaffold.py`'s `find_route_function(modules)` AST-scans `{filename:
+  source}` module sources for a TOP-LEVEL `def route(...)` with EXACTLY 3 parameters and no
+  `*args`, ignoring a wrong-arity `route` def and a `route` def NESTED inside a class or another
+  function. Returns the first match's module stem, or `None` on no match / malformed input. Never
+  raises.
+- [x] `apply_http_service_scaffold` gives the routing contract TOP PRECEDENCE: when
+  `find_route_function` recognizes a `route()`, a generated `BaseHTTPRequestHandler`/`HTTPServer`
+  driver (`generate_route_skeleton`) — do_GET/do_POST/do_PUT/do_DELETE/do_PATCH parse the
+  method/path/JSON body, call `route(method, path, body)`, write the returned status + JSON body
+  (empty body forced for a 204 regardless of the returned body value, correct `Content-Length`
+  always), reads `PORT` via `os.environ.get("PORT", "8000")` — is wired at the spec-demanded
+  entrypoint filename, UNCONDITIONALLY REPLACING whatever entrypoint/serve-loop code the model
+  emitted there, whether broken OR already a real serve loop (the `has_real_serve_loop`
+  non-degrading guard is deliberately bypassed on this path). Precedence overall: route() contract
+  > existing recognized dispatch shapes (`find_dispatch_handler`, REQ-48) > skeleton fallback /
+  clean-prompt retry. Never mutates the input dict; never raises.
+- [x] Non-degrading for every OLDER shape: when NO `route()` is recognized, behavior is BYTE-
+  IDENTICAL to before this requirement — the pre-existing `has_real_serve_loop`/
+  `find_dispatch_handler`/clean-prompt-retry precedence (REQ-48) is unchanged, a non-http-service
+  spec is a no-op, and garbage/malformed input never raises.
+- [x] Proven OFFLINE (no model/Jetson call): a hand-written CORRECT `route()` module, once scaffolded,
+  actually RUNS and passes a real `serve_and_check_stdlib` round-trip (POST 201, GET 200, DELETE 204,
+  GET-after-delete 404) end-to-end; the SAME scaffold REPLACES a broken model serve loop (the
+  measured `TCPServer(("", port), handler_function)` shape passing a function where a handler class
+  is required) when a `route()` exists elsewhere, and the repaired tree passes the same serve check;
+  `find_route_function` correctly ignores wrong-arity and nested `route` defs; the prompt-injection
+  seam is verified directly against `_build_module`. `tests/test_ext036_routing_contract.py`, plus no
+  regression in `tests/test_ext036_http_service_scaffold.py` / `tests/test_ext036_port_coercion.py`.

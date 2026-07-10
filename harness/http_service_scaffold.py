@@ -264,6 +264,177 @@ def generate_skeleton(handler: dict, *, same_module: bool,
     return _SKELETON_HEADER + import_line + "\n" + instantiate + body.lstrip("\n")
 
 
+# #EXT-036-REQ-51 Start
+# TASK-64: the SCAFFOLD half of the stdlib-http-service ROUTING CONTRACT (the PROMPT half
+# lives in `harness/system_builder.py`'s `_routing_contract_guidance`). MEASURED (4
+# code-dumped draws, `.jaros-data/artifacts/saas_diag.log`): the model's hand-rolled
+# `http.server` PROTOCOL code is unstable PER DRAW -- a plain function passed where
+# `TCPServer` needs a handler CLASS, a hallucinated `request.end_positive()`, a router with
+# no serve loop at all, a str-typed PORT -- so extraction/repair can never chase every shape.
+# Instead of recognizing one more per-draw shape, this recognizes the CONTRACT ITSELF: a
+# top-level `def route(method, path, body):` -- and, whenever one exists, the deterministic
+# server ALWAYS owns ALL protocol, unconditionally REPLACING whatever serve-loop/entrypoint
+# code the model emitted (broken OR already-working) with a generated, correct
+# `BaseHTTPRequestHandler`/`HTTPServer` driver wired to it. This is checked BEFORE the
+# `has_real_serve_loop` non-degrading guard below, so route() precedence is:
+#   route() contract  >  existing recognized dispatch shapes (`find_dispatch_handler`)  >
+#   skeleton fallback / clean-prompt retry.
+# Non-degrading for the OLDER shapes: when no route() exists, this block is a complete no-op
+# and the pre-existing find_dispatch_handler/has_real_serve_loop precedence is unchanged.
+def find_route_function(modules: "dict[str, str] | None") -> "dict | None":
+    """Best-effort, NEVER-RAISE AST scan of ``{filename: source}`` module SOURCES for the
+    ROUTING CONTRACT function (REQ-51): a TOP-LEVEL ``def route(...)`` with EXACTLY 3
+    parameters (e.g. ``route(method, path, body)``), no ``*args``. A ``route`` def NESTED
+    inside a class or another function is ignored (only a genuine top-level, module-scope
+    function counts as the contract being honored), as is a wrong-arity ``route`` def.
+
+    Returns ``{"module": <stem>, "kind": "function", "class": None, "callable": "route"}``
+    for the FIRST match (module dict order), or ``None`` when nothing matches or on any
+    malformed input."""
+    try:
+        items = list((modules or {}).items())
+    except (AttributeError, TypeError):
+        return None
+    for name, code in items:
+        try:
+            if not name or not str(name).endswith(".py") or not code:
+                continue
+            tree = ast.parse(str(code))
+        except (SyntaxError, TypeError, ValueError):
+            continue
+        stem = str(name)[:-3]
+        try:
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef) and node.name == "route":
+                    args = node.args
+                    n_params = len(list(args.posonlyargs or [])) + len(args.args or [])
+                    if n_params == 3 and not args.vararg:
+                        return {"module": stem, "kind": "function", "class": None,
+                                "callable": "route"}
+        except Exception:
+            continue
+    return None
+
+
+def _is_main_guard_if(node: "ast.stmt") -> bool:
+    """True when ``node`` is a top-level ``if __name__ == "__main__":`` (or the reversed
+    ``"__main__" == __name__``) guard -- used to strip a model's own entrypoint block before
+    appending the deterministic routing driver in the same module. Never raises."""
+    if not isinstance(node, ast.If):
+        return False
+    test = node.test
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)):
+        return False
+    operands = [test.left, *test.comparators]
+    has_name = any(isinstance(o, ast.Name) and o.id == "__name__" for o in operands)
+    has_main = any(isinstance(o, ast.Constant) and o.value == "__main__" for o in operands)
+    return has_name and has_main
+
+
+def _strip_main_guard(code: str) -> str:
+    """Remove any top-level ``if __name__ == "__main__":`` block(s) from ``code`` -- so
+    appending the routing driver's OWN ``__main__`` block never lands behind a model's
+    broken/duplicate one. Returns ``code`` UNCHANGED (byte-identical, no re-serialization) when
+    there is nothing to strip or on any parse/unparse failure -- never raises."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code
+    new_body = [n for n in tree.body if not _is_main_guard_if(n)]
+    if len(new_body) == len(tree.body):
+        return code
+    tree.body = new_body
+    try:
+        ast.fix_missing_locations(tree)
+        return ast.unparse(tree)
+    except Exception:
+        return code
+
+
+_ROUTE_SKELETON_HEADER = (
+    "import json\n"
+    "import os\n"
+    "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+    "from urllib.parse import urlparse\n"
+)
+
+_ROUTE_SERVER_BLOCK = '''
+
+class _RouteHTTPHandler(BaseHTTPRequestHandler):
+    def _handle(self, method):
+        path = urlparse(self.path).path
+        body = None
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length:
+            raw = self.rfile.read(length)
+            try:
+                body = json.loads(raw)
+            except Exception:
+                body = None
+        status, resp_body = route(method, path, body)
+        if status == 204:
+            payload = b""
+        else:
+            payload = json.dumps(resp_body).encode("utf-8") if resp_body is not None else b""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if payload:
+            self.wfile.write(payload)
+
+    def do_GET(self):
+        self._handle("GET")
+
+    def do_POST(self):
+        self._handle("POST")
+
+    def do_PUT(self):
+        self._handle("PUT")
+
+    def do_DELETE(self):
+        self._handle("DELETE")
+
+    def do_PATCH(self):
+        self._handle("PATCH")
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    HTTPServer(("", port), _RouteHTTPHandler).serve_forever()
+'''
+
+
+def generate_route_skeleton(handler: dict, *, same_module: bool,
+                             existing_code: "str | None" = None) -> str:
+    """Build the DETERMINISTIC ``http.server`` MAIN driver wired to the ROUTING CONTRACT
+    function found by :func:`find_route_function`: a ``BaseHTTPRequestHandler`` subclass whose
+    ``do_GET``/``do_POST``/``do_PUT``/``do_DELETE``/``do_PATCH`` parse the method/path/JSON
+    body, call ``route(method, path, body)``, and write the returned status + JSON body
+    (empty body for a 204, correct ``Content-Length`` always), then
+    ``HTTPServer(("", port), ...).serve_forever()`` under ``if __name__ == "__main__":``,
+    reading ``PORT`` via ``os.environ.get("PORT", "8000")``.
+
+    When ``same_module`` is True (``route`` is already defined in the entry module itself),
+    any of the model's OWN ``if __name__ == "__main__":`` block(s) are stripped
+    (:func:`_strip_main_guard`) and the driver is APPENDED to what remains -- ``route`` is
+    already in scope, no import needed. Otherwise a fresh, self-contained module is generated
+    that imports ``route`` from ``handler['module']``. Pure string composition -- never
+    executes anything."""
+    if same_module:
+        base = _strip_main_guard(existing_code or "").rstrip("\n")
+        return base + "\n\n\n" + _ROUTE_SKELETON_HEADER + _ROUTE_SERVER_BLOCK.lstrip("\n")
+    import_line = f"from {handler['module']} import route\n"
+    return _ROUTE_SKELETON_HEADER + import_line + "\n" + _ROUTE_SERVER_BLOCK.lstrip("\n")
+# #EXT-036-REQ-51 End
+
+
 _SCAFFOLD_RETRY_PROMPT = (
     "Write a COMPLETE, correct Python program in ONE file (main.py) that satisfies this "
     "spec:\n\n{spec}\n\n"
@@ -318,17 +489,27 @@ def _resolve_entry_name(modules: "dict[str, str]", spec_text: "str | None") -> s
 def apply_http_service_scaffold(modules: "dict[str, str]", spec_text: "str | None", *,
                                  llm=None) -> "tuple[dict[str, str], list[str]]":
     """The public, never-raising repair: fires ONLY when ``spec_text`` demands a stdlib
-    ``http.server`` service (:func:`spec_demands_stdlib_http_service`) AND no module in
-    ``modules`` already has a real serve loop (:func:`has_real_serve_loop`) AND no Flask/
-    FastAPI/Starlette service was detected (:func:`harness.server_oracle.detect_web_service`
-    -- that shape is handled by the OTHER oracle path).
+    ``http.server`` service (:func:`spec_demands_stdlib_http_service`) AND no Flask/FastAPI/
+    Starlette service was detected (:func:`harness.server_oracle.detect_web_service` -- that
+    shape is handled by the OTHER oracle path).
 
-    When a dispatcher callable is confidently recognized (:func:`find_dispatch_handler`),
-    wires it into a freshly generated ``http.server`` skeleton (:func:`generate_skeleton`) at
-    the spec-demanded entrypoint filename (reusing ``harness.filename_contract.
-    demanded_filenames``, falling back to ``main.py``). Otherwise, when ``llm`` is supplied,
-    falls back to a single targeted clean-prompt retry (:func:`_retry_via_clean_prompt`).
-    With no recognizable handler and no ``llm``, this is a safe no-op.
+    **REQ-51 routing-contract precedence (checked FIRST):** when a top-level ``def
+    route(method, path, body):`` is confidently recognized (:func:`find_route_function`), the
+    deterministic server ALWAYS owns ALL protocol -- a generated, correct driver
+    (:func:`generate_route_skeleton`) unconditionally REPLACES whatever entrypoint/serve-loop
+    code the model emitted at the spec-demanded entrypoint filename, whether that code was
+    broken OR already a real serve loop (so the ``has_real_serve_loop`` guard below is
+    deliberately bypassed for this path -- the routing contract, once honored, is a stronger
+    signal than a merely-present serve loop).
+
+    Otherwise (no ``route()`` recognized), the PRE-EXISTING precedence is unchanged: a no-op
+    when a real serve loop already exists (:func:`has_real_serve_loop`); else, when a
+    dispatcher callable is confidently recognized (:func:`find_dispatch_handler`), wired into
+    a freshly generated ``http.server`` skeleton (:func:`generate_skeleton`) at the
+    spec-demanded entrypoint filename (reusing ``harness.filename_contract.
+    demanded_filenames``, falling back to ``main.py``); otherwise, when ``llm`` is supplied,
+    falls back to a single targeted clean-prompt retry (:func:`_retry_via_clean_prompt`); with
+    no recognizable handler and no ``llm``, a safe no-op.
 
     Returns a NEW dict (never mutates ``modules``) plus a list of explanatory notes. Never
     raises -- any internal failure leaves ``modules`` unchanged."""
@@ -348,11 +529,34 @@ def apply_http_service_scaffold(modules: "dict[str, str]", spec_text: "str | Non
         except Exception:
             pass
 
+        entry_name = _resolve_entry_name(mods, spec_text)
+
+        # #EXT-036-REQ-51 Start
+        route_handler = find_route_function(mods)
+        if route_handler is not None:
+            same_module = (route_handler["module"] + ".py") == entry_name and entry_name in mods
+            existing = mods.get(entry_name) if same_module else None
+            try:
+                new_code = generate_route_skeleton(route_handler, same_module=same_module,
+                                                     existing_code=existing)
+                ast.parse(new_code)
+            except SyntaxError as exc:
+                notes.append(f"generated route() skeleton failed to parse -- no-op: {exc}")
+                return mods, notes
+            if mods.get(entry_name) == new_code:
+                notes.append("route() already correctly wired -- no-op")
+                return mods, notes
+            mods[entry_name] = new_code
+            notes.append(
+                f"wired {route_handler['module']}.route into a generated http.server "
+                f"skeleton at {entry_name} (routing contract, REQ-51)"
+            )
+            return mods, notes
+        # #EXT-036-REQ-51 End
+
         if has_real_serve_loop(mods):
             notes.append("a real serve loop already exists -- no-op")
             return mods, notes
-
-        entry_name = _resolve_entry_name(mods, spec_text)
 
         handler = find_dispatch_handler(mods)
         if handler is not None:
