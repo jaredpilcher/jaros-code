@@ -1,7 +1,7 @@
 # Production-Systems Atlas — jaros-code Completeness Ledger
 
 **Status:** living planning artifact (a coverage ledger, like `docs/GAP-MAP.md`) — **NOT product code.**
-**Last assembled:** 2026-07-09 · **Wave-1 OSS-decomposition expansion:** 2026-07-10 (§3.4, +73 classes) · **Wave-2 selfhosted-ecosystem expansion:** 2026-07-10 (§3.5, +50) · **Wave-3 industry-vertical expansion:** 2026-07-10 (§3.6, +60 — six NEW verticals) · **Wave-4 infra/integration pattern layer:** 2026-07-10 (§3.7, +33) · **Wave-5 agent-cluster expansion:** 2026-07-10 (§3.1 A11–A40, +30) · **Wave-6 not-covered-backlog sweep:** 2026-07-10 (§3.8, +57) · **Wave-7 engineering-blog mining:** 2026-07-10 (§3.9, +21) · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below) + read-only GitHub/OSS product research (§3.4 provenance note).
+**Last assembled:** 2026-07-09 · **Wave-1 OSS-decomposition expansion:** 2026-07-10 (§3.4, +73 classes) · **Wave-2 selfhosted-ecosystem expansion:** 2026-07-10 (§3.5, +50) · **Wave-3 industry-vertical expansion:** 2026-07-10 (§3.6, +60 — six NEW verticals) · **Wave-4 infra/integration pattern layer:** 2026-07-10 (§3.7, +33) · **Wave-5 agent-cluster expansion:** 2026-07-10 (§3.1 A11–A40, +30) · **Wave-6 not-covered-backlog sweep:** 2026-07-10 (§3.8, +57) · **Wave-7 engineering-blog mining:** 2026-07-10 (§3.9, +21) · **Wave-8 Python-library/tooling ecosystem:** 2026-07-10 (§3.10, +41 — the reusable import-time leaf-component layer) · **Sources:** `.jaros-data/artifacts/atlas/{saas_devtools,fintech_finops,verticals}.md` + `.jaros-data/artifacts/saas_taxonomy_research.md` (folded in / reconciled below) + read-only GitHub/OSS product research (§3.4 provenance note).
 
 ---
 
@@ -31,6 +31,18 @@ Everything here stays **offline / local / $0** at solve time. Payment providers,
 SMTP, CDNs, cloud queues are **simulated in-process** (high-fidelity mocks / fixtures), never
 deployed — Tenet 2/3 clean.
 
+> **🛰️ RESEARCH PLANE — CONVERGED (2026-07-10).** Eight independent research waves have now mapped
+> **~547 classes** across every targeted vertical *plus* the reusable import-time leaf-component layer
+> (parsers/validators/codecs/ADTs/algorithms), with **zero new oracle KINDS** required beyond the §4
+> table (waves 5–8 each confirmed the vocabulary is complete-in-kind). **The mapping frontier is no
+> longer the bottleneck** — the bottleneck is now **BUILDING mapped classes onto the EXT-060 board**
+> (moving the `verified` tier, still ≈ 5+1 / 547). Future discovery research is therefore a
+> **low-priority top-up**, not the active frontier: a possible **Wave-9** would sweep the remaining
+> awesome-python component pockets (`pyparsing` grammars, `python-stdnum` national-ID formats,
+> `phonenumbers`-style locale tables, `shapely`-lite geometry predicates) and should expect the same
+> **import-driver-only, diminishing-but-nonzero** pattern — no new substrate. Spend effort on the
+> board, not on more mapping.
+
 ---
 
 ## 2. Coverage summary
@@ -48,8 +60,9 @@ deployed — Tenet 2/3 clean.
 | Wave-5 agent-cluster additions (§3.1 A11–A40, 2026-07-10) | **+30** (all 30 staged survived final dedupe; stager pre-dropped 18 near-dups) |
 | Wave-6 not-covered-backlog additions (§3.8, 2026-07-10) | **+57** (63 staged − 6 cross-wave drops; stager pre-dropped 16 vs G-rows) |
 | Wave-7 engineering-blog additions (§3.9, 2026-07-10) | **+21** (EB1–EB21; all 21 staged survived final dedupe — the stager pre-dropped ~35 vs the full atlas, the heaviest overlap of any wave, as predicted) |
-| **Distinct production-system classes** | **≈ 506** |
-| Stdlib-buildable-now (zero deps, offline) | **≈ 499 / 506 (~98%)** |
+| Wave-8 Python-library/tooling additions (§3.10, 2026-07-10) | **+41** (PL1–PL41; ~34 pre-dropped by the stager against the ADT/parser/calculator leaf rows + trivial-stdlib leaves; all 41 survivors carry an explicit ≠ distinction from their nearest atlas neighbor — final-dedupe added 0 further drops. The **first wave aimed at the reusable import-time COMPONENT layer** — parsers/validators/codecs/ADTs/algorithms/calculators; the most import-driver-PURE slice in the atlas) |
+| **Distinct production-system classes** | **≈ 547** |
+| Stdlib-buildable-now (zero deps, offline) | **≈ 540 / 547 (~99%)** (all 41 wave-8 leaf components are pure-stdlib) |
 | Needs a 3rd-party dep (all have a stdlib/simulated path) | **~7** (CAMT/OFX/MT940 parse, NACHA validator, real broker, Postgres/Redis wire, DKIM full RSA sign (X40 — canonicalization itself is stdlib) — Docker-backed oracles exist) |
 
 ### 2.2 Per-vertical / cluster counts
@@ -76,6 +89,7 @@ deployed — Tenet 2/3 clean.
 | **Wave-5 agent-cluster extension** — orchestration shapes 9 · model-I/O 5 · memory/context 2 · RAG decomposed 3 · guardrails/economics 5 · agent ops/platform 6 | **30** | §3.1 A11–A40 (wave 5) |
 | **Wave-6 backlog sweep** — chat/NLU 3 · object-storage internals 2 · deep billing 2 · CI/CD+registries 5 · ATS 1 · genealogy 2 · maps/GPS 3 · IoT 2 · NVR 2 · DNS/VPN 3 · groupware/CalDAV 3 · CRM 4 · mail stack 3 · e-books/ILS 3 · backup 3 · GTFS transit 2 · payroll 3 · construction 3 · hospitality 2 · telecom BSS 2 · manufacturing MES 2 · emergency CAD 2 | **57** | §3.8 (wave 6) |
 | **Wave-7 engineering-blog mining** — collab/sync-engine 6 (Figma/Linear/Notion/Slack/Discord) · traffic/infra 4 (Cloudflare/GitHub/Stripe/Segment) · marketplace/mobility 5 (Uber/Airbnb/DoorDash/Shopify) · comms/media/payroll 6 (Twilio/Netflix/Spotify/Dropbox/Gusto-class) | **21** | §3.9 (wave 7) |
+| **Wave-8 Python-library/tooling ecosystem (reusable import-time leaf layer)** — data-structures/ADTs 9 (bloom/HLL/count-min/consistent-hash/trie/union-find/Fenwick/order-stat/interval) · text&format 8 (fuzzy-distance/phonetic/Aho-Corasick/num-to-words/inflector/diff-patch/template/readability) · serialization&codecs 7 (msgpack/bencode/TOML/CSV-RFC4180/fixed-width/canonical-JSON/base-N) · data-validation 3 (check-digit/IP-CIDR/format-validators) · date-time 2 (ISO-8601 duration/fiscal-calendar) · algorithms&engines 6 (Dijkstra/shunting-yard/spreadsheet-recalc/content-defined-chunking/Huffman-LZ77/checksums) · numeric-units 3 (unit-conversion/financial-functions/descriptive-stats) · files-paths 3 (glob-matcher/safe-path-join/MIME-detect) | **41** | §3.10 (wave 8) |
 
 ### 2.3 Status breakdown (current reality)
 
@@ -85,7 +99,7 @@ Status values: **unmapped** → **mapped** → **on-roadmap** → **building** �
 |---|---|---|
 | **verified** (utility tier — real, but being demoted as "toys-are-the-floor") | 5 | retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl (≈ atlas class **S45 ETL**) |
 | **building** | 1 | **REST+DB CRUD service** (create+modify — first SaaS rung; service oracle just landed) |
-| **mapped** | ≈ 500 | everything else in this atlas (incl. 73 wave-1 G-rows §3.4, 50 wave-2 SH-rows §3.5, 60 wave-3 W-rows §3.6, 33 wave-4 P-rows §3.7, 30 wave-5 A11–A40, 57 wave-6 X-rows §3.8, 21 wave-7 EB-rows §3.9) |
+| **mapped** | ≈ 541 | everything else in this atlas (incl. 73 wave-1 G-rows §3.4, 50 wave-2 SH-rows §3.5, 60 wave-3 W-rows §3.6, 33 wave-4 P-rows §3.7, 30 wave-5 A11–A40, 57 wave-6 X-rows §3.8, 21 wave-7 EB-rows §3.9, 41 wave-8 PL-rows §3.10) |
 | on-roadmap | 0 (roadmap owns this; assigned as classes are promoted from §5/§6) | — |
 | unmapped | 0 (this atlas is the completeness boundary; new discoveries append here) | — |
 
@@ -94,7 +108,7 @@ memoize/retry). It is **real but demoted** — those are the FLOOR, not the fron
 the first **service** rung (REST+DB CRUD, `building`) and the **agent** cluster — whose gate has
 **lifted: the agent-loop oracle is LANDED** (`harness/agent_oracle.py`, commit `2ee7efa`, validated
 by the plain-tool-calling-agent class measuring 3/3), making A1–A40's agent-loop-gradable rows
-**gradable TODAY**. Coverage today ≈ **5 verified + 1 building / 506** — the number this ledger
+**gradable TODAY**. Coverage today ≈ **5 verified + 1 building / 547** — the number this ledger
 exists to move.
 
 ### 2.4 Reconciliation notes (dedupe)
@@ -891,6 +905,134 @@ oracle KIND needed — the 7th consecutive wave confirming the §4 convergence f
 
 ---
 
+### 3.10 Wave-8 Python-library / tooling-ecosystem additions (reusable import-time leaf layer, 2026-07-10)
+
+**Provenance:** category-by-category sweep of `github.com/vinta/awesome-python` (Date&Time, Data
+Validation, Data Structures, Serialization, Specific-Formats Processing, Text&Format Processing,
+Algorithms & Design Patterns, Configuration, CLI, Files, Cryptography, Caching, Job Scheduling) +
+the file-format sub-index + probabilistic-structures research (representative libs named per row for
+grounding, not endorsement). **This is the FIRST wave to target the import-time reusable-COMPONENT
+layer** — the parsers, validators, serializers, codecs, ADTs, algorithms, and calculators a developer
+`import`s and composes, which sits *below* the atlas's deployed-system rows and was only incidentally
+sampled by waves 1–7. That is why the haul is mid-range (41 survivors) despite the atlas already
+holding 506 classes: the dedupe is heaviest against the ADT/parser/calculator theme, but the leaf
+universe beneath it was largely unmapped.
+
+**Oracle demand — the most import-driver-PURE slice in the atlas:** 39 of 41 rows grade purely on
+**import-driver**, in three ALREADY-USED variants — **(a) fixture-table** input→exact-output
+(validators, parsers, calculators, converters), **(b) round-trip** encode∘decode==identity /
+canonical-form (codecs, diff/patch, serializers — the SH-B5/W20/X20 shape), **(c) property-based**
+(probabilistic + ADT + algorithm rows: bloom "no false negatives", HLL "within error band",
+consistent-hash "minimal key movement", union-find/order-stat "matches reference model" — the
+G56/EB1 convergence-property shape). Only 2 rows touch a second oracle (FS for MIME/fixed-width file
+cases). **Near-ZERO clock/state-machine/http/db demand** — leaf components are mostly pure functions.
+**No new oracle KIND needed — the 8th consecutive wave confirming the §4 convergence finding** (now
+DEFINITIVE). The actionable takeaway: the single highest-leverage substrate investment for THIS
+layer is not a new oracle but a **strong property/round-trip/fixture import-driver RUNNER with good
+failure diffs** (the EXT-059 C1 direction) — that one runner grades essentially all 39.
+
+All rows: status = `mapped`, stdlib = yes. Final-dedupe pass confirmed the stager's biggest-cluster
+drops (recurrence/calendar time-math ≈ G28/X33/G46/W14/W42/G27/S15 · schema-validation ≈
+P14/A20/A10/S28 · graph-service overlaps topo-sort/bin-packing/MST/FSM-lib/rules-engine ≈
+X12/G71/W26/W15+state-machine oracle · caching/rate leaves token-bucket/LRU/retry/memoize/circuit ≈
+S7/S9/verified/S52) and added **0 further drops** — every survivor carries an explicit ≠ distinction.
+
+*Top-10 gradable-TODAY by impact × buildability (all import-driver, no new substrate): PL24
+check-digit validators · PL13 fuzzy string-distance · PL36 glob/gitignore matcher · PL30 unit
+conversion · PL25 base-N codecs · PL31 financial functions · PL1 bloom filter · PL9 interval-set
+algebra · PL16 number-to-words · PL5 trie autocomplete.*
+
+**Data structures (specialized collections / ADTs)**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL1 | devtools/lib | Bloom filter (k hashes, m bits, tunable FPR) | IMPORT (property: never a false negative; measured FPR ≤ target) | 2 | C+M | Build a compact membership structure answering "have I seen this id" via several hashes over a bit array, never saying no to something added while keeping the false-yes rate under the target. | mapped | Data Structures / pybloom-shape |
+| PL2 | devtools/lib | HyperLogLog cardinality estimator (registers, harmonic-mean, bias correction) | IMPORT (property: estimate within std-error band) | 3 | C+M | Build a distinct-count estimator that counts unique visitors of a stream in a few kilobytes and proves it stays within the expected error margin on a million-item fixture. | mapped | probabilistic-structures / Redis HLL |
+| PL3 | devtools/lib | Count-min sketch (d×w counters, never underestimates) | IMPORT (property: reported ≥ true count, error ≤ ε·N) | 3 | C+M | Build a frequency estimator over a fixed counter grid that never reports fewer than the true count of any item. | mapped | probabilistic-structures |
+| PL4 | devtools/lib | Consistent-hashing ring (virtual nodes; key→node; add/remove) | IMPORT (property: node change moves only ~1/N keys; deterministic) | 3 | C+M | Build a hash ring mapping keys to servers so removing one server reassigns only its keys and leaves every other key put. | mapped | Algorithms / hash_ring-shape |
+| PL5 | devtools/lib | Trie / prefix tree + top-k autocomplete (insert, prefix walk, frequency rank) | IMPORT (prefix→exact ranked completions vs reference) | 2 | C+M | Build a typeahead index where inserting weighted words lets a prefix query return the highest-weighted completions in order. | mapped | Data Structures / marisa-trie/pygtrie |
+| PL6 | devtools/lib | Disjoint-set / union-find (rank, path compression, components, cycle check) | IMPORT (property: same partition as reference; cycle detected) | 2 | C+M | Build a connectivity structure that groups elements as pairs are unioned, answers whether two share a group, and detects when an edge closes a cycle. | mapped | Algorithms & Design Patterns |
+| PL7 | devtools/lib | Order-statistics sorted container (balanced/skip-list: rank-of, select-kth, range-count) | IMPORT (property: rank/select/range match sorted-list reference over op-script) | 3 | C+M | Build a sorted collection that answers "what rank is this value", "what is the k-th smallest", and "how many fall in this range" in sub-linear time. | mapped | Data Structures / sortedcontainers |
+| PL8 | devtools/lib | Fenwick / segment tree (point update + range aggregate sum/min/max) | IMPORT (property: range answers equal brute-force recompute) | 3 | C+M | Build an array structure supporting fast single-element updates and fast range sum/min queries, proven against a plain recomputation. | mapped | Algorithms & Design Patterns |
+| PL9 | devtools/lib | Interval-set / interval-tree algebra (insert, stab/overlap, union-merge, subtract, complement) | IMPORT (interval op-script → exact resulting set; overlap-symmetry) | 2 | C+M | Build an interval collection that merges overlaps on insert, answers which ranges cover a point, and computes difference and complement of two range sets exactly. | mapped | Algorithms / intervaltree — ≠X30/G26 (calendar free-busy SERVICES; this is the range algebra) |
+
+**Text & format processing**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL13 | devtools/lib | Fuzzy string-distance (Levenshtein, Damerau, Jaro-Winkler, Hamming, ratio) | IMPORT (string-pair → exact distance/ratio vectors) | 2 | C+M | Build a text-similarity toolkit reporting edit distance and a 0-to-1 similarity under several metrics, matching a published vector table. | mapped | Text / python-Levenshtein/rapidfuzz — ≠W33/W4/X37 |
+| PL14 | devtools/lib | Phonetic encoder (Soundex, Metaphone, NYSIIS, Double-Metaphone) | IMPORT (name → exact phonetic-code vectors) | 2 | C+M | Build a name-sounds-like encoder that gives "Robert" and "Rupert" the same Soundex code, matching reference codes. | mapped | Text / jellyfish-shape |
+| PL15 | devtools/lib | Aho-Corasick multi-pattern matcher (build automaton once, all dictionary hits + positions) | IMPORT (text × dictionary → exact match list w/ offsets) | 3 | C+M | Build a matcher that finds every occurrence of any word in a given list within a document in a single pass, reporting each hit's start. | mapped | Algorithms / pyahocorasick — ≠G20/X1 |
+| PL16 | fintech/lib | Number-to-words / cheque-amount speller (cardinal, ordinal, currency) | IMPORT (number → exact word-string vectors, multiple styles) | 2 | C+M | Build a converter writing 1,234.50 as "one thousand two hundred thirty-four dollars and 50/100" and 21 as "twenty-first". | mapped | Text / num2words |
+| PL17 | devtools/lib | Inflector / pluralizer (singular↔plural incl. irregulars, camelize/underscore, ordinalize, titleize) | IMPORT (word → exact inflected-form vectors) | 2 | C+M | Build a word-form helper that pluralizes "person"→"people", turns "user_id"→"userId", and renders 3→"3rd". | mapped | Text / inflection/inflect — ≠P42 (locale plural) |
+| PL18 | devtools/lib | Unified-diff generate + apply/patch (Myers diff, hunk format, 3-way merge, conflict markers) | IMPORT (round-trip: apply(diff(a,b),a)==b; 3-way fixtures) | 3 | C+M | Build a text-diff tool producing a unified diff between two files and applying it to reproduce the target exactly, flagging conflicts on a 3-way merge. | mapped | Text / diff-match-patch — ≠SH-W1 (wiki revision SERVICE) |
+| PL19 | devtools/lib | Logic-ful template engine (mustache/handlebars subset: sections, inverted, partials, auto-escape, dotted lookups) | IMPORT (template + data → exact rendered output; escaping fixtures) | 3 | C+M | Build a template renderer that loops over a list, hides inverted sections when falsy, includes partials, and HTML-escapes by default. | mapped | Text — ≠G36 (flat interpolation) / A20 (LLM output parser) |
+| PL20 | media/lib | Readability scorer (Flesch-Kincaid grade, reading-ease, syllable count, SMOG) | IMPORT (text → exact score vectors) | 2 | C | Build a content-readability tool reporting grade level and reading-ease of a passage from its sentence and syllable counts. | mapped | Text / textstat-shape |
+
+**Serialization / specific-formats (codecs & parsers)**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL21 | devtools/lib | MessagePack-subset codec (int/float/str/bin/array/map/nil/bool) | IMPORT (round-trip: decode(encode(x))==x; byte-exact vs spec) | 2 | C+M | Build a binary serializer that packs nested dicts and lists into MessagePack bytes and unpacks to the identical value, matching the spec's byte sequences. | mapped | Serialization / msgpack |
+| PL22 | devtools/lib | Bencode codec (ints, byte-strings, lists, sorted-key dicts) | IMPORT (round-trip + canonical form: keys sorted, single valid encoding) | 2 | C+M | Build a bencode encoder/decoder that round-trips a nested structure and always emits dict keys sorted so equal data encodes to identical bytes. | mapped | Specific-Formats / bencode.py |
+| PL23 | devtools/lib | TOML-subset parser (tables, inline tables, arrays, typed scalars incl. datetimes, dotted keys) | IMPORT (TOML text → exact structure; error on duplicate key) | 2 | C+M | Build a TOML reader parsing tables, arrays-of-tables, and typed values into nested dicts, rejecting a file that defines the same key twice. | mapped | Specific-Formats / tomllib — ≠ INI (verified) / S28 |
+| PL25 | devtools/lib | Base-N codec family (RFC-4648 base16/32/32hex/64/64url + base58 + base62, alphabets & padding) | IMPORT (round-trip per alphabet; spec test vectors) | 1 | C+M | Build an encoder/decoder converting bytes to and from base32, base64url, and base58 with the standard alphabets, round-tripping exactly. | mapped | Cryptography/encoding — no base-N codec in the atlas |
+| PL26 | data/lib | RFC-4180 CSV reader/writer + dialect sniffer (quoting, embedded commas/newlines, delimiter detection) | IMPORT (round-trip on edge-case fixtures; sniffed dialect matches) | 2 | C+M | Build a CSV parser correctly reading quoted commas and newlines, writing them back identically, and auto-detecting comma vs semicolon vs tab. | mapped | Specific-Formats / csvkit/tablib — ≠S45 (E→T→L pipeline) |
+| PL27 | data/lib | Fixed-width / copybook record parser+writer (offsets/widths/types; padding/justification) | IMPORT + FS (round-trip: parse then write reproduces record bytes) | 2 | C+M | Build a fixed-width parser driven by a field layout that decodes each line into typed fields and re-emits byte-identical records. | mapped | Specific-Formats — ≠F26 (NACHA write only) |
+| PL28 | devtools/lib | Canonical-JSON serializer (RFC-8785 subset: sorted keys, minimal number formatting, deterministic bytes) | IMPORT (equal inputs → byte-identical output; round-trip preserves value) | 2 | C+M | Build a JSON serializer emitting sorted keys and canonical numbers so two equal documents produce byte-identical output suitable for hashing. | mapped | Serialization — the deterministic-bytes leaf under F10/EB1 |
+
+**Data validation**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL24 | fintech/lib | Check-digit validator suite (IBAN mod-97, ISBN-10/13, EAN-8/13 & UPC, ABA routing, mod-10/11) | IMPORT (identifier → valid/invalid + reason vectors) | 2 | C+M | Build an identifier validator confirming an IBAN by mod-97, an ISBN-13 by its weighted digit, and a routing number by ABA checksum, naming which check failed. | mapped | Data Validation / python-stdnum — ≠F58 (Luhn only) |
+| PL11 | devtools/lib | IP / CIDR math library (parse v4/v6, contains, overlaps, supernet/summarize, split-subnets, host enum) | IMPORT (address/prefix ops → exact results; containment vectors) | 2 | C+M | Build an address toolkit that says whether an IP falls in a CIDR block, whether two blocks overlap, and splits a /24 into four /26 subnets. | mapped | Data Validation/net — ≠X31 (DHCP SERVICE) / X29 (zone-file) |
+| PL39 | devtools/lib | Syntactic format validators (email RFC-5322 subset + normalize, URL parse/normalize, hostname, UUID, MAC) | IMPORT (string → valid/invalid + normalized form vectors) | 2 | C+M | Build a validator set that accepts a well-formed email and returns its normalized lowercase form, canonicalizes a URL, and rejects a bad hostname with a reason. | mapped | Data Validation / validators-lib — ≠EB17 (E.164) / SH-B1 |
+
+**Date & time**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL32 | devtools/lib | ISO-8601 duration parse/format (`P1Y2M10DT2H30M` ↔ components ↔ total seconds) | IMPORT (duration string ↔ seconds/components vectors) | 1 | C+M | Build a duration helper parsing "P1DT2H30M" into components and total seconds and formatting a second count back into the shortest valid ISO-8601 duration. | mapped | Date and Time / isodate — no duration codec in the atlas |
+| PL33 | fintech/lib | Fiscal/retail-calendar mapper (4-4-5 / 4-5-4 & custom FY-start: date → fiscal year/quarter/period/week) | IMPORT (date → exact fiscal-period label vectors) | 2 | C | Build a calendar mapper that, given a February fiscal-year start and a 4-5-4 pattern, reports which fiscal year, quarter, period, and week a date falls in. | mapped | Date and Time — ≠G46/W14/W42 (business-day/holiday/deadline) |
+
+**Algorithms & engines**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL10 | devtools/lib | Weighted shortest-path (Dijkstra + A* heuristic; path + cost; negative-edge rejection) | IMPORT (graph fixture → exact path & cost; unreachable → none) | 3 | C+M | Build a router finding the least-cost path between two nodes of a weighted graph, returning path and total cost, refusing negative edges. | mapped | Algorithms — ≠V37 (NP-hard VRP); this is the polynomial exact class |
+| PL12 | devtools/lib | Shunting-yard arithmetic evaluator (infix→postfix, precedence, parens, functions, safe—no eval) | IMPORT (expression + vars → exact numeric result; malformed → error) | 2 | C+M | Build a safe calculator evaluating "3 + 4 * (2 - 1)" and "max(a, b) / 2" with correct precedence and no eval, erroring on unbalanced parens. | mapped | Algorithms — ≠A33 (runs Python) / G36 (flat interpolation) |
+| PL34 | data/lib | Spreadsheet formula recalc engine (dependency graph, topological recompute, cycle detect, SUM/IF/refs) | IMPORT (cell edits → exact recomputed grid; cycle → error naming cell) | 3 | C+M | Build a mini spreadsheet where cells hold numbers or formulas, editing one recomputes exactly the affected cells, and a self-reference is refused. | mapped | Algorithms/engines — ≠G71 (issue dep graph, no recompute) |
+| PL29 | devtools/lib | Content-defined chunking (rolling-hash/FastCDC variable boundaries; min/avg/max size) | IMPORT (property: same content→same boundaries; local insert re-chunks only nearby) | 3 | C+M | Build a file chunker splitting a byte stream at content-defined boundaries so inserting a few bytes near the start leaves almost all later boundaries unchanged. | mapped | Algorithms — ≠EB20 (fixed-size dedup) / G54 (resumable upload) |
+| PL35 | devtools/lib | Huffman / LZ77 compressor (code table or sliding window; encode+decode round-trip) | IMPORT (round-trip: decompress(compress(x))==x; ratio<1 on redundant fixtures) | 3 | C+M | Build a self-contained compressor that shrinks a redundant byte string and restores it exactly, proving the compressed form is smaller on repetitive input. | mapped | Algorithms |
+| PL37 | devtools/lib | Non-crypto checksums & hashes (CRC-32, Adler-32, Fletcher-16/32, FNV-1a, MurmurHash3) | IMPORT (input → exact checksum vectors) | 1 | C+M | Build a checksum library computing CRC-32 and Adler-32 of a byte string and MurmurHash3 of a key, all matching published test vectors. | mapped | Cryptography (non-crypto) — ≠F58 (Luhn) / SH-P2 |
+
+**Numeric / units**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL30 | devtools/lib | Unit conversion / dimensional analysis (length/mass/volume/temp/time; compound units; dimension check) | IMPORT (quantity + target-unit → exact value; incompatible → error) | 2 | C+M | Build a unit converter turning "5 km" into meters, 20°C to °F, rejecting kilograms→meters, and handling compound units like meters per second. | mapped | pint-shape — ≠SH-R2 (kitchen) / W54 (harvest) domain converters |
+| PL31 | fintech/lib | Financial functions (NPV, IRR via bisection/Newton, PMT/FV/PV, effective/nominal rate) | IMPORT (cashflow/rate inputs → known result within tolerance) | 2 | C | Build a finance math module computing NPV and IRR of a cashflow series and the level monthly payment of a loan, matching reference values. | mapped | numpy-financial-shape — ≠F36 (amortization schedule) |
+| PL38 | data/lib | Descriptive statistics + quantile + simple linear regression (mean/median/mode/var, percentile methods, Pearson r, OLS) | IMPORT (dataset → exact statistic vectors; documented quantile methods) | 2 | C | Build a statistics module reporting mean, standard deviation, the 90th percentile under a chosen interpolation method, and the least-squares line through points. | mapped | Data Analysis — narrower than F45/F47; the descriptive-stats leaf |
+
+**Files / paths**
+
+| ID | Vertical | Concrete class | Oracle | Tier | C/M | Example task sentence | Status | Source |
+|---|---|---|---|---|---|---|---|---|
+| PL36 | devtools/lib | Glob / gitignore-style path matcher (`*`, `**`, `?`, `[…]`, negation, anchoring, dir-only rules) | IMPORT (path × pattern-set → exact match/ignore vectors) | 2 | C+M | Build a path matcher that, given gitignore-style rules incl. double-star and negation, decides for each path whether it is ignored, honoring rule order. | mapped | Files / pathspec/fnmatch-extended |
+| PL40 | devtools/lib | Safe path join + normalization (`..` collapse, cross-platform sep, canonicalization, traversal-escape rejection) | IMPORT (base + user-path → normalized path or rejection vectors) | 2 | C+M | Build a path helper safely joining a user subpath under a base dir, collapsing "." and "..", and refusing any input that would escape the base. | mapped | Files — the traversal-prevention leaf (security-relevant) |
+| PL41 | devtools/lib | MIME-type detection (extension map + magic-byte sniffing; confidence when they disagree) | IMPORT + FS (filename/bytes → exact media-type vectors) | 2 | C+M | Build a file-type detector identifying a PNG from its leading bytes even when the extension is wrong, falling back to the extension map when no signature matches. | mapped | Files / python-magic |
+
+*Wave-8 dedupe record (Tenet-3 honesty): ~34 researched candidates dropped as dup/too-thin, the
+biggest clusters being date/time recurrence math (cron/RRULE/business-day/DST ≈ S15/G28/X33/G27),
+schema-validation (JSON-Schema/type-coercer/env-loader ≈ P14/A20/A10/S28), graph-service overlaps
+(topo-sort/bin-packing/MST/FSM-lib/rules-engine ≈ X12/G71/W26/W15+state-machine oracle),
+caching/rate leaves (token-bucket/LRU/retry/memoize/circuit = S7/S9/verified/S52), and
+trivial-stdlib leaves (plist/querystring/punycode/hexdump/roman/base-radix/textwrap/Fraction). See
+the staging file's DROP record for the full list.*
+
+---
+
 ## 4. RANKED NEW-ORACLE SUBSTRATE — the lever
 
 The substrate, not any single build, is what moves coverage: **each oracle flips a whole sub-cluster
@@ -899,14 +1041,21 @@ all three slices (a class that needs two oracles is counted under each). Every o
 offline**; the honesty note is load-bearing (Tenet 3) — a low-fidelity oracle that always passes is
 worse than none.
 
-> **⭐ CONVERGENCE FINDING (2026-07-10, waves 1–7 merged):** **seven consecutive** independent
-> research waves — OSS-product decomposition, the selfhosted ecosystem, six new industry
-> verticals, the infra/pattern layer, the agent stack, the 24-cluster leftover backlog, and
-> real-company engineering-blog mining — needed **NO new oracle KIND** beyond this table (the
-> only two additions, #18 workflow-replay-determinism and #19 process-lifecycle probe, are small
-> refinements of existing replay/HTTP grading, and every other one of the ~250 newly staged rows
-> graded onto the existing vocabulary). **The substrate vocabulary is complete in kind; the
-> remaining work is demand-ranked instances.** Final merged demand: **injectable-clock ~70 wave
+> **⭐ CONVERGENCE FINDING (2026-07-10, waves 1–8 merged — now DEFINITIVE):** **eight consecutive**
+> independent research waves — OSS-product decomposition, the selfhosted ecosystem, six new industry
+> verticals, the infra/pattern layer, the agent stack, the 24-cluster leftover backlog,
+> real-company engineering-blog mining, and the **Python-library/tooling reusable-component layer** —
+> needed **NO new oracle KIND** beyond this table (the only two additions, #18 workflow-replay-
+> determinism and #19 process-lifecycle probe, are small refinements of existing replay/HTTP grading,
+> and every other one of the ~290 newly staged rows graded onto the existing vocabulary). Wave 8 is
+> the strongest confirmation yet: a whole fresh *layer* of 41 pure-function leaf components — the
+> most **import-driver-PURE** slice in the atlas (39/41 grade on import-driver fixture/round-trip/
+> property variants alone, near-ZERO clock/state-machine/http/db demand) — needed no new judge.
+> **The substrate vocabulary is complete in kind; the remaining work is demand-ranked instances.**
+> The one actionable sharpening from wave 8: the highest-leverage substrate investment for the
+> leaf-component layer is not a new oracle but a **strong property/round-trip/fixture import-driver
+> RUNNER with good failure diffs (the EXT-059 C1 direction)** — that single runner grades ~all 39.
+> Final merged demand: **injectable-clock ~70 wave
 > votes** (w1 17 · w2 11 · w3 12 · w4 10 · w6 16 · w7 4; ~79 total consumers with the original
 > ~10) — **decisively the next oracle, ALREADY BEING BUILT as EXT-059 REQ-10 `clock_oracle`** ·
 > state-machine +~48 new (≈73 total, biggest absolute count) · conservation +~44 (≈61 total) ·
@@ -951,7 +1100,7 @@ richest gradable-today seam) → **multi-service harness** (moved up: ~15, monit
 mock-payment → idempotency-replay + hash-chain/audit → workflow-replay-determinism +
 process-lifecycle probe (small wave-4 proposals, #18/#19; EB9 strengthens both) → SMTP-sink →
 concurrency → streaming → feasibility → matching → protocol (~7 incl. Google-Reader facade +
-ActivityPub-lite). **Clock + state-machine + conservation alone flip well over 150 of the 506
+ActivityPub-lite). **Clock + state-machine + conservation alone flip well over 150 of the 547
 classes to honestly gradable; with the landed agent-loop and the existing HTTP/DB/FS/CLI/IMPORT
 oracles, the majority of the atlas is then reachable.**
 
@@ -1006,7 +1155,7 @@ today plus the four soon-to-land invariant oracles.
 - **Every oracle grades structural invariants over a replayed op-script**, never a memorizable output
   string — the model cannot fake it by branching on a known task. Optimization classes grade on
   **feasibility + cost-bound**, never a single gold solution.
-- **The `verified` tier is honest and small (5 utility + 1 building / 506).** The utility tier is the
+- **The `verified` tier is honest and small (5 utility + 1 building / 547).** The utility tier is the
   FLOOR being demoted; the frontier is the first service rung and the agent cluster (whose oracle is
   now LANDED). Moving `verified` up — by landing the ranked oracles in §4, clock first — is the
   whole game.
