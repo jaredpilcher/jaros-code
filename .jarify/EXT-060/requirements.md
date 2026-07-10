@@ -64,3 +64,26 @@ identically to the other two tasks; added to `REAL_SYSTEMS_TASKS`.
       a correct INI-parsing CLI's exact stdout is verified; a wrong value/extra output is caught.
 - [x] Leaves-OFF enforced (same two checks as REQ-1/REQ-2/REQ-3: static `leaf_for_spec` + post-build
       `build_path` check); no oracle leak into the build prompt.
+
+### [REQ-5] Memoize/cache decorator library task graded by the existing import_driver oracle
+
+A 4th held-out real-systems task -- a memoize/cache decorator library -- graded by the EXISTING
+`import_driver` oracle (no new oracle code, mirrors REQ-3's `"import"` dispatch). A single-file
+`memoize.py` module exports exactly one public function `memoize(maxsize=128)` that returns a
+decorator; the decorated callable caches its return value keyed by its positional-argument tuple --
+a repeated call with the SAME arguments returns the cached value WITHOUT re-invoking the wrapped
+callable, while a call with NEW arguments does invoke it. Because `maxsize` is entirely defaulted,
+`@memoize()` with zero arguments must work -- this ALSO exercises the EXT-036 REQ-45 deterministic
+signature-contract-default repair on a SECOND reusable-library class (a generalization data point
+beyond REQ-3's `retry.py`).
+
+#### Acceptance Criteria
+- [x] The task's sentence is contract-exact (filename `memoize.py`, the public function name +
+      signature `memoize(maxsize=128)`, decorator/caching semantics, keying by the positional-
+      argument tuple) with oracle-chosen call values echoed by the contract (no hidden key).
+- [x] Graded by the existing `import_driver` oracle (`grade_real_system_task` `oracle_kind="import"`):
+      a decorated spy invoked with the same argument twice then a different argument once must
+      record exactly 2 underlying calls (the repeated call served from cache, never re-invoking the
+      spy); a stub that never caches (always calls through) is caught.
+- [x] Leaves-OFF enforced identically to REQ-2/REQ-3/REQ-4 (static `leaf_for_spec` + post-build
+      `build_path` check); no oracle leak; added to `REAL_SYSTEMS_TASKS`.

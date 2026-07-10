@@ -56,5 +56,17 @@
       "startLine": 13,
       "endLine": 141
     }
+  ],
+  "REQ-5": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 461,
+      "endLine": 539
+    },
+    {
+      "file": "tests/test_ext060_memoize.py",
+      "startLine": 13,
+      "endLine": 156
+    }
   ]
 }

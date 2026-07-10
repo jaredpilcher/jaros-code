@@ -456,3 +456,84 @@ INI_SECTION_QUERY_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(INI_SECTION_QUERY_TASK)
 # #EXT-060-REQ-4 End
+
+
+# #EXT-060-REQ-5 Start
+# TASK-4: the memoize/cache decorator library task -- a 4th held-out real-systems task, graded by
+# the ALREADY-LANDED import_driver oracle (no new oracle code: reuses `_grade_import` ->
+# `harness.import_driver.drive_import`, exactly REQ-3's `"import"` dispatch path). This is
+# deliberately a SECOND reusable-library task, with a DOCUMENTED, entirely-defaulted parameter
+# (`maxsize=128`) -- the oracle's own primary call chain invokes `memoize()` with NO arguments at
+# all, so a build that drops the documented default (making `maxsize` a required positional
+# parameter, mirroring the exact defect shape EXT-036 REQ-45's deterministic signature-contract
+# repair targets) fails to even construct the decorator, never mind cache correctly. Every detail
+# of the public contract (filename, function name/signature, decorator/caching semantics, keying
+# by the positional-argument tuple) is pinned in the sentence itself so the oracle's expected
+# values are all DERIVED from that same visible contract.
+_MEMOIZE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named memoize.py, a "
+    "memoization/caching decorator library. Define exactly one public function named `memoize` "
+    "with the signature `memoize(maxsize=128)` -- the `maxsize` parameter must be OPTIONAL with "
+    "that exact default value, so calling `memoize()` with NO arguments at all is valid and uses "
+    "the default. Calling `memoize(maxsize=128)`, or calling it with no arguments at all since "
+    "`maxsize=128` is its default, returns a DECORATOR (a function that takes one argument, the "
+    "callable to wrap, and returns a new callable) meant to be used as `@memoize()` above a "
+    "function definition, or applied directly as `memoize()(some_callable)`. The new (wrapped) "
+    "callable returned by the decorator accepts the exact same positional arguments as the "
+    "callable it wraps and forwards them unchanged. It maintains an internal cache keyed by the "
+    "tuple of positional arguments it is called with. The FIRST time the new callable is invoked "
+    "with a given tuple of positional arguments, it calls the wrapped callable with those exact "
+    "arguments, stores the returned value in its cache keyed by that argument tuple, and returns "
+    "that value. Every SUBSEQUENT time the new callable is invoked with a positional-argument "
+    "tuple that exactly matches one already present in its cache, it returns the cached value "
+    "immediately WITHOUT calling the wrapped callable again. Assume `maxsize` is always large "
+    "enough that no cached entry is ever evicted for the inputs used against it."
+)
+
+MEMOIZE_LIB_TASK = RealSystemTask(
+    name="memoize-decorator-lib",
+    cls="library",
+    sentence=_MEMOIZE_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "memoize",
+        # Call chain: (1) `memoize()` with NO arguments (relying entirely on the documented
+        # `maxsize=128` default -- the signature-contract angle) -> the decorator itself; (2)
+        # apply that decorator to the injected recording spy -> the decorated callable; (3)-(6)
+        # invoke the decorated callable with arg 5 twice, then arg 7 once, then arg 5 again -- a
+        # correct implementation calls the underlying spy only for the FIRST occurrence of each
+        # distinct argument (2 total calls: one for 5, one for 7), serving every repeat (including
+        # the LAST call, `call_x3`, which follows an intervening different-argument call) from its
+        # cache -- so this also catches a "cache only the most recent call" bug, not just a
+        # "never caches" bug.
+        "api_calls": [
+            {"id": "make_decorator", "target": "memoize", "args": [], "kwargs": {}},
+            {"id": "decorated", "target": "make_decorator",
+             "args": [{"__jaros_ref__": "counter"}], "kwargs": {}},
+            {"id": "call_x1", "target": "decorated", "args": [5], "kwargs": {}},
+            {"id": "call_x2", "target": "decorated", "args": [5], "kwargs": {}},
+            {"id": "call_y1", "target": "decorated", "args": [7], "kwargs": {}},
+            {"id": "call_x3", "target": "decorated", "args": [5], "kwargs": {}},
+        ],
+        "injected": {
+            "spies": {
+                # A fixed-return recording spy -- correctness here is decided by ITS CALL COUNT
+                # (2, not 4), never by varying its return value per argument (the import_driver
+                # spy protocol has no such feature; see harness/import_driver.py).
+                "counter": {"return_value": "spied-value"},
+            },
+        },
+        "checks": [
+            {"kind": "returns_equals", "call_id": "call_x1", "expected": "spied-value"},
+            {"kind": "returns_equals", "call_id": "call_x2", "expected": "spied-value"},
+            {"kind": "returns_equals", "call_id": "call_y1", "expected": "spied-value"},
+            {"kind": "returns_equals", "call_id": "call_x3", "expected": "spied-value"},
+            {"kind": "call_count", "spy": "counter", "expected": 2},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(MEMOIZE_LIB_TASK)
+# #EXT-060-REQ-5 End

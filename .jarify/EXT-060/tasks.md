@@ -55,3 +55,30 @@
 
 #### Implements
 - [REQ-4] INI-section config-query CLI task graded by the existing cli-exact oracle
+
+### [TASK-4] Memoize/cache decorator library task wired to the existing import_driver oracle (REQ-5)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `MEMOIZE_LIB_TASK` (a `RealSystemTask`, `oracle_kind
+   ="import"`) with a contract-exact sentence for a single-file `memoize.py` module exporting
+   exactly one public function `memoize(maxsize=128)` that returns a decorator; the decorated
+   callable caches its return value keyed by the tuple of positional arguments it is called with
+   (a repeated call with the SAME arguments returns the cached value without re-invoking the
+   wrapped callable; a call with NEW arguments does invoke it). Wire it via the ALREADY-LANDED
+   `"import"` oracle dispatch (`_grade_import` -> `harness/import_driver.py`'s `drive_import`) --
+   no new oracle code. The oracle's `api_calls` chain calls `memoize()` with NO arguments (relying
+   entirely on the `maxsize=128` default) to also exercise the EXT-036 REQ-45 signature-contract-
+   default repair on this second library class.
+2. Add it to `REAL_SYSTEMS_TASKS` (append after the existing INI task, outside any existing
+   REQ-tagged block). Keep leaves-OFF enforced (same two checks as the other tasks -- static
+   `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value is
+   derivable from the visible sentence contract).
+3. Add `tests/test_ext060_memoize.py` (OFFLINE, no Jetson/model): a hand-authored CORRECT
+   `memoize.py` stub passes the import_driver grading; a WRONG stub (never caches -- always calls
+   through) is caught; leaves-OFF holds (`leaf_for_spec` returns `None` for the sentence); the
+   task is a member of `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_memoize.py tests/test_ext060*.py -q`; confirm green.
+   Update `.jarify/EXT-060/index.json` (REQ-5 ranges) + check REQ-5 boxes in requirements.md.
+
+#### Implements
+- [REQ-5] Memoize/cache decorator library task graded by the existing import_driver oracle
