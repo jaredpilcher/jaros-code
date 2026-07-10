@@ -2863,3 +2863,52 @@ extracted the WRONG field (grabbed `tool_call_id` instead of the args).
 
 #### Implements
 - [REQ-49] Deterministic AGENT-LOOP SCAFFOLD repair — wire a correct tool-calling protocol boilerplate loop
+
+### [TASK-63] Deterministic PORT int-coercion repair (REQ-50, owner directive 2026-07-09 -- newest SaaS deterministic lever)
+
+MEASURED ROOT CAUSE (diagnosed via code-dump, `scratchpad/saas_crud_diag.out`): the canonical-board
+SaaS HTTP-service classes (rest-sqlite-crud CREATE and rest-put MODIFY) both measure 0/3 because
+gemma writes FULLY CORRECT service logic (a real SQLite layer, real routing, a REAL serve loop) but
+reads the port from the environment as a STRING and passes it un-coerced to the server
+constructor -- `TypeError: 'str' object cannot be interpreted as an integer` -> the server never
+binds -> 0/3. gemma's serve loop EXISTS and is correct, so the http.server scaffold repair (REQ-48)
+correctly no-ops (`has_real_serve_loop=True`); the ONLY defect is the missing `int()` coercion.
+
+#### Steps
+1. Create `harness/port_coercion.py` with `coerce_ports_in_code(code: str) -> str`: parse with
+   `ast`; find the PORT expression in stdlib server bind sites and wrap it in `int(...)` if it
+   isn't already an int literal or already an `int(...)` call. Target bind sites: server
+   constructors (`HTTPServer`/`ThreadingHTTPServer`/`socketserver.TCPServer`/
+   `socketserver.ThreadingTCPServer`/`TCPServer`/`ThreadingTCPServer`, bare or
+   attribute-qualified) whose first positional arg is a `(host, port)` 2-tuple -- wrap the
+   tuple's second element; and a raw `<sock>.bind((host, port))` call -- same wrap. Wrap in
+   `# #EXT-036-REQ-50 Start`/`End` markers.
+2. Idempotent + safe: do NOT wrap when the port element is already an integer literal
+   (`ast.Constant` int) or already an `int(...)` call. Never raise (any parse/edit failure returns
+   the code unchanged). Only rewrite (via `ast.unparse`) a module that actually changed --
+   untouched modules are byte-identical to their input.
+3. Add `apply_port_coercion(modules: dict) -> dict`: apply `coerce_ports_in_code` to each `.py`
+   module's source, returning a NEW dict (only changed modules differ) -- the same shape as
+   `harness/signature_contract.py`'s `apply_signature_contract`/`harness/filename_contract.py`'s
+   `apply_filename_contract` so it drops into the same seam.
+4. Wire `apply_port_coercion(built)` into `harness/system_builder.py`'s `build_system`
+   deterministic-repair pass, right after the filename-contract repair (`# #EXT-036-REQ-46 End`)
+   and BEFORE the http.server scaffold repair (`# #EXT-036-REQ-48 Start`) -- so a correct-but-
+   str-port serve loop is fixed IN PLACE rather than scaffolded over. Wrap in
+   `# #EXT-036-REQ-50 Start`/`End` markers.
+5. Add offline tests `tests/test_ext036_port_coercion.py` (NO model/Jetson calls) covering: (a)
+   the EXACT measured broken shape (`port = os.getenv("PORT")` then
+   `socketserver.TCPServer(("", port), handler)`) -- after `coerce_ports_in_code` the bind site is
+   `int(port)`, the module compiles, and is actually RUN in a subprocess with a str-typed `PORT`
+   env var, binding the port and passing a real `serve_and_check_stdlib` round-trip (with an
+   unrepaired control proving the same fixture genuinely fails to bind); (b) the `HTTPServer(...)`
+   variant; (c) the raw `sock.bind(...)` variant; (d) IDEMPOTENT -- already `int(port)` and an
+   already-int-literal `8000` are left byte-identical; (e) never raises on unparseable/garbage
+   input; (f) `apply_port_coercion` over a multi-module dict only changes the offending module.
+6. Run ONLY `python -m pytest tests/test_ext036_port_coercion.py -q` (offline); confirm green.
+   Also run `python -c "import ast; ast.parse(open('harness/system_builder.py').read())"` and
+   `python -c "import harness.system_builder, harness.port_coercion"` (clean). Update
+   `.jarify/EXT-036/index.json` (REQ-50 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-50] Deterministic PORT int-coercion repair — fix a str-typed port at the server bind site

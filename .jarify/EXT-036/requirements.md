@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2231,3 +2231,45 @@ the `__JAROS_AGENT_FINAL__...__END__` sentinel on termination).
       correct loop already exists (including idempotency on the scaffold's own generated output);
       a no-op when the spec is not this agent contract; never raising on garbage input.
       `tests/test_ext036_agent_scaffold.py`.
+
+### [REQ-50] Deterministic PORT int-coercion repair — fix a str-typed port at the server bind site
+
+MEASURED ROOT CAUSE (diagnosed via code-dump, `scratchpad/saas_crud_diag.out`): the canonical-board
+SaaS HTTP-service classes (rest-sqlite-crud CREATE and rest-put MODIFY) both measure 0/3 because
+gemma writes FULLY CORRECT service logic -- a real SQLite layer, real routing, a REAL serve loop
+(so `has_real_serve_loop`, REQ-48's non-degrading guard, correctly no-ops) -- but reads the port
+from the environment as a STRING and passes it un-coerced to the server bind site:
+
+    port = os.getenv("PORT")
+    with socketserver.TCPServer(("", port), handler) as httpd:   # port is a str
+
+`TypeError: 'str' object cannot be interpreted as an integer` is raised at bind time, so the
+service never binds and every http check fails before a single request is sent -- a build-time
+gap, not a request-handling gap. This is the direct analog of the already-landed deterministic
+signature-contract (REQ-45), filename-contract (REQ-46), and http.server-scaffold (REQ-48)
+repairs: a mechanical AST pass over the built modules, never a model re-call.
+
+#### Acceptance Criteria
+- [x] `coerce_ports_in_code(code)` parses with `ast` and wraps the PORT element of a recognized
+  stdlib server bind-site tuple in `int(...)` if it isn't already an int literal or an `int(...)`
+  call. Recognized bind sites: `HTTPServer`/`ThreadingHTTPServer`/`socketserver.TCPServer`/
+  `socketserver.ThreadingTCPServer`/`TCPServer`/`ThreadingTCPServer` (and `http.server.HTTPServer`)
+  constructor calls whose first positional arg is a `(host, port)` 2-tuple, and a
+  `<sock>.bind((host, port))` call.
+- [x] Idempotent + non-degrading: a port is always numeric, so `int(<expr>)` is a no-op on an
+  already-int expression and a correct coercion on a numeric string; an already-int-literal or
+  already-`int(...)`-wrapped port element is left byte-identical. Never raises: any parse/unparse
+  failure, or a module with no recognized bind site, leaves the code byte-identical.
+- [x] `apply_port_coercion(modules)` maps `coerce_ports_in_code` across a `{module: code}` dict,
+  returning a NEW dict where only the modules that actually got a coercion differ from the input.
+- [x] Wired into `harness/system_builder.py`'s `build_system` deterministic-repair pass, right
+  after the filename-contract repair (REQ-46) and BEFORE the http.server scaffold repair (REQ-48)
+  -- so a correct-but-str-port serve loop is fixed IN PLACE rather than scaffolded over.
+- [x] Proven OFFLINE (no model/Jetson call): the EXACT measured broken shape
+  (`os.getenv("PORT")` -> `socketserver.TCPServer(("", port), handler)`) is repaired and then
+  actually RUN with a str-typed `PORT` env var, binding the port and passing a real
+  `serve_and_check_stdlib` round-trip end-to-end (with an unrepaired control proving the same
+  fixture genuinely fails to bind without the fix); the `HTTPServer` and raw `sock.bind` variants
+  are recognized and coerced; idempotency on an already-`int(...)`/int-literal port; never raises
+  on garbage/unparseable input; `apply_port_coercion` over a multi-module dict changes only the
+  offending module. `tests/test_ext036_port_coercion.py`.

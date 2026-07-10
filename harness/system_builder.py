@@ -3285,6 +3285,26 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _filename_contract_notes = apply_filename_contract(built, spec)
     # #EXT-036-REQ-46 End
 
+    # #EXT-036-REQ-50 Start
+    # TASK-63: deterministic PORT int-coercion repair. MEASURED
+    # (`scratchpad/saas_crud_diag.out`, the canonical-board rest-sqlite-crud CREATE and rest-put
+    # MODIFY SaaS classes, both 0/3): gemma writes FULLY CORRECT service logic -- a real SQLite
+    # layer, real routing, a REAL serve loop (so the http.server scaffold repair below correctly
+    # no-ops via `has_real_serve_loop`) -- but reads the port from the environment as a STRING and
+    # passes it un-coerced to the server bind site (`socketserver.TCPServer(("", port), handler)`),
+    # so the service raises `TypeError: 'str' object cannot be interpreted as an integer` at bind
+    # time and never binds. Wired in the same spot/pattern as the import-resolver, guard-index,
+    # signature-contract, and filename-contract repairs above -- additive, AST-only, never-raising,
+    # leak-free (reads only the built module's own AST, never spec text/an oracle/a test), and
+    # NON-DEGRADING: a port is always numeric, so `int(<expr>)` is a no-op on an already-int
+    # expression and a correct coercion on a numeric string; an already-int-literal or already-
+    # `int(...)`-wrapped port element is left untouched (idempotent). Placed BEFORE the
+    # http.server scaffold repair below so a correct-but-str-port serve loop is fixed IN PLACE
+    # rather than scaffolded over.
+    from harness.port_coercion import apply_port_coercion
+    built = apply_port_coercion(built)
+    # #EXT-036-REQ-50 End
+
     # #EXT-036-REQ-48 Start
     # TASK-61: deterministic http.server SCAFFOLD repair. MEASURED
     # (`.jaros-data/artifacts/saas_diag.log`, the first on-Jetson SaaS build, 0/3): gemma writes
