@@ -575,3 +575,40 @@
 
 #### Implements
 - [REQ-22] Second FINTECH-LEDGER CREATE task, in an accounts-receivable/invoicing vertical
+
+### [TASK-18] Thread `spec_hint` from the real-systems MODIFY driver into `modify_system` (REQ-23)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add an optional `base_sentence: str = ""` field to
+   `RealSystemModifyTask` (fully backward compatible). Populate it for all 6 existing modify
+   tasks with the matching CREATE task's sentence: `RETRY_BASE_DELAY_MODIFY_TASK` <-
+   `_RETRY_BACKOFF_SENTENCE` (`RETRY_BACKOFF_LIB_TASK`'s), `INI_DEFAULT_FLAG_MODIFY_TASK` <-
+   `_INI_SECTION_QUERY_SENTENCE` (`INI_SECTION_QUERY_TASK`'s), `REST_SQLITE_ADD_UPDATE_MODIFY` <-
+   `_REST_SQLITE_CRUD_SENTENCE` (`REST_SQLITE_CRUD_TASK`'s), `AGENT_ADD_STEP_GUARD_MODIFY` <-
+   `_PLAIN_AGENT_SENTENCE` (`PLAIN_AGENT_TASK`'s), `ORDER_ADD_REFUND_MODIFY` <-
+   `_ORDER_LIFECYCLE_SENTENCE` (`ORDER_LIFECYCLE_TASK`'s), `INVENTORY_ADD_BACKORDER_MODIFY` <-
+   `_INVENTORY_SENTENCE` (`INVENTORY_TASK`'s).
+2. In `_run_one_modify_task`, pass `spec_hint=(task.base_sentence or None)` to the
+   `modify_system(...)` call (REQ-52's already-landed kwarg) -- `base_sentence` defaults to `""`
+   (falsy), so `spec_hint` stays `None` for any task that never sets it.
+3. Verify (offline, pure functions, no build): `REST_SQLITE_ADD_UPDATE_MODIFY.base_sentence + " "
+   + REST_SQLITE_ADD_UPDATE_MODIFY.mod_sentence` makes
+   `harness.http_service_scaffold.spec_demands_stdlib_http_service` return `True` (and the bare
+   `mod_sentence` alone returns `False`, proving the gap); `AGENT_ADD_STEP_GUARD_MODIFY.
+   base_sentence + " " + AGENT_ADD_STEP_GUARD_MODIFY.mod_sentence` makes
+   `harness.agent_scaffold.spec_demands_tool_calling_agent` return `True`.
+4. Add `tests/test_ext060_spec_hint.py` (offline, no Jetson/`build_llm`): (a) every modify task in
+   `REAL_SYSTEMS_MODIFY_TASKS` has a non-empty `base_sentence` drawn from
+   `REAL_SYSTEMS_TASKS`'s own sentences; (b) the two protocol-modify detector checks from step 3;
+   (c) the driver passes `spec_hint` through to `modify_system` -- verified by monkeypatching
+   `harness.real_systems_suite.modify_system` with a stub that captures its kwargs and calling
+   `_run_one_modify_task` directly (both a task with a `base_sentence` and one without, asserting
+   `spec_hint is None` in the latter case); (d) `REAL_SYSTEMS_TASKS`/`REAL_SYSTEMS_MODIFY_TASKS`
+   are unchanged in size (15 create + 6 modify) -- this task only threads an existing field
+   through, it never adds/removes a roster task.
+5. Run `python -m pytest tests/test_ext060_spec_hint.py tests/test_ext060*.py -q`; confirm green
+   (offline only). Update `.jarify/EXT-060/index.json` (REQ-23 ranges, via `jarify-manage-links`)
+   and flip the REQ-23 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-23] Thread `spec_hint` from the real-systems MODIFY driver into `modify_system`

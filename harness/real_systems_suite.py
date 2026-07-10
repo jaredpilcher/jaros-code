@@ -932,7 +932,17 @@ class RealSystemModifyTask:
     ``oracle_kind``/``oracle_spec`` are the SAME declarative shape :class:`RealSystemTask` uses
     -- deliberately, so the CREATE half's independent oracle dispatcher (
     :func:`grade_real_system_task`) grades a *modified* tree with zero new oracle code (duck
-    typing: that dispatcher only ever reads ``task.oracle_kind``/``task.oracle_spec``)."""
+    typing: that dispatcher only ever reads ``task.oracle_kind``/``task.oracle_spec``).
+
+    ``base_sentence`` (REQ-23, TASK-18): optional, defaults to ``""`` -- fully backward
+    compatible. When set, it is the ORIGINAL CREATE-style sentence the ``start_system`` baseline
+    was built from (e.g. the matching ``RealSystemTask.sentence``); ``_run_one_modify_task``
+    forwards it to ``harness.system_builder.modify_system`` as ``spec_hint`` (REQ-52's landed
+    kwarg) so the deterministic repair chain's spec detectors (``spec_demands_stdlib_http_
+    service``/``spec_demands_tool_calling_agent``) see the FULL protocol contract -- a bare
+    ``mod_sentence`` alone (e.g. "Add a `PUT /items/<id>` endpoint...") typically does not
+    mention the http.server/OpenAI-protocol keywords those scaffolds key on, so without
+    ``base_sentence`` they never fire on a real modify task."""
 
     name: str
     cls: str
@@ -940,6 +950,7 @@ class RealSystemModifyTask:
     mod_sentence: str
     oracle_kind: str
     oracle_spec: dict = field(default_factory=dict)
+    base_sentence: str = ""
 
 
 def _run_one_modify_task(task: "RealSystemModifyTask", *, llm: Any, python_exe: str) -> dict:
@@ -964,7 +975,17 @@ def _run_one_modify_task(task: "RealSystemModifyTask", *, llm: Any, python_exe: 
 
         with tempfile.TemporaryDirectory(prefix="real_sys_modify_suite_") as tmp:
             root = Path(tmp)
-            result = modify_system(dict(task.start_system or {}), task.mod_sentence, root, llm=llm)
+            # #EXT-060-REQ-23 Start
+            # TASK-18: thread the task's `base_sentence` (the original CREATE-style sentence its
+            # `start_system` was built from) through to `modify_system` as `spec_hint` (REQ-52's
+            # landed kwarg) -- combined with `mod_sentence`, this lets the http/agent scaffolds'
+            # spec detectors see the full protocol contract even though the bare `mod_sentence`
+            # alone often doesn't mention it. `task.base_sentence` defaults to `""`, which is
+            # falsy, so `spec_hint=None` for any task that doesn't set it (fully backward
+            # compatible with the two REQ-7 tasks that predate this field).
+            result = modify_system(dict(task.start_system or {}), task.mod_sentence, root,
+                                    llm=llm, spec_hint=(task.base_sentence or None))
+            # #EXT-060-REQ-23 End
             if not isinstance(result, dict):
                 rec["note"] = "modify_system returned a non-dict result"
                 return rec
@@ -1047,6 +1068,12 @@ RETRY_BASE_DELAY_MODIFY_TASK = RealSystemModifyTask(
     cls="library-modify",
     start_system={"retry.py": _RETRY_BASELINE_PY},
     mod_sentence=_RETRY_BASE_DELAY_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (RETRY_BACKOFF_LIB_TASK's), forwarded to
+    # `modify_system` as `spec_hint` so its deterministic repair chain sees the full original
+    # contract, not just this MODIFY task's one-sentence delta.
+    base_sentence=_RETRY_BACKOFF_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="import",
     oracle_spec={
         "module": "retry",
@@ -1140,6 +1167,10 @@ INI_DEFAULT_FLAG_MODIFY_TASK = RealSystemModifyTask(
     cls="config-cli-modify",
     start_system={"main.py": _INI_QUERY_BASELINE_PY},
     mod_sentence=_INI_DEFAULT_FLAG_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (INI_SECTION_QUERY_TASK's).
+    base_sentence=_INI_SECTION_QUERY_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="cli-exact",
     oracle_spec={
         "argv": ["server", "missing", "--default", "fallback"],
@@ -1423,6 +1454,14 @@ REST_SQLITE_ADD_UPDATE_MODIFY = RealSystemModifyTask(
     cls="rest-api-modify",
     start_system={"main.py": _REST_SQLITE_BASELINE_PY},
     mod_sentence=_REST_SQLITE_PUT_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (REST_SQLITE_CRUD_TASK's) -- the bare
+    # `mod_sentence` above ("Add a `PUT /items/<id>` endpoint...") does not itself mention
+    # `http.server`/"web service"/the PORT env var, so WITHOUT this `spec_demands_stdlib_http_
+    # service` never fires on this MODIFY task's repair chain; combined with `mod_sentence` it
+    # does (verified in tests/test_ext060_spec_hint.py).
+    base_sentence=_REST_SQLITE_CRUD_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="service",
     oracle_spec={
         "entry": "main.py",
@@ -1519,6 +1558,14 @@ AGENT_ADD_STEP_GUARD_MODIFY = RealSystemModifyTask(
     cls="agent-modify",
     start_system={"main.py": _AGENT_UNGUARDED_BASELINE_PY},
     mod_sentence=_AGENT_STEP_GUARD_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (PLAIN_AGENT_TASK's) -- pins the
+    # OPENAI_BASE_URL/JAROS_TOOL_URL/tool_calling/chat-completions protocol contract
+    # `spec_demands_tool_calling_agent` keys on, so combined with `mod_sentence` the repair
+    # chain's agent scaffold sees the full protocol (verified in
+    # tests/test_ext060_spec_hint.py).
+    base_sentence=_PLAIN_AGENT_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="agent",
     oracle_spec={
         "entry": "main.py",
@@ -1664,6 +1711,10 @@ ORDER_ADD_REFUND_MODIFY = RealSystemModifyTask(
     cls="lifecycle-modify",
     start_system={"order.py": _ORDER_BASELINE_PY},
     mod_sentence=_ORDER_ADD_REFUND_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (ORDER_LIFECYCLE_TASK's).
+    base_sentence=_ORDER_LIFECYCLE_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="state_machine",
     oracle_spec={
         "module": "order",
@@ -1817,6 +1868,10 @@ INVENTORY_ADD_BACKORDER_MODIFY = RealSystemModifyTask(
     cls="inventory-modify",
     start_system={"inventory.py": _INVENTORY_BASELINE_PY},
     mod_sentence=_INVENTORY_BACKORDER_MOD_SENTENCE,
+    # #EXT-060-REQ-23 Start
+    # TASK-18: the matching CREATE task's sentence (INVENTORY_TASK's).
+    base_sentence=_INVENTORY_SENTENCE,
+    # #EXT-060-REQ-23 End
     oracle_kind="conservation",
     oracle_spec={
         "module": "inventory",

@@ -655,3 +655,37 @@ mutation) when the legs are unbalanced.
       fixture is accepted by `grade_real_system_task(INVOICE_AR_TASK, ...)`; a BROKEN fixture
       (posts an unbalanced entry with no guard) is rejected; the task is a member of
       `REAL_SYSTEMS_TASKS`.
+
+### [REQ-23] Thread `spec_hint` from the real-systems MODIFY driver into `modify_system`
+
+`harness.system_builder.modify_system` already accepts a keyword-only `spec_hint: str | None =
+None` (EXT-036 REQ-52, the explicitly-flagged follow-up this task closes) and combines it with
+`mod_sentence` as the spec text its deterministic repair chain's scaffold detectors
+(`spec_demands_stdlib_http_service`/`spec_demands_tool_calling_agent`) inspect. The MEASURED gap:
+a bare `mod_sentence` for a real MODIFY task (e.g. "Add a `PUT /items/<id>` endpoint...") does NOT
+itself contain those protocol keywords, so without a hint those scaffolds never fire on a real
+modify task even though they DO fire on the matching CREATE task's full sentence. `RealSystemModify
+Task` gains an optional `base_sentence` field carrying the matching CREATE task's sentence, and
+`run_real_systems_modify_suite`'s driver forwards it to `modify_system` as `spec_hint`.
+
+#### Acceptance Criteria
+- [x] `RealSystemModifyTask` gains an optional `base_sentence: str = ""` field, fully backward
+      compatible with existing callers that don't set it.
+- [x] All 6 existing modify tasks in `REAL_SYSTEMS_MODIFY_TASKS`
+      (`RETRY_BASE_DELAY_MODIFY_TASK`, `INI_DEFAULT_FLAG_MODIFY_TASK`,
+      `REST_SQLITE_ADD_UPDATE_MODIFY`, `AGENT_ADD_STEP_GUARD_MODIFY`, `ORDER_ADD_REFUND_MODIFY`,
+      `INVENTORY_ADD_BACKORDER_MODIFY`) have `base_sentence` populated with their matching CREATE
+      task's sentence.
+- [x] `_run_one_modify_task` passes `spec_hint=(task.base_sentence or None)` to `modify_system`,
+      so a task with an empty `base_sentence` still calls `modify_system` exactly as before
+      (`spec_hint=None`).
+- [x] `REST_SQLITE_ADD_UPDATE_MODIFY.base_sentence + " " + REST_SQLITE_ADD_UPDATE_MODIFY.
+      mod_sentence` triggers `spec_demands_stdlib_http_service`, and
+      `AGENT_ADD_STEP_GUARD_MODIFY.base_sentence + " " + AGENT_ADD_STEP_GUARD_MODIFY.mod_sentence`
+      triggers `spec_demands_tool_calling_agent` — proving the two protocol MODIFY scaffolds now
+      see the full contract. The bare `mod_sentence` alone does NOT trigger the http-service
+      detector (proving the gap this task closes).
+- [x] Offline-testable (no real model/Jetson): every modify task has a non-empty `base_sentence`
+      drawn from the CREATE roster's own sentences; the driver's `modify_system` call is verified
+      to pass `spec_hint` via a monkeypatched stub; the roster size is unchanged (15 create + 6
+      modify).
