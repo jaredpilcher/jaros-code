@@ -1094,3 +1094,150 @@ seconds per `now_fn`; `check(token)` returns `True` strictly within that 900-sec
       that never invalidates a token (valid forever once issued) is rejected; the task is a
       member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four
       REQ-31/32/33/34 tasks (length 22 -> 26).
+
+### [REQ-35] Fifth LIFECYCLE MODIFY task: add an `on_hold` state to the SLA-tiered helpdesk ticket
+
+The canonical scoreboard's MODIFY half was lopsided (26 CREATE vs only 6 MODIFY). This is the first of
+FIVE new MODIFY tasks (REQ-35..39) that grow it to 11, each reusing an ALREADY-VERIFIED CREATE task's
+oracle dispatch verbatim (zero new oracle code), mirroring how REQ-14/REQ-16 reuse REQ-13/REQ-15's
+dispatch. `HELPDESK_ADD_STATE_MODIFY` (`RealSystemModifyTask`, `cls="helpdesk-modify"`,
+`oracle_kind="state_machine"`) is added to `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a
+hand-authored CORRECT baseline `helpdesk.py` matching REQ-24's `HELPDESK_SLA_TASK` contract exactly (no
+`hold()`/`release()`); `mod_sentence` asks for a new `on_hold` state reachable via `hold()` from EITHER
+`triaged` OR `escalated`, with `release()` returning it to `triaged` -- legal only from those source
+states.
+
+#### Acceptance Criteria
+- [x] `HELPDESK_ADD_STATE_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="state_machine"` dispatcher REQ-13/REQ-24 land (no new oracle code, reusing
+      `grade_real_system_task` exactly as every prior MODIFY task reuses its CREATE half's dispatch).
+- [x] `mod_sentence` pins `hold()`'s two legal source states (`triaged`/`escalated`) and `release()`'s
+      single legal source state (`on_hold` -> `triaged`), and the illegal-elsewhere/state-unchanged
+      contract; every oracle-checked value in `oracle_spec` (the extended states/transitions table, a
+      driven script exercising both hold/release from BOTH legal source states plus an illegal
+      hold-from-`new`, mixed with a regression of the original legal SLA path and the original illegal
+      close-from-`triaged` rejection) is derivable from that same visible `mod_sentence` (no hidden key,
+      no leak).
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): the `start_system` baseline
+      ALONE is accepted by `HELPDESK_SLA_TASK`'s own oracle (proves the baseline is a genuinely correct
+      REQ-24 implementation); a hand-authored CORRECT post-modification fixture (baseline + guarded
+      `hold()`/`release()`) is accepted by the new MODIFY oracle; the UNMODIFIED baseline is rejected;
+      a fixture that adds `hold()`/`release()` correctly but regresses the original illegal
+      close-from-`triaged` rejection is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-36] Second `oracle_kind="import"` MODIFY task: add an optional `cap_cents` to progressive tax withholding
+
+The canonical scoreboard's SECOND payroll/tax "import" MODIFY task, reusing TAX_WITHHOLDING_TASK's
+already-VERIFIED `oracle_kind="import"` dispatch (REQ-3/REQ-26) verbatim, mirroring how REQ-7's
+`RETRY_BASE_DELAY_MODIFY_TASK` adds an optional keyword parameter to a reusable library.
+`TAX_ADD_CAP_MODIFY` (`RealSystemModifyTask`, `cls="payroll-modify"`, `oracle_kind="import"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline `withholding.py`
+matching REQ-26's contract exactly (no `cap_cents`); `mod_sentence` asks for an ADDITIONAL optional
+`cap_cents` keyword (default `None`) that, when supplied, caps the computed withholding at `cap_cents`
+without ever raising it.
+
+#### Acceptance Criteria
+- [x] `TAX_ADD_CAP_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="import"` dispatcher REQ-3/REQ-26 land (no new oracle code).
+- [x] `mod_sentence` pins the new `cap_cents=None` default, the "smaller of the natural amount and
+      `cap_cents`" cap rule, and the unchanged-when-omitted-or-`None` contract; `oracle_spec.api_calls`
+      REUSES REQ-26's own four exact hand-verified regression values (invoked with no `cap_cents`) plus
+      two NEW calls proving the cap both BINDS (a cap below the natural amount) and is a no-op (a cap
+      above the natural amount never raises the result) -- every value derivable from the same visible
+      `mod_sentence` (no hidden key, no leak).
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): the `start_system` baseline
+      ALONE is accepted by `TAX_WITHHOLDING_TASK`'s own oracle; a hand-authored CORRECT
+      post-modification fixture (baseline + `cap_cents=None` cap) is accepted by the new MODIFY oracle;
+      the UNMODIFIED baseline is rejected (`TypeError` on the cap calls); a fixture that adds `cap_cents`
+      with a WRONG nonzero default (regressing the original uncapped behavior) is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-37] Second `oracle_kind="cli-exact"` MODIFY task: add an alphabetical-tie-elimination rule to IRV tally
+
+The canonical scoreboard's SECOND elections "cli-exact" MODIFY task, reusing IRV_TALLY_TASK's
+already-VERIFIED `oracle_kind="cli-exact"` dispatch (REQ-25) verbatim, mirroring how REQ-10's
+`INI_DEFAULT_FLAG_MODIFY_TASK` reuses the same dispatch for a config CLI. `IRV_ADD_TIE_RULE_MODIFY`
+(`RealSystemModifyTask`, `cls="elections-modify"`, `oracle_kind="cli-exact"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline `main.py` implementing
+REQ-25's ORIGINAL contract exactly except for one behavior REQ-25 explicitly leaves unspecified (a tie
+for fewest votes, which its own ballots never exercise) -- the baseline breaks ties alphabetically
+EARLIEST, a plausible but wrong guess; `mod_sentence` pins the new rule: break ties by eliminating the
+candidate LATER alphabetically.
+
+#### Acceptance Criteria
+- [x] `IRV_ADD_TIE_RULE_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="cli-exact"` dispatcher REQ-25 lands (no new oracle code).
+- [x] `mod_sentence` pins the new alphabetically-later tie-elimination rule and that the no-tie case is
+      unchanged; `oracle_spec` is a crafted 22-ballot fixture where a tie for fewest genuinely occurs and
+      the tie-break choice CHANGES the eventual winner (breaking the tie the other way would hand the win
+      to a different candidate) -- the exact expected multi-round stdout (tally lines, elimination order,
+      winner) was hand-recomputed and independently re-verified against a script implementing the rule.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): the `start_system` baseline
+      ALONE is accepted by `IRV_TALLY_TASK`'s own oracle (its different, unexercised tie-break never
+      fires on REQ-25's own no-tie ballots); a hand-authored CORRECT post-modification fixture is
+      accepted by the new MODIFY oracle; the UNMODIFIED baseline is rejected (wrong tie-break, wrong
+      winner); a fixture that implements the new rule correctly but regresses the original
+      `Round <N>: ...` separator format is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-38] Second `oracle_kind="service"` MODIFY task: add `DELETE /links/<code>` to the URL shortener
+
+The canonical scoreboard's SECOND web "service" MODIFY task, reusing URL_SHORTENER_TASK's
+already-VERIFIED `oracle_kind="service"` dispatch (REQ-9/REQ-33) verbatim, mirroring how REQ-10's
+`REST_SQLITE_ADD_UPDATE_MODIFY` adds an endpoint to a stdlib CRUD service. `SHORTENER_ADD_DELETE_MODIFY`
+(`RealSystemModifyTask`, `cls="web-modify"`, `oracle_kind="service"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline `main.py` matching
+REQ-33's contract exactly (no `DELETE`); `mod_sentence` asks for a `DELETE /links/<code>` endpoint that
+responds 204 and genuinely removes the row (a subsequent `GET` for that code must 404), following
+REQ-33's own SAFETY design (no redirect-following, `.invalid`-TLD fixture urls).
+
+#### Acceptance Criteria
+- [x] `SHORTENER_ADD_DELETE_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="service"` dispatcher REQ-9/REQ-33 land (no new oracle code).
+- [x] `mod_sentence` pins the `DELETE /links/<code>` -> 204 contract, the subsequent-GET-404
+      requirement, and the 404-for-unknown/already-deleted-code behavior; `oracle_spec.http_checks`
+      REGRESSES REQ-33's original `POST`/`GET`/unknown-`GET /r/<code>` checks unchanged, then exercises
+      the new `DELETE` both for a real link (204, then a follow-up `GET` proving it is genuinely gone)
+      and for an already-deleted code (404); `oracle_spec.db` uses the SURVIVING (never-deleted) second
+      link so the independent post-teardown row assertion stays honestly satisfiable.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): the `start_system` baseline
+      ALONE is accepted by `URL_SHORTENER_TASK`'s own oracle; a hand-authored CORRECT post-modification
+      fixture (baseline + a real `do_DELETE`) is accepted by the new MODIFY oracle; the UNMODIFIED
+      baseline is rejected (`BaseHTTPRequestHandler` 501s with no `do_DELETE`); a fixture whose `DELETE`
+      wipes EVERY row (no `WHERE id = ?` clause, regressing persistence) is also rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+
+### [REQ-39] Second `oracle_kind="clock"` MODIFY task: add `admin_unlock()` to the account lockout policy
+
+The canonical scoreboard's SECOND auth "clock" MODIFY task, reusing LOCKOUT_BACKOFF_TASK's
+already-VERIFIED `oracle_kind="clock"` dispatch (REQ-28) verbatim, mirroring how REQ-14/REQ-16 add a new
+action method to their CREATE half's baseline. `LOCKOUT_ADMIN_UNLOCK_MODIFY` (`RealSystemModifyTask`,
+`cls="auth-modify"`, `oracle_kind="clock"`) is added to `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a
+hand-authored CORRECT baseline `lockout.py` matching REQ-28's contract exactly (no `admin_unlock()`);
+`mod_sentence` asks for `admin_unlock()`, which clears an active lock IMMEDIATELY (not merely at its
+natural clear time).
+
+#### Acceptance Criteria
+- [x] `LOCKOUT_ADMIN_UNLOCK_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="clock"` dispatcher REQ-28 lands (no new oracle code).
+- [x] `mod_sentence` pins `admin_unlock()`'s immediate-clear contract (`is_locked()` false right after,
+      the next `record_attempt` processed as unlocked) and its no-op-when-not-locked behavior; the
+      driven timeline REGRESSES REQ-28's own t=0/10/20 (lock-triggering) and t=30 (still-locked,
+      `LockedOut`) steps, then calls `admin_unlock()` at t=40 and a `record_attempt` at t=50 -- only 10
+      simulated seconds later, WAY before the natural t=620 clear -- so a no-op or unwired
+      `admin_unlock()` is caught (t=50 would still raise `LockedOut` under the OLD lock-clear time).
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): the `start_system` baseline
+      ALONE is accepted by `LOCKOUT_BACKOFF_TASK`'s own oracle; a hand-authored CORRECT
+      post-modification fixture is accepted by the new MODIFY oracle; the UNMODIFIED baseline is
+      rejected (`AttributeError` on `admin_unlock`); a fixture that adds a genuinely-working
+      `admin_unlock()` but regresses the original 3-failure lock threshold (weakened to 4) is also
+      rejected.
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
+- [x] `REAL_SYSTEMS_MODIFY_TASKS` grew by exactly these five REQ-35/36/37/38/39 tasks (length 6 -> 11);
+      `REAL_SYSTEMS_TASKS` (the CREATE half) is untouched by this wave (still 26).

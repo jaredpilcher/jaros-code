@@ -978,3 +978,177 @@
 
 #### Implements
 - [REQ-34] Second `oracle_kind="clock"` CREATE task, in an auth vertical (access-token validity window)
+
+### [TASK-30] Fifth LIFECYCLE MODIFY task: add an `on_hold` state to the helpdesk ticket (REQ-35)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a hand-authored CORRECT baseline `_HELPDESK_SLA_
+   BASELINE_PY` matching REQ-24's `HELPDESK_SLA_TASK` contract exactly (no `hold()`/`release()`).
+2. Add `HELPDESK_ADD_STATE_MODIFY` (`RealSystemModifyTask`, `cls="helpdesk-modify"`,
+   `oracle_kind="state_machine"`, `start_system={"helpdesk.py": _HELPDESK_SLA_BASELINE_PY}`,
+   `base_sentence=_HELPDESK_SLA_SENTENCE`) with a `mod_sentence` asking for a new `on_hold` state
+   reachable via `hold()` from EITHER `triaged` OR `escalated`, with `release()` returning it to
+   `triaged` -- legal ONLY from those source states, illegal (raising `ValueError`, state
+   unchanged) everywhere else. Reuse the ALREADY-LANDED `_grade_state_machine` dispatch
+   (REQ-13) -- no new oracle code.
+3. Extend the `oracle_spec.spec` transitions table with the three new entries
+   (`triaged:hold`/`escalated:hold` -> `on_hold`, `on_hold:release` -> `triaged`) and hand-walk a
+   `drive` script that mixes an illegal hold-from-`new` (regression of the leaves-OFF-honesty
+   habit REQ-13/24 already established), the ORIGINAL legal SLA path, a regression of the
+   ORIGINAL illegal close-from-`triaged` rejection, and the NEW hold/release pair exercised from
+   BOTH its legal source states.
+4. Add it to `REAL_SYSTEMS_MODIFY_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Create `tests/test_ext060_modify_wave2.py` (OFFLINE, no model/Jetson) with its first section:
+   the `start_system` baseline ALONE is accepted by `grade_real_system_task(HELPDESK_SLA_TASK,
+   ...)`; a hand-authored CORRECT post-modification fixture (baseline + guarded
+   `hold()`/`release()`) is accepted by `grade_real_system_task(HELPDESK_ADD_STATE_MODIFY, ...)`;
+   the UNMODIFIED baseline is rejected; a fixture that adds `hold()`/`release()` correctly but
+   ALSO regresses the original illegal close-from-`triaged` rejection is also rejected;
+   leaves-OFF holds (`leaf_for_spec(HELPDESK_ADD_STATE_MODIFY.mod_sentence) is None`); the task is
+   a member of `REAL_SYSTEMS_MODIFY_TASKS`.
+6. Run `python -m pytest tests/test_ext060_modify_wave2.py tests/test_ext060*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-35 ranges, via
+   `jarify-manage-links`) and flip the REQ-35 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-35] Fifth LIFECYCLE MODIFY task: add an `on_hold` state to the SLA-tiered helpdesk ticket
+
+### [TASK-31] Second `oracle_kind="import"` MODIFY task: add an optional `cap_cents` to tax withholding (REQ-36)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a hand-authored CORRECT baseline `_TAX_WITHHOLDING_
+   BASELINE_PY` matching REQ-26's `TAX_WITHHOLDING_TASK` contract exactly (no `cap_cents`).
+2. Add `TAX_ADD_CAP_MODIFY` (`RealSystemModifyTask`, `cls="payroll-modify"`,
+   `oracle_kind="import"`, `start_system={"withholding.py": _TAX_WITHHOLDING_BASELINE_PY}`,
+   `base_sentence=_TAX_WITHHOLDING_SENTENCE`) with a `mod_sentence` asking for an ADDITIONAL
+   optional `cap_cents` keyword (default `None`) that, when supplied as an integer, caps the
+   computed withholding at `cap_cents` -- never raising it, and leaving the uncapped behavior
+   completely unchanged when omitted or `None`. Reuse the ALREADY-LANDED `_grade_import` dispatch
+   (REQ-3) -- no new oracle code.
+3. `oracle_spec.api_calls` REUSES REQ-26's own four exact hand-verified regression values (`zero`/
+   `boundary`/`mid`/`top`, invoked with no `cap_cents`) plus two NEW calls at the `mid` income
+   proving the cap both BINDS (a cap below the natural 35007-cent amount) and is a no-op (a cap
+   above it).
+4. Add it to `REAL_SYSTEMS_MODIFY_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Extend `tests/test_ext060_modify_wave2.py` (same file TASK-30 creates, OFFLINE, no
+   model/Jetson): the `start_system` baseline ALONE is accepted by
+   `grade_real_system_task(TAX_WITHHOLDING_TASK, ...)`; a hand-authored CORRECT
+   post-modification fixture (baseline + `cap_cents=None` cap) is accepted by
+   `grade_real_system_task(TAX_ADD_CAP_MODIFY, ...)`; the UNMODIFIED baseline is rejected
+   (`TypeError` on the cap calls); a fixture that adds `cap_cents` with a WRONG nonzero default
+   (regressing the original uncapped behavior) is also rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_MODIFY_TASKS`.
+6. Run `python -m pytest tests/test_ext060_modify_wave2.py tests/test_ext060*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-36 ranges, via
+   `jarify-manage-links`) and flip the REQ-36 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-36] Second `oracle_kind="import"` MODIFY task: add an optional `cap_cents` to progressive tax withholding
+
+### [TASK-32] Second `oracle_kind="cli-exact"` MODIFY task: add an alphabetical-tie-elimination rule to IRV tally (REQ-37)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a hand-authored CORRECT baseline `_IRV_TALLY_
+   BASELINE_PY` implementing REQ-25's ORIGINAL instant-runoff contract exactly, breaking a tie
+   for fewest votes (a case REQ-25's own ballots never exercise) by eliminating the
+   alphabetically EARLIEST tied candidate -- a plausible but WRONG guess, deliberately distinct
+   from the new rule this task adds.
+2. Add `IRV_ADD_TIE_RULE_MODIFY` (`RealSystemModifyTask`, `cls="elections-modify"`,
+   `oracle_kind="cli-exact"`, `start_system={"main.py": _IRV_TALLY_BASELINE_PY}`,
+   `base_sentence=_IRV_TALLY_SENTENCE`) with a `mod_sentence` pinning the new rule: on a tie for
+   fewest first-choice votes, eliminate the candidate LATER alphabetically instead; the no-tie
+   case is unchanged. Reuse the ALREADY-LANDED `_grade_cli_exact` dispatch (REQ-25) -- no new
+   oracle code.
+3. Hand-craft a 22-ballot fixture (10 ballots ranking `A` alone; 6 ranking `B,C`; 6 ranking `C,B`)
+   where round 1 produces a genuine tie for fewest between `B`/`C` (6 each) AND the tie-break
+   choice CHANGES the eventual winner (eliminating `C`, the correct rule, transfers its votes to
+   `B`, who then wins; eliminating `B` instead would transfer to `C` and hand `C` the win) --
+   hand-recompute the exact multi-round expected stdout and independently re-verify it against a
+   scratch script implementing the rule before adding it to `oracle_spec`.
+4. Add it to `REAL_SYSTEMS_MODIFY_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Extend `tests/test_ext060_modify_wave2.py` (same file TASK-30/31 create, OFFLINE, no
+   model/Jetson): the `start_system` baseline ALONE is accepted by
+   `grade_real_system_task(IRV_TALLY_TASK, ...)`; a hand-authored CORRECT post-modification
+   fixture is accepted by `grade_real_system_task(IRV_ADD_TIE_RULE_MODIFY, ...)`; the UNMODIFIED
+   baseline is rejected (wrong tie-break, wrong winner); a fixture that implements the new rule
+   correctly but regresses the original `Round <N>: ...` separator format is also rejected;
+   leaves-OFF holds; the task is a member of `REAL_SYSTEMS_MODIFY_TASKS`.
+6. Run `python -m pytest tests/test_ext060_modify_wave2.py tests/test_ext060*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-37 ranges, via
+   `jarify-manage-links`) and flip the REQ-37 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-37] Second `oracle_kind="cli-exact"` MODIFY task: add an alphabetical-tie-elimination rule to IRV tally
+
+### [TASK-33] Second `oracle_kind="service"` MODIFY task: add `DELETE /links/<code>` to the URL shortener (REQ-38)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a hand-authored CORRECT baseline
+   `_URL_SHORTENER_BASELINE_PY` matching REQ-33's `URL_SHORTENER_TASK` contract exactly (no
+   `DELETE`).
+2. Add `SHORTENER_ADD_DELETE_MODIFY` (`RealSystemModifyTask`, `cls="web-modify"`,
+   `oracle_kind="service"`, `start_system={"main.py": _URL_SHORTENER_BASELINE_PY}`,
+   `base_sentence=_URL_SHORTENER_SENTENCE`) with a `mod_sentence` asking for a
+   `DELETE /links/<code>` endpoint: 204 + genuine removal for a known code (a subsequent `GET`
+   for that code must 404), 404 with no effect for an unknown/already-deleted code. Follow
+   REQ-33's own SAFETY design (no redirect-following, `.invalid`-TLD fixture urls). Reuse the
+   ALREADY-LANDED `_grade_service` dispatch (REQ-9) -- no new oracle code.
+3. `oracle_spec.http_checks` REGRESSES REQ-33's original `POST`/`GET`/unknown-`GET /r/<code>`
+   checks unchanged, then exercises the new `DELETE` for a real link (204, then a follow-up `GET`
+   proving it is genuinely gone) and for an already-deleted code (404, no effect).
+   `oracle_spec.db` uses the SURVIVING (never-deleted) second link so the independent
+   post-teardown row assertion (`min_rows: 1`) stays honestly satisfiable.
+4. Add it to `REAL_SYSTEMS_MODIFY_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Extend `tests/test_ext060_modify_wave2.py` (same file TASK-30/31/32 create, OFFLINE, no
+   model/Jetson): the `start_system` baseline ALONE is accepted by
+   `grade_real_system_task(URL_SHORTENER_TASK, ...)`; a hand-authored CORRECT post-modification
+   fixture (baseline + a real `do_DELETE`) is accepted by
+   `grade_real_system_task(SHORTENER_ADD_DELETE_MODIFY, ...)`; the UNMODIFIED baseline is
+   rejected (`BaseHTTPRequestHandler` 501s with no `do_DELETE`); a fixture whose `DELETE` wipes
+   EVERY row (no `WHERE id = ?` clause, regressing persistence) is also rejected; leaves-OFF
+   holds; the task is a member of `REAL_SYSTEMS_MODIFY_TASKS`.
+6. Run `python -m pytest tests/test_ext060_modify_wave2.py tests/test_ext060*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-38 ranges, via
+   `jarify-manage-links`) and flip the REQ-38 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-38] Second `oracle_kind="service"` MODIFY task: add `DELETE /links/<code>` to the URL shortener
+
+### [TASK-34] Second `oracle_kind="clock"` MODIFY task: add `admin_unlock()` to the account lockout policy (REQ-39)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a hand-authored CORRECT baseline
+   `_LOCKOUT_BACKOFF_BASELINE_PY` matching REQ-28's `LOCKOUT_BACKOFF_TASK` contract exactly (no
+   `admin_unlock()`).
+2. Add `LOCKOUT_ADMIN_UNLOCK_MODIFY` (`RealSystemModifyTask`, `cls="auth-modify"`,
+   `oracle_kind="clock"`, `start_system={"lockout.py": _LOCKOUT_BACKOFF_BASELINE_PY}`,
+   `base_sentence=_LOCKOUT_BACKOFF_SENTENCE`) with a `mod_sentence` asking for a new
+   `admin_unlock()` zero-argument method that clears an active lock IMMEDIATELY (`is_locked()`
+   false right after, the next `record_attempt` processed as unlocked), a no-op when not
+   currently locked. Reuse the ALREADY-LANDED `_grade_clock` dispatch (REQ-28) -- no new oracle
+   code.
+3. Hand-walk a timeline that REGRESSES REQ-28's own t=0/10/20 (lock-triggering) and t=30
+   (still-locked, `LockedOut`) steps, then calls `admin_unlock()` at t=40 and a `record_attempt`
+   at t=50 -- only 10 simulated seconds later, WAY before the natural t=620 clear -- so a no-op
+   or unwired `admin_unlock()` is caught (t=50 would still raise `LockedOut` under the OLD
+   lock-clear time).
+4. Add it to `REAL_SYSTEMS_MODIFY_TASKS`. Keep leaves-OFF enforced + leak-free.
+5. Extend `tests/test_ext060_modify_wave2.py` (same file TASK-30/31/32/33 create, OFFLINE, no
+   model/Jetson): the `start_system` baseline ALONE is accepted by
+   `grade_real_system_task(LOCKOUT_BACKOFF_TASK, ...)`; a hand-authored CORRECT
+   post-modification fixture is accepted by
+   `grade_real_system_task(LOCKOUT_ADMIN_UNLOCK_MODIFY, ...)`; the UNMODIFIED baseline is rejected
+   (`AttributeError` on `admin_unlock`); a fixture that adds a genuinely-working `admin_unlock()`
+   but regresses the original 3-failure lock threshold (weakened to 4) is also rejected;
+   leaves-OFF holds; the task is a member of `REAL_SYSTEMS_MODIFY_TASKS`. Add a final roster-wide
+   test asserting `REAL_SYSTEMS_MODIFY_TASKS` grew by exactly these five REQ-35/36/37/38/39 tasks
+   (length 6 -> 11) while `REAL_SYSTEMS_TASKS` stays at 26.
+6. Bump the one pre-existing hardcoded MODIFY roster-size assertion in
+   `tests/test_ext060_spec_hint.py` (`len(REAL_SYSTEMS_MODIFY_TASKS) == 6` -> `== 11`, plus the
+   five new task names added to its membership set).
+7. Run `python -m pytest tests/test_ext060_modify_wave2.py tests/test_ext060*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-39 ranges, via
+   `jarify-manage-links`) and flip the REQ-39 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-39] Second `oracle_kind="clock"` MODIFY task: add `admin_unlock()` to the account lockout policy

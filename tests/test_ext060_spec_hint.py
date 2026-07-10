@@ -22,13 +22,18 @@ from harness.agent_scaffold import spec_demands_tool_calling_agent
 from harness.http_service_scaffold import spec_demands_stdlib_http_service
 from harness.real_systems_suite import (
     AGENT_ADD_STEP_GUARD_MODIFY,
+    HELPDESK_ADD_STATE_MODIFY,
     INI_DEFAULT_FLAG_MODIFY_TASK,
     INVENTORY_ADD_BACKORDER_MODIFY,
+    IRV_ADD_TIE_RULE_MODIFY,
+    LOCKOUT_ADMIN_UNLOCK_MODIFY,
     ORDER_ADD_REFUND_MODIFY,
     REAL_SYSTEMS_MODIFY_TASKS,
     REAL_SYSTEMS_TASKS,
     REST_SQLITE_ADD_UPDATE_MODIFY,
     RETRY_BASE_DELAY_MODIFY_TASK,
+    SHORTENER_ADD_DELETE_MODIFY,
+    TAX_ADD_CAP_MODIFY,
 )
 
 
@@ -140,9 +145,12 @@ def test_driver_passes_none_spec_hint_when_base_sentence_is_empty(monkeypatch):
 def test_roster_size_unchanged():
     # bumped 19 -> 22 -> 26: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py) added
     # three more CREATE tasks after this module's own REQ-23 landed, then REQ-31..34
-    # (tests/test_ext060_atlas_wave2_tasks.py) added four more.
+    # (tests/test_ext060_atlas_wave2_tasks.py) added four more. The CREATE count is still
+    # unchanged by this file. MODIFY bumped 6 -> 11: REQ-35..39
+    # (tests/test_ext060_modify_wave2.py) added five more MODIFY tasks, growing the previously
+    # lopsided 26-CREATE-vs-6-MODIFY split.
     assert len(REAL_SYSTEMS_TASKS) == 26
-    assert len(REAL_SYSTEMS_MODIFY_TASKS) == 6
+    assert len(REAL_SYSTEMS_MODIFY_TASKS) == 11
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert names == {
         RETRY_BASE_DELAY_MODIFY_TASK.name,
@@ -151,5 +159,10 @@ def test_roster_size_unchanged():
         AGENT_ADD_STEP_GUARD_MODIFY.name,
         ORDER_ADD_REFUND_MODIFY.name,
         INVENTORY_ADD_BACKORDER_MODIFY.name,
+        HELPDESK_ADD_STATE_MODIFY.name,
+        TAX_ADD_CAP_MODIFY.name,
+        IRV_ADD_TIE_RULE_MODIFY.name,
+        SHORTENER_ADD_DELETE_MODIFY.name,
+        LOCKOUT_ADMIN_UNLOCK_MODIFY.name,
     }
 # #EXT-060-REQ-23 End

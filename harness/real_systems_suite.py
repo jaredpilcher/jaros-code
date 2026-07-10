@@ -3236,3 +3236,588 @@ TOKEN_VALIDITY_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(TOKEN_VALIDITY_TASK)
 # #EXT-060-REQ-34 End
+
+
+# #EXT-060-REQ-35 Start
+# TASK-30: growing the lopsided MODIFY half (26 CREATE vs only 6 MODIFY) -- a FIFTH
+# LIFECYCLE-shaped MODIFY task, reusing HELPDESK_SLA_TASK's already-VERIFIED "state_machine"
+# oracle_kind dispatch (REQ-13/REQ-24) verbatim, mirroring how REQ-14's ORDER_ADD_REFUND_MODIFY
+# adds a transition to ORDER_LIFECYCLE_TASK's baseline. `start_system` is a hand-authored CORRECT
+# baseline `helpdesk.py` matching REQ-24's `HELPDESK_SLA_TASK` contract exactly (no `hold()`/
+# `release()` -- that is what this task adds); `mod_sentence` asks for a new `on_hold` state
+# reachable via `hold()` from EITHER `triaged` OR `escalated`, with `release()` returning it to
+# `triaged` -- legal only from those source states, the same "legal from two source states"
+# shape REQ-18's `SUBSCRIPTION_LIFECYCLE_TASK.cancel()` already established for a CREATE task.
+_HELPDESK_SLA_BASELINE_PY = (
+    "class HelpdeskTicket:\n"
+    "    _TRANSITIONS = {\n"
+    "        (\"new\", \"triage\"): \"triaged\",\n"
+    "        (\"triaged\", \"escalate\"): \"escalated\",\n"
+    "        (\"triaged\", \"resolve\"): \"resolved\",\n"
+    "        (\"escalated\", \"resolve\"): \"resolved\",\n"
+    "        (\"triaged\", \"wait_on_customer\"): \"waiting_customer\",\n"
+    "        (\"escalated\", \"wait_on_customer\"): \"waiting_customer\",\n"
+    "        (\"waiting_customer\", \"resume\"): \"triaged\",\n"
+    "        (\"resolved\", \"close\"): \"closed\",\n"
+    "        (\"closed\", \"reopen\"): \"new\",\n"
+    "    }\n"
+    "\n"
+    "    def __init__(self):\n"
+    "        self._state = \"new\"\n"
+    "\n"
+    "    @property\n"
+    "    def state(self):\n"
+    "        return self._state\n"
+    "\n"
+    "    def _transition(self, action):\n"
+    "        key = (self._state, action)\n"
+    "        if key not in self._TRANSITIONS:\n"
+    "            raise ValueError(f\"illegal transition: {action} from {self._state}\")\n"
+    "        self._state = self._TRANSITIONS[key]\n"
+    "\n"
+    "    def triage(self):\n"
+    "        self._transition(\"triage\")\n"
+    "\n"
+    "    def escalate(self):\n"
+    "        self._transition(\"escalate\")\n"
+    "\n"
+    "    def resolve(self):\n"
+    "        self._transition(\"resolve\")\n"
+    "\n"
+    "    def wait_on_customer(self):\n"
+    "        self._transition(\"wait_on_customer\")\n"
+    "\n"
+    "    def resume(self):\n"
+    "        self._transition(\"resume\")\n"
+    "\n"
+    "    def close(self):\n"
+    "        self._transition(\"close\")\n"
+    "\n"
+    "    def reopen(self):\n"
+    "        self._transition(\"reopen\")\n"
+)
+
+_HELPDESK_ADD_ONHOLD_MOD_SENTENCE = (
+    "Modify helpdesk.py so that `HelpdeskTicket` ALSO supports two new zero-argument action "
+    "methods: `hold()` and `release()`. `hold()` moves the ticket to a NEW state, the string "
+    "`\"on_hold\"` (extend the `state` property so it can also report `\"on_hold\"`); `hold()` is "
+    "legal from EITHER `\"triaged\"` OR `\"escalated\"` (whichever SLA tier the ticket was in when "
+    "it went on hold), never from any other state (including `\"new\"`, `\"waiting_customer\"`, "
+    "`\"resolved\"`, `\"closed\"`, or `\"on_hold\"` itself). `release()` moves the ticket from "
+    "`\"on_hold\"` back to `\"triaged\"` (normal-tier handling resumes, regardless of which tier "
+    "it was on hold from), and is legal ONLY from `\"on_hold\"`. Calling `hold()` or `release()` "
+    "from any state where it is not legal must instead raise `ValueError` and must leave the "
+    "ticket's `state` COMPLETELY UNCHANGED, exactly like every other illegal transition. Every "
+    "other existing aspect of its behavior -- the `triage()`/`escalate()`/`wait_on_customer()`/"
+    "`resume()`/`resolve()`/`close()`/`reopen()` methods, their exact legal source states, the "
+    "`ValueError`-on-illegal-transition-with-unchanged-state contract, and the `state` property "
+    "-- is completely unchanged."
+)
+
+HELPDESK_ADD_STATE_MODIFY = RealSystemModifyTask(
+    name="helpdesk-sla-add-onhold-state-modify",
+    cls="helpdesk-modify",
+    start_system={"helpdesk.py": _HELPDESK_SLA_BASELINE_PY},
+    mod_sentence=_HELPDESK_ADD_ONHOLD_MOD_SENTENCE,
+    base_sentence=_HELPDESK_SLA_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "helpdesk",
+        "entity": "HelpdeskTicket",
+        "spec": {
+            "states": ["new", "triaged", "escalated", "waiting_customer", "resolved", "closed",
+                       "on_hold"],
+            "initial": "new",
+            "transitions": {
+                "new:triage": "triaged",
+                "triaged:escalate": "escalated",
+                "triaged:resolve": "resolved",
+                "escalated:resolve": "resolved",
+                "triaged:wait_on_customer": "waiting_customer",
+                "escalated:wait_on_customer": "waiting_customer",
+                "waiting_customer:resume": "triaged",
+                "resolved:close": "closed",
+                "closed:reopen": "new",
+                "triaged:hold": "on_hold",
+                "escalated:hold": "on_hold",
+                "on_hold:release": "triaged",
+            },
+            # An illegal hold-from-"new" FIRST (the ticket was never triaged), then the ORIGINAL
+            # legal triage plus a regression of the ORIGINAL illegal close-from-triaged rejection,
+            # then the NEW hold/release pair exercised from BOTH its legal source states
+            # ("triaged" and, after escalating, "escalated"), then the ORIGINAL legal SLA path
+            # back through resolve/close/reopen to "new" -- mixing the old legal path, the new
+            # hold/release behavior, and an illegal-new-behavior rejection in one script.
+            "drive": [
+                {"action": "hold", "expect": "reject"},
+                {"action": "triage", "expect": "accept"},
+                {"action": "close", "expect": "reject"},
+                {"action": "hold", "expect": "accept"},
+                {"action": "release", "expect": "accept"},
+                {"action": "escalate", "expect": "accept"},
+                {"action": "hold", "expect": "accept"},
+                {"action": "release", "expect": "accept"},
+                {"action": "resolve", "expect": "accept"},
+                {"action": "close", "expect": "accept"},
+                {"action": "reopen", "expect": "accept"},
+            ],
+            "expect_final": "new",
+        },
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(HELPDESK_ADD_STATE_MODIFY)
+# #EXT-060-REQ-35 End
+
+
+# #EXT-060-REQ-36 Start
+# TASK-31: a SECOND "import" oracle_kind MODIFY task built on a payroll/tax CREATE task --
+# reusing TAX_WITHHOLDING_TASK's already-VERIFIED "import" oracle_kind dispatch (REQ-3/REQ-26)
+# verbatim, mirroring how REQ-7's RETRY_BASE_DELAY_MODIFY_TASK adds an optional keyword
+# parameter to a reusable library. `start_system` is a hand-authored CORRECT baseline
+# `withholding.py` matching REQ-26's `TAX_WITHHOLDING_TASK` contract exactly (no `cap_cents` --
+# that is what this task adds); every regression value below is IDENTICAL to
+# `TAX_WITHHOLDING_TASK.oracle_spec`'s own hand-verified values (re-derived, not re-imported, so
+# this task's spec stays fully self-contained and independently readable).
+_TAX_WITHHOLDING_BASELINE_PY = (
+    "def compute_withholding_cents(income_cents, brackets):\n"
+    "    total = 0\n"
+    "    lower = 0\n"
+    "    for upper, rate in brackets:\n"
+    "        if upper is None:\n"
+    "            portion = max(income_cents - lower, 0)\n"
+    "        else:\n"
+    "            portion = max(min(income_cents, upper) - lower, 0)\n"
+    "        total += (portion * rate) // 100\n"
+    "        if upper is not None:\n"
+    "            lower = upper\n"
+    "    return total\n"
+)
+
+_TAX_ADD_CAP_MOD_SENTENCE = (
+    "Modify withholding.py so that `compute_withholding_cents` ALSO accepts an ADDITIONAL "
+    "optional keyword parameter named `cap_cents`, with a default value of Python's `None` "
+    "(meaning no cap -- when `cap_cents` is not supplied at all, or is `None`, behavior is "
+    "completely unchanged from before). When `cap_cents` is supplied as an integer (not "
+    "`None`), the function's return value is the SMALLER of (a) the withholding amount computed "
+    "exactly as before from `income_cents` and `brackets`, and (b) `cap_cents` itself -- the "
+    "computed withholding is never allowed to exceed `cap_cents`, no matter how high "
+    "`income_cents` or the bracket rates are. Every other existing aspect of its behavior -- the "
+    "progressive cumulative-bracket computation itself, integer floor division, no hardcoded "
+    "jurisdiction/bracket table -- is completely unchanged."
+)
+
+TAX_ADD_CAP_MODIFY = RealSystemModifyTask(
+    name="tax-withholding-add-annual-cap-modify",
+    cls="payroll-modify",
+    start_system={"withholding.py": _TAX_WITHHOLDING_BASELINE_PY},
+    mod_sentence=_TAX_ADD_CAP_MOD_SENTENCE,
+    base_sentence=_TAX_WITHHOLDING_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "withholding",
+        "api_calls": [
+            # Regression: the ORIGINAL four calls (REQ-26's exact hand-verified values), invoked
+            # with no `cap_cents` at all -- a build that changed the `=None` default to anything
+            # else, or that caps even when uncapped, fails one of these.
+            {"id": "zero", "target": "compute_withholding_cents",
+             "args": [0, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "boundary", "target": "compute_withholding_cents",
+             "args": [100000, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "mid", "target": "compute_withholding_cents",
+             "args": [225037, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            {"id": "top", "target": "compute_withholding_cents",
+             "args": [500000, _TAX_WITHHOLDING_BRACKETS], "kwargs": {}},
+            # New: the $2,250.37 income's NATURAL withholding is 35007 cents (see REQ-26's own
+            # "mid" comment) -- a $200.00 (20000-cent) cap BINDS, capping the result down to
+            # exactly 20000.
+            {"id": "cap_binding", "target": "compute_withholding_cents",
+             "args": [225037, _TAX_WITHHOLDING_BRACKETS], "kwargs": {"cap_cents": 20000}},
+            # New: the SAME income with a $500.00 (50000-cent) cap -- ABOVE the natural 35007 --
+            # is a no-op: the cap must never RAISE the result, only ever lower it.
+            {"id": "cap_noop", "target": "compute_withholding_cents",
+             "args": [225037, _TAX_WITHHOLDING_BRACKETS], "kwargs": {"cap_cents": 50000}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "zero", "expected": 0},
+            {"kind": "returns_equals", "call_id": "boundary", "expected": 10000},
+            {"kind": "returns_equals", "call_id": "mid", "expected": 35007},
+            {"kind": "returns_equals", "call_id": "top", "expected": 100000},
+            {"kind": "returns_equals", "call_id": "cap_binding", "expected": 20000},
+            {"kind": "returns_equals", "call_id": "cap_noop", "expected": 35007},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(TAX_ADD_CAP_MODIFY)
+# #EXT-060-REQ-36 End
+
+
+# #EXT-060-REQ-37 Start
+# TASK-32: a SECOND "cli-exact" oracle_kind MODIFY task, built on the elections CREATE task --
+# reusing IRV_TALLY_TASK's already-VERIFIED "cli-exact" oracle_kind dispatch (REQ-25) verbatim,
+# mirroring how REQ-10's INI_DEFAULT_FLAG_MODIFY_TASK reuses the same dispatch for a config CLI.
+# `start_system` is a hand-authored CORRECT baseline `main.py` implementing REQ-25's ORIGINAL
+# instant-runoff contract exactly, EXCEPT for one deliberately UNSPECIFIED behavior the original
+# sentence explicitly disclaims ("the graded input never produces a tie for fewest"): on a tie
+# for fewest votes, this baseline breaks it by eliminating the alphabetically EARLIER candidate
+# (`min` over `(count, name)`) -- a plausible but WRONG guess, distinct from the new rule this
+# task adds. `mod_sentence` pins the new rule explicitly: on a tie for fewest, eliminate the
+# candidate LATER alphabetically instead.
+_IRV_TALLY_BASELINE_PY = '''import sys
+from collections import Counter
+
+
+def main():
+    ballots = []
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+        ballots.append(line.split(","))
+
+    candidates = set()
+    for ballot in ballots:
+        candidates.update(ballot)
+
+    eliminated = set()
+    round_num = 1
+    while True:
+        counts = Counter()
+        for candidate in candidates - eliminated:
+            counts[candidate] = 0
+        for ballot in ballots:
+            for name in ballot:
+                if name not in eliminated:
+                    counts[name] += 1
+                    break
+
+        remaining = sorted(counts.keys())
+        line = ", ".join(f"{name}={counts[name]}" for name in remaining)
+        print(f"Round {round_num}: {line}")
+
+        total = sum(counts.values())
+        winner = None
+        for name in remaining:
+            if counts[name] * 2 > total:
+                winner = name
+                break
+        if winner is not None:
+            print(f"Winner: {winner}")
+            return
+
+        # Tie-break: alphabetically EARLIEST of the fewest -- an unspecified (and, per this
+        # task's mod_sentence, now WRONG) guess for the case REQ-25 never exercises.
+        fewest = min(remaining, key=lambda name: (counts[name], name))
+        eliminated.add(fewest)
+        print(f"Eliminated: {fewest}")
+        round_num += 1
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+_IRV_ADD_TIE_RULE_MOD_SENTENCE = (
+    "Modify main.py so that, when there is a TIE for fewest first-choice votes among two or "
+    "more candidates still in the race in some round, it eliminates the candidate whose name "
+    "is LATER in alphabetical order among those tied (instead of any other tie-breaking rule) "
+    "-- printing `Eliminated: <name>` for that alphabetically-later candidate, exactly like any "
+    "other elimination. When there is NO tie for fewest (a single candidate has strictly fewer "
+    "votes than every other remaining candidate), behavior is completely unchanged: that "
+    "single candidate is eliminated exactly as before. Every other existing aspect of its "
+    "behavior -- the per-round tally and `Round <N>: ...` output format, the strict-majority "
+    "`Winner: <name>` rule, ballot transfer to each ballot's next remaining ranked candidate, "
+    "and a ballot with no remaining ranked candidate casting no further vote -- is completely "
+    "unchanged."
+)
+
+# 22 ballots: 10 rank A alone (A is never eliminated, so a second choice is never needed); 6
+# rank B first then C; 6 rank C first then B. Round 1: A=10, B=6, C=6 -- no majority (needs
+# >11), and B/C TIE for fewest at 6 each. The new rule eliminates C (later alphabetically than
+# B); C's 6 ballots transfer to their second choice, B. Round 2: A=10, B=12 -- B now has a
+# strict majority (12 > 11) and wins -- breaking the tie the OTHER way (eliminating B instead)
+# would transfer B's votes to C and hand C the win instead, proving the alphabetical rule (not
+# an arbitrary tie-break) genuinely decides the outcome.
+_IRV_TIE_STDIN = ("A\n" * 10) + ("B,C\n" * 6) + ("C,B\n" * 6)
+_IRV_TIE_EXPECTED_STDOUT = (
+    "Round 1: A=10, B=6, C=6\n"
+    "Eliminated: C\n"
+    "Round 2: A=10, B=12\n"
+    "Winner: B\n"
+)
+
+IRV_ADD_TIE_RULE_MODIFY = RealSystemModifyTask(
+    name="irv-tally-add-tie-elimination-rule-modify",
+    cls="elections-modify",
+    start_system={"main.py": _IRV_TALLY_BASELINE_PY},
+    mod_sentence=_IRV_ADD_TIE_RULE_MOD_SENTENCE,
+    base_sentence=_IRV_TALLY_SENTENCE,
+    oracle_kind="cli-exact",
+    oracle_spec={
+        "argv": [],
+        "stdin": _IRV_TIE_STDIN,
+        "expected_stdout": _IRV_TIE_EXPECTED_STDOUT,
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(IRV_ADD_TIE_RULE_MODIFY)
+# #EXT-060-REQ-37 End
+
+
+# #EXT-060-REQ-38 Start
+# TASK-33: a SECOND "service" oracle_kind MODIFY task, built on the web/URL-shortener CREATE
+# task -- reusing URL_SHORTENER_TASK's already-VERIFIED "service" oracle_kind dispatch
+# (REQ-9/REQ-33) verbatim, mirroring how REQ-10's REST_SQLITE_ADD_UPDATE_MODIFY adds an endpoint
+# to the items CRUD service. `start_system` is a hand-authored CORRECT baseline `main.py`
+# matching REQ-33's `URL_SHORTENER_TASK` contract exactly (no `DELETE` -- that is what this task
+# adds); `mod_sentence` asks for a `DELETE /links/<code>` endpoint that actually removes the row
+# (a subsequent `GET` for that same code must 404, not just report success).
+_URL_SHORTENER_BASELINE_PY = '''import json
+import os
+import sqlite3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse
+
+DB_PATH = "data.db"
+
+
+def _init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS links ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT)"
+    )
+    conn.commit()
+    return conn
+
+
+CONN = _init_db()
+
+
+def _link_id(path, prefix):
+    parts = urlparse(path).path.strip("/").split("/")
+    if len(parts) == 2 and parts[0] == prefix:
+        try:
+            return int(parts[1])
+        except ValueError:
+            return None
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {}
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        link_id = _link_id(path, "links")
+        if link_id is not None:
+            cur = CONN.execute("SELECT id, url FROM links WHERE id = ?", (link_id,))
+            row = cur.fetchone()
+            if row is None:
+                self.send_response(404)
+                self.end_headers()
+            else:
+                self._send_json(200, {"code": str(row[0]), "url": row[1]})
+            return
+        redirect_id = _link_id(path, "r")
+        if redirect_id is not None:
+            cur = CONN.execute("SELECT id, url FROM links WHERE id = ?", (redirect_id,))
+            row = cur.fetchone()
+            if row is None:
+                self.send_response(404)
+                self.end_headers()
+            else:
+                self.send_response(301)
+                self.send_header("Location", row[1])
+                self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/links":
+            self.send_response(404)
+            self.end_headers()
+            return
+        data = self._read_json()
+        url = data.get("url")
+        cur = CONN.execute("INSERT INTO links (url) VALUES (?)", (url,))
+        CONN.commit()
+        self._send_json(201, {"code": str(cur.lastrowid), "url": url})
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+if __name__ == "__main__":
+    port = int(os.environ["PORT"])
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    server.serve_forever()
+'''
+
+_SHORTENER_ADD_DELETE_MOD_SENTENCE = (
+    "Add a `DELETE /links/<code>` endpoint: when `<code>` matches a previously created link's "
+    "code, delete that link and respond 204 with no body; a subsequent `GET /links/<code>` for "
+    "that SAME now-deleted code must respond 404 (exactly like a code that was never created). "
+    "When `<code>` does NOT match any existing link (including one already deleted), "
+    "`DELETE /links/<code>` responds 404 with no meaningful body and has no other effect. Every "
+    "other existing endpoint (`POST /links`, `GET /links/<code>` for a code that still exists, "
+    "and `GET /r/<code>`) is completely unchanged."
+)
+
+SHORTENER_ADD_DELETE_MODIFY = RealSystemModifyTask(
+    name="url-shortener-add-delete-endpoint-modify",
+    cls="web-modify",
+    start_system={"main.py": _URL_SHORTENER_BASELINE_PY},
+    mod_sentence=_SHORTENER_ADD_DELETE_MOD_SENTENCE,
+    base_sentence=_URL_SHORTENER_SENTENCE,
+    oracle_kind="service",
+    oracle_spec={
+        "entry": "main.py",
+        "http_checks": [
+            {"method": "POST", "path": "/links", "json_body": {"url": "https://example.invalid/a"},
+             "status": 201, "json_contains": {"code": "1", "url": "https://example.invalid/a"}},
+            {"method": "POST", "path": "/links", "json_body": {"url": "https://example.invalid/b"},
+             "status": 201, "json_contains": {"code": "2", "url": "https://example.invalid/b"}},
+            # Regression: the ORIGINAL GET/404 semantics, unchanged.
+            {"method": "GET", "path": "/links/1", "status": 200,
+             "json_contains": {"code": "1", "url": "https://example.invalid/a"}},
+            {"method": "GET", "path": "/links/999", "status": 404},
+            {"method": "GET", "path": "/r/999", "status": 404},
+            # New: DELETE the first link, then confirm it is genuinely gone (not just a 204 with
+            # no real effect), plus a DELETE of an already-deleted/unknown code stays 404.
+            {"method": "DELETE", "path": "/links/1", "status": 204},
+            {"method": "GET", "path": "/links/1", "status": 404},
+            {"method": "DELETE", "path": "/links/1", "status": 404},
+        ],
+        # Link 1 was deleted; link 2 ("b") is left alone so the independent post-teardown row
+        # assertion stays honestly satisfiable via the SURVIVING row.
+        "db": {"path": "data.db", "min_rows": 1},
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(SHORTENER_ADD_DELETE_MODIFY)
+# #EXT-060-REQ-38 End
+
+
+# #EXT-060-REQ-39 Start
+# TASK-34: a SECOND "clock" oracle_kind MODIFY task, built on the auth/lockout CREATE task --
+# reusing LOCKOUT_BACKOFF_TASK's already-VERIFIED "clock" oracle_kind dispatch (REQ-28) verbatim,
+# mirroring how REQ-14/REQ-16's MODIFY tasks add a new action method to their CREATE half's
+# baseline. `start_system` is a hand-authored CORRECT baseline `lockout.py` matching REQ-28's
+# `LOCKOUT_BACKOFF_TASK` contract exactly (no `admin_unlock()` -- that is what this task adds);
+# `mod_sentence` asks for an `admin_unlock()` that clears an active lock IMMEDIATELY -- the
+# driven timeline proves this by unlocking well BEFORE the lock's natural t=620 clear time (an
+# `admin_unlock()` that is a no-op, or never wired up at all, is caught because the very next
+# attempt at t=50 would still be inside the OLD lock window).
+_LOCKOUT_BACKOFF_BASELINE_PY = '''class LockedOut(Exception):
+    pass
+
+
+class LoginAttemptTracker:
+    def __init__(self, now_fn):
+        self._now_fn = now_fn
+        self._streak_count = 0
+        self._streak_start = None
+        self._locked_until = None
+
+    def is_locked(self):
+        if self._locked_until is None:
+            return False
+        return self._now_fn() < self._locked_until
+
+    def record_attempt(self, success):
+        now = self._now_fn()
+        if self._locked_until is not None:
+            if now < self._locked_until:
+                raise LockedOut()
+            self._locked_until = None
+
+        if success:
+            self._streak_count = 0
+            self._streak_start = None
+            return None
+
+        if self._streak_start is None or (now - self._streak_start) > 300:
+            self._streak_start = now
+            self._streak_count = 1
+        else:
+            self._streak_count += 1
+
+        if self._streak_count >= 3:
+            self._locked_until = now + 600
+
+        return None
+'''
+
+_LOCKOUT_ADMIN_UNLOCK_MOD_SENTENCE = (
+    "Modify lockout.py so that `LoginAttemptTracker` ALSO supports a new zero-argument action "
+    "method named `admin_unlock()`. Calling `admin_unlock()` immediately clears any currently "
+    "active lock, exactly as if the account's recorded lock-clear time had already been "
+    "reached: `is_locked()` must return `False` immediately after `admin_unlock()` is called, "
+    "even when the previously recorded lock-clear time has NOT yet actually been reached, and "
+    "the very next `record_attempt(...)` call after `admin_unlock()` must be processed like any "
+    "other unlocked attempt (never raising `LockedOut` because of the old lock-clear time). "
+    "Calling `admin_unlock()` while the account is NOT currently locked has no effect (it never "
+    "raises, and leaves everything else unchanged). Every other existing aspect of "
+    "`LoginAttemptTracker`'s behavior -- the failure-streak counting, the automatic lock after a "
+    "third consecutive failure within 300 seconds, the automatic clearing once `now_fn()` "
+    "reaches the recorded lock-clear time on its own, and `record_attempt`/`is_locked`'s "
+    "existing contracts -- is completely unchanged."
+)
+
+LOCKOUT_ADMIN_UNLOCK_MODIFY = RealSystemModifyTask(
+    name="lockout-add-admin-unlock-modify",
+    cls="auth-modify",
+    start_system={"lockout.py": _LOCKOUT_BACKOFF_BASELINE_PY},
+    mod_sentence=_LOCKOUT_ADMIN_UNLOCK_MOD_SENTENCE,
+    base_sentence=_LOCKOUT_BACKOFF_SENTENCE,
+    oracle_kind="clock",
+    oracle_spec={
+        "module": "lockout",
+        "entity": "LoginAttemptTracker",
+        "spec": {
+            "clock_param": "now_fn",
+            "construct_args": [],
+            "construct_kwargs": {},
+            # t=0/10/20: three consecutive failures within the 300s window -- the third (t=20)
+            # locks the account until t=20+600=620 (REQ-28's own timeline, a regression). t=30 is
+            # still inside that lock (30 < 620) -> must raise LockedOut (regression). `admin_
+            # unlock()` at t=40 must then clear the lock IMMEDIATELY -- t=50 is only 10
+            # simulated seconds later, WAY before the natural t=620 clear, so a build whose
+            # `admin_unlock` is a no-op (or never wired up) fails here: t=50's attempt would
+            # still raise LockedOut under the OLD lock-clear time, but a genuinely-wired
+            # `admin_unlock` lets it return None instead.
+            "timeline": [
+                {"at": 0, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 10, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 20, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 30, "call": "record_attempt", "args": [True],
+                 "expect": {"raises": "LockedOut"}},
+                {"at": 40, "call": "admin_unlock", "args": [], "expect": {"returns": None}},
+                {"at": 50, "call": "record_attempt", "args": [True], "expect": {"returns": None}},
+            ],
+            "expect_final": {"is_locked": False},
+        },
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(LOCKOUT_ADMIN_UNLOCK_MODIFY)
+# #EXT-060-REQ-39 End
