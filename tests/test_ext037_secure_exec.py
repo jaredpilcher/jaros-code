@@ -15,6 +15,7 @@ import time
 import pytest
 
 from harness.secure_exec import (
+    CATEGORY_NETWORK,
     EgressPolicy,
     ScanPolicy,
     run_sandboxed,
@@ -376,3 +377,174 @@ def test_run_sandboxed_omitted_stdin_param_still_runs_fine(tmp_path):
     assert result["ok"] is True
     assert "no stdin pipe needed" in result["stdout"]
 # #EXT-037-REQ-7 End
+
+
+# #EXT-037-REQ-15 Start
+# --- egress-scan PRECISION: listener/parser submodules are no longer over-flagged by root-name
+# matching, while every genuinely egress-capable module stays flagged (precision, not
+# relaxation -- see the STANDING SECURITY ORDER in the owning task). Offline, deterministic --
+# these snippets only IMPORT the modules under test; nothing here is ever actually run against a
+# network.
+
+
+def _egress_categories(report):
+    return [v["category"] for v in report.violations]
+
+
+# --- (1) each allowlisted listener/parser form PASSES (no longer flagged) -------------------
+
+
+def test_scan_code_allows_http_server_import():
+    report = scan_code("import http.server\n")
+    assert report.ok is True
+    assert report.violations == []
+    assert report.egress_ops == []
+
+
+def test_scan_code_allows_socketserver_import():
+    report = scan_code("import socketserver\n")
+    assert report.ok is True
+    assert report.violations == []
+    assert report.egress_ops == []
+
+
+def test_scan_code_allows_urllib_parse_from_import():
+    report = scan_code("from urllib.parse import urlparse\n")
+    assert report.ok is True
+    assert report.violations == []
+    assert report.egress_ops == []
+
+
+def test_scan_code_allows_http_server_from_import():
+    report = scan_code("from http.server import BaseHTTPRequestHandler\n")
+    assert report.ok is True
+    assert report.violations == []
+    assert report.egress_ops == []
+
+
+def test_scan_code_allows_urllib_import_parse_submodule_form():
+    # `from urllib import parse` -- `parse` is a submodule of the precise root `urllib`; only
+    # the specific submodule imported is classified, not the whole `urllib` root.
+    report = scan_code("from urllib import parse\nparse.urlparse('a')\n")
+    assert report.ok is True
+    assert report.violations == []
+    assert report.egress_ops == []
+
+
+# --- (2) each still-flagged egress-capable form is REFUSED (unchanged, precision only) ------
+
+
+def test_scan_code_still_flags_urllib_request_import():
+    report = scan_code("import urllib.request\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_from_urllib_import_request():
+    report = scan_code("from urllib import request\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_http_client_import():
+    report = scan_code("import http.client\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_socket_import():
+    report = scan_code("import socket\ns = socket.socket()\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_requests_import():
+    report = scan_code("import requests\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_urllib_request_urlopen_from_import():
+    report = scan_code("from urllib.request import urlopen\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+def test_scan_code_still_flags_mixed_urllib_parse_and_request_from_import():
+    # The sneaky case: `from urllib import parse, request` must still be refused because
+    # `request` is unsafe, even though `parse` alone would be allowed.
+    report = scan_code("from urllib import parse, request\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+# --- (3) bare `import urllib` (no submodule -- can't prove which part is used) stays flagged -
+
+
+def test_scan_code_bare_urllib_import_still_flagged():
+    report = scan_code("import urllib\n")
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+# --- (4) a mixed FILE (a safe listener import alongside a genuine egress import) is refused --
+
+
+def test_scan_code_mixed_file_http_server_and_urllib_request_is_refused():
+    code = (
+        "import http.server\n"
+        "import urllib.request\n"
+        "def main():\n"
+        "    urllib.request.urlopen('http://example.com')\n"
+    )
+    report = scan_code(code)
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+
+
+# --- (6) an integration test: a stdlib HTTP-service modules dict now passes the scan, while one
+# using urllib.request still fails --------------------------------------------------------------
+
+
+def test_scan_code_stdlib_http_service_modules_pass_scan():
+    modules = {
+        "main.py": (
+            "import http.server\n"
+            "import socketserver\n"
+            "import sqlite3\n"
+            "from urllib.parse import urlparse, parse_qs\n"
+            "\n"
+            "class Handler(http.server.BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        parsed = urlparse(self.path)\n"
+            "        conn = sqlite3.connect('data.db')\n"
+            "        self.send_response(200)\n"
+            "        self.end_headers()\n"
+            "\n"
+            "if __name__ == '__main__':\n"
+            "    with socketserver.TCPServer(('localhost', 8000), Handler) as httpd:\n"
+            "        httpd.serve_forever()\n"
+        ),
+    }
+    report = scan_code(modules)
+    assert report.ok is True
+    assert report.violations == []
+
+
+def test_scan_code_stdlib_http_service_with_urllib_request_still_fails():
+    modules = {
+        "main.py": (
+            "import http.server\n"
+            "import urllib.request\n"
+            "\n"
+            "class Handler(http.server.BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        urllib.request.urlopen('http://example.com')\n"
+            "        self.send_response(200)\n"
+            "        self.end_headers()\n"
+        ),
+    }
+    report = scan_code(modules)
+    assert report.ok is False
+    assert CATEGORY_NETWORK in _egress_categories(report)
+# #EXT-037-REQ-15 End

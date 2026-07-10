@@ -87,12 +87,58 @@ CATEGORY_SUBPROCESS = "SUBPROCESS/SHELL"
 CATEGORY_DYNAMIC_EXEC = "DYNAMIC-EXEC"
 CATEGORY_DESTRUCTIVE_FS = "DESTRUCTIVE/FS-OUTSIDE-ROOT"
 
+# #EXT-037-REQ-15 Start
+# Module-import egress classification is SUBMODULE-PRECISE, not root-name matching -- root
+# matching over-flagged INBOUND LISTENERS (`http.server`, `socketserver`, which bind/accept
+# local sockets and cannot themselves initiate an outbound connection) and PURE PARSERS
+# (`urllib.parse`, `html.parser`, `email.parser`, which do no I/O at all) just because they
+# share a root package name with a genuine egress-capable module. See ``_is_network_module``
+# for the exact precedence (explicit allowlist first, then explicit always-flag, then
+# per-root default-deny) -- the posture stays default-deny: anything NOT explicitly
+# allowlisted below keeps today's flagged behavior.
+
+# Dotted (or bare) module names that are ALWAYS egress/network regardless of how they are
+# imported -- each can itself initiate an outbound connection.
 _NETWORK_MODULES = {
-    "socket", "socketserver", "urllib", "urllib.request", "urllib2",
+    "socket", "urllib", "urllib.request", "urllib2",
     "http.client", "httplib", "requests", "httpx", "aiohttp", "ftplib",
     "smtplib", "telnetlib", "xmlrpc.client", "paramiko",
 }
-_NETWORK_ROOT_MODULES = {m.split(".")[0] for m in _NETWORK_MODULES}
+# Root package names whose submodules need PRECISE (not blanket) matching: some submodules
+# under these roots are listeners/parsers (allow-listed below) while others (or a bare
+# `import <root>` with no submodule at all) remain egress-capable and stay flagged.
+_NETWORK_PRECISE_ROOTS = {"urllib", "http", "xmlrpc"}
+# Exact submodule dotted names explicitly carved OUT of egress classification: inbound
+# listeners (bind/accept local sockets -- cannot exfiltrate) and pure string parsers (no I/O
+# at all). `socket`/raw sockets are deliberately NOT here -- a raw `socket.socket()` can
+# `connect()` out even though servers also use it, so it stays flagged (see module docstring
+# / STANDING SECURITY ORDER: this is precision, not relaxation).
+_NETWORK_ALLOWED_SUBMODULES = {
+    "http.server", "socketserver", "urllib.parse", "html.parser", "email.parser",
+}
+
+
+def _is_network_module(mod: str) -> bool:
+    """Return True if importing ``mod`` (a fully dotted module path exactly as written in the
+    import statement, e.g. ``"http.server"``, ``"urllib"``, ``"urllib.parse"``) is
+    NETWORK/EGRESS. Precedence: (1) an exact match in the explicit listener/parser allowlist is
+    NEVER egress; (2) an exact match in ``_NETWORK_MODULES`` is ALWAYS egress; (3) any other
+    submodule (or a bare ``import <root>`` with no submodule) under a
+    ``_NETWORK_PRECISE_ROOTS`` root default-denies (stays flagged, unchanged from prior
+    behavior) since it is not explicitly proven safe; (4) anything else is not a recognized
+    network module at all."""
+    if mod in _NETWORK_ALLOWED_SUBMODULES:
+        return False
+    if mod in _NETWORK_MODULES:
+        return True
+    root = mod.split(".")[0]
+    if root in _NETWORK_PRECISE_ROOTS:
+        return True
+    return root in _NETWORK_ROOT_MODULES
+
+
+_NETWORK_ROOT_MODULES = {m.split(".")[0] for m in _NETWORK_MODULES} - _NETWORK_PRECISE_ROOTS
+# #EXT-037-REQ-15 End
 
 _SUBPROCESS_MODULES = {"subprocess", "pty", "commands"}
 _SUBPROCESS_OS_ATTRS = {"system", "popen", "execl", "execle", "execlp", "execlpe",
@@ -199,11 +245,12 @@ class SecurityReport:
 
 
 def _classify_import(node, filename: str, violations: list, egress_ops: list) -> None:
+    # #EXT-037-REQ-15 Start
     if isinstance(node, ast.Import):
         for alias in node.names:
             mod = alias.name
             root = mod.split(".")[0]
-            if mod in _NETWORK_MODULES or root in _NETWORK_ROOT_MODULES:
+            if _is_network_module(mod):
                 egress_ops.append({
                     "category": CATEGORY_NETWORK, "detail": f"import {mod}",
                     "lineno": getattr(node, "lineno", None), "file": filename,
@@ -217,7 +264,22 @@ def _classify_import(node, filename: str, violations: list, egress_ops: list) ->
     elif isinstance(node, ast.ImportFrom):
         mod = node.module or ""
         root = mod.split(".")[0]
-        if mod in _NETWORK_MODULES or root in _NETWORK_ROOT_MODULES:
+        if mod in _NETWORK_PRECISE_ROOTS:
+            # `from <root> import a, b, c` where <root> is itself a precise root (e.g.
+            # `from urllib import parse, request`) -- each imported NAME is a submodule of
+            # <root>, so classify PER NAME. A mixed import (some names safe, one not) still
+            # flags on the unsafe name -- never silently allowed because a sibling name was
+            # allowlisted.
+            for alias in node.names:
+                submod = f"{mod}.{alias.name}"
+                if _is_network_module(submod):
+                    egress_ops.append({
+                        "category": CATEGORY_NETWORK,
+                        "detail": f"from {mod} import {alias.name}",
+                        "lineno": getattr(node, "lineno", None), "file": filename,
+                        "kind": "import", "host": None,
+                    })
+        elif _is_network_module(mod):
             egress_ops.append({
                 "category": CATEGORY_NETWORK, "detail": f"from {mod} import ...",
                 "lineno": getattr(node, "lineno", None), "file": filename,
@@ -228,6 +290,7 @@ def _classify_import(node, filename: str, violations: list, egress_ops: list) ->
                 "category": CATEGORY_SUBPROCESS, "detail": f"from {mod} import ...",
                 "lineno": getattr(node, "lineno", None), "file": filename,
             })
+        # #EXT-037-REQ-15 End
         if root == "importlib":
             for alias in node.names:
                 if alias.name in _DYNAMIC_EXEC_ATTR_MODULES.get("importlib", set()):

@@ -917,3 +917,70 @@ this task.
   in-root file; `runtime=None` raw-deletes an existing file and returns `None`, and a missing file
   is a silent no-op returning `None`; a path-jail escape (`"../evil.py"`) is rejected with no
   Decision emitted and nothing deleted, whether or not a runtime is supplied
+
+### [REQ-15] Egress-scan PRECISION for listener/parser submodules — no weakening (covered)
+
+**Owner-directed, security-sensitive (2026-07-10) — measured false-positive, PRECISION not
+relaxation.** `harness/secure_exec.py::scan_code`'s NETWORK/EGRESS import classification
+(REQ-7) matched on the ROOT module name (`root in _NETWORK_ROOT_MODULES`), so `import
+http.server`, `import socketserver`, and `from urllib.parse import ...` were all flagged as
+egress purely because they share a root package name (`http`, `urllib`) with a genuinely
+egress-capable module (`http.client`, `urllib.request`). `http.server`/`socketserver` are
+INBOUND LISTENERS — they bind a local socket and accept connections; they cannot themselves
+initiate outbound traffic. `urllib.parse` is a PURE STRING PARSER — no I/O of any kind. This
+over-flagging measurably blocked `build_system`'s acceptance/repair machinery for every
+stdlib HTTP-service class (the scan-refusal short-circuits before any acceptance/repair logic
+runs, per REQ-7's TASK-10 gate). This requirement makes the egress scan's import matching
+SUBMODULE-PRECISE instead of root-name matching, closing that false-positive — the HARD
+BOUNDARY (every genuinely egress-capable module — `urllib.request`, `http.client`, raw
+`socket`, third-party HTTP clients, `ftplib`/`smtplib`/`telnetlib`/`xmlrpc.client`, etc.) stays
+flagged exactly as before. This is a precision fix, never a relaxation of the security posture.
+
+**HONEST STATUS (Tenet 3, TASK-19):** `harness/secure_exec.py`'s import classification gained
+`_is_network_module(mod)`, a small explicit-precedence classifier: (1) an exact match in a new
+`_NETWORK_ALLOWED_SUBMODULES` allowlist (`http.server`, `socketserver`, `urllib.parse`,
+`html.parser`, `email.parser`) is NEVER egress; (2) an exact match in the existing
+`_NETWORK_MODULES` set (`socket`, `urllib.request`, `http.client`, `requests`, `httpx`,
+`aiohttp`, `ftplib`, `smtplib`, `telnetlib`, `xmlrpc.client`, `paramiko`, `urllib`/`urllib2`
+bare) is ALWAYS egress; (3) any other submodule (or a bare `import <root>`) under a new
+`_NETWORK_PRECISE_ROOTS` set (`urllib`, `http`, `xmlrpc`) DEFAULT-DENIES exactly as before —
+only the explicit allowlist is exempted, nothing else changes behavior. `_classify_import` was
+updated to call this classifier for both `ast.Import` and `ast.ImportFrom` nodes, and — for the
+mixed-import case (`from urllib import parse, request`) where `node.module` is itself a precise
+root — classifies EACH imported name individually as its own submodule
+(`f"{node.module}.{alias.name}"`) so a sneaky mixed import still flags on the unsafe name even
+though a sibling name in the same statement is allowlisted. `socket` is deliberately NOT
+allowlisted even though servers use it too — a raw `socket.socket()` can `connect()` out, so it
+stays flagged; the STANDING SECURITY ORDER (owner, non-negotiable) is precision, not relaxation.
+Only import-statement classification changed; the scan's other categories (filesystem escape,
+subprocess, dynamic-exec, the CALL-site network detection for `requests.get(...)`-style calls)
+are untouched.
+
+**Honest scope note:** this task closes the SCAN's false-positive only. The separate control-flow
+issue this false-positive exposed — `harness/system_builder.py`'s early-return on scan refusal
+(~line 3439-3451) skipping acceptance/governed-repair/single-file-retry/leaf-repair — is an
+explicit, separate follow-up NOT touched by this task (a different owning file, out of this
+task's scope boundary).
+
+#### Acceptance Criteria
+- [x] `import http.server`, `import socketserver`, `from urllib.parse import ...`, and
+  `from http.server import ...` no longer flag as NETWORK/EGRESS (`report.ok is True`,
+  `report.egress_ops == []`)
+- [x] `from urllib import parse` (submodule-of-precise-root form) is allowed, but `from urllib
+  import parse, request` (a sneaky mixed import) still flags — the unsafe name in the same
+  statement is never hidden by an allowlisted sibling
+- [x] Every genuinely egress-capable form STAYS flagged, unchanged: `import urllib.request`,
+  `from urllib import request`, `from urllib.request import urlopen`, `import http.client`,
+  `import socket`, `import requests`, and a bare `import urllib` (no submodule, can't prove
+  which part is used, default-deny)
+- [x] A mixed file (`http.server` alongside `urllib.request`) is still refused
+- [x] An integration proof: a modules dict for a stdlib HTTP service (`http.server` +
+  `socketserver` + `sqlite3` + `urllib.parse`) now passes `scan_code` cleanly, while the same
+  shape using `urllib.request` still fails
+- [x] The scan's other categories (SUBPROCESS/SHELL, DYNAMIC-EXEC, DESTRUCTIVE/FS-OUTSIDE-ROOT,
+  and the CALL-site network/host detection) are unchanged
+- [x] Proven by `tests/test_ext037_secure_exec.py`: each allowlisted import form passes, each
+  still-flagged form is refused (including the sneaky mixed `from urllib import parse, request`
+  and the bare `import urllib`), the mixed-file case is refused, and both integration
+  (stdlib-HTTP-service-passes / urllib.request-still-fails) cases pass; the full pre-existing
+  `test_ext037_secure_exec.py` suite remains green with no regression

@@ -1106,3 +1106,57 @@ structure as `_jailed_write`.
 
 #### Implements
 - [REQ-14] Gate host-repo file DELETIONS through a `code.delete_file` Decision (Tenet 1)
+
+### [TASK-19] Egress-scan precision for listener/parser submodules (REQ-15)
+
+**Security-sensitive, PRECISION not relaxation.** `harness/secure_exec.py::scan_code`'s
+import-based NETWORK/EGRESS classification matched on the ROOT module name, so `import
+http.server`, `import socketserver`, and `from urllib.parse import ...` were all flagged as
+egress solely because they share a root package name (`http`, `urllib`) with a genuinely
+egress-capable module. `http.server`/`socketserver` are inbound listeners (bind/accept local
+sockets, cannot themselves exfiltrate); `urllib.parse` is a pure string parser (no I/O at
+all). This task makes the import matching submodule-precise via an explicit allowlist, while
+every genuinely egress-capable form (raw `socket`, `urllib.request`, `http.client`, third-party
+HTTP clients, `ftplib`/`smtplib`/`telnetlib`/`xmlrpc.client`) stays flagged exactly as before —
+the default-deny posture is unchanged for anything not explicitly allowlisted.
+
+#### Steps
+1. In `harness/secure_exec.py`, replace the root-name `_NETWORK_ROOT_MODULES` blanket match
+   with a precise classifier: keep `_NETWORK_MODULES` (dotted/bare names that are ALWAYS
+   egress: `socket`, `urllib`, `urllib.request`, `urllib2`, `http.client`, `httplib`,
+   `requests`, `httpx`, `aiohttp`, `ftplib`, `smtplib`, `telnetlib`, `xmlrpc.client`,
+   `paramiko`); add `_NETWORK_PRECISE_ROOTS = {"urllib", "http", "xmlrpc"}` (roots whose
+   submodules need per-submodule handling rather than a blanket root match) and
+   `_NETWORK_ALLOWED_SUBMODULES = {"http.server", "socketserver", "urllib.parse",
+   "html.parser", "email.parser"}` (the explicit listener/parser allowlist — the ONLY
+   exemption from default-deny); add `_is_network_module(mod) -> bool` implementing the
+   precedence: allowlist match → never egress; `_NETWORK_MODULES` exact match → always egress;
+   any other submodule (or a bare `import <root>`) under a `_NETWORK_PRECISE_ROOTS` root →
+   still egress (default-deny, unchanged); else not a recognized network module. Recompute
+   `_NETWORK_ROOT_MODULES` (used for the remaining flat root-level modules like `socket`/
+   `requests`) as `{m.split(".")[0] for m in _NETWORK_MODULES} - _NETWORK_PRECISE_ROOTS`.
+2. Update `_classify_import` to call `_is_network_module` for both `ast.Import` and
+   `ast.ImportFrom` nodes in place of the old `mod in _NETWORK_MODULES or root in
+   _NETWORK_ROOT_MODULES` check. For the `ast.ImportFrom` case where `node.module` is ITSELF an
+   exact `_NETWORK_PRECISE_ROOTS` member (e.g. `from urllib import parse, request`), classify
+   EACH imported alias individually as its own submodule (`f"{node.module}.{alias.name}"`) so a
+   mixed import still flags on the unsafe name even when a sibling name in the same statement is
+   allowlisted (`from urllib import parse, request` must still refuse). Leave every other
+   category (subprocess-import detection, the `importlib` dynamic-exec check, and all of
+   `_classify_call`'s network CALL-site detection) untouched.
+3. Extend `tests/test_ext037_secure_exec.py` (do not remove or weaken any existing test) with:
+   (a) each allowlisted form passes (`import http.server`, `import socketserver`, `from
+   urllib.parse import urlparse`, `from http.server import BaseHTTPRequestHandler`, `from
+   urllib import parse`); (b) each still-flagged form is refused (`import urllib.request`,
+   `from urllib import request`, `import http.client`, `import socket`, `import requests`,
+   `from urllib.request import urlopen`, and the sneaky `from urllib import parse, request`);
+   (c) a bare `import urllib` stays refused; (d) a mixed file (`http.server` +
+   `urllib.request`) is refused; (e) two integration tests: a stdlib-HTTP-service modules dict
+   (`http.server` + `socketserver` + `sqlite3` + `urllib.parse`) now passes `scan_code` cleanly,
+   while the same shape using `urllib.request` still fails.
+4. Run `python -m pytest tests/test_ext037_secure_exec.py -q` and `python -m pytest tests/ -k
+   "secure or egress" -q` to confirm every new and pre-existing test is green, with no
+   regression to any other REQ-7 (TASK-9/10/11) behavior.
+
+#### Implements
+- [REQ-15] Egress-scan PRECISION for listener/parser submodules — no weakening
