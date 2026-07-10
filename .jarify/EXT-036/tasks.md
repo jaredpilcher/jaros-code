@@ -3164,3 +3164,54 @@ validation/retry-style orchestration.
 - [REQ-54] Conservative gating for the AGENT tool-call-parse scaffold (a precise detector for
   validation/retry/stop-decision spec language + a gate on `apply_agent_scaffold` so it never
   fires on a spec the generic skeleton structurally cannot satisfy)
+
+### [TASK-71] `_extract_json` LAST-RESORT truncation-salvage stage (REQ-58, owner directive 2026-07-10 -- close a measured 2/3 failure)
+
+MEASURED MOTIVATION (live-reproduced, raw evidence in this session's scratchpad diagnostics --
+`batch3_diag_gfs_d1.out` + `batch3_calls_backup-retention-gfs-pruning-lib_d1.jsonl`):
+`backup-retention-gfs-pruning-lib` fails 2/3 with "planner produced no parseable JSON plan"
+because the planner emits a WELL-FORMED ```json plan whose `"acceptance"` value is a giant
+multi-line Python string, and the completion hard-truncates at `PLAN_MAX_TOKENS=900` MID-STRING
+-- ends `...test_gfs_retention` with no closing quote/brace/fence. `_extract_json`'s existing
+stages all fail: greedy needs a balanced span; the walker never closes; `_recover_missing_braces`
+can't fix an UNTERMINATED STRING (its own explicit non-goal). Prototyped (~15 lines) and PROVED
+the salvaged plan `json.loads`-parses and passes `validate_plan` with zero defects.
+
+#### Steps
+1. `harness/system_builder.py`: add `_salvage_truncated_json(text, opener, closer)` right after
+   `_recover_missing_braces` -- walk `text` from its FIRST `opener` to the END of the string
+   (unlike every earlier stage, which stops at the LAST closer present), tracking JSON
+   string/escape state and a bracket stack; if the walk ends inside a string, close it (`"`);
+   then pop the remaining bracket stack, appending the needed closers in order (innermost
+   first). Return the salvaged text only if `json.loads` on it (optionally after
+   `_repair_json_candidate`) succeeds; else `None`. A no-op (`None`) when the fragment was not
+   actually truncated (walk ends outside a string with an empty stack). Never raises. Wrap in
+   `# #EXT-036-REQ-58 Start`/`End` markers.
+2. Wire as the TRUE final stage inside `_extract_json`: call `_salvage_truncated_json(text,
+   opener, closer)` (the fence-stripped `text`, NOT the `candidates` list -- those are all cut
+   off at the last closer present and so never include content emitted after a mid-string
+   truncation point) right before the function's final `return None`. Wrap the wiring in its own
+   `# #EXT-036-REQ-58 Start`/`End` markers (nested inside the existing REQ-33 block). Update the
+   `_extract_json` docstring to mention the new stage.
+3. Tests `tests/test_ext036_truncation_salvage.py` (OFFLINE -- no model/Jetson call): (a) the
+   EXACT measured shape (embedded verbatim, reconstructed from the diagnostic evidence) -- a
+   ```json block with `modules`/`entrypoint` complete + an `acceptance` string truncated
+   mid-line -> salvages, parses, `validate_plan` clean on `modules`/`entrypoint`; (b) truncation
+   mid-key or at a structural (non-string) position -> never crashes, never returns invalid
+   JSON; (c) ordering/no-regression -- every pre-existing valid/repairable shape (already-valid
+   JSON, trailing-comma repair, a TASK-48 missing-brace shape) still resolves via its OWN earlier
+   stage, with `_salvage_truncated_json` a confirmed no-op on those inputs (proves the stage is
+   genuinely last-resort); (d) garbage/empty -> `None`, never raises; (e) a truncated fragment
+   whose salvage does NOT `json.loads` -> `None`, never a partial/garbage payload. Also update
+   `tests/test_ext036_plan_brace_recovery.py`'s pre-existing end-of-input-truncation test (it
+   pinned the OLD `_extract_json` `None` result for exactly this now-fixed class) -- rename it to
+   assert the new, superseding behavior; `_recover_missing_braces` itself stays unchanged
+   (still proven to leave that shape untouched). Run `python -m pytest tests/ -k "extract_json or
+   planrepair" -q` (all green). Also `python -c "import ast; ast.parse(open('harness/
+   system_builder.py').read())"` and `python -c "import harness.system_builder"` (clean). Update
+   `.jarify/EXT-036/index.json` per jarify-manage-links.
+
+#### Implements
+- [REQ-58] `_extract_json` LAST-RESORT truncation-salvage stage (a new, additive, deterministic
+  stage that closes an unterminated string + any still-open brackets when a completion was hard-
+  truncated mid-emission, reached only when every earlier stage has already failed)

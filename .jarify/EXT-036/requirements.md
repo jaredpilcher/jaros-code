@@ -2531,3 +2531,56 @@ skeleton cannot express.
   pre-existing `tests/test_ext036_agent_scaffold.py` tests stay green (no regression to REQ-49),
   and `tests/test_ext060_clock_agent_tasks.py` stays green (its offline fixtures don't go through
   `build_system`, so unaffected by this gate).
+
+### [REQ-58] `_extract_json` LAST-RESORT truncation-salvage stage (DONE — EXT-036 TASK-71, 2026-07-10)
+
+MEASURED MOTIVATION (live-reproduced): the board class `backup-retention-gfs-pruning-lib` fails
+2/3 with note "planner produced no parseable JSON plan". The planner emits a WELL-FORMED ```json
+plan whose `"acceptance"` value is a giant multi-line Python string, and the completion hard-
+truncates at `PLAN_MAX_TOKENS=900` MID-STRING — the raw completion ends `...test_gfs_retention`
+with no closing quote, no closing brace, and no closing fence. Every existing `_extract_json`
+stage (REQ-33's greedy match/balanced span/repair, and the TASK-48 structural-bracket recovery)
+fails on this shape: the greedy/balanced stages both need a closer that was never emitted (and
+the greedy match, when it finds SOME `}` earlier in the text, cuts the candidate off there —
+before the `"entrypoint"`/`"acceptance"` fields even begin); `_recover_missing_braces`
+deliberately leaves an end-of-input-open stack untouched (its own explicit non-goal, a
+DIFFERENT defect class than the one it fixes).
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_salvage_truncated_json(text, opener, closer)` — a new,
+  LAST-RESORT stage reached only when every earlier `_extract_json` stage has already failed.
+  Unlike every earlier stage (which extracts a span ending at the LAST closer PRESENT in the
+  text, so it never includes content emitted after a mid-string truncation point), this walks
+  `text` from its FIRST `opener` to the END of the string, tracking JSON string-literal state
+  (quote + backslash-escape awareness) and a bracket stack (the same string-aware scan
+  `_recover_missing_braces` uses). If the walk ends INSIDE a string literal, closes it (appends
+  `"`); then appends the closer for every still-open bracket, innermost first.
+- [x] Returns the salvaged text ONLY when `json.loads` on it (optionally after
+  `_repair_json_candidate`, for a stray control character or trailing comma left in the
+  surviving text) actually succeeds — never fabricates content beyond the closers/quote needed
+  to make the JSON syntactically well-formed, and never returns a partial/garbage payload. A
+  no-op (returns None) when `text` was not actually truncated (the walk ends outside any string
+  with an empty bracket stack — a shape an earlier stage would already have handled) or when no
+  salvage attempt parses. Never raises.
+- [x] Wired into `_extract_json` as the true final stage, after the TASK-48 structural-bracket
+  recovery and before the function's final `return None` — additive, deterministic, leak-free
+  (operates purely on the model's own emitted text; no oracle/expected content involved).
+- [x] HONEST SCOPE: the salvage necessarily loses the TAIL of the truncated string value —
+  typically a throwaway acceptance-hint string in a build plan. Downstream `validate_plan` still
+  gates plan sanity on the surviving `modules`/`entrypoint` fields, and acceptance-checklist
+  derivation has its own deterministic floor, so a truncated acceptance hint is safe to lose.
+- [x] Proven OFFLINE (no model/Jetson call, `tests/test_ext036_truncation_salvage.py`): (a) the
+  EXACT measured `backup-retention-gfs-pruning-lib` completion (embedded verbatim) now salvages
+  — parses cleanly, keeps the complete `modules`/`entrypoint` fields, and `validate_plan` reports
+  zero defects; (b) truncation mid-key or at a structural (non-string) position never crashes and
+  never yields invalid JSON; (c) the stage is proven LAST-RESORT — every pre-existing
+  valid/repairable shape (already-valid JSON, a trailing-comma defect, a TASK-48 missing-brace
+  shape) still resolves via its own earlier stage, with `_salvage_truncated_json` itself a
+  confirmed no-op on those inputs; (d) garbage/empty input returns None, never raises; (e) a
+  truncated fragment whose salvage attempt does not `json.loads` returns None, never a
+  partial/garbage payload. `tests/test_ext036_plan_brace_recovery.py`'s pre-existing
+  end-of-input-truncation test is updated (not removed) to assert the new, superseding
+  behavior — `_recover_missing_braces` itself is unchanged (still leaves that shape untouched),
+  but `_extract_json` as a whole no longer returns `None` on it. All pre-existing
+  `_extract_json`/`_recover_missing_braces`/plan-repair tests stay green (`python -m pytest
+  tests/ -k "extract_json or planrepair" -q`).

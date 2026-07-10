@@ -553,6 +553,92 @@ def _recover_missing_braces(text: str) -> str:
     return "".join(out)
 
 
+# #EXT-036-REQ-58 Start
+def _salvage_truncated_json(text: str, opener: str, closer: str):
+    """TASK-71 (REQ-58): LAST-RESORT stage for `_extract_json`, reached only when every
+    earlier stage (greedy match, balanced span, control-char/trailing-comma repair,
+    TASK-48 structural-bracket recovery) has already failed to return a parseable
+    payload.
+
+    MEASURED (live gemma draw, `backup-retention-gfs-pruning-lib`): the planner emits a
+    WELL-FORMED ```json plan whose `"acceptance"` value is a giant multi-line Python
+    string; the completion hard-truncates at `PLAN_MAX_TOKENS` MID-STRING, ending
+    `...test_gfs_retention` with no closing quote, no closing brace, and no closing
+    fence. None of the earlier stages can fix this: greedy/balanced extraction both
+    need a closer that was never emitted, and `_recover_missing_braces` deliberately
+    leaves an end-of-input-open stack untouched (a different, non-truncation defect
+    class -- see its docstring).
+
+    Unlike every earlier stage -- which extracts a span ending at the LAST closer
+    PRESENT in the text, so it never includes content emitted after a mid-string
+    truncation point -- this walks `text` from its FIRST `opener` all the way to the
+    END of the string, tracking JSON string-literal state (quote + backslash-escape
+    awareness) and a bracket stack, the same string-aware scan `_recover_missing_braces`
+    uses. If the walk ends INSIDE a string literal, closes it (appends `"`); then
+    appends the closer for every still-open bracket on the stack, innermost first.
+    Returns the salvaged text only when `json.loads` on it (optionally after
+    `_repair_json_candidate`, for a stray control character or trailing comma left in
+    the surviving text) actually succeeds -- never fabricates content beyond the
+    closers/quote needed to make the JSON syntactically well-formed. A no-op (returns
+    None) when `text` was not actually truncated -- the walk ends outside any string
+    with an empty stack, a shape an earlier stage would already have handled -- or when
+    no salvage attempt parses. Never raises.
+
+    HONEST SCOPE: the salvage necessarily loses the TAIL of the truncated string value
+    (typically a throwaway acceptance-hint string in a build plan) -- downstream
+    `validate_plan` still gates plan sanity on the surviving `modules`/`entrypoint`
+    fields, and acceptance-checklist derivation has its own deterministic floor, so a
+    truncated acceptance hint is safe to lose."""
+    if not text:
+        return None
+    start = text.find(opener)
+    if start == -1:
+        return None
+    fragment = text[start:]
+    openers = {"{": "}", "[": "]"}
+    closers_to_openers = {"}": "{", "]": "["}
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    for ch in fragment:
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch in openers:
+            stack.append(ch)
+            continue
+        if ch in closers_to_openers:
+            wanted = closers_to_openers[ch]
+            if stack and stack[-1] == wanted:
+                stack.pop()
+            continue
+    if not in_string and not stack:
+        # Nothing was actually truncated -- an earlier stage would already have
+        # succeeded on this shape.
+        return None
+    salvaged = fragment
+    if in_string:
+        salvaged += '"'
+    for opener_ch in reversed(stack):
+        salvaged += openers[opener_ch]
+    for attempt in (salvaged, _repair_json_candidate(salvaged)):
+        try:
+            json.loads(attempt)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        return attempt
+    return None
+# #EXT-036-REQ-58 End
+
+
 def _extract_json(raw: str, opener: str, closer: str):
     """Best-effort JSON extraction: the model output may carry prose or markdown fences
     around the JSON payload; pull the outermost {..}/[..] span and parse it. Returns None
@@ -564,8 +650,10 @@ def _extract_json(raw: str, opener: str, closer: str):
     through to a balanced-bracket extraction (string-literal aware, avoids over-spanning
     into trailing prose that contains a stray closer), then a bounded, string-aware
     repair (escaping unescaped control characters inside string values; dropping trailing
-    commas), and finally (TASK-48) a structural-bracket RECOVERY stage that inserts an
-    OMITTED closer the model dropped inside a nested container, before giving up."""
+    commas), then (TASK-48) a structural-bracket RECOVERY stage that inserts an OMITTED
+    closer the model dropped inside a nested container, and finally (TASK-71) a
+    truncation-SALVAGE stage that closes an unterminated string + any still-open
+    brackets when the completion was hard-truncated mid-emission, before giving up."""
     raw = raw or ""
     m = re.search(re.escape(opener) + r".*" + re.escape(closer), raw, re.DOTALL)
     if m:
@@ -630,6 +718,20 @@ def _extract_json(raw: str, opener: str, closer: str):
             return json.loads(repaired)
         except (json.JSONDecodeError, ValueError):
             continue
+
+    # #EXT-036-REQ-58 Start (TASK-71: LAST-RESORT truncation salvage)
+    # Only reached when every prior stage -- greedy match, balanced span, repair, and
+    # TASK-48 structural-bracket recovery -- has already failed on every candidate.
+    # Operates on the fence-stripped `text` directly (NOT `candidates`, which are all
+    # cut off at the LAST closer present anywhere in the text and so never include
+    # content emitted AFTER a mid-string truncation point).
+    salvaged = _salvage_truncated_json(text, opener, closer)
+    if salvaged is not None:
+        try:
+            return json.loads(salvaged)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # #EXT-036-REQ-58 End
 
     return None
 # #EXT-036-REQ-33 End

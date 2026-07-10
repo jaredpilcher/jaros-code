@@ -18,7 +18,17 @@ inline oracle replicating the pre-TASK-48 candidate-gathering logic); (b) severa
 already-valid JSON payloads (including nested arrays-of-objects and strings literally
 containing `{ } [ ] ,`) pass through `_recover_missing_braces` BYTE-IDENTICAL and
 `_extract_json` returns the SAME result as before; (c) an end-of-input-truncated payload
-is left unchanged (never fabricated); (d) the helper never raises on bad input.
+is left unchanged BY `_recover_missing_braces` ITSELF (never fabricated -- that stays
+this helper's explicit non-goal, unchanged); (d) the helper never raises on bad input.
+
+UPDATED (TASK-71, REQ-58): `_recover_missing_braces` still deliberately leaves
+end-of-input truncation untouched (proven below, unchanged), but `_extract_json` as a
+WHOLE no longer returns `None` on that shape -- its new last-resort truncation-salvage
+stage (`harness/system_builder.py::_salvage_truncated_json`) now closes the dangling
+structure and salvages a parseable result. See `tests/test_ext036_truncation_salvage.py`
+for that stage's dedicated coverage; `test_truncated_payload_extract_json_still_none`
+below is updated accordingly (renamed) to assert the new, superseding behavior rather
+than pin the old one.
 
 OFFLINE -- no live model, no network, no filesystem dependency on runtime state.
 """
@@ -173,7 +183,11 @@ def test_extract_json_unchanged_on_valid_json(sample):
 
 
 # ---------------------------------------------------------------------------
-# (c) END-OF-INPUT TRUNCATION is a DIFFERENT class -- never fabricated/recovered.
+# (c) END-OF-INPUT TRUNCATION is a DIFFERENT class from what `_recover_missing_braces`
+# handles -- that helper never fabricates/recovers it (still true, unchanged). TASK-71
+# added a DIFFERENT, later stage inside `_extract_json` (`_salvage_truncated_json`)
+# that DOES handle exactly this class -- see the module docstring's "UPDATED" note and
+# `tests/test_ext036_truncation_salvage.py`.
 # ---------------------------------------------------------------------------
 
 TRUNCATED_PAYLOADS = [
@@ -189,8 +203,13 @@ def test_truncated_payload_left_unchanged_by_recover(raw):
 
 
 @pytest.mark.parametrize("raw", TRUNCATED_PAYLOADS)
-def test_truncated_payload_extract_json_still_none(raw):
-    assert _extract_json(raw, "{", "}") is None
+def test_truncated_payload_now_salvaged_by_extract_json(raw):
+    # TASK-71: `_extract_json` as a whole no longer gives up on end-of-input
+    # truncation -- its new last-resort salvage stage closes the dangling
+    # string/brackets and returns a genuinely parseable result.
+    result = _extract_json(raw, "{", "}")
+    assert result is not None
+    assert result == json.loads(json.dumps(result))
 
 
 # ---------------------------------------------------------------------------
