@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2117,3 +2117,63 @@ checklist exactly like the FastAPI hollow-pass gap REQ-22 fixed.
   `POST`/`GET /items` round-trip passes end-to-end; a broken fixture (wrong status/body) fails honestly; a
   fixture that never binds fails with a note and leaves no orphan; garbage input (missing entry, non-dict
   checks) never raises. `tests/test_ext036_server_oracle_stdlib.py`.
+
+### [REQ-48] Deterministic http.server SCAFFOLD repair — wire a recognized handler into a real serve loop
+
+MEASURED via `.jaros-data/artifacts/saas_diag.log` (2026-07-09, the first on-Jetson SaaS build, 0/3
+against `REST_SQLITE_CRUD_TASK`): gemma writes CORRECT business logic -- a SQLite DB layer
+(`database.py`) and a request-routing handler (`api.py`'s `APIHandler.handle_request(method, path,
+data) -> (status, body)`) -- but the entrypoint (`main.py`) it emits imports `http.server`/
+`socketserver` and then NEVER calls `HTTPServer(...).serve_forever()`: it re-declares a stray
+`DatabaseManager` stub and stops. No real server ever binds the `PORT` the stdlib server oracle
+(REQ-47's `serve_and_check_stdlib`) expects, so every http check fails before a single request is
+sent -- a build-time gap, not a request-handling gap. This is a TWO-PLANE fix, the same shape as the
+already-landed deterministic filename/signature/guard-index contract repairs (REQ-45/REQ-46,
+EXT-035 REQ-3): the model supplies the judgement (the routing + DB logic already in `built`); a
+deterministic tool supplies the mechanical scaffold (the event loop + PORT binding + request
+parsing/dispatch). Validated via `.jaros-data/saas_scaffold_probe.py`: gemma's measured
+`(method, path, data) -> (status, body)` dispatcher shape is recognized by a plain AST scan and,
+wired into a generated stdlib skeleton, actually binds `PORT` and passes a full
+`serve_and_check_stdlib` POST/GET/DELETE round-trip.
+
+#### Acceptance Criteria
+- [x] `spec_demands_stdlib_http_service(spec_text)` detects a visible spec that demands a plain
+      stdlib `http.server` service (mentions `http.server`/"web service"/"REST"/"PORT environment
+      variable" AND names at least one HTTP-method endpoint), leak-free (reads only the visible spec
+      text), never raises.
+- [x] `has_real_serve_loop(modules)` detects whether ANY built module already contains a real serve
+      construct (`serve_forever(`/`HTTPServer(`/`ThreadingHTTPServer(`/`TCPServer(`) -- the
+      non-degrading guard so an already-working service is never touched.
+- [x] `find_dispatch_handler(modules)` is a best-effort, never-raising AST scan that confidently
+      recognizes gemma's measured dispatcher shape (a class method or top-level function taking
+      exactly 3 params after `self` and returning >=2 distinct 2-element tuples), including a
+      confident no-arg-instantiability check for the enclosing class's `__init__` when the match is a
+      method.
+- [x] `generate_skeleton(handler, *, same_module, existing_code=None)` deterministically composes a
+      correct stdlib `http.server` MAIN skeleton: reads `port = int(os.environ.get("PORT",
+      "8000"))`, defines a `BaseHTTPRequestHandler` subclass with `do_GET`/`do_POST`/`do_PUT`/
+      `do_DELETE`/`do_PATCH` that parse the method/path/JSON body and dispatch to the recognized
+      handler, and runs `HTTPServer(("", port), ...).serve_forever()` under `if __name__ ==
+      "__main__":`. Wires an already-recognized handler either by IMPORTING it (different module
+      than the entrypoint) or by APPENDING the wiring block to the entrypoint's own existing code
+      (handler already defined there) -- never destroys sibling modules' logic.
+- [x] `apply_http_service_scaffold(modules, spec_text, *, llm=None)` is the public, non-degrading,
+      never-raising repair: fires ONLY when `spec_demands_stdlib_http_service` is true AND
+      `has_real_serve_loop` is false AND no Flask/FastAPI/Starlette service is detected
+      (`harness.server_oracle.detect_web_service`, that shape belongs to the OTHER oracle path);
+      resolves the entry filename via `harness.filename_contract.demanded_filenames` (falling back to
+      `main.py`); wires a confidently-recognized handler via `generate_skeleton`; when no handler is
+      confidently recognizable AND an `llm` is supplied, falls back to ONE targeted clean-prompt retry
+      (the REQ-43 analog: a single self-contained call re-asking the model for one `main.py`
+      implementing the endpoints inside this module's own skeleton contract, built ONLY from the
+      visible spec text -- no oracle leak); with no recognizable handler and no `llm`, a safe no-op.
+- [x] Wired into `harness/system_builder.py`'s `build_system` deterministic-repair pass over the built
+      modules (same seam/style as the import-resolver, guard-index, signature-contract, and
+      filename-contract repairs), after the filename-contract repair and before the ASSEMBLE step,
+      passing the build's own `llm` through for the fallback retry.
+- [x] Proven OFFLINE (no model/Jetson call) with tests covering: gemma's actual measured handler
+      shape is recognized and wired, and the REPAIRED `main.py`, when actually RUN with `PORT` set,
+      binds the port and passes a real `serve_and_check_stdlib` POST/GET/DELETE round-trip
+      end-to-end; a no-op when a real serve loop already exists; a no-op/safe outcome when the spec
+      is not a web service or a Flask/FastAPI service is detected; never raising on garbage input.
+      `tests/test_ext036_http_service_scaffold.py`.

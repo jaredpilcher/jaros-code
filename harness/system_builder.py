@@ -3285,6 +3285,25 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _filename_contract_notes = apply_filename_contract(built, spec)
     # #EXT-036-REQ-46 End
 
+    # #EXT-036-REQ-48 Start
+    # TASK-61: deterministic http.server SCAFFOLD repair. MEASURED
+    # (`.jaros-data/artifacts/saas_diag.log`, the first on-Jetson SaaS build, 0/3): gemma writes
+    # CORRECT business logic (a SQLite DB layer + a `handle_request(method, path, data) ->
+    # (status, body)` router) but the entrypoint never calls `HTTPServer(...).serve_forever()`,
+    # so the built service never binds the `PORT` the server oracle
+    # (`harness.server_oracle.serve_and_check_stdlib`) expects. Wired in the same spot/pattern as
+    # the import-resolver, guard-index, signature-contract, and filename-contract repairs above --
+    # additive, AST-only, never-raising, leak-free (the spec-demanded endpoints/filename come only
+    # from `spec`, the visible build spec, never a hidden oracle/test), and NON-DEGRADING: a no-op
+    # whenever a real serve loop already exists, the spec isn't a stdlib http.server service, or a
+    # Flask/FastAPI/Starlette service was detected (that shape is handled by the OTHER oracle path
+    # via `detect_web_service`/`serve_and_check` below). `llm` is passed through so the fallback
+    # clean-prompt retry (when no dispatcher callable is confidently recognizable) can fire; this
+    # function is a complete no-op without a recognizable handler when `llm` is None.
+    from harness.http_service_scaffold import apply_http_service_scaffold
+    built, _http_scaffold_notes = apply_http_service_scaffold(built, spec, llm=llm)
+    # #EXT-036-REQ-48 End
+
     # 3. ASSEMBLE
     _beat("ASSEMBLE")  # #EXT-040-REQ-3
     try:

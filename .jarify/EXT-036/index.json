@@ -1,4 +1,11 @@
 {
+  "REQ-24": [
+    {
+      "file": "harness/episodic_memory.py",
+      "startLine": 37,
+      "endLine": 256
+    }
+  ],
   "REQ-23": [
     {
       "file": "harness/coherence_suite.py",
@@ -317,11 +324,76 @@
       "endLine": 237
     }
   ],
-  "REQ-20": [
+  "REQ-46": [
     {
-      "file": "harness/system_suite.py",
-      "startLine": 44,
-      "endLine": 846
+      "file": "harness/filename_contract.py",
+      "startLine": 28,
+      "endLine": 170
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3273,
+      "endLine": 3286
+    }
+  ],
+  "REQ-6": [
+    {
+      "file": "harness/multi_tests.py",
+      "startLine": 33,
+      "endLine": 153
+    }
+  ],
+  "REQ-21": [
+    {
+      "file": "harness/modification_suite.py",
+      "startLine": 61,
+      "endLine": 1038
+    }
+  ],
+  "REQ-45": [
+    {
+      "file": "harness/signature_contract.py",
+      "startLine": 18,
+      "endLine": 135
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3261,
+      "endLine": 3271
+    }
+  ],
+  "REQ-47": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 103,
+      "endLine": 138
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 239,
+      "endLine": 270
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 470,
+      "endLine": 575
+    }
+  ],
+  "REQ-22": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 61,
+      "endLine": 467
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2286,
+      "endLine": 2358
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3344,
+      "endLine": 3384
     }
   ],
   "REQ-42": [
@@ -582,23 +654,6 @@
       "endLine": 4932
     }
   ],
-  "REQ-22": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2286,
-      "endLine": 2358
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3344,
-      "endLine": 3384
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 61,
-      "endLine": 452
-    }
-  ],
   "REQ-5": [
     {
       "file": "harness/system_builder.py",
@@ -626,30 +681,6 @@
       "file": "harness/system_builder.py",
       "startLine": 3713,
       "endLine": 3715
-    }
-  ],
-  "REQ-45": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3261,
-      "endLine": 3271
-    },
-    {
-      "file": "harness/signature_contract.py",
-      "startLine": 18,
-      "endLine": 135
-    }
-  ],
-  "REQ-46": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3273,
-      "endLine": 3286
-    },
-    {
-      "file": "harness/filename_contract.py",
-      "startLine": 28,
-      "endLine": 170
     }
   ],
   "REQ-35": [
@@ -723,42 +754,23 @@
       "endLine": 5071
     }
   ],
-  "REQ-6": [
+  "REQ-20": [
     {
-      "file": "harness/multi_tests.py",
-      "startLine": 33,
-      "endLine": 153
+      "file": "harness/system_suite.py",
+      "startLine": 44,
+      "endLine": 846
     }
   ],
-  "REQ-21": [
+  "REQ-48": [
     {
-      "file": "harness/modification_suite.py",
-      "startLine": 61,
-      "endLine": 1038
-    }
-  ],
-  "REQ-24": [
-    {
-      "file": "harness/episodic_memory.py",
-      "startLine": 37,
-      "endLine": 256
-    }
-  ],
-  "REQ-47": [
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 103,
-      "endLine": 138
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 35,
+      "endLine": 392
     },
     {
-      "file": "harness/server_oracle.py",
-      "startLine": 239,
-      "endLine": 270
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 455,
-      "endLine": 559
+      "file": "harness/system_builder.py",
+      "startLine": 3288,
+      "endLine": 3305
     }
   ]
 }

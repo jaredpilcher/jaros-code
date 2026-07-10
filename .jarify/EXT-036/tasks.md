@@ -2759,3 +2759,52 @@ block (port allocation, port-wait, request-driving, teardown) unchanged.
 
 #### Implements
 - [REQ-47] Stdlib `http.server` launch+drive mode for the server oracle
+
+### [TASK-61] Deterministic http.server SCAFFOLD repair — wire a recognized handler into a real serve loop (REQ-48, owner directive 2026-07-09 -- first SaaS deterministic lever)
+
+Build the first SaaS deterministic lever: a two-plane repair that wires gemma's CORRECT business
+logic (a SQLite DB layer + a request-routing handler) into a DETERMINISTIC stdlib `http.server`
+scaffold, fixing the measured gap where the built entrypoint never calls
+`HTTPServer(...).serve_forever()` (`.jaros-data/artifacts/saas_diag.log`, 0/3 against
+`REST_SQLITE_CRUD_TASK`). Validated offline first via `.jaros-data/saas_scaffold_probe.py`.
+
+#### Steps
+1. Create `harness/http_service_scaffold.py` with `spec_demands_stdlib_http_service(spec_text)`
+   (detects http.server/"web service"/"REST"/"PORT environment variable" + an endpoint mention),
+   `has_real_serve_loop(modules)` (the non-degrading no-op guard), and `find_dispatch_handler
+   (modules)` — a never-raising AST scan recognizing gemma's measured `(method, path, data) ->
+   (status, body)` dispatcher shape (a class method, with a confident no-arg-instantiability check
+   on `__init__`, or a top-level function). Wrap in `# #EXT-036-REQ-48 Start`/`End` markers.
+2. In the same module, add `generate_skeleton(handler, *, same_module, existing_code=None)` —
+   deterministically composes a correct stdlib `http.server` MAIN skeleton (reads `PORT` via
+   `os.environ.get("PORT", "8000")`, a `BaseHTTPRequestHandler` subclass with
+   `do_GET`/`do_POST`/`do_PUT`/`do_DELETE`/`do_PATCH` parsing method/path/JSON body and dispatching
+   to the recognized handler, `HTTPServer(("", port), ...).serve_forever()` under
+   `if __name__ == "__main__":`), wiring the handler either by IMPORT (different module than the
+   entrypoint) or by APPENDING to the entrypoint's own existing code (handler already defined
+   there).
+3. Add the public `apply_http_service_scaffold(modules, spec_text, *, llm=None)` — fires ONLY when
+   `spec_demands_stdlib_http_service` is true AND `has_real_serve_loop` is false AND no
+   Flask/FastAPI/Starlette service is detected (reuses `harness.server_oracle.detect_web_service`,
+   never reimplemented); resolves the entry filename via
+   `harness.filename_contract.demanded_filenames` (falling back to `main.py`); wires a
+   confidently-recognized handler via `generate_skeleton`; when no handler is confidently
+   recognizable and `llm` is supplied, falls back to ONE targeted clean-prompt retry (the REQ-43
+   analog, built ONLY from the visible spec text — no oracle leak); otherwise a safe no-op. Never
+   raises; returns a NEW dict + notes, never mutates `modules`.
+4. Wire `apply_http_service_scaffold(built, spec, llm=llm)` into `harness/system_builder.py`'s
+   `build_system`, in the deterministic-repair seam right after the filename-contract repair
+   (`# #EXT-036-REQ-46 End`) and before the ASSEMBLE step, wrapped in
+   `# #EXT-036-REQ-48 Start`/`End` markers.
+5. Add offline tests `tests/test_ext036_http_service_scaffold.py` (NO model/Jetson calls)
+   reconstructing gemma's measured shape from `saas_diag.log`, covering: (a) a recognizable
+   handler + no serve loop — the repaired `main.py`, when actually RUN with `PORT` set, binds the
+   port and passes a real `serve_and_check_stdlib` POST/GET/DELETE round-trip end-to-end; (b) a
+   no-op when a real serve loop already exists; (c) a no-op when the spec is not a web service (and
+   when a Flask/FastAPI service is detected instead); (d) never raises on garbage input (None,
+   non-dict modules, unparseable code, a spec of an unexpected type).
+6. Run ONLY `python -m pytest tests/test_ext036_http_service_scaffold.py -q` (offline); confirm
+   green. Update `.jarify/EXT-036/index.json` (REQ-48 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-48] Deterministic http.server SCAFFOLD repair — wire a recognized handler into a real serve loop
