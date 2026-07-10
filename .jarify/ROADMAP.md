@@ -28,8 +28,9 @@ signal to look harder and generate the next horizon, never to stop.
   Atlas** — it is the backlog this roadmap prioritizes against; the roadmap never invents a class the
   Atlas doesn't hold, and **coverage (verified / total) is a first-class scoreboard signal.** The
   canonical EXT-060 board is the execution surface; its verified roster IS the Atlas's `verified`
-  tier. Atlas coverage today ≈ **9 verified + 1 flipping / 485** (top-4 invariant oracles + the
-  injectable-clock oracle all LANDED). ⭐ Convergence finding (waves 1–6): **no new oracle KIND
+  tier. Atlas coverage today ≈ **14 verified + 2 capable (2/3) + 4 measuring / 485** (board grew
+  21→32 classes on 2026-07-10; ALL 6 oracle kinds in active board service; injectable-clock PROVEN
+  on-device). ⭐ Convergence finding (waves 1–6): **no new oracle KIND
   needed** — the substrate vocabulary is complete in kind; remaining work is demand-ranked instances.
 - **Item format:** `- **[<id|tag>]** <one line> — <priority> · <rationale / links to spec·REQ·GAP·#task>`
   where priority ∈ `high|med|low`. Sections carry status: NOW=in-flight, NEXT=planned-soon,
@@ -69,18 +70,21 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   curated tiers (FLOOR).
 - **Product-Parity Checklist** (whether the PRODUCT is there): feature-by-feature vs the official Claude
   Code docs (works/partial/missing), **re-synced MONTHLY** (moving target) — GAP-MAP §Product-surface parity.
-- Full test suite: **2440 green** (2 skipped). Product-surface parity **84.4%** (13 works + 2 partial / 16).
+- Full test suite: **3153 green / 0 red** (3a3c102 — 11 stale/environmental reds fixed meaning-preserving).
+  Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
-- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **9
-  verified + 1 flipping / 485** classes (denominator grew 182→485 on 2026-07-10 — an honest coverage-%
-  DROP because the map got more complete, not because capability regressed). Verified = the utility/leaf
-  FLOOR (retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl) **PLUS the first four
-  invariant-oracle-graded service rungs green 3/3 on the board: double-entry-ledger,
-  subscription-lifecycle-state-machine, wallet-no-overdraw, agent-loop**; the frontier rung — the SaaS
-  REST+DB CRUD service (rest-put-modify, the board's last consistent red) — is **FLIPPING post-lever-chain
-  (2/2 measured so far, final draw in flight)**. ★ THE SUBSTRATE LEVER KEEPS PAYING (2026-07-10): the
-  Atlas's top-4 highest-reuse oracles PLUS **injectable-clock (f2847c8 — the #1-demand oracle, ~75
-  consumers)** are ALL LANDED; clock + state-machine + conservation alone make **150+ of the 485 classes
+- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **14
+  verified + 2 capable (2/3) + 4 measuring / 485** classes (denominator grew 182→485 on 2026-07-10 — an
+  honest coverage-% DROP because the map got more complete, not because capability regressed). Verified =
+  the utility/leaf FLOOR (retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl) + the
+  invariant-oracle service rungs (double-entry-ledger, subscription-lifecycle-state-machine,
+  wallet-no-overdraw, agent-loop) + **rest-put-modify FLIPPED 3/3 post-lever-chain** (the board's last
+  consistent red; every pass independently DB-verified) + the 2026-07-10 board-growth wave's 3/3 rungs:
+  **helpdesk-ticket-lifecycle, court-deadline math, account-lockout-backoff (★ INJECTABLE-CLOCK ORACLE
+  PROVEN ON-DEVICE), llm-output-parser**. Capable-not-reliable (2/3): IRV ranked-choice tally,
+  progressive-tax withholding. Measuring now: GFS-retention, CI-matrix, URL-shortener, token-validity
+  (a35230e). The board grew **21 → 32 classes (26 create + 6 modify)** and **ALL 6 oracle kinds are in
+  active board service**; clock + state-machine + conservation alone make **150+ of the 485 classes
   honestly gradable**. Rising `verified` under honest oracles is progress; "mapped rows" is not.
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
@@ -130,10 +134,11 @@ real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fal
   protocol server — each with an honest behavioral oracle, measured with NO leaves so the number reflects
   GENUINE capability. Being designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard
   classes become the FLOOR.
-- **[EXT-060 canonical scoreboard — FRESH FULL HEADLINE RUN, NOW]** the board has grown to **21 classes**;
-  last full headline was **14/18** (pre-SaaS-lever-chain). Run `.jaros-data/realsys_canonical.py` live on
-  the Jetson for the fresh combined pass@1 — expected well above 14/18 now rest-put-modify has FLIPPED
-  (final: 3/3 post-lever, every pass independently DB-verified). This IS the tracked number; trend it every growth wave. high.
+- **[EXT-060 canonical scoreboard — FRESH FULL HEADLINE RUN, NOW]** the board has grown to **32 classes
+  (26 create + 6 modify)**; last full headline was **14/18** (pre-SaaS-lever-chain, pre-growth-wave). Run
+  `.jaros-data/realsys_canonical.py` live on the Jetson for the fresh combined pass@1 once the batch-3
+  measurement (a35230e) completes — rest-put-modify has FLIPPED (final: 3/3 post-lever, every pass
+  independently DB-verified). This IS the tracked number; trend it every growth wave. high.
 - **[first real-system probe — RUNNING]** build a real stdlib HTTP REST API from one sentence; build_system
   serve-and-checks it (starts server, drives HTTP). No API leaf → tests genuine capability. Result pending.
 - **[GENERIC capability mechanisms — NEXT, from the workflow plan]** decompose → cross-module coherence →
@@ -159,35 +164,31 @@ classes** — each is independent-oracle-verified coverage at near-zero new-subs
 the full board headline. All items below trace to PRIME-001 tenet 3 (honest oracles) + the real-systems
 North Star (build ANY real system a production developer ships, verified honestly, at $0).
 
-**NOW — the board-growth wave (impact × buildable-today, every oracle already landed):**
-1. **[EXT-060 grow · 8 immediately-gradable atlas classes — HIGH, NOW]** add CREATE(+MODIFY where cheap)
-   tasks for the atlas's top demand-ranked, zero-new-substrate classes: **helpdesk-ticket-lifecycle**
-   (open→triaged→resolved→closed) [state-machine oracle], **IRV ranked-choice tally** (gov/civic wave-3)
-   [cli-exact], **court-deadline math** (legal wave-3, business-day/holiday calendar) [import-driver],
-   **TOU/tiered utility billing** (energy wave-3) [import-driver], **progressive tax withholding** (payroll
-   wave-6) [import-driver], **GFS backup-retention pruning** (wave-6) [import-driver], **CI job-matrix
-   expansion** (devtools wave-6) [import-driver], **URL shortener** [http+datastore]. Each is a §4 rank-17
-   "fixture-table over an existing oracle" or a landed-oracle reuse — max coverage per unit effort; the
-   first rungs from the 6 NEW verticals (gov/legal/energy) land on the board. high.
-2. **[FIRST injectable-clock-graded board class — HIGH, NOW · proves the #1-demand oracle end-to-end]**
-   add **account-lockout-with-backoff** or **token-validity-window** to the board, graded by the freshly
-   landed `clock_oracle` (f2847c8, EXT-059 REQ-10) — deterministic time-advance, no real sleep. First
-   on-Jetson measurement proves the ~75-consumer oracle on real hardware, unlocking the whole timing tier
-   (rate-limit/quota/scheduler/TTL/dunning/retention/SLA). high.
-3. **[FIRST wave-5 agent classes (A11–A40) on the board — HIGH, NOW · agent systems are first-class]**
-   the landed agent-loop oracle grades ~27 of the A-rows TODAY; add the first NEW ones beyond the quartet:
-   **output-parser library** (strict tool-call JSON parse/repair), **validation-retry repair loop** (bad
-   tool output → bounded re-ask), **context-window manager** (token-budget truncation policy). high ·
-   dogfoods the agent North Star; the tool_calls-parse scaffold (f77080a) already proved the cluster.
+**NOW — post-growth-wave (the 2026-07-10 board-growth wave LANDED — b6f46de + cee0abf + a35230e, board
+21→32 classes, see the LANDED trail; these are the next highest impact × tractability moves):**
+1. **[EXT-060 · MODIFY-half growth — HIGH, NOW]** the board is lopsided: **26 CREATE vs only 6 MODIFY**.
+   Add MODIFY variants for the freshly-verified classes — **helpdesk add-a-state, tax add-bracket-edge,
+   IRV add-tie-rule, URL-shortener add-delete-endpoint, lockout add-admin-unlock** — each reusing the
+   class's already-landed oracle (zero new substrate). MODIFY measured historically MORE robust than
+   CREATE (starts composed), so this is cheap, honest coverage growth. high.
+2. **[schema-validation-retry-loop residual — HIGH, NOW · DIAGNOSE before any lever]** the post-gating
+   failure mode: gemma's own agent program consistently fails the **SYNTAX gate** (complex single-file
+   agent code). Per the playbook, code-dump the failing draws and characterize the syntax-failure SHAPE
+   first — the fix is a deterministic tool aimed at the actual failure class, not a guess. high.
+3. **[plan-parse robustness watch — MED, NOW]** "planner produced no parseable JSON plan" recurred on
+   the GFS draws (2/3); if it recurs ACROSS classes it graduates to a plan-parse robustness follow-up
+   (extending the `_recover_missing_braces` deterministic-recovery family, 2190faf). Watch the batch-3
+   results; don't build yet. med.
 4. **[FULL canonical board headline run — HIGH, NOW · the number]** fresh on-Jetson run of the FULL
-   EXT-060 board (21 classes) for the new headline combined pass@1 — expected well above the old 14/18
-   now the SaaS lever chain landed (rest-put-modify 2/2 so far, final draw in flight). Every growth item
-   above re-runs under this same headline; the trend is the progress signal. high.
+   EXT-060 board (32 classes) for the new headline combined pass@1, once the batch-3 measurement
+   (GFS/CI-matrix/URL-shortener/token-validity, a35230e) completes. Every growth item above re-runs
+   under this same headline; the trend is the progress signal. high.
 
 **NEXT — the expansion wave (planned this week, oracles landed or one-step):**
 - **[state-machine + conservation class expansion — HIGH]** the atlas post-merge counts: state-machine
-  ~70 classes (largest absolute), conservation ~57; with clock (~75) these three flip **150+ of the 485**
-  to honestly gradable. Harvest breadth: order/shipment/RMA/dispute/document-approval lifecycles
+  ~70 classes (largest absolute), conservation ~57 — **~127 combined**, the biggest remaining gradable
+  backlog now both oracles are proven in board service (helpdesk 3/3 joined subscription-lifecycle under
+  state-machine). Harvest breadth: order/shipment/RMA/dispute/document-approval lifecycles
   [state-machine]; inventory+stock-reservation `available+committed==on_hand`, seat-booking no-double-book,
   invoice-total==Σlines, meal-plan shopping-list merge (SH-R3) [conservation].
 - **[★ LangGraph agent-behind-an-API track (A8-shape) — HIGH]** a state-graph agent served behind an HTTP
@@ -202,9 +203,11 @@ North Star (build ANY real system a production developer ships, verified honestl
   mid-flight, restart, assert exactly-once activity effects + identical final state from the event history —
   matches Jaros's own `jaros replay` DNA, cheap to build, high honesty value (G32 Temporal-shape + stronger
   saga/job-DAG grading).
-- **[rest-crud CREATE residual · best-of-k on the REAL service oracle — MED]** the CREATE half of the SaaS
-  rung still has per-draw variance; best-of-k is legit here precisely because the service oracle is
-  behavior-checkable (run the app + real HTTP + independent DB re-read — NOT the best-of-k-blind-spot trap).
+- **[best-of-k on the REAL oracle for the variance classes — MED]** the CREATE half of the SaaS rung
+  (rest-crud 1/3) still has per-draw variance, and the growth wave added more capable-not-reliable
+  classes (IRV 2/3, tax 2/3; GFS pending batch-3). best-of-k is legit here precisely because each class's
+  oracle is behavior-checkable (run the app + real HTTP + independent DB re-read / fixture-table
+  import-driver — NOT the best-of-k-blind-spot trap, which only bites self-acceptance proxies).
 - **[Auth pack + multi-tenant row-scoping (S2–S6, S59) — MED, carried]** the SaaS spine after CRUD: session/
   JWT-HS256/RBAC/TOTP (stdlib `hmac`/`hashlib`, HTTP+import-driver today) + the cross-tenant leak probe
   (the highest honesty-value class in SaaS).
@@ -217,15 +220,20 @@ output string.
 needed **NO new oracle KIND** — every new class graded onto the existing vocabulary (the only two additions,
 workflow-replay-determinism + process-lifecycle probe, are small refinements of existing replay/HTTP grading).
 **The substrate vocabulary is complete in kind; the remaining work is demand-ranked instances.**
-**★ TOP-5 SUBSTRATE COMPLETE:** the four 2026-07-09 oracles PLUS injectable-clock are ALL LANDED; clock +
+**★ TOP-5 SUBSTRATE COMPLETE — AND ALL 6 ORACLE KINDS NOW IN ACTIVE BOARD SERVICE (2026-07-10):** the four
+2026-07-09 oracles PLUS injectable-clock are ALL LANDED, and the growth wave put every kind (state-machine,
+cli-exact, import-driver fixture-tables, clock, agent-loop, http+datastore) behind a live board class; clock +
 state-machine + conservation alone flip **150+ of the 485 classes** to honestly gradable.
 - **[1 · agent-loop oracle — ✅ LANDED (2ee7efa)]** **~27 classes post-merge** (A1–A10 + 17 of the wave-5
   A11–A40, gradable TODAY). Scripted stub-model + fake tools + assertions over the transcript. ★ The agent
-  tool_calls-parse build scaffold (f77080a) FLIPPED the agent class 0/3→3/3 on-Jetson.
-- **[2 · injectable-clock / fake-time oracle — ✅ LANDED (f2847c8, EXT-059 REQ-10 `clock_oracle`)]** **~75
-  consumers post-merge — the single most-demanded oracle (~66 wave votes)**: rate-limit refill, scheduler fire,
-  TTL/token expiry, dunning/backoff, statutory deadlines, grace windows, retention ladders, SLA timers.
-  NEXT: prove it end-to-end with the first clock-graded board class (NOW item #2 above).
+  tool_calls-parse build scaffold (f77080a) FLIPPED the agent class 0/3→3/3 on-Jetson. ★ 2nd wave-5 agent
+  rung: **llm-output-parser 3/3 (cee0abf)**; scaffold-gating made conservative (c4d13a9) so it no longer
+  clobbers a build's own custom stop/validation orchestration.
+- **[2 · injectable-clock / fake-time oracle — ✅ LANDED (f2847c8) + ✅ PROVEN ON-DEVICE (cee0abf)]**
+  **~75 consumers post-merge — the single most-demanded oracle (~66 wave votes)**: rate-limit refill, scheduler
+  fire, TTL/token expiry, dunning/backoff, statutory deadlines, grace windows, retention ladders, SLA timers.
+  ★ PROVEN END-TO-END 2026-07-10: **account-lockout-backoff 3/3 on-Jetson (cee0abf)** — deterministic
+  time-advance, no real sleep; the whole timing tier is now unlockable. token-validity-window measuring (a35230e).
 - **[3 · generic state-machine / lifecycle oracle — ✅ LANDED (1a93f29)]** **~70 classes post-merge — largest
   absolute count.** Declared transition graph + op-script → every transition legal + terminal invariants.
   First board rung: subscription-lifecycle-state-machine 3/3.
@@ -234,10 +242,10 @@ state-machine + conservation alone flip **150+ of the 485 classes** to honestly 
   wallet-no-overdraw 3/3 (6cbe59f).
 - **[5 · double-entry-balance invariant oracle — ✅ LANDED (71c2ec5)]** ~21 classes post-merge. Σdebits==Σcredits
   per txn AND balance==Σpostings per account. First board rung: double-entry-ledger 3/3 (f3c2f7e).
-- **[6 · rule-engine exact-output fixture tables — 🔜 NOT new code, ~65 consumers]** deterministic input→exact-
-  output tables over the EXISTING import-driver oracle (tax brackets, deadline math, rating tables, GFS pruning,
-  grade weighting, semver resolution); a business-day/holiday-calendar fixture is the one recurring table to
-  write once. high-leverage + cheap — this is what NOW item #1 exercises.
+- **[6 · rule-engine exact-output fixture tables — ✅ IN BOARD SERVICE (2026-07-10), ~65 consumers]**
+  deterministic input→exact-output tables over the EXISTING import-driver oracle — now live on the board via
+  progressive-tax (2/3), court-deadline math incl. business-day/holiday calendar (3/3), GFS pruning + CI
+  job-matrix (measuring, a35230e). high-leverage + cheap, confirmed: max coverage per unit effort.
 - **[7 · money-invariant (no-float / exact-cent) oracle]** ~7 classes, universal across fintech/e-comm/billing.
   med-high · cheap, pairs with #4/#5.
 - **[8 · multi-service fixture-upstream harness — moved UP (rising demand)]** ~15 classes post-merge. ≥2
@@ -724,6 +732,28 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ EXT-060 BOARD GREW 21 → 32 CLASSES (26 CREATE + 6 MODIFY) — three atlas growth batches (2026-07-10)]**
+  the NOW board-growth wave executed end-to-end. **Batch-1 (b6f46de):** helpdesk-ticket-lifecycle
+  [state-machine], IRV ranked-choice tally [cli-exact], progressive-tax withholding [import-driver],
+  court-deadline math incl. business-day/holiday calendar [import-driver] — measured on-Jetson **10/12**
+  (helpdesk 3/3, IRV 2/3, tax 2/3, court 3/3); the first board rungs from the gov/civic + legal verticals.
+  **Batch-2 clock+agent (cee0abf): account-lockout-backoff 3/3 = the INJECTABLE-CLOCK ORACLE PROVEN
+  END-TO-END ON-DEVICE** (deterministic time-advance, no real sleep — unlocks the ~75-consumer timing tier)
+  + **llm-output-parser 3/3** (2nd wave-5 agent class under the agent-loop oracle). **Batch-3 (a35230e):**
+  GFS backup-retention pruning, CI job-matrix expansion, URL shortener [http+datastore], token-validity
+  window [clock] — measuring on-Jetson now. With these, **ALL 6 oracle kinds are in active board service.**
+  Traces to PRIME-001 Tenet 3 (independent oracles) + the real-systems North Star via the Atlas backlog.
+- **[★ ORACLE/LEVER INTEGRITY FIXES — honest-grading hardening under the growth wave (2026-07-10)]**
+  (a) **conservative agent-scaffold gating (c4d13a9):** the agent tool_calls scaffold no longer clobbers a
+  build's own custom stop/validation orchestration — it applies only where the build lacks one (keeps the
+  scaffold's 0/3→3/3 win without regressing richer agent programs); (b) **ADT priority-queue convention
+  detection (a098023):** a max-heap-convention PQ is no longer false-negatived, and contradictory specs are
+  skipped honestly instead of guess-graded (Tenet-3 false-not-done removed); (c) **outage-retry hardening**
+  in the killable measurement runners (uncommitted scratch) so a Jetson blip no longer scores as a class
+  failure — measurement trustworthiness, same family as the d2550c3 contamination fix.
+- **[★ FULL SUITE GREEN 3153/0 (3a3c102, 2026-07-10)]** 11 stale/environmental reds fixed
+  meaning-preserving (no assertion weakened, no oracle relaxed); the regression floor is clean underneath
+  the whole board-growth wave.
 - **[★★ ATLAS EXPANSION 182 → 485 MAPPED CLASSES — 6 parallel GitHub-mining research waves (2026-07-10, wave 1
   5db9986, waves 2–6 merged ce76aa0)]** the discovery plane ran systematically: wave 1 OSS-product decomposition
   (+73), wave 2 selfhosted ecosystem (+50), wave 3 industry verticals (+60 — **six entirely NEW verticals:
@@ -740,8 +770,8 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
   (env/module-seam hook) so the grader advances time DETERMINISTICALLY: rate-limiter refill, scheduler fire,
   TTL/token expiry, dunning/backoff timers, statutory deadlines, grace windows, retention ladders, SLA timers —
   no real `sleep`, no flake, no leak. With it, clock + state-machine + conservation together flip **150+ of the
-  485 atlas classes** to honestly gradable. Immediate next: the first clock-graded board class
-  (account-lockout-backoff / token-validity-window) proves it end-to-end on-Jetson.
+  485 atlas classes** to honestly gradable. ✅ DONE (2026-07-10): the first clock-graded board class,
+  account-lockout-backoff, PROVED it end-to-end on-Jetson 3/3 (cee0abf); token-validity-window measuring.
 - **[★★ SaaS-TIER LEVER CHAIN COMPLETE — rest-put-modify (the board's last consistent red) is FLIPPING
   (2026-07-10)]** five deterministic build-plane levers landed in sequence: **PORT-coercion (0bcfea7)** +
   **routing-contract (ddd878a)** + **modify-repair-seam (b04928a)** + **spec_hint (5835009)** +
