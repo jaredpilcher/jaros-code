@@ -99,3 +99,46 @@ system class, including jaros-code itself -- can be honestly verified: inject a 
 
 #### Implements
 - [REQ-6] Agent-loop oracle (`agent_oracle`)
+
+### [TASK-5] Build the state-machine / lifecycle oracle (`harness/state_machine_oracle.py`)
+
+A deterministic, model-free verifier that grades whether a built system enforces a legal state
+machine — the highest-leverage substrate gap (unblocks order/shipment/fulfillment/RMA/
+prescription/claim/dispute/moderation/appointment/subscription lifecycle classes). The honesty
+core: illegal transitions (ship-before-pay, cancel-after-delivered) must be REJECTED, not silently
+allowed.
+
+#### Steps
+1. Create `harness/state_machine_oracle.py` defining the declarative spec shape: `states` (list),
+   `initial` (state name), `transitions` (dict of `"<from_state>:<action>" -> <to_state>`, anything
+   unlisted is illegal), a `drive` script (ordered list of `{"action", "args": [...], "kwargs": {...},
+   "expect": "accept"|"reject"}` ops), and `expect_final` (state name).
+2. Implement `grade_state_machine(root, *, module, entity, spec, python_exe=None, timeout=...) ->
+   (accepted: bool, note: str)`: build one `harness.import_driver.drive_import` `api_calls` list that
+   (a) constructs the entity once (`target=entity`, bound to a call id), (b) calls each drive-script
+   op's action as a method on that bound instance in order, then reads a final `state` property call —
+   reusing `drive_import`'s sandboxed-subprocess launch, sentinel protocol, and `_kill_tree` teardown
+   as-is (no reimplementation).
+3. After `drive_import` returns, evaluate the modeled state machine against the driver's
+   sentinel-reported per-call results/raised-exceptions purely in Python (no subprocess call here):
+   walk `drive` in order tracking an expected "shadow" state from `transitions`; for each
+   `expect:"accept"` op assert the call did NOT raise; for each `expect:"reject"` op assert the call
+   DID raise (or returned a documented `ok=False`-shaped failure marker) — an illegal transition that
+   the driven entity silently allowed is a caught FAILURE, not a pass; assert the shadow-tracked final
+   state equals `expect_final`.
+4. Add small helpers `validate_spec(spec) -> (bool, note)` (checks `states`/`initial`/`transitions`/
+   `drive`/`expect_final` shape before driving) and wrap the whole grading path in a top-level
+   try/except so `grade_state_machine` NEVER raises — any malformed spec, uncallable entity, or
+   crashing/garbage fixture is an honest `(False, note)`.
+5. Add `tests/test_ext059_state_machine_oracle.py` (offline, hand-written fixtures, no model call):
+   (a) a CORRECT order-lifecycle fixture class (states `created/paid/shipped/delivered/cancelled`,
+   legal paths `created->paid->shipped->delivered` and `created->cancelled`, illegal `ship`
+   before `pay` and illegal `cancel` after `delivered`) passes; (b) a BROKEN fixture that ALLOWS
+   ship-before-pay is caught (`accepted=False`) — the flagship honesty test; (c) a fixture that
+   reaches the wrong final state fails; (d) the oracle never raises on a crashing/garbage fixture.
+   Run only `python -m pytest tests/test_ext059_state_machine_oracle.py -q`.
+6. Update `.jarify/EXT-059/index.json` (via `jarify-manage-links`) mapping REQ-7 to the new file
+   ranges; `requirements.md` status stays `partial` (REQ-4/REQ-5 remain open).
+
+#### Implements
+- [REQ-7] State-machine / lifecycle oracle (`state_machine_oracle`)

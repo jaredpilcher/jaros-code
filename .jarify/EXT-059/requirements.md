@@ -12,6 +12,8 @@ implementation:
   - tests/test_ext059_import_driver.py
   - harness/agent_oracle.py
   - tests/test_ext059_agent_oracle.py
+  - harness/state_machine_oracle.py
+  - tests/test_ext059_state_machine_oracle.py
 ---
 
 ### [REQ-1] Filesystem oracle (`fs_oracle`)
@@ -124,3 +126,31 @@ termination.
 
 **Follow-up (not built here):** a Jaros-flavor extension that additionally asserts two-plane
 Decision-emission and `jaros replay` byte-identical determinism for built agents.
+
+### [REQ-7] State-machine / lifecycle oracle (`state_machine_oracle`)
+
+A deterministic, model-free verifier that grades whether a built system enforces a legal STATE
+MACHINE — the highest-leverage substrate gap across every lifecycle-shaped vertical (order,
+shipment, fulfillment, RMA, prescription, claim, dispute, moderation, appointment, subscription).
+The honesty core: illegal transitions (ship an unpaid order, cancel a delivered one) MUST be
+REJECTED, not silently allowed — a system that permits an illegal transition FAILS the check even
+if every legal transition also works.
+
+#### Acceptance Criteria
+- [x] `harness/state_machine_oracle.py` accepts a declarative state-machine spec (`states`,
+      `initial`, `transitions` mapping `from_state + action -> to_state` — anything unlisted is
+      illegal) and an ordered `drive` script of ops (`action` + `args` + `expect: "accept" |
+      "reject"`), then drives a built class-based entity (reusing `harness.import_driver.drive_import`)
+      through the script.
+- [x] Each `expect:"accept"` op must succeed AND move the modeled state to the spec's next state;
+      each `expect:"reject"` op must be REFUSED (raise, or a documented failure return with no state
+      change) — an illegal transition that is silently allowed is a FAILURE, not a pass.
+- [x] The final state after the whole script must match `expect_final`.
+- [x] Never raises: a missing/uncallable entity, a crashing fixture, or a malformed spec is an honest
+      `ok=False` with a diagnostic note.
+- [x] Tests prove a correct order-lifecycle fixture passes, a fixture that ALLOWS an illegal
+      transition (e.g. ship-before-pay) is CAUGHT (`accepted=False`), a fixture reaching the wrong
+      final state fails, and the oracle never raises on a crashing/garbage fixture.
+
+**Follow-up (not built here):** a service-based variant driving transitions over HTTP via
+`harness/server_oracle.py`'s launch/request lifecycle instead of `import_driver`.
