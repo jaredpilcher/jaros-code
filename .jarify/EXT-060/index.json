@@ -1,4 +1,36 @@
 {
+  "REQ-9": [
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 288,
+      "endLine": 299
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 61,
+      "endLine": 70
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 194,
+      "endLine": 197
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 297,
+      "endLine": 395
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 1263,
+      "endLine": 1416
+    },
+    {
+      "file": "tests/test_ext060_service_oracle.py",
+      "startLine": 13,
+      "endLine": 364
+    }
+  ],
   "REQ-7": [
     {
       "file": "harness/real_systems_suite.py",
@@ -7,8 +39,8 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 922,
-      "endLine": 1185
+      "startLine": 965,
+      "endLine": 1228
     },
     {
       "file": "tests/test_ext060_modify_suite.py",
@@ -24,55 +56,23 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 176,
-      "endLine": 179
+      "startLine": 190,
+      "endLine": 193
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 236,
-      "endLine": 276
+      "startLine": 254,
+      "endLine": 294
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 653,
-      "endLine": 727
+      "startLine": 696,
+      "endLine": 770
     },
     {
       "file": "tests/test_ext060_real_systems_suite.py",
       "startLine": 288,
       "endLine": 447
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": "harness/real_systems_suite.py",
-      "startLine": 61,
-      "endLine": 70
-    },
-    {
-      "file": "harness/real_systems_suite.py",
-      "startLine": 180,
-      "endLine": 183
-    },
-    {
-      "file": "harness/real_systems_suite.py",
-      "startLine": 279,
-      "endLine": 377
-    },
-    {
-      "file": "harness/real_systems_suite.py",
-      "startLine": 1220,
-      "endLine": 1373
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 288,
-      "endLine": 299
-    },
-    {
-      "file": "tests/test_ext060_service_oracle.py",
-      "startLine": 13,
-      "endLine": 364
     }
   ],
   "REQ-11": [
@@ -83,18 +83,18 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 184,
-      "endLine": 187
+      "startLine": 198,
+      "endLine": 201
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 380,
-      "endLine": 420
+      "startLine": 398,
+      "endLine": 438
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1376,
-      "endLine": 1438
+      "startLine": 1419,
+      "endLine": 1481
     },
     {
       "file": "tests/test_ext060_agent_task.py",
@@ -110,18 +110,18 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 188,
-      "endLine": 191
+      "startLine": 202,
+      "endLine": 205
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 423,
-      "endLine": 446
+      "startLine": 441,
+      "endLine": 464
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1594,
-      "endLine": 1689
+      "startLine": 1637,
+      "endLine": 1732
     },
     {
       "file": "tests/test_ext060_lifecycle_inventory.py",
@@ -137,18 +137,18 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 192,
-      "endLine": 195
+      "startLine": 206,
+      "endLine": 209
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 449,
-      "endLine": 473
+      "startLine": 467,
+      "endLine": 491
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1755,
-      "endLine": 1836
+      "startLine": 1798,
+      "endLine": 1879
     },
     {
       "file": "tests/test_ext060_lifecycle_inventory.py",
@@ -164,18 +164,18 @@
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 196,
-      "endLine": 199
+      "startLine": 210,
+      "endLine": 213
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 476,
-      "endLine": 500
+      "startLine": 494,
+      "endLine": 518
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1909,
-      "endLine": 1975
+      "startLine": 1952,
+      "endLine": 2018
     },
     {
       "file": "tests/test_ext060_double_entry_task.py",
@@ -183,11 +183,38 @@
       "endLine": 136
     }
   ],
+  "REQ-28": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 100,
+      "endLine": 105
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 214,
+      "endLine": 217
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 521,
+      "endLine": 543
+    },
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2681,
+      "endLine": 2762
+    },
+    {
+      "file": "tests/test_ext060_clock_agent_tasks.py",
+      "startLine": 51,
+      "endLine": 210
+    }
+  ],
   "REQ-1": [
     {
       "file": "harness/real_systems_suite.py",
       "startLine": 37,
-      "endLine": 581
+      "endLine": 624
     },
     {
       "file": "tests/test_ext060_real_systems_suite.py",
@@ -198,15 +225,15 @@
   "REQ-2": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 584,
-      "endLine": 650
+      "startLine": 627,
+      "endLine": 693
     }
   ],
   "REQ-4": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 730,
-      "endLine": 774
+      "startLine": 773,
+      "endLine": 817
     },
     {
       "file": "tests/test_ext060_ini_query.py",
@@ -217,8 +244,8 @@
   "REQ-5": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 777,
-      "endLine": 855
+      "startLine": 820,
+      "endLine": 898
     },
     {
       "file": "tests/test_ext060_memoize.py",
@@ -229,8 +256,8 @@
   "REQ-6": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 858,
-      "endLine": 919
+      "startLine": 901,
+      "endLine": 962
     },
     {
       "file": "tests/test_ext060_file_organizer.py",
@@ -241,50 +268,50 @@
   "REQ-23": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 978,
-      "endLine": 988
+      "startLine": 1021,
+      "endLine": 1031
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1071,
-      "endLine": 1076
+      "startLine": 1114,
+      "endLine": 1119
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1170,
-      "endLine": 1173
+      "startLine": 1213,
+      "endLine": 1216
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1457,
-      "endLine": 1464
+      "startLine": 1500,
+      "endLine": 1507
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1561,
-      "endLine": 1568
+      "startLine": 1604,
+      "endLine": 1611
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1714,
-      "endLine": 1717
+      "startLine": 1757,
+      "endLine": 1760
     },
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1871,
-      "endLine": 1874
+      "startLine": 1914,
+      "endLine": 1917
     },
     {
       "file": "tests/test_ext060_spec_hint.py",
       "startLine": 18,
-      "endLine": 152
+      "endLine": 154
     }
   ],
   "REQ-8": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1188,
-      "endLine": 1217
+      "startLine": 1231,
+      "endLine": 1260
     },
     {
       "file": "tests/test_ext060_canonical_scoreboard.py",
@@ -295,8 +322,8 @@
   "REQ-10": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1441,
-      "endLine": 1490
+      "startLine": 1484,
+      "endLine": 1533
     },
     {
       "file": "tests/test_ext060_modify_suite.py",
@@ -307,8 +334,8 @@
   "REQ-12": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1493,
-      "endLine": 1591
+      "startLine": 1536,
+      "endLine": 1634
     },
     {
       "file": "tests/test_ext060_agent_task.py",
@@ -319,8 +346,8 @@
   "REQ-14": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1692,
-      "endLine": 1752
+      "startLine": 1735,
+      "endLine": 1795
     },
     {
       "file": "tests/test_ext060_lifecycle_inventory.py",
@@ -331,8 +358,8 @@
   "REQ-16": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1839,
-      "endLine": 1906
+      "startLine": 1882,
+      "endLine": 1949
     },
     {
       "file": "tests/test_ext060_lifecycle_inventory.py",
@@ -343,8 +370,8 @@
   "REQ-18": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 1978,
-      "endLine": 2050
+      "startLine": 2021,
+      "endLine": 2093
     },
     {
       "file": "tests/test_ext060_saas_fintech_tasks.py",
@@ -355,8 +382,8 @@
   "REQ-19": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2053,
-      "endLine": 2117
+      "startLine": 2096,
+      "endLine": 2160
     },
     {
       "file": "tests/test_ext060_saas_fintech_tasks.py",
@@ -367,8 +394,8 @@
   "REQ-20": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2120,
-      "endLine": 2190
+      "startLine": 2163,
+      "endLine": 2233
     },
     {
       "file": "tests/test_ext060_ticket_booking_invoice.py",
@@ -379,8 +406,8 @@
   "REQ-21": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2193,
-      "endLine": 2254
+      "startLine": 2236,
+      "endLine": 2297
     },
     {
       "file": "tests/test_ext060_ticket_booking_invoice.py",
@@ -391,8 +418,8 @@
   "REQ-22": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2257,
-      "endLine": 2330
+      "startLine": 2300,
+      "endLine": 2373
     },
     {
       "file": "tests/test_ext060_ticket_booking_invoice.py",
@@ -403,8 +430,8 @@
   "REQ-24": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2333,
-      "endLine": 2418
+      "startLine": 2376,
+      "endLine": 2461
     },
     {
       "file": "tests/test_ext060_atlas_wave1_tasks.py",
@@ -415,8 +442,8 @@
   "REQ-25": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2421,
-      "endLine": 2483
+      "startLine": 2464,
+      "endLine": 2526
     },
     {
       "file": "tests/test_ext060_atlas_wave1_tasks.py",
@@ -427,8 +454,8 @@
   "REQ-26": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2486,
-      "endLine": 2562
+      "startLine": 2529,
+      "endLine": 2605
     },
     {
       "file": "tests/test_ext060_atlas_wave1_tasks.py",
@@ -439,13 +466,37 @@
   "REQ-27": [
     {
       "file": "harness/real_systems_suite.py",
-      "startLine": 2565,
-      "endLine": 2635
+      "startLine": 2608,
+      "endLine": 2678
     },
     {
       "file": "tests/test_ext060_atlas_wave1_tasks.py",
       "startLine": 365,
       "endLine": 459
+    }
+  ],
+  "REQ-29": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2765,
+      "endLine": 2852
+    },
+    {
+      "file": "tests/test_ext060_clock_agent_tasks.py",
+      "startLine": 214,
+      "endLine": 351
+    }
+  ],
+  "REQ-30": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 2855,
+      "endLine": 2938
+    },
+    {
+      "file": "tests/test_ext060_clock_agent_tasks.py",
+      "startLine": 355,
+      "endLine": 499
     }
   ]
 }

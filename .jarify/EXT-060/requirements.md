@@ -832,3 +832,123 @@ day is a weekend or a holiday. Fully deterministic (every input is explicit; not
       ...)`; a BROKEN fixture that forgets to honor `holidays` is rejected; the task is a member
       of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-24/25/26/27
       tasks (length 15 -> 19).
+
+### [REQ-28] `oracle_kind="clock"` + first TIME-DEPENDENT CREATE task (account lockout/backoff)
+
+The canonical scoreboard's first TIME-DEPENDENT-shaped task, grading whether a build derives every
+time decision from an INJECTED clock rather than the real wall clock — a class of real system (auth
+lockout/backoff, SLA windows, token/magic-link validity, digest/batch windows, grace periods,
+retention sweepers) EXT-059 REQ-10 built a dedicated deterministic oracle (the injectable-clock
+oracle) for but that had no representative task on this scoreboard yet. A `_grade_clock` grader wires
+the already-landed EXT-059 REQ-10 oracle (`harness/clock_oracle.py`'s `grade_clock`) into
+`grade_real_system_task` under a new `oracle_kind="clock"` dispatch — no new process-launch or driving
+mechanism, reusing that oracle verbatim. `LOCKOUT_BACKOFF_TASK` (`RealSystemTask`, `cls="auth"`,
+`oracle_kind="clock"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only,
+single-file `LoginAttemptTracker` class (plus a `LockedOut` exception) in `lockout.py`, constructed
+with a keyword-named zero-argument clock callable (`now_fn`) it must consult for EVERY time decision —
+three consecutive failed attempts within a 300-second window locks the account for 600 seconds
+(further attempts raise `LockedOut` while locked); a successful attempt resets the failure streak; the
+lock clears once `now_fn()` reaches the recorded lock-clear time.
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="clock"` to a new `_grade_clock(oracle_spec,
+      root, python_exe)` that maps `oracle_spec` (`{"module": str, "entity": str, "spec":
+      {...injectable-clock spec shape...}}`) to `harness.clock_oracle.grade_clock(root, module=...,
+      entity=..., spec=..., python_exe=python_exe)`, returning `(accepted, note)`. NEVER raises
+      (reuses `clock_oracle`'s own never-raise contract) — a malformed spec, a missing entrypoint, or
+      a build that derives its time decisions from the real wall clock instead of the injected one is
+      an honest `(False, <reason>)`.
+- [x] `LOCKOUT_BACKOFF_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the lockout
+      contract (filename `lockout.py`, the `LockedOut` exception, the `LoginAttemptTracker(now_fn)`
+      constructor's `now_fn` keyword contract explicitly stating the zero-argument-callable/injected-
+      clock requirement, the 3-failures/300-second-window/600-second-lock/`is_locked()` semantics)
+      with every oracle-checked value (the timeline's `at`/`call`/`args`/`expect` entries,
+      `expect_final`) derivable from that same visible sentence (no hidden key, no leak); the
+      sentence describes the lock as "clearing," never "expiring," and avoids every other
+      leaf-fingerprinting token (cache/ttl/queue/stack/ring/buffer/memoize).
+- [x] The driven timeline exercises the FLAGSHIP honesty case: three failures at `t=0/10/20` trigger
+      a lock clearing at `t=620`; an attempt at `t=30` (still locked) must raise `LockedOut`; an
+      attempt at `t=650` — a 620-SIMULATED-second jump from `t=30` that executes in real
+      milliseconds — must succeed (the lock has cleared) — a build that secretly consults the real
+      wall clock instead of the injected `now_fn` cannot tell those two calls apart and is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `LoginAttemptTracker` fixture is accepted by `grade_real_system_task(LOCKOUT_BACKOFF_TASK,
+      ...)`; a BROKEN fixture that secretly uses the real wall clock (`time.time()`) instead of
+      `now_fn` is rejected; a SECOND, independently BROKEN fixture with no lock guard at all is
+      also rejected; `harness.clock_oracle.validate_spec` reports `(True, "ok")` for the task's own
+      spec; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-29] First agent/LLM-infrastructure CREATE task, an LLM-output parsing library
+
+A held-out task from the atlas's wave-5 agent/LLM-infrastructure research pass, graded by the
+ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code — reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `OUTPUT_PARSER_TASK`
+(`RealSystemTask`, `cls="agent-infra"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file `output_parser.py` module exporting three
+functions — `parse_json_block(text)` (finds and parses the first ` ```json ` fenced block, tolerating
+prose around it, raising `ValueError` when none is present), `parse_key_values(text)` (parses
+"Key: value" lines into a dict, skipping non-matching lines), and `strip_fences(text)` (removes every
+fenced-code-block marker line, returning the remaining content) — extracting structured data out of
+messy, LLM-style free-text output.
+
+#### Acceptance Criteria
+- [x] `OUTPUT_PARSER_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the parsing
+      contract (filename `output_parser.py`, the three function signatures/semantics, the exact
+      fence-line-matching rule for `parse_json_block`/`strip_fences`, the first-colon-split rule for
+      `parse_key_values`, the no-block `ValueError` case) with every oracle-checked value derivable
+      from that same visible sentence (no hidden key, no leak).
+- [x] The driven checks cover: a fenced block WITH a language tag (`` ```json ``) whose JSON content
+      contains NESTED objects/arrays (proving line-based, not balanced-brace, extraction), the
+      no-fenced-block `ValueError` case, `parse_key_values` on a mix of matching and non-matching
+      lines (including a value that itself contains a colon), and `strip_fences` on text with a
+      differently-tagged fence (`` ```python ``) — each expected value hand-verified against a
+      scratch reference implementation before being added to the roster; a build that corrupts
+      nested JSON structure (e.g. re-wraps nested values) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `output_parser.py` fixture is accepted by `grade_real_system_task(OUTPUT_PARSER_TASK, ...)`; a
+      BROKEN fixture that returns the wrong nesting for `parse_json_block` is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-30] Second agent/LLM-infrastructure CREATE task, a schema-validation-retry loop
+
+A SECOND held-out task from the atlas's wave-5 agent/LLM-infrastructure research pass, graded by the
+ALREADY-LANDED `oracle_kind="agent"` dispatch REQ-11 lands (no new oracle code — reuses `_grade_agent`
+-> `harness.agent_oracle.drive_agent`/`check_agent` verbatim). `VALIDATION_RETRY_TASK`
+(`RealSystemTask`, `cls="agent-infra"`, `oracle_kind="agent"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file plain-Python agent `main.py` implementing a
+Pydantic-AI-shaped validation-retry loop — it asks the stub model for structured output via
+tool/function calling, validates the result LOCALLY against a required-keys schema, and on validation
+failure sends the error back to the model for exactly ONE retry before finalizing. The scripted stub
+model returns an INVALID payload on its first call, then a VALID one on the retry.
+
+#### Acceptance Criteria
+- [x] `VALIDATION_RETRY_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      validation-retry contract (filename `main.py`, the env-var/chat-completions/tool-call
+      protocol shared with `PLAIN_AGENT_TASK`, the required-keys schema, the append-the-error-then-
+      retry-once behavior, the exact final-sentinel line + exit 0) with every oracle-checked value
+      (the 2-turn script, the canned tool observation, the goal string, the expected ordered
+      tool-call sequence, the expected final substring) derivable from that same visible sentence (no
+      hidden key, no leak).
+- [x] `oracle_spec["script"]` scripts exactly TWO model turns — an INVALID structured-output
+      tool-call attempt (missing a required key) then a VALID, corrected one — and
+      `oracle_spec["expect_tool_calls"]` is an ORDERED, args-exact 2-entry list, so the existing
+      `check_agent` call-count/args check independently proves BOTH that exactly one retry occurred
+      (never zero, never more than one) and that the retry's payload is the schema-corrected one; a
+      build that never retries (only one tool call) or that resubmits the same invalid payload on
+      retry is caught by that same existing check, with no new oracle code.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written agent fixtures only): a CORRECT
+      validation-retry agent fixture is accepted by `grade_real_system_task(VALIDATION_RETRY_TASK,
+      ...)` and independently confirmed (via a direct `drive_agent` call) to make exactly 2 model
+      round-trips; a BROKEN fixture that never retries on an invalid first attempt is rejected; the
+      task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the three
+      REQ-28/29/30 tasks (length 19 -> 22).

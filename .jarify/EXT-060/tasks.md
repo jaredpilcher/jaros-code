@@ -739,3 +739,107 @@
 
 #### Implements
 - [REQ-27] Fourth import-oracle CREATE task, in a legal/court-filing vertical (deadline date math)
+
+### [TASK-23] `oracle_kind="clock"` + first TIME-DEPENDENT CREATE task (account lockout/backoff) (REQ-28)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add a `from harness.clock_oracle import grade_clock`
+   import, a new `_grade_clock(oracle_spec, root, python_exe)` helper mirroring
+   `_grade_conservation` exactly (validates `module`/`entity` keys, calls
+   `harness.clock_oracle.grade_clock(root, module=..., entity=..., spec=oracle_spec.get("spec"),
+   python_exe=python_exe)`), and a new `oracle_kind == "clock"` branch in
+   `grade_real_system_task` dispatching to it -- no new driving mechanism.
+2. Add `LOCKOUT_BACKOFF_TASK` (`RealSystemTask`, `cls="auth"`, `oracle_kind="clock"`) with a
+   contract-exact sentence for a stdlib-only single-file `LoginAttemptTracker` class (plus a
+   `LockedOut` exception) in `lockout.py`, constructed with a keyword-named zero-argument clock
+   callable `now_fn` it must consult for EVERY time decision (never the real wall clock): three
+   consecutive failed attempts within a 300-second window locks the account for 600 seconds
+   (further attempts raise `LockedOut` while locked); a successful attempt resets the failure
+   streak; the lock clears once `now_fn()` reaches the recorded lock-clear time. Say "clears,"
+   never "expires"; avoid every leaf-fingerprinting token (cache/ttl/queue/stack/ring/buffer/
+   memoize).
+3. Hand-walk (e.g. via a scratch Python script) a timeline that exercises the FLAGSHIP honesty
+   case: failures at `t=0/10/20` trigger a lock clearing at `t=620`; `t=30` (still locked) must
+   raise `LockedOut`; `t=650` (a 620-SIMULATED-second jump from `t=30`, executed in real
+   milliseconds) must succeed (unlocked) -- a real-wall-clock-driven build cannot tell those two
+   calls apart. Call `harness.clock_oracle.validate_spec` on the resulting spec and confirm
+   `(True, "ok")` before adding the task to the roster.
+4. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free.
+5. Add `tests/test_ext060_clock_agent_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `LoginAttemptTracker` fixture is accepted by `grade_real_system_task(LOCKOUT_BACKOFF_TASK,
+   ...)`; a BROKEN fixture that secretly uses `time.time()` instead of `now_fn` is rejected; a
+   SECOND, independently BROKEN fixture with no lock guard at all is also rejected;
+   `harness.clock_oracle.validate_spec(LOCKOUT_BACKOFF_TASK.oracle_spec["spec"])` reports
+   `(True, "ok")`; leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+6. Run `python -m pytest tests/test_ext060_clock_agent_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-28 ranges, via
+   `jarify-manage-links`) and flip the REQ-28 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-28] `oracle_kind="clock"` + first TIME-DEPENDENT CREATE task (account lockout/backoff)
+
+### [TASK-24] First agent/LLM-infrastructure CREATE task, an LLM-output parsing library (REQ-29)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `OUTPUT_PARSER_TASK` (`RealSystemTask`,
+   `cls="agent-infra"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `output_parser.py` module exporting `parse_json_block(text)` (finds and parses the
+   first ` ```json ` fenced block, tolerating prose around it, raising `ValueError` when none is
+   present), `parse_key_values(text)` (parses "Key: value" lines into a dict, splitting on the
+   FIRST colon only, skipping non-matching lines), and `strip_fences(text)` (removes every fenced
+   -code-block marker line, returning the remaining content). Reuse the ALREADY-LANDED
+   `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Pick four `api_calls`/`checks`: a fenced block WITH a language tag whose JSON content contains
+   NESTED objects/arrays (proving line-based, not balanced-brace, extraction), the no-fenced
+   -block `ValueError` case, `parse_key_values` on a mix of matching/non-matching lines (including
+   a value that itself contains a colon), and `strip_fences` on text with a differently-tagged
+   fence -- hand-verify every expected value against a scratch reference implementation before
+   adding the task to the roster.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_clock_agent_tasks.py` (same file TASK-23 creates, OFFLINE, no
+   model/Jetson): a CORRECT `output_parser.py` fixture is accepted by
+   `grade_real_system_task(OUTPUT_PARSER_TASK, ...)`; a BROKEN fixture that returns the wrong
+   nesting for `parse_json_block` (re-wraps nested values) is rejected; leaves-OFF holds; the
+   task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_clock_agent_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-29 ranges, via
+   `jarify-manage-links`) and flip the REQ-29 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-29] First agent/LLM-infrastructure CREATE task, an LLM-output parsing library
+
+### [TASK-25] Second agent/LLM-infrastructure CREATE task, a schema-validation-retry loop (REQ-30)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `VALIDATION_RETRY_TASK` (`RealSystemTask`,
+   `cls="agent-infra"`, `oracle_kind="agent"`) with a contract-exact sentence for a stdlib-only
+   single-file plain-Python agent `main.py` implementing a Pydantic-AI-shaped validation-retry
+   loop, mirroring `PLAIN_AGENT_TASK`'s env-var/chat-completions/tool-call protocol: it asks the
+   stub model for structured output via tool/function calling (the model "calls" a
+   `submit_output` function whose arguments ARE the candidate payload), validates the parsed
+   arguments LOCALLY against a required-keys schema (`name`+`email`), and on validation failure
+   appends the error to the message list and sends ONE retry before finalizing. Reuse the
+   ALREADY-LANDED `_grade_agent` dispatch (REQ-11) -- no new oracle code.
+2. Script `oracle_spec["script"]` with exactly TWO turns (`tool_call_turn("submit_output", ...)`
+   with an INVALID payload missing `email`, then a VALID, corrected one), and
+   `oracle_spec["expect_tool_calls"]` as the matching ORDERED, args-exact 2-entry list -- proving
+   via the EXISTING `check_agent` call-count/args check (no new oracle code) that exactly one
+   retry occurred and that the retry's payload is schema-corrected.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free.
+4. Extend `tests/test_ext060_clock_agent_tasks.py` (same file TASK-23/24 create, OFFLINE, no
+   model/Jetson): a CORRECT validation-retry agent fixture is accepted by
+   `grade_real_system_task(VALIDATION_RETRY_TASK, ...)` and independently confirmed (via a direct
+   `harness.agent_oracle.drive_agent` call) to make exactly 2 model round-trips; a BROKEN fixture
+   that never retries on an invalid first attempt is rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_TASKS`; assert `REAL_SYSTEMS_TASKS` grew by exactly the three
+   REQ-28/29/30 tasks (length 19 -> 22).
+5. Run `python -m pytest tests/test_ext060_clock_agent_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; also confirm the three pre-existing hardcoded roster-size
+   assertions in `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_ticket_booking_
+   invoice.py`, and `tests/test_ext060_spec_hint.py` are updated to the new total of 22). Update
+   `.jarify/EXT-060/index.json` (REQ-30 ranges, via `jarify-manage-links`) and flip the REQ-30
+   acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-30] Second agent/LLM-infrastructure CREATE task, a schema-validation-retry loop

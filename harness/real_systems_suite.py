@@ -97,6 +97,13 @@ from harness.conservation_oracle import grade_conservation
 from harness.double_entry_oracle import grade_double_entry
 # #EXT-060-REQ-17 End
 
+# #EXT-060-REQ-28 Start
+# TASK-23: reuse (not reimplement) the already-landed injectable-clock oracle (EXT-059 REQ-10)
+# for the first TIME-DEPENDENT ("clock" oracle_kind) grading path -- never a new driving
+# mechanism.
+from harness.clock_oracle import grade_clock
+# #EXT-060-REQ-28 End
+
 
 @dataclass
 class RealSystemTask:
@@ -162,6 +169,13 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
       (``harness.conservation_oracle.grade_conservation``) -- for a CONSERVATION-shaped system (an
       operation that would oversell/overdraw a conserved quantity must be rejected, not silently
       allowed).
+    - ``"clock"``: ``task.oracle_spec`` is ``{"module": str, "entity": str, "spec":
+      {...injectable-clock spec shape...}}``. Imports the built ``entity`` class from ``module``
+      in a fresh sandboxed subprocess and drives it through the spec's injected-clock timeline
+      script (``harness.clock_oracle.grade_clock``) -- for a TIME-DEPENDENT system (correctness
+      that depends on the passage of time, e.g. an auth lockout window) whose constructor must
+      accept a keyword-named zero-argument clock callable and consult ONLY that callable, never
+      the real wall clock, for every time decision.
 
     Returns ``(accepted, note)``. NEVER RAISES: an unknown ``oracle_kind``, a malformed
     ``oracle_spec``, or any exception during grading is an honest ``(False, <reason>)`` -- never a
@@ -197,6 +211,10 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
         if task.oracle_kind == "double_entry":
             return _grade_double_entry(spec, root, python_exe)
         # #EXT-060-REQ-17 End
+        # #EXT-060-REQ-28 Start
+        if task.oracle_kind == "clock":
+            return _grade_clock(spec, root, python_exe)
+        # #EXT-060-REQ-28 End
         return False, f"unknown oracle_kind: {task.oracle_kind!r}"
     except Exception as exc:  # never raise -- an honest diagnostic result instead
         return False, f"grade_real_system_task raised unexpectedly: {exc}"
@@ -498,6 +516,31 @@ def _grade_double_entry(oracle_spec: dict, root: Any, python_exe: str) -> "tuple
         root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
     )
 # #EXT-060-REQ-17 End
+
+
+# #EXT-060-REQ-28 Start
+# TASK-23: the ``oracle_kind == "clock"`` grading path -- for a TIME-DEPENDENT system (auth
+# lockout/backoff, SLA windows, token validity, etc.) whose correctness depends on the passage of
+# time. Wires (never reimplements) ``harness.clock_oracle.grade_clock`` -- the injectable-clock
+# timeline oracle already landed for EXT-059 REQ-10.
+def _grade_clock(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "clock"`` grading path: import ``oracle_spec["entity"]`` from
+    ``oracle_spec["module"]`` in a fresh sandboxed subprocess and drive it through
+    ``oracle_spec["spec"]``'s injected-clock timeline script (``harness.clock_oracle.grade_clock``),
+    returning ``(accepted, note)`` UNMODIFIED from that oracle. Never raises: a malformed
+    ``oracle_spec`` (missing ``module``/``entity``/``spec``) or any exception during grading is an
+    honest ``(False, <reason>)`` -- ``grade_clock`` itself already never raises, this helper adds
+    no exception-prone logic of its own."""
+    module = oracle_spec.get("module")
+    if not isinstance(module, str) or not module.strip():
+        return False, f"oracle_spec missing/invalid required 'module' key: {module!r}"
+    entity = oracle_spec.get("entity")
+    if not isinstance(entity, str) or not entity.strip():
+        return False, f"oracle_spec missing/invalid required 'entity' key: {entity!r}"
+    return grade_clock(
+        root, module=module, entity=entity, spec=oracle_spec.get("spec"), python_exe=python_exe,
+    )
+# #EXT-060-REQ-28 End
 
 
 def _rates(results: "list[dict]") -> dict:
@@ -2633,3 +2676,263 @@ COURT_DEADLINE_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(COURT_DEADLINE_TASK)
 # #EXT-060-REQ-27 End
+
+
+# #EXT-060-REQ-28 Start
+# TASK-23: the FIRST TIME-DEPENDENT CREATE task -- an account login-attempt lockout/backoff
+# policy, in an auth vertical -- graded by the NEW `oracle_kind="clock"` dispatch this
+# requirement lands (`_grade_clock` -> `harness.clock_oracle.grade_clock`, no reimplementation of
+# the oracle itself). The defining honesty core: the entity's constructor accepts a keyword-named
+# zero-argument clock callable (`now_fn`, per `harness.clock_oracle`'s pinned `clock_param`
+# contract) and MUST consult only that callable for every time decision -- a build that instead
+# calls the real wall clock internally (`time.time()`/`datetime.datetime.now()`) is caught because
+# the driven timeline jumps from t=30 to t=650 (a 620-simulated-second leap) in real milliseconds:
+# a real-clock-driven build sees no meaningful elapsed time between those two calls and so cannot
+# correctly report BOTH "still locked at t=30" and "unlocked again at t=650". The sentence
+# deliberately says the lock "clears" (never "expires") and avoids every other
+# leaf-fingerprinting token (cache/ttl/queue/stack/ring/buffer/memoize) so this auth-lockout class
+# is never confused with the verified `ttl-store` leaf.
+_LOCKOUT_BACKOFF_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named lockout.py, "
+    "using only the standard library, defining exactly one exception class named `LockedOut` "
+    "(a subclass of the built-in `Exception`, taking no required constructor arguments) and "
+    "exactly one public class named `LoginAttemptTracker` modeling an account login-attempt "
+    "lockout/backoff policy. `LoginAttemptTracker(now_fn)` accepts exactly one argument, the "
+    "keyword `now_fn`: a zero-argument callable that returns the current time as an integer "
+    "number of epoch seconds. The class must determine EVERY time-based decision by calling "
+    "`now_fn()` at the moment it needs to know the current time -- it must never read the real "
+    "system clock (`time.time()`, `datetime.datetime.now()`, or any other wall-clock source) "
+    "for any purpose. The class exposes exactly one action method, `record_attempt(success)` "
+    "(`success` is a bool: `True` for a successful login attempt, `False` for a failed one), "
+    "and exactly one zero-argument reader method, `is_locked()`, returning a bool. Track a run "
+    "of consecutive failed attempts (a 'failure streak'), counted only while the account is not "
+    "locked: the streak starts at the first failed attempt seen, and each further consecutive "
+    "failed attempt extends it, UNLESS more than 300 seconds have elapsed (per `now_fn()`) "
+    "since the streak's first failure, in which case that failed attempt starts a brand-new "
+    "streak of length 1 instead of extending the old one. The moment a THIRD failed attempt "
+    "lands in the SAME streak (three consecutive failures, all within 300 seconds of the "
+    "streak's first failure), the account becomes locked: record a lock-clear time of "
+    "`now_fn() + 600` (600 seconds after that third failure), and `is_locked()` must return "
+    "`True` from that call onward. While the account is locked (the current `now_fn()` reading "
+    "is still strictly before the recorded lock-clear time), calling `record_attempt(...)` with "
+    "EITHER `True` or `False` must immediately raise `LockedOut` and must have no other effect "
+    "-- it must not count toward, reset, or otherwise change the failure streak, the lock-clear "
+    "time, or anything else. Once `now_fn()` reaches or passes the recorded lock-clear time, "
+    "the account is no longer locked: the very next `record_attempt(...)` call is processed "
+    "exactly like any other attempt below (not raising `LockedOut`), and `is_locked()` must "
+    "return `False` again once that call has been processed (unless that same call itself "
+    "immediately re-locks the account). A SUCCESSFUL attempt (`success=True`) processed while "
+    "not locked always resets the failure streak completely (no failures currently counted). "
+    "`record_attempt` returns `None` on every call that does not raise `LockedOut`."
+)
+
+LOCKOUT_BACKOFF_TASK = RealSystemTask(
+    name="account-lockout-backoff-lib",
+    cls="auth",
+    sentence=_LOCKOUT_BACKOFF_SENTENCE,
+    oracle_kind="clock",
+    oracle_spec={
+        "module": "lockout",
+        "entity": "LoginAttemptTracker",
+        "spec": {
+            "clock_param": "now_fn",
+            "construct_args": [],
+            "construct_kwargs": {},
+            # Hand-walked timeline (see the task's commit for the scratch verification script):
+            # t=0/10/20 are three consecutive failures within the 300s window -> the third
+            # (t=20) triggers a lock clearing at t=20+600=620. t=30 is still inside the lock
+            # (30 < 620) -> must raise LockedOut. t=650 is a 620-SIMULATED-second jump from t=30
+            # (executed in real milliseconds) that lands AFTER the lock clears (650 >= 620) -> a
+            # real-wall-clock-driven build cannot distinguish this from t=30 and fails here.
+            "timeline": [
+                {"at": 0, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 10, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 20, "call": "record_attempt", "args": [False], "expect": {"returns": None}},
+                {"at": 30, "call": "record_attempt", "args": [True],
+                 "expect": {"raises": "LockedOut"}},
+                {"at": 650, "call": "record_attempt", "args": [True], "expect": {"returns": None}},
+            ],
+            "expect_final": {"is_locked": False},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(LOCKOUT_BACKOFF_TASK)
+# #EXT-060-REQ-28 End
+
+
+# #EXT-060-REQ-29 Start
+# TASK-24: the FIRST agent/LLM-infrastructure CREATE task from the atlas's wave-5 agent-infra
+# vertical -- an LLM-output parsing library -- graded by the ALREADY-LANDED "import" oracle_kind
+# dispatch REQ-3 lands (no new oracle code -- reuses `_grade_import` ->
+# `harness.import_driver.drive_import` verbatim). Every expected value below was hand-verified
+# against a scratch reference implementation (see the task's commit) before being added to the
+# roster.
+_OUTPUT_PARSER_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "output_parser.py, using only the standard library, defining exactly three public "
+    "functions: `parse_json_block(text)`, `parse_key_values(text)`, and `strip_fences(text)` -- "
+    "each extracting structured data out of messy, LLM-style free-text output. "
+    "`parse_json_block(text)` searches `text` line by line for a fenced block that OPENS with a "
+    "line whose stripped content is EXACTLY three backticks immediately followed by the word "
+    "`json` (no space between the backticks and `json`) and CLOSES at the next line whose "
+    "stripped content is EXACTLY three backticks and nothing else; every line strictly between "
+    "those two fence lines (joined back together with a single newline between each, exactly as "
+    "they appeared) is parsed as JSON text with the standard library's `json.loads`, and that "
+    "parsed value is returned. Ordinary prose lines before and after the fenced block are "
+    "ignored (tolerated), and the JSON content itself may contain arbitrarily nested objects "
+    "and arrays. When `text` contains NO such fenced json block anywhere, `parse_json_block` "
+    "raises `ValueError`. When more than one such fenced block is present, only the FIRST one "
+    "is used. `parse_key_values(text)` splits `text` into lines and, for each line that "
+    "contains at least one colon character `:`, splits that line at its FIRST colon only, "
+    "strips leading/trailing whitespace from both the part before the colon (the key) and the "
+    "part after it (the value), and records `key -> value` in a dict it returns (a later line "
+    "with a repeated key overwrites the value recorded for an earlier line with the same key); "
+    "a line containing NO colon at all is skipped entirely (never added to the returned dict, "
+    "never an error). `strip_fences(text)` splits `text` into lines and removes every line "
+    "whose content, once leading/trailing whitespace is stripped, STARTS WITH three backticks "
+    "(this covers both a bare fence line and a fence line immediately followed by a language "
+    "tag such as `json` or `python`), keeping every other line completely unchanged and in its "
+    "original order, then joins the surviving lines back together with a single newline between "
+    "each (no trailing newline added) and returns that joined string."
+)
+
+_PARSER_TEXT_JSON_BLOCK = (
+    "Here is the result:\n"
+    "```json\n"
+    '{"a": 1, "b": {"c": 2, "d": [1, 2, 3]}}\n'
+    "```\n"
+    "Thanks!\n"
+)
+_PARSER_TEXT_NO_JSON = "no fenced json here, just prose.\n"
+_PARSER_TEXT_KEY_VALUES = (
+    "Name: Alice\n"
+    "Just some prose without a colon\n"
+    "Age: 30\n"
+    "Time: 10:30\n"
+)
+_PARSER_TEXT_FENCED = "before\n```python\ncode_line_1\ncode_line_2\n```\nafter\n"
+
+OUTPUT_PARSER_TASK = RealSystemTask(
+    name="llm-output-parser-lib",
+    cls="agent-infra",
+    sentence=_OUTPUT_PARSER_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "output_parser",
+        "api_calls": [
+            {"id": "json_ok", "target": "parse_json_block",
+             "args": [_PARSER_TEXT_JSON_BLOCK], "kwargs": {}},
+            {"id": "json_error", "target": "parse_json_block",
+             "args": [_PARSER_TEXT_NO_JSON], "kwargs": {}},
+            {"id": "kv", "target": "parse_key_values",
+             "args": [_PARSER_TEXT_KEY_VALUES], "kwargs": {}},
+            {"id": "fences", "target": "strip_fences",
+             "args": [_PARSER_TEXT_FENCED], "kwargs": {}},
+        ],
+        "checks": [
+            # fence with a language tag + a nested-brace JSON value: proves the extraction is
+            # LINE-based (never balanced-brace counting), so nesting survives intact.
+            {"kind": "returns_equals", "call_id": "json_ok",
+             "expected": {"a": 1, "b": {"c": 2, "d": [1, 2, 3]}}},
+            # no-block edge case: must raise, never silently return None/empty.
+            {"kind": "raises", "call_id": "json_error", "exception": "ValueError"},
+            {"kind": "returns_equals", "call_id": "kv",
+             "expected": {"Name": "Alice", "Age": "30", "Time": "10:30"}},
+            {"kind": "returns_equals", "call_id": "fences",
+             "expected": "before\ncode_line_1\ncode_line_2\nafter"},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(OUTPUT_PARSER_TASK)
+# #EXT-060-REQ-29 End
+
+
+# #EXT-060-REQ-30 Start
+# TASK-25: the SECOND agent/LLM-infrastructure CREATE task from the atlas's wave-5 agent-infra
+# vertical -- a Pydantic-AI-shaped schema-validation-retry loop -- graded by the ALREADY-LANDED
+# `oracle_kind="agent"` dispatch REQ-11 lands (no new oracle code -- reuses `_grade_agent` ->
+# `harness.agent_oracle.drive_agent`/`check_agent` verbatim). Structured output is extracted via
+# tool/function calling (the model "calls" a `submit_output` function whose arguments ARE the
+# candidate structured payload -- exactly how real structured-output libraries like Pydantic-AI/
+# instructor implement extraction under the hood), so the ORDERED, args-checked `tool_calls`
+# sequence `check_agent` already grades independently proves BOTH that exactly two model
+# round-trips occurred (never zero retries, never more than one) AND that the second submission
+# is the schema-corrected one -- no new oracle mechanism needed. `tools["submit_output"]`'s
+# canned observation is a plain audit-log acknowledgement (its value is never consulted for
+# validity by the agent) -- the required-keys schema check itself is LOCAL to the agent, mirroring
+# the built agent code every fixture below implements.
+_VALIDATION_RETRY_SENTENCE = (
+    "Write a single-file Python plain-Python agent program in a file named main.py, "
+    "stdlib-only (the `json`, `os`, `sys`, and `urllib.request` modules are enough), "
+    "implementing a validation-retry loop that extracts STRUCTURED output from a chat-style "
+    "language model through tool/function calling -- distinct from a model that merely answers "
+    "in prose. It reads its LLM endpoint from the environment variable `OPENAI_BASE_URL` and its "
+    "controlled-tool endpoint from the environment variable `JAROS_TOOL_URL`; it takes its goal "
+    "from `sys.argv[1]`. Maintain a list of chat messages, starting with exactly one message "
+    "`{\"role\": \"user\", \"content\": <goal>}`. The REQUIRED schema for the structured output "
+    "is exactly the two keys `name` and `email` (both must be present for the output to be "
+    "VALID; any other keys are ignored; either key missing makes the output INVALID). Repeat "
+    "the following up to twice (at most 2 requests to the model in total): send an HTTP POST "
+    "request with a JSON body `{\"model\": \"stub\", \"messages\": <the current message list>}` "
+    "to `f\"{OPENAI_BASE_URL}/chat/completions\"`, and parse the JSON response's "
+    "`response[\"choices\"][0][\"message\"]`. That message's non-empty `\"tool_calls\"` list's "
+    "first entry's `[\"function\"][\"name\"]` is the structured-output function the model chose "
+    "to call, and its `[\"function\"][\"arguments\"]` is a JSON-encoded STRING of the model's "
+    "candidate structured-output payload (parse it with `json.loads`); append that assistant "
+    "message (including its `\"tool_calls\"`) to the message list, then send an HTTP POST "
+    "request with the parsed payload as a JSON body to `f\"{JAROS_TOOL_URL}/<function_name>\"` "
+    "(an audit-log sink recording every candidate submission -- its JSON response's "
+    "`\"observation\"` value is not needed for validation), and append a message "
+    "`{\"role\": \"tool\", \"tool_call_id\": <that tool call's \"id\">, \"content\": "
+    "json.dumps(<that endpoint's \"observation\" value>)}` to the message list. Then LOCALLY "
+    "check the parsed payload against the required schema (both `name` and `email` present). If "
+    "VALID: print EXACTLY the string `\"__JAROS_AGENT_FINAL__\"` followed by "
+    "`json.dumps(<the parsed payload>)` followed by `\"__END__\"`, with no other output "
+    "anywhere, then exit with status 0 -- do not send any further request to the model. If "
+    "INVALID and this was the FIRST request: append one more message to the message list, "
+    "`{\"role\": \"user\", \"content\": <a string describing the validation error, naming every "
+    "missing required key>}` (so the retry request the model sees literally contains the "
+    "validation failure), then repeat the loop (send a SECOND chat-completions request) -- this "
+    "is the ONE allowed retry. If INVALID and this was already the SECOND request (the retry "
+    "also failed validation), print EXACTLY the string `\"__JAROS_AGENT_FINAL__\"` followed by "
+    "the literal text `\"validation failed after retry\"` followed by `\"__END__\"`, with no "
+    "other output anywhere, then exit with status 0, without sending a third request."
+)
+
+VALIDATION_RETRY_TASK = RealSystemTask(
+    name="schema-validation-retry-loop",
+    cls="agent-infra",
+    sentence=_VALIDATION_RETRY_SENTENCE,
+    oracle_kind="agent",
+    oracle_spec={
+        "entry": "main.py",
+        # Turn 1: the model's FIRST structured-output attempt is missing the required `email`
+        # key (invalid); turn 2 (served only if the agent actually retries) is the corrected,
+        # valid attempt.
+        "script": [
+            tool_call_turn("submit_output", {"name": "Alice"}),
+            tool_call_turn("submit_output", {"name": "Alice", "email": "alice@example.com"}),
+        ],
+        "tools": {
+            "submit_output": {"logged": True},
+        },
+        "goal": "produce a JSON object describing a new user's signup with required keys name and email",
+        # An ORDERED, args-exact 2-entry expectation: a build that never retries makes only ONE
+        # submit_output call (length mismatch, rejected); a build that retries but resubmits the
+        # SAME invalid payload fails the second entry's args match (rejected).
+        "expect_tool_calls": [
+            {"name": "submit_output", "args": {"name": "Alice"}},
+            {"name": "submit_output", "args": {"name": "Alice", "email": "alice@example.com"}},
+        ],
+        "expect_final_contains": "alice@example.com",
+        "expect_terminated": True,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(VALIDATION_RETRY_TASK)
+# #EXT-060-REQ-30 End
