@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py", "harness/endpoint_shape.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2415,3 +2415,72 @@ chain to the regenerated module set is safe end-to-end.
   `tests/test_ext036_http_service_scaffold.py` / `tests/test_ext036_agent_scaffold.py` /
   `tests/test_ext036_system_builder.py` / `tests/test_ext036_modify.py` /
   `tests/test_ext036_modify_add.py` / `tests/test_ext036_system_repair.py` (191 passed).
+
+### [REQ-53] Deterministic endpoint-shape contract repair (DONE — EXT-036 TASK-66, 2026-07-10)
+
+MEASURED MOTIVATION (2 code-dumped draws, `scratchpad/restput_diag.out`): the canonical-board
+`rest-sqlite-items-put-modify` MODIFY class measures 0/3 — gemma writes a PERFECT `do_PUT` body (a
+real SQLite `UPDATE` + `rowcount` check + re-`SELECT` of the updated row + correct 200/404
+statuses) but guards it with `parts = path.strip('/').split('/'); if len(parts) == 3 and
+parts[0] == 'items' and parts[1].isdigit():` — `"/items/1"` always splits into exactly TWO
+segments, so the guard never matches and every `PUT` silently falls through to a generic 404.
+IDENTICAL across both draws (deterministic, not sampling variance). The existing length-guard
+repair (`repair_guard_index_mismatch`, REQ-39) correctly does NOT fire — there is no
+unreachable-INDEX contradiction (the body only ever indexes `parts[0]`/`parts[1]`, both valid at
+`len(parts) == 3`); the bug is only provable against the VISIBLE spec's own endpoint template
+(`"PUT /items/<id>"` implies exactly TWO path segments) — the same epistemics as the
+signature-contract repair (REQ-45): a documented contract in the visible spec vs. the code's
+actual shape, mechanical + leak-free.
+
+#### Acceptance Criteria
+- [x] `harness/endpoint_shape.py::endpoint_segment_counts(spec_text) -> set[int]` parses URL path
+  TEMPLATES (`/`-starting tokens, e.g. `/items`, `/items/<id>`, `/items/{id}`, `/items/:id`,
+  `/users/<user_id>/orders`) out of the visible spec text and returns the SET of segment counts
+  those templates imply (counted the same way built code counts them:
+  `path.strip('/').split('/')`). Returns an empty set for absent/garbage/no-match spec text.
+  Never raises.
+- [x] `harness/endpoint_shape.py::repair_endpoint_shape_guards(code, spec_text) -> str` AST-parses
+  `code`; for each `if` whose test (bare, or the FIRST clause of an `and`-BoolOp) is
+  `len(<name>) == N` where `<name>` was assigned from a `.split('/')` call traced within the SAME
+  function (accepts `path.strip('/').split('/')` and similar chains — only the final `.split('/')`
+  call is inspected, not the intermediate chain), rewrites the numeric literal `N` — via a
+  surgical, literal-span-only edit (mirrors `system_builder._apply_line_col_edits`, reimplemented
+  locally to avoid a build<->repair circular import) — to the SMALLEST count `C` in
+  `endpoint_segment_counts(spec_text)` such that: (1) `N` is NOT itself already in that set, and
+  (2) `C` is strictly greater than the largest constant index the guard's own true-branch body
+  reads off `<name>` (so the rewrite can never make a previously-safe index access go
+  out-of-range; a body with no constant index at all treats every count in the set as safe).
+  CONSERVATIVE (Tenet 3 — a false repair is a real regression): fires ONLY on a leading `==`
+  guard on a split-derived name with a non-empty parsed endpoint set satisfying (1)+(2); never
+  touches a chained/other comparison beyond the leading `==` clause inside an `and`; never
+  touches `!=`/`<`/`>`/etc. guards; never guesses when the literal's source span can't be
+  located; returns `code` BYTE-IDENTICAL on any parse failure or when no repair applies. Never
+  raises.
+- [x] `harness/endpoint_shape.py::apply_endpoint_shape(modules, spec_text) -> dict[str, str]` maps
+  `repair_endpoint_shape_guards` across a `{module_name: code}` dict. Returns a NEW dict (never
+  mutates `modules`); a module whose repair fails to apply cleanly, or that has no matching
+  defect, is left unchanged in the returned dict. Never raises.
+- [x] Wired into BOTH deterministic-repair chains: the BUILD path (`build_system`,
+  `harness/system_builder.py`, right after the REQ-45 signature-contract repair and before the
+  REQ-46 filename-contract repair) AND the MODIFY path (`_apply_deterministic_repairs`, REQ-52,
+  in the same relative position — right after `apply_signature_contract` and before
+  `apply_port_coercion`). Both wire points wrapped in `# #EXT-036-REQ-53 Start`/`End` markers.
+- [x] Leak-free (Tenet 3): the corrected segment count comes ONLY from URL path templates parsed
+  out of the visible build spec text handed to `endpoint_segment_counts` — never a hidden
+  oracle/test/reference implementation.
+- [x] Proven OFFLINE (no model/Jetson call, `tests/test_ext036_endpoint_shape.py`): (a)
+  `endpoint_segment_counts` parses `/items`/`/items/<id>`/`/items/{id}`/`/items/:id`/
+  multi-segment templates correctly, empty/garbage spec text -> empty set; (b) THE MEASURED
+  SHAPE — the exact broken `do_PUT` reproduction is rewritten from `len(parts) == 3` to
+  `len(parts) == 2`, with ONLY that one literal changed (byte-identical elsewhere) and the
+  repaired module still compiling; (c) END-TO-END — the repaired module genuinely SERVES a real
+  `POST`/`PUT` round-trip via `harness.server_oracle.serve_and_check_stdlib` (PUT /items/1 -> 200
+  with the updated name), while the UNREPAIRED control genuinely FAILS the identical check (not a
+  fabricated pass); (d) non-firing safety — an already-consistent guard, a spec with no
+  parseable endpoints, a non-split-derived name, and `!=`/`<` guards are all left byte-identical;
+  garbage input never raises; a multi-module dict only changes the offending module; (e) wired
+  correctly via `_apply_deterministic_repairs` — a modules dict with the broken shape + an http
+  `spec_text` comes out repaired, proving the MODIFY-path wire. No regression in
+  `tests/test_ext036_modify_repair_seam.py` / `tests/test_ext036_port_coercion.py` /
+  `tests/test_ext036_routing_contract.py` / `tests/test_ext036_http_service_scaffold.py` /
+  `tests/test_ext036_signature_contract.py` / `tests/test_ext036_system_builder.py` (148 passed).

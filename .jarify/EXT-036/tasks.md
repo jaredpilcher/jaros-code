@@ -3055,3 +3055,62 @@ end-to-end.
   fire on a regenerated MODIFY candidate before the regression gate; the `spec_hint` threading
   from `harness/real_systems_suite.py`'s live driver remains an explicit follow-up, honestly
   scoped as not-yet-done)
+
+### [TASK-66] Deterministic endpoint-shape contract repair (REQ-53, owner directive 2026-07-10)
+
+MEASURED MOTIVATION (2 code-dumped draws, `scratchpad/restput_diag.out`): `rest-sqlite-items-put-
+modify` fails 0/3 because gemma writes a PERFECT `do_PUT` body (UPDATE + rowcount + fetch + correct
+statuses) but guards it with `parts = path.strip('/').split('/'); if len(parts) == 3 and
+parts[0] == 'items' and parts[1].isdigit():` -- `"/items/1"` splits into 2 parts, so the guard
+NEVER matches and every PUT falls through to a generic 404. IDENTICAL in both draws (deterministic,
+not variance). `repair_guard_index_mismatch` (REQ-39) correctly does NOT fire (no unreachable-index
+contradiction -- the body only indexes `parts[0..1]`, valid at `len(parts) == 3`); the bug is only
+provable against the VISIBLE spec's own endpoint template ("PUT /items/<id>" -> exactly 2 path
+segments) -- same epistemics as the signature-contract repair (REQ-45).
+
+#### Steps
+1. New `harness/endpoint_shape.py`: `endpoint_segment_counts(spec_text) -> set[int]` parses
+   `/`-starting URL path templates (`/items`, `/items/<id>`, `/items/{id}`, `/items/:id`,
+   `/users/<user_id>/orders`) out of the visible spec text via regex, returning the SET of
+   segment counts implied (`path.strip('/').split('/')` on each match). Empty/garbage spec ->
+   empty set. Never raises.
+2. `repair_endpoint_shape_guards(code, spec_text) -> str`: AST-parse `code`; for each `if` whose
+   test (bare, or the FIRST clause of an `and`-BoolOp) is `len(<name>) == N` where `<name>` is
+   traced to a `.split('/')` call within the SAME function, and (a) `N` is NOT in
+   `endpoint_segment_counts(spec_text)`, and (b) some count `C` in that set is strictly greater
+   than the largest constant index the guard's true-branch body reads off `<name>` (a body with
+   no such index treats every count as safe) -- picking the SMALLEST qualifying `C` when several
+   exist -- rewrite the literal `N` -> `C` via a surgical, literal-span-only edit (reimplement
+   `_apply_line_col_edits` locally to avoid a build<->repair circular import with
+   `system_builder.py`). Conservative (Tenet 3): never touches a chained/other comparison beyond
+   the leading `==` clause, never touches `!=`/`<`/`>` guards, never guesses when the literal's
+   span can't be located, byte-identical on parse failure or no match. Never raises.
+3. `apply_endpoint_shape(modules: dict, spec_text) -> dict`: maps `repair_endpoint_shape_guards`
+   over a `{module: code}` dict, same shape/never-raise convention as `apply_signature_contract`.
+4. Wire into BOTH deterministic-repair chains in `harness/system_builder.py`: (a) the BUILD path
+   (`build_system`), right after the REQ-45 signature-contract repair and before the REQ-46
+   filename-contract repair; (b) `_apply_deterministic_repairs` (the MODIFY path, REQ-52), in the
+   same relative position -- right after `apply_signature_contract`, before `apply_port_coercion`.
+   Both wire points wrapped in `# #EXT-036-REQ-53 Start`/`End` markers.
+5. Tests `tests/test_ext036_endpoint_shape.py` (OFFLINE -- no model/Jetson call): (a)
+   `endpoint_segment_counts` parses the `/items`/`/items/<id>`/`{id}`/`:id`/multi-segment variants
+   correctly, empty/garbage spec -> empty set; (b) THE MEASURED SHAPE -- the exact broken `do_PUT`
+   is rewritten from `len(parts) == 3` to `len(parts) == 2`, everything else byte-identical, and
+   the repaired module compiles; (c) END-TO-END -- the repaired module genuinely SERVES a real
+   `POST`/`PUT` round-trip via `harness.server_oracle.serve_and_check_stdlib`, with an UNREPAIRED
+   control genuinely failing the same check; (d) non-firing safety (already-consistent guard, no
+   parseable endpoints, non-split-derived name, `!=`/`<` guards, garbage input, multi-module
+   only-offending-module-changed); (e) `_apply_deterministic_repairs` wiring proof -- a modules
+   dict with the broken shape + an http `spec_text` comes out repaired through the MODIFY chain.
+   Run `python -m pytest tests/test_ext036_endpoint_shape.py tests/test_ext036_modify_repair_seam.py
+   tests/test_ext036_port_coercion.py tests/test_ext036_routing_contract.py
+   tests/test_ext036_http_service_scaffold.py tests/test_ext036_signature_contract.py
+   tests/test_ext036_system_builder.py -q` (all green). Also `python -c "import ast;
+   ast.parse(open('harness/system_builder.py').read())"` and `python -c "import
+   harness.endpoint_shape; import harness.system_builder"` (clean). Update
+   `.jarify/EXT-036/index.json` per jarify-manage-links.
+
+#### Implements
+- [REQ-53] Deterministic endpoint-shape contract repair (a new AST-only, leak-free repair fixing
+  a path-segment-count guard that mismatches the spec's own endpoint template, wired into both
+  the BUILD and MODIFY deterministic-repair chains)

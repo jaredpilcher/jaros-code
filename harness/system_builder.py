@@ -3318,6 +3318,22 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _sig_contract_notes = apply_signature_contract(built, spec)
     # #EXT-036-REQ-45 End
 
+    # #EXT-036-REQ-53 Start
+    # TASK-66: deterministic endpoint-shape contract repair. MEASURED
+    # (`scratchpad/restput_diag.out`, 2 code-dumped draws, `rest-sqlite-items-put-modify`): gemma
+    # writes a PERFECT do_PUT body (a real SQLite UPDATE + rowcount check + re-SELECT + correct
+    # statuses) but guards it with a path-segment-count guard the real request can never satisfy
+    # (`if len(parts) == 3 ...` when `"/items/1"` always splits into 2 segments), so the guard
+    # never matches and every PUT falls through to a generic 404 -- deterministic across both
+    # draws, not sampling variance. Wired in the same spot/pattern as the import-resolver,
+    # guard-index, and signature-contract repairs above -- additive, AST-only, never-raising,
+    # leak-free (the corrected segment count comes only from URL path templates parsed out of
+    # `spec`, the visible build spec, never a hidden oracle/test): a no-op for any spec/module
+    # without this exact defect shape.
+    from harness.endpoint_shape import apply_endpoint_shape
+    built = apply_endpoint_shape(built, spec)
+    # #EXT-036-REQ-53 End
+
     # #EXT-036-REQ-46 Start
     # TASK-59: deterministic spec-demanded filename/entrypoint normalization. MEASURED
     # (`.jaros-data/filename_norm_probe.py`, `.jaros-data/entrypoint_norm_probe.py`): a built
@@ -4226,23 +4242,33 @@ def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | No
                                   *, llm=None) -> "dict[str, str]":
     """Run the build path's deterministic repair chain, in the SAME order `build_system` applies
     it, over an arbitrary CANDIDATE ``{name: code}`` module set: `apply_signature_contract` ->
-    `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_agent_scaffold`.
+    `apply_endpoint_shape` (REQ-53, TASK-66) -> `apply_port_coercion` ->
+    `apply_http_service_scaffold` -> `apply_agent_scaffold`.
 
     Deliberately EXCLUDES `apply_filename_contract` -- a rename is safe at CREATE time (nothing
     yet depends on the chosen filename) but NOT at MODIFY time, where a rename could break an
     EXISTING system's already-agreed-upon import/entrypoint expectations (a sibling module, the
     caller, or the regression-gate oracle itself may already reference the CURRENT filename).
 
-    Tolerates each repair's own return shape (`apply_port_coercion` returns a plain dict;
-    the other three return a `(dict, notes)` tuple) by unpacking exactly the way the build path
-    already does. Returns a NEW dict (never mutates ``modules``). Never raises -- on ANY
-    internal failure (an import error, an unexpected exception from a repair) returns ``modules``
-    completely UNCHANGED, so a repair-chain defect can never itself cause work to be lost."""
+    Tolerates each repair's own return shape (`apply_port_coercion` and `apply_endpoint_shape`
+    return a plain dict; the other three return a `(dict, notes)` tuple) by unpacking exactly the
+    way the build path already does. Returns a NEW dict (never mutates ``modules``). Never raises
+    -- on ANY internal failure (an import error, an unexpected exception from a repair) returns
+    ``modules`` completely UNCHANGED, so a repair-chain defect can never itself cause work to be
+    lost."""
     fallback = modules if isinstance(modules, dict) else {}
     try:
         result = dict(modules) if isinstance(modules, dict) else {}
         from harness.signature_contract import apply_signature_contract
         result, _sig_notes = apply_signature_contract(result, spec_text)
+        # #EXT-036-REQ-53 Start
+        # TASK-66: deterministic endpoint-shape contract repair (REQ-53), wired into the MODIFY
+        # chain in the SAME relative position as the build path (harness.endpoint_shape module
+        # docstring has the measured motivation) -- a regenerated MODIFY candidate can reintroduce
+        # the same path-segment-count guard bug the build path already fixes for CREATE.
+        from harness.endpoint_shape import apply_endpoint_shape
+        result = apply_endpoint_shape(result, spec_text)
+        # #EXT-036-REQ-53 End
         from harness.port_coercion import apply_port_coercion
         result = apply_port_coercion(result)
         from harness.http_service_scaffold import apply_http_service_scaffold
