@@ -2060,3 +2060,216 @@ WALLET_NO_OVERDRAW_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(WALLET_NO_OVERDRAW_TASK)
 # #EXT-060-REQ-19 End
+
+
+# #EXT-060-REQ-20 Start
+# TASK-15: a SECOND LIFECYCLE-shaped task, in a NEW support/helpdesk vertical (not order/subscription)
+# -- graded by the ALREADY-LANDED "state_machine" oracle_kind dispatch REQ-13 lands (no new oracle
+# code: reuses `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine`
+# verbatim). The driven script exercises TWO distinct illegal transitions (resolving a ticket that
+# was never assigned, and reopening a ticket that was never closed) so a build that guards only ONE
+# of those, or that lets any action fire from any state, is independently caught. The trial-lapse
+# naming lesson from REQ-18 applies here too: no leaf-fingerprinting tokens (queue/cache/ttl/expire/
+# stack/ring/buffer/memoize) appear anywhere in this sentence -- confirmed via `leaf_for_spec`.
+_TICKET_WORKFLOW_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named ticket.py, "
+    "using only the standard library, defining exactly one public class named `Ticket` modeling a "
+    "support/helpdesk ticket workflow state machine. `Ticket()` (no constructor arguments) creates "
+    "a new ticket whose initial state is the string `\"open\"`. The class exposes a real Python "
+    "`@property` named `state` that returns the ticket's current state as one of the strings "
+    "`\"open\"`, `\"assigned\"`, `\"pending_customer\"`, `\"resolved\"`, or `\"closed\"`. It defines "
+    "exactly six zero-argument action methods: `assign()` moves the ticket from `\"open\"` to "
+    "`\"assigned\"` (a support agent takes ownership); `await_customer()` moves it from "
+    "`\"assigned\"` to `\"pending_customer\"` (the agent is waiting on more information from the "
+    "customer); `respond()` moves it from `\"pending_customer\"` back to `\"assigned\"` (the "
+    "customer has replied); `resolve()` moves it from `\"assigned\"` to `\"resolved\"` (the agent "
+    "has fixed the issue); `close()` moves it from `\"resolved\"` to `\"closed\"`; `reopen()` moves "
+    "it from `\"closed\"` back to `\"open\"` (the ticket is reopened after being closed). Each of "
+    "these six methods is legal ONLY from the exact source state named above; calling any of them "
+    "from any OTHER current state (for example calling `resolve()` on a ticket that is still "
+    "`\"open\"` and has never been assigned to anyone, or calling `reopen()` on a ticket that is "
+    "`\"assigned\"` and was never closed) must instead raise `ValueError` and must leave the "
+    "ticket's `state` COMPLETELY UNCHANGED -- no partial mutation before the raise."
+)
+
+TICKET_WORKFLOW_TASK = RealSystemTask(
+    name="support-ticket-workflow-state-machine",
+    cls="ticket",
+    sentence=_TICKET_WORKFLOW_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "ticket",
+        "entity": "Ticket",
+        "spec": {
+            "states": ["open", "assigned", "pending_customer", "resolved", "closed"],
+            "initial": "open",
+            "transitions": {
+                "open:assign": "assigned",
+                "assigned:await_customer": "pending_customer",
+                "pending_customer:respond": "assigned",
+                "assigned:resolve": "resolved",
+                "resolved:close": "closed",
+                "closed:reopen": "open",
+            },
+            # Illegal resolve-while-still-unassigned FIRST (must be rejected), then the legal
+            # assign, then an illegal reopen from "assigned" (never closed -- must ALSO be
+            # rejected, a SECOND distinct illegal transition), then the full legal support path
+            # (await_customer -> respond -> resolve -> close -> reopen) back to "open".
+            "drive": [
+                {"action": "resolve", "expect": "reject"},
+                {"action": "assign", "expect": "accept"},
+                {"action": "reopen", "expect": "reject"},
+                {"action": "await_customer", "expect": "accept"},
+                {"action": "respond", "expect": "accept"},
+                {"action": "resolve", "expect": "accept"},
+                {"action": "close", "expect": "accept"},
+                {"action": "reopen", "expect": "accept"},
+            ],
+            "expect_final": "open",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(TICKET_WORKFLOW_TASK)
+# #EXT-060-REQ-20 End
+
+
+# #EXT-060-REQ-21 Start
+# TASK-16: a THIRD CONSERVATION-shaped task, in an events/venue-booking vertical (not inventory or
+# wallet) -- graded by the ALREADY-LANDED "conservation" oracle_kind dispatch REQ-15 lands (no new
+# oracle code: reuses `_grade_conservation` -> `harness.conservation_oracle.grade_conservation`
+# verbatim). Mirrors `INVENTORY_TASK`'s two-quantity (available/reserved) shape exactly, applied to
+# seat capacity rather than SKU stock, with TWO distinct illegal overbooking attempts (at the very
+# start, and again mid-sequence after a partial release) so a guard that only checks the initial
+# capacity, or that stops enforcing after any legal operation has occurred, is independently caught.
+_SEAT_BOOKING_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named booking.py, "
+    "using only the standard library, defining exactly one public class named `SeatBooking` "
+    "modeling seat reservations for a single event or venue with a fixed seating capacity. "
+    "`SeatBooking(total_seats)` (exactly one positional constructor argument, a non-negative "
+    "integer) creates seat tracking for that event whose `available_seats` start at `total_seats` "
+    "and whose `reserved_seats` start at `0`. It exposes two zero-argument reader methods, "
+    "`available_seats()` and `reserved_seats()`, each returning the current integer value of that "
+    "quantity. It defines two methods that each take one positional integer argument, `n`: "
+    "`reserve(n)` moves `n` seats from `available_seats` to `reserved_seats` (decreasing "
+    "`available_seats` by `n` and increasing `reserved_seats` by `n`) -- but if `n` is GREATER than "
+    "the CURRENT `available_seats` (an overbooking), it must instead raise `ValueError` and leave "
+    "BOTH `available_seats` and `reserved_seats` COMPLETELY UNCHANGED; `release(n)` moves `n` seats "
+    "back from `reserved_seats` to `available_seats` (increasing `available_seats` by `n` and "
+    "decreasing `reserved_seats` by `n`). The total of `available_seats` plus `reserved_seats` must "
+    "never change across any successful call -- seats are only ever moved between the two, never "
+    "created or destroyed."
+)
+
+SEAT_BOOKING_TASK = RealSystemTask(
+    name="seat-booking-no-double-book",
+    cls="booking",
+    sentence=_SEAT_BOOKING_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "booking",
+        "entity": "SeatBooking",
+        "spec": {
+            "quantities": ["available_seats", "reserved_seats"],
+            "initial": {"available_seats": 100, "reserved_seats": 0},
+            "construct_args": [100],
+            # Illegal overbooking at the very START (150 of 100 -- must be rejected), then two
+            # legal ops (reserve 60, release 20), then a SECOND illegal overbooking MID-sequence
+            # (reserving 70 when only 60 is available after the partial release -- proving the
+            # guard holds after legal ops have moved the balance too, not just at construction),
+            # then a final legal reserve landing on a concrete expect_final.
+            "drive": [
+                {"action": "reserve", "args": [150], "expect": "reject"},
+                {"action": "reserve", "args": [60], "expect": "accept",
+                 "deltas": {"available_seats": -60, "reserved_seats": 60}},
+                {"action": "release", "args": [20], "expect": "accept",
+                 "deltas": {"available_seats": 20, "reserved_seats": -20}},
+                {"action": "reserve", "args": [70], "expect": "reject"},
+                {"action": "reserve", "args": [50], "expect": "accept",
+                 "deltas": {"available_seats": -50, "reserved_seats": 50}},
+            ],
+            "expect_final": {"available_seats": 10, "reserved_seats": 90},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(SEAT_BOOKING_TASK)
+# #EXT-060-REQ-21 End
+
+
+# #EXT-060-REQ-22 Start
+# TASK-17: a SECOND FINTECH-LEDGER-shaped task, in an accounts-receivable/invoicing vertical (not
+# the general cash/revenue/expense journal REQ-17 already covers) -- graded by the ALREADY-LANDED
+# "double_entry" oracle_kind dispatch REQ-17 lands (no new oracle code: reuses
+# `_grade_double_entry` -> `harness.double_entry_oracle.grade_double_entry` verbatim). The driven
+# script issues two customer invoices (debit accounts_receivable / credit revenue) and receives one
+# payment (debit cash / credit accounts_receivable) alongside one unbalanced-posting rejection --
+# `expect_final` is hand-derived from the debit-positive/credit-negative shadow math (verified via
+# `harness.double_entry_oracle.validate_spec` and an end-to-end `grade_double_entry` dry run against
+# both a correct and a broken fixture before this task was added to the roster).
+_INVOICE_AR_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named invoicing.py, "
+    "using only the standard library, defining exactly one public class named `Invoicing` modeling "
+    "an accounts-receivable double-entry ledger over exactly three named accounts: "
+    "`accounts_receivable`, `revenue`, and `cash`. `Invoicing()` (no constructor arguments) creates "
+    "a ledger where all three accounts start at a balance of `0` (an exact integer number of "
+    "cents). It exposes three zero-argument reader methods, `accounts_receivable()`, `revenue()`, "
+    "and `cash()`, each returning that account's CURRENT integer balance in cents. It defines "
+    "exactly one method, `post(legs)`, taking one positional argument -- a list of leg dicts, each "
+    "either `{\"account\": <name>, \"debit\": <cents>}` or `{\"account\": <name>, \"credit\": "
+    "<cents>}`, where `<name>` is one of `accounts_receivable`/`revenue`/`cash` and `<cents>` is a "
+    "positive integer. Posting a leg to an account with `debit` ADDS that many cents to the "
+    "account's balance; posting a leg with `credit` SUBTRACTS that many cents from the account's "
+    "balance. Issuing a customer invoice is recorded by posting legs that DEBIT "
+    "`accounts_receivable` and CREDIT `revenue` for the same amount; later receiving payment "
+    "against that invoice is recorded by posting legs that DEBIT `cash` and CREDIT "
+    "`accounts_receivable` for the same amount. If the legs in one call to `post(legs)` are "
+    "BALANCED (the sum of every `debit` amount in the list equals the sum of every `credit` amount "
+    "in the list), `post(legs)` must apply EVERY leg to its account's balance and return normally. "
+    "If the legs are UNBALANCED (the sum of the `debit` amounts does not equal the sum of the "
+    "`credit` amounts), `post(legs)` must instead raise `ValueError` and leave EVERY account's "
+    "balance COMPLETELY UNCHANGED -- no partial posting of any leg from an unbalanced call."
+)
+
+INVOICE_AR_TASK = RealSystemTask(
+    name="invoice-accounts-receivable-ledger",
+    cls="invoice",
+    sentence=_INVOICE_AR_SENTENCE,
+    oracle_kind="double_entry",
+    oracle_spec={
+        "module": "invoicing",
+        "entity": "Invoicing",
+        "spec": {
+            "accounts": ["accounts_receivable", "revenue", "cash"],
+            "initial": {"accounts_receivable": 0, "revenue": 0, "cash": 0},
+            "post_method": "post",
+            # Unbalanced entry FIRST (debit accounts_receivable 10000, credit revenue 9000 -- off
+            # by 1000 cents, must be rejected), then two balanced invoice postings ($500.00 and
+            # $300.00, each debiting accounts_receivable / crediting revenue), then one balanced
+            # payment posting ($500.00, debiting cash / crediting accounts_receivable) -- landing
+            # on accounts_receivable=30000, revenue=-80000, cash=50000 (debit-positive/
+            # credit-negative sign convention, matching DOUBLE_ENTRY_LEDGER_TASK's own convention).
+            "drive": [
+                {"legs": [{"account": "accounts_receivable", "debit": 10000},
+                          {"account": "revenue", "credit": 9000}],
+                 "expect": "reject"},
+                {"legs": [{"account": "accounts_receivable", "debit": 50000},
+                          {"account": "revenue", "credit": 50000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "accounts_receivable", "debit": 30000},
+                          {"account": "revenue", "credit": 30000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "cash", "debit": 50000},
+                          {"account": "accounts_receivable", "credit": 50000}],
+                 "expect": "accept"},
+            ],
+            "expect_final": {"accounts_receivable": 30000, "revenue": -80000, "cash": 50000},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INVOICE_AR_TASK)
+# #EXT-060-REQ-22 End

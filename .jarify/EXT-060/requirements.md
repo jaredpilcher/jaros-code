@@ -553,3 +553,105 @@ exceeds the current `balance_cents` — `balance_cents` can never go negative (a
       fixture is accepted by `grade_real_system_task(WALLET_NO_OVERDRAW_TASK, ...)`; a BROKEN
       fixture (allows an overdraw, e.g. `debit()` with no guard) is rejected; the task is a member
       of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-20] Third LIFECYCLE CREATE task, in a support/helpdesk vertical (ticket workflow state machine)
+
+A THIRD held-out LIFECYCLE-shaped task, graded by the ALREADY-LANDED `oracle_kind="state_machine"`
+dispatch REQ-13 lands (no new oracle code — reuses `_grade_state_machine` ->
+`harness.state_machine_oracle.grade_state_machine` verbatim). `TICKET_WORKFLOW_TASK`
+(`RealSystemTask`, `cls="ticket"`, `oracle_kind="state_machine"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `Ticket` class in
+`ticket.py` modeling a support/helpdesk ticket with states `open`/`assigned`/`pending_customer`/
+`resolved`/`closed`, action methods `assign()`/`await_customer()`/`respond()`/`resolve()`/
+`close()`/`reopen()` that mutate state along the legal support path (`open→assigned`,
+`assigned→pending_customer`, `pending_customer→assigned`, `assigned→resolved`,
+`resolved→closed`, `closed→open`), a real `state` property, and TWO distinct illegal transitions
+(resolving a ticket that was never assigned, and reopening a ticket that was never closed) raising
+`ValueError` with state left unchanged.
+
+#### Acceptance Criteria
+- [x] `TICKET_WORKFLOW_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the ticket
+      contract (filename `ticket.py`, the five states, the six action methods and their legal
+      source states, the `ValueError`-on-illegal-transition + unchanged-state contract, the
+      `state` property) with every oracle-checked value (the states/transitions table, the driven
+      accept/reject script, `expect_final`) derivable from that same visible sentence (no hidden
+      key, no leak).
+- [x] The driven script exercises TWO distinct illegal transitions (rejected) alongside the full
+      legal support path — a build that guards only one of the two, or that allows either illegal
+      transition, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No leaf-fingerprinting token (queue/cache/ttl/
+      expire/stack/ring/buffer/memoize) appears anywhere in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Ticket`
+      fixture is accepted by `grade_real_system_task(TICKET_WORKFLOW_TASK, ...)`; a BROKEN
+      fixture (allows an illegal transition, e.g. unguarded `resolve()`/`reopen()`) is rejected;
+      the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-21] Third CONSERVATION CREATE task, in an events/venue-booking vertical (seat booking, no double-book)
+
+A THIRD held-out CONSERVATION-shaped task, graded by the ALREADY-LANDED `oracle_kind=
+"conservation"` dispatch REQ-15 lands (no new oracle code — reuses `_grade_conservation` ->
+`harness.conservation_oracle.grade_conservation` verbatim). `SEAT_BOOKING_TASK`
+(`RealSystemTask`, `cls="booking"`, `oracle_kind="conservation"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `SeatBooking` class
+in `booking.py` constructed with a fixed total-seats capacity, `reserve(n)`/`release(n)` methods
+that move seats between `available_seats` and `reserved_seats` (a structural mirror pair so the
+conservation law holds), and `reserve(n)` raising `ValueError` (no mutation) when `n` exceeds the
+current `available_seats` — seats can never be overbooked.
+
+#### Acceptance Criteria
+- [x] `SEAT_BOOKING_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the booking
+      contract (filename `booking.py`, the constructor's total-seats argument,
+      `reserve(n)`/`release(n)` semantics, the `ValueError`-on-overbooking-attempt +
+      unchanged-quantities contract, the `available_seats()`/`reserved_seats()` readers) with
+      every oracle-checked value (the initial capacity, the driven accept/reject script and its
+      per-op deltas, `expect_final`) derivable from that same visible sentence (no hidden key, no
+      leak).
+- [x] The driven script exercises TWO distinct illegal overbooking attempts (rejected, quantities
+      unchanged) — one at the very start against the initial capacity, and one mid-sequence after
+      a partial release — alongside legal reserve/release operations with their declared
+      per-quantity deltas; a build that only checks capacity at construction, or that allows
+      either overbooking, or that silently loses/creates seats on a legal op, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `SeatBooking`
+      fixture is accepted by `grade_real_system_task(SEAT_BOOKING_TASK, ...)`; a BROKEN fixture
+      (allows an overbook, e.g. `reserve()` with no guard) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-22] Second FINTECH-LEDGER CREATE task, in an accounts-receivable/invoicing vertical
+
+A SECOND held-out FINTECH-shaped task, graded by the ALREADY-LANDED `oracle_kind="double_entry"`
+dispatch REQ-17 lands (no new oracle code — reuses `_grade_double_entry` ->
+`harness.double_entry_oracle.grade_double_entry` verbatim). `INVOICE_AR_TASK`
+(`RealSystemTask`, `cls="invoice"`, `oracle_kind="double_entry"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `Invoicing` class
+in `invoicing.py` over three named accounts (`accounts_receivable`, `revenue`, `cash`), a
+`post(legs)` method that applies a balanced list of debit/credit legs to each account's
+exact-integer-cents balance (issuing an invoice debits `accounts_receivable`/credits `revenue`;
+receiving payment debits `cash`/credits `accounts_receivable`), and raises `ValueError` (no
+mutation) when the legs are unbalanced.
+
+#### Acceptance Criteria
+- [x] `INVOICE_AR_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      accounts-receivable contract (filename `invoicing.py`, the three named accounts, the
+      `post(legs)` debit/credit-leg contract, the invoice-issuance and payment-receipt posting
+      conventions, the `ValueError`-on-unbalanced-entry + unchanged-balances contract, the three
+      zero-argument balance readers) with every oracle-checked value (the accounts, the driven
+      balanced/unbalanced posting script and its expected balances, `expect_final`) derivable from
+      that same visible sentence (no hidden key, no leak).
+- [x] The driven script exercises BOTH an illegal unbalanced posting (rejected, every account
+      balance unchanged) and multiple legal balanced postings representing two invoices issued and
+      one payment received — a build that only ever exercises the legal path, or that allows the
+      unbalanced posting, or that posts a balanced entry to the wrong side of an account, is
+      caught. `expect_final` is verified consistent with the debit-positive/credit-negative shadow
+      math via `harness.double_entry_oracle.validate_spec` and an end-to-end dry run.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Invoicing`
+      fixture is accepted by `grade_real_system_task(INVOICE_AR_TASK, ...)`; a BROKEN fixture
+      (posts an unbalanced entry with no guard) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.

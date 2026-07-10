@@ -477,3 +477,101 @@
 
 #### Implements
 - [REQ-19] Second CONSERVATION CREATE task, in a fintech vertical (wallet, no-overdraw balance)
+
+### [TASK-15] Third LIFECYCLE CREATE task, in a support/helpdesk vertical (ticket workflow state machine) (REQ-20)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `TICKET_WORKFLOW_TASK` (`RealSystemTask`,
+   `cls="ticket"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a
+   stdlib-only single-file `Ticket` class in `ticket.py` (states `open`/`assigned`/
+   `pending_customer`/`resolved`/`closed`, action methods `assign()`/`await_customer()`/
+   `respond()`/`resolve()`/`close()`/`reopen()`, a real `state` property, `ValueError` raised on
+   any illegal transition with state left unchanged). Reuse the ALREADY-LANDED
+   `_grade_state_machine` dispatch (REQ-13) -- no new oracle code. `oracle_spec.spec` drives:
+   `resolve` from `open` (reject), `assign` (accept -> `assigned`), `reopen` from `assigned`
+   (reject -- a SECOND distinct illegal transition), `await_customer` (accept ->
+   `pending_customer`), `respond` (accept -> `assigned`), `resolve` (accept -> `resolved`),
+   `close` (accept -> `closed`), `reopen` (accept -> `open`); `expect_final="open"`. Confirm via
+   `harness.graph_dsl.leaf_for_spec` that no leaf fingerprint fires for the sentence (avoid
+   queue/cache/ttl/expire/stack/ring/buffer/memoize tokens).
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as every other task --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value
+   is derivable from the visible sentence contract).
+3. Add `tests/test_ext060_ticket_booking_invoice.py` (OFFLINE, no model/Jetson, hand-written
+   fixtures only): a CORRECT `Ticket` fixture is accepted by
+   `grade_real_system_task(TICKET_WORKFLOW_TASK, ...)`; a BROKEN fixture (illegal transitions
+   allowed, e.g. unguarded `resolve()`/`reopen()`) is rejected; leaves-OFF holds
+   (`leaf_for_spec(TICKET_WORKFLOW_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_ticket_booking_invoice.py tests/test_ext060_lifecycle_inventory.py
+   -q`; confirm green (offline only -- do not run the full suite). Update `.jarify/EXT-060/index.json`
+   (REQ-20 ranges, via `jarify-manage-links`) and flip the REQ-20 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-20] Third LIFECYCLE CREATE task, in a support/helpdesk vertical (ticket workflow state machine)
+
+### [TASK-16] Third CONSERVATION CREATE task, in an events/venue-booking vertical (seat booking, no double-book) (REQ-21)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `SEAT_BOOKING_TASK` (`RealSystemTask`, `cls="booking"`,
+   `oracle_kind="conservation"`) with a contract-exact sentence for a stdlib-only single-file
+   `SeatBooking` class in `booking.py` (constructor takes a fixed total-seats capacity,
+   `reserve(n)`/`release(n)` methods, zero-argument `available_seats()`/`reserved_seats()`
+   readers, `reserve(n)` raising `ValueError` with quantities left unchanged when `n` exceeds
+   what is available, seats conserved). Reuse the ALREADY-LANDED `_grade_conservation` dispatch
+   (REQ-15) -- no new oracle code. `oracle_spec.spec` drives an illegal overbooking `reserve` at
+   the start (reject), a legal `reserve` and a legal `release` each with declared per-quantity
+   `deltas`, a SECOND illegal overbooking `reserve` mid-sequence after the partial release
+   (reject -- proving the guard holds after legal ops have moved the balance too), then a final
+   legal `reserve`, ending on a concrete `expect_final`.
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as every other task --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value
+   is derivable from the visible sentence contract).
+3. Extend `tests/test_ext060_ticket_booking_invoice.py` (same file TASK-15 creates, OFFLINE, no
+   model/Jetson): a CORRECT `SeatBooking` fixture is accepted by
+   `grade_real_system_task(SEAT_BOOKING_TASK, ...)`; a BROKEN fixture (allows an overbook, e.g.
+   unguarded `reserve()`) is rejected; leaves-OFF holds
+   (`leaf_for_spec(SEAT_BOOKING_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_ticket_booking_invoice.py tests/test_ext060_lifecycle_inventory.py
+   -q`; confirm green (offline only -- do not run the full suite). Update `.jarify/EXT-060/index.json`
+   (REQ-21 ranges, via `jarify-manage-links`) and flip the REQ-21 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-21] Third CONSERVATION CREATE task, in an events/venue-booking vertical (seat booking, no double-book)
+
+### [TASK-17] Second FINTECH-LEDGER CREATE task, in an accounts-receivable/invoicing vertical (REQ-22)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `INVOICE_AR_TASK` (`RealSystemTask`, `cls="invoice"`,
+   `oracle_kind="double_entry"`) with a contract-exact sentence for a stdlib-only single-file
+   `Invoicing` class in `invoicing.py` (three named accounts `accounts_receivable`/`revenue`/
+   `cash`, zero-argument readers, a `post(legs)` method applying balanced debit/credit legs --
+   issuing an invoice debits `accounts_receivable`/credits `revenue`; receiving payment debits
+   `cash`/credits `accounts_receivable` -- raising `ValueError` with every balance left unchanged
+   when the legs are unbalanced). Reuse the ALREADY-LANDED `_grade_double_entry` dispatch
+   (REQ-17) -- no new oracle code. `oracle_spec.spec` drives an illegal unbalanced posting
+   (reject) first, then two balanced invoice postings ($500.00 and $300.00) and one balanced
+   payment posting ($500.00), ending on a concrete `expect_final`
+   (`accounts_receivable=30000, revenue=-80000, cash=50000` cents, debit-positive/credit-negative
+   convention). Validate the spec via `harness.double_entry_oracle.validate_spec` and an
+   end-to-end `grade_double_entry` dry run against both a correct and a broken fixture before
+   adding the task to the roster.
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as every other task --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value
+   is derivable from the visible sentence contract).
+3. Extend `tests/test_ext060_ticket_booking_invoice.py` (same file TASK-15/16 create, OFFLINE, no
+   model/Jetson): a CORRECT `Invoicing` fixture is accepted by
+   `grade_real_system_task(INVOICE_AR_TASK, ...)`; a BROKEN fixture (posts an unbalanced entry
+   with no guard) is rejected; leaves-OFF holds (`leaf_for_spec(INVOICE_AR_TASK.sentence) is
+   None`); the task is a member of `REAL_SYSTEMS_TASKS`; assert `REAL_SYSTEMS_TASKS` grew by
+   exactly the three REQ-20/21/22 tasks (length 12 -> 15).
+4. Run `python -m pytest tests/test_ext060_ticket_booking_invoice.py tests/test_ext060*.py -q`;
+   confirm green (offline only -- do not run the full suite). Update `.jarify/EXT-060/index.json`
+   (REQ-22 ranges, via `jarify-manage-links`) and flip the REQ-22 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-22] Second FINTECH-LEDGER CREATE task, in an accounts-receivable/invoicing vertical

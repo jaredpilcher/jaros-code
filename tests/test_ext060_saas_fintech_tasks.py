@@ -250,7 +250,11 @@ def test_wallet_no_overdraw_task_is_leaves_off_and_a_roster_member():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_two_new_tasks():
-    assert len(REAL_SYSTEMS_TASKS) == 12
+    # `>=` rather than `==`: later tasks (e.g. REQ-20/21/22) append further roster members after
+    # this test was written, so this only asserts REQ-18/REQ-19's own contribution stayed intact
+    # (never a regression that shrinks the roster or removes these two tasks) -- a strict `==`
+    # would go stale every time the roster grows, exactly the brittleness this fix removes.
+    assert len(REAL_SYSTEMS_TASKS) >= 12
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "subscription-lifecycle-state-machine" in names
     assert "wallet-no-overdraw" in names
