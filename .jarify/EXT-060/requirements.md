@@ -486,3 +486,70 @@ holds across every accepted entry.
       fixture is accepted by `grade_real_system_task(DOUBLE_ENTRY_LEDGER_TASK, ...)`; a BROKEN
       fixture (posts an unbalanced entry with no guard) is rejected; the task is a member of
       `REAL_SYSTEMS_TASKS`.
+
+### [REQ-18] Second LIFECYCLE CREATE task, in a NEW SaaS-billing vertical (subscription state machine)
+
+A SECOND held-out LIFECYCLE-shaped task, graded by the ALREADY-LANDED `oracle_kind="state_machine"`
+dispatch REQ-13 lands (no new oracle code — reuses `_grade_state_machine` ->
+`harness.state_machine_oracle.grade_state_machine` verbatim). `SUBSCRIPTION_LIFECYCLE_TASK`
+(`RealSystemTask`, `cls="subscription"`, `oracle_kind="state_machine"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `Subscription` class
+in `subscription.py` modeling a SaaS billing subscription with states `trialing`/`active`/
+`past_due`/`canceled`/`expired`, action methods `activate()`/`payment_failed()`/`recover()`/
+`cancel()`/`lapse()` that mutate state along the legal billing path (`trialing→active`,
+`active→past_due`, `past_due→active`, `active`-or-`past_due`→`canceled`, `trialing→expired`), a
+real `state` property, and at least one illegal transition (e.g. cancelling a still-trialing
+subscription, or lapsing an already-canceled one) raising `ValueError` with state left unchanged.
+
+#### Acceptance Criteria
+- [x] `SUBSCRIPTION_LIFECYCLE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      subscription contract (filename `subscription.py`, the five states, the five action methods
+      and their legal source state(s), the `ValueError`-on-illegal-transition + unchanged-state
+      contract, the `state` property) with every oracle-checked value (the states/transitions
+      table, the driven accept/reject script, `expect_final`) derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] The driven script exercises AT LEAST ONE illegal transition (rejected) alongside the full
+      legal billing path — a build that only ever exercises the legal path, or that allows even
+      one illegal transition, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. (The sentence deliberately names the lapse
+      action `lapse()` rather than `expire()`/`expiry` — those tokens fingerprint the verified
+      `ttl-store` leaf in `harness.adt_oracle`'s keyword table and would falsely trip leaves-OFF
+      for an unrelated lifecycle class.)
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Subscription`
+      fixture is accepted by `grade_real_system_task(SUBSCRIPTION_LIFECYCLE_TASK, ...)`; a BROKEN
+      fixture (allows an illegal transition, e.g. unguarded `cancel()`) is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-19] Second CONSERVATION CREATE task, in a fintech vertical (wallet, no-overdraw balance)
+
+A SECOND held-out CONSERVATION-shaped task, graded by the ALREADY-LANDED `oracle_kind=
+"conservation"` dispatch REQ-15 lands (no new oracle code — reuses `_grade_conservation` ->
+`harness.conservation_oracle.grade_conservation` verbatim). `WALLET_NO_OVERDRAW_TASK`
+(`RealSystemTask`, `cls="wallet"`, `oracle_kind="conservation"`) is added to `REAL_SYSTEMS_TASKS`:
+a contract-exact sentence for a stdlib-only, single-file `Wallet` class in `wallet.py` constructed
+with an initial integer-cents balance, `credit(cents)`/`debit(cents)` methods that move cents
+between `balance_cents` and an internal `ledger_cents` bookkeeping counter (a structural mirror pair
+so the conservation law holds), and `debit(cents)` raising `ValueError` (no mutation) when `cents`
+exceeds the current `balance_cents` — `balance_cents` can never go negative (an overdraw).
+
+#### Acceptance Criteria
+- [x] `WALLET_NO_OVERDRAW_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      wallet contract (filename `wallet.py`, the constructor's initial-balance argument,
+      `credit(cents)`/`debit(cents)` semantics, the `ValueError`-on-overdraw-attempt +
+      unchanged-quantities contract, the `balance_cents()`/`ledger_cents()` readers) with every
+      oracle-checked value (the initial balance, the driven accept/reject script and its per-op
+      deltas, `expect_final`) derivable from that same visible sentence (no hidden key, no leak).
+- [x] The driven script exercises AT LEAST ONE illegal overdraw attempt (rejected, quantities
+      unchanged) both before and after legal credit/debit operations, plus legal credit/debit
+      operations with their declared per-quantity deltas — a build that only ever exercises the
+      legal path, or that allows the overdraw, or that silently loses/creates cents on a legal op,
+      is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Wallet`
+      fixture is accepted by `grade_real_system_task(WALLET_NO_OVERDRAW_TASK, ...)`; a BROKEN
+      fixture (allows an overdraw, e.g. `debit()` with no guard) is rejected; the task is a member
+      of `REAL_SYSTEMS_TASKS`.

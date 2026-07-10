@@ -413,3 +413,67 @@
 
 #### Implements
 - [REQ-17] `oracle_kind="double_entry"` + first FINTECH-LEDGER CREATE task (double-entry balance)
+
+### [TASK-13] Second LIFECYCLE CREATE task, in a NEW SaaS-billing vertical (subscription state machine) (REQ-18)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `SUBSCRIPTION_LIFECYCLE_TASK` (`RealSystemTask`,
+   `cls="subscription"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a
+   stdlib-only single-file `Subscription` class in `subscription.py` (states `trialing`/`active`/
+   `past_due`/`canceled`/`expired`, action methods `activate()`/`payment_failed()`/`recover()`/
+   `cancel()`/`lapse()`, a real `state` property, `ValueError` raised on any illegal transition
+   with state left unchanged). Reuse the ALREADY-LANDED `_grade_state_machine` dispatch (REQ-13) --
+   no new oracle code. `oracle_spec.spec` drives: `cancel` from `trialing` (reject), `activate`
+   (accept -> `active`), `payment_failed` (accept -> `past_due`), `recover` (accept -> `active`),
+   `cancel` (accept -> `canceled`), `lapse` from `canceled` (reject); `expect_final="canceled"`.
+   Name the trial-lapse action `lapse()`, NOT `expire()`/`expiry` -- those tokens trip
+   `harness.adt_oracle`'s `ttl-store` keyword fingerprint (`leaf_for_spec` would falsely classify
+   this unrelated lifecycle sentence as the verified `ttl-store` leaf, breaking leaves-OFF).
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as every other task --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value
+   is derivable from the visible sentence contract).
+3. Add `tests/test_ext060_saas_fintech_tasks.py` (OFFLINE, no model/Jetson, hand-written fixtures
+   only): a CORRECT `Subscription` fixture is accepted by
+   `grade_real_system_task(SUBSCRIPTION_LIFECYCLE_TASK, ...)`; a BROKEN fixture (an illegal
+   transition allowed, e.g. unguarded `cancel()`) is rejected; leaves-OFF holds
+   (`leaf_for_spec(SUBSCRIPTION_LIFECYCLE_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+4. Run `python -m pytest tests/test_ext060_saas_fintech_tasks.py tests/test_ext060_lifecycle_inventory.py
+   -q`; confirm green (offline only -- do not run the full suite). Update `.jarify/EXT-060/index.json`
+   (REQ-18 ranges, via `jarify-manage-links`) and flip the REQ-18 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-18] Second LIFECYCLE CREATE task, in a NEW SaaS-billing vertical (subscription state machine)
+
+### [TASK-14] Second CONSERVATION CREATE task, in a fintech vertical (wallet, no-overdraw balance) (REQ-19)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `WALLET_NO_OVERDRAW_TASK` (`RealSystemTask`,
+   `cls="wallet"`, `oracle_kind="conservation"`) with a contract-exact sentence for a stdlib-only
+   single-file `Wallet` class in `wallet.py` (constructor takes an initial integer-cents balance,
+   `credit(cents)`/`debit(cents)` methods, zero-argument `balance_cents()`/`ledger_cents()` readers,
+   `debit(cents)` raising `ValueError` with quantities left unchanged when `cents` exceeds the
+   current `balance_cents`, cents conserved between `balance_cents` and the internal `ledger_cents`
+   mirror counter). Reuse the ALREADY-LANDED `_grade_conservation` dispatch (REQ-15) -- no new
+   oracle code. `oracle_spec.spec` drives an illegal overdraw `debit` (reject), then a legal
+   `credit` and a legal `debit` each with declared per-quantity `deltas`, then a SECOND illegal
+   overdraw `debit` mid-sequence (proving the guard holds after legal ops have moved the balance
+   too), ending on a concrete `expect_final`.
+2. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (same two checks as every other task --
+   static `leaf_for_spec` + post-build `build_path` check) + leak-free (every oracle-chosen value
+   is derivable from the visible sentence contract).
+3. Extend `tests/test_ext060_saas_fintech_tasks.py` (same file TASK-13 creates, OFFLINE, no
+   model/Jetson): a CORRECT `Wallet` fixture is accepted by
+   `grade_real_system_task(WALLET_NO_OVERDRAW_TASK, ...)`; a BROKEN fixture (allows an overdraw,
+   e.g. unguarded `debit()`) is rejected; leaves-OFF holds
+   (`leaf_for_spec(WALLET_NO_OVERDRAW_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`; assert `REAL_SYSTEMS_TASKS` grew by exactly the two REQ-18/REQ-19 tasks
+   (length 10 -> 12).
+4. Run `python -m pytest tests/test_ext060_saas_fintech_tasks.py tests/test_ext060_lifecycle_inventory.py
+   -q`; confirm green (offline only -- do not run the full suite). Update `.jarify/EXT-060/index.json`
+   (REQ-19 ranges, via `jarify-manage-links`) and flip the REQ-19 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-19] Second CONSERVATION CREATE task, in a fintech vertical (wallet, no-overdraw balance)

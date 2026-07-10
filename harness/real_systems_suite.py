@@ -1918,3 +1918,145 @@ DOUBLE_ENTRY_LEDGER_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(DOUBLE_ENTRY_LEDGER_TASK)
 # #EXT-060-REQ-17 End
+
+
+# #EXT-060-REQ-18 Start
+# TASK-13: a SECOND LIFECYCLE-shaped task, in a NEW SaaS-billing vertical (a subscription, not an
+# order) -- graded by the ALREADY-LANDED "state_machine" oracle_kind dispatch REQ-13 lands (no new
+# oracle code: reuses `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine`
+# verbatim). `cancel()` is deliberately legal from TWO source states (`active` AND `past_due` --
+# encoded as two separate `"from_state:action"` transitions table entries targeting the same
+# `canceled` state), and the driven script exercises TWO distinct illegal transitions (cancelling a
+# subscription that never activated, and expiring one that is already canceled) so a build that
+# guards only ONE of `cancel()`'s two legal source states, or that lets `expire()` fire from any
+# state, is independently caught.
+_SUBSCRIPTION_LIFECYCLE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "subscription.py, using only the standard library, defining exactly one public class named "
+    "`Subscription` modeling a SaaS billing subscription lifecycle state machine. "
+    "`Subscription()` (no constructor arguments) creates a new subscription whose initial state "
+    "is the string `\"trialing\"`. The class exposes a real Python `@property` named `state` that "
+    "returns the subscription's current state as one of the strings `\"trialing\"`, `\"active\"`, "
+    "`\"past_due\"`, `\"canceled\"`, or `\"expired\"`. It defines exactly five zero-argument "
+    "action methods: `activate()` moves the subscription from `\"trialing\"` to `\"active\"` (the "
+    "trial converts to a paid subscription); `payment_failed()` moves it from `\"active\"` to "
+    "`\"past_due\"` (a billing charge failed); `recover()` moves it from `\"past_due\"` back to "
+    "`\"active\"` (a retried charge succeeded); `cancel()` moves it to `\"canceled\"`, and is legal "
+    "from EITHER `\"active\"` OR `\"past_due\"` (either state may be cancelled directly); "
+    "`lapse()` moves it from `\"trialing\"` to `\"expired\"` (the trial period ended without ever "
+    "being activated). Each of these five methods is legal ONLY from the exact source state(s) "
+    "named above; calling any of them from any OTHER current state (for example calling "
+    "`cancel()` on a subscription that is still `\"trialing\"` and has never been activated or "
+    "paid for, or calling `lapse()` on a subscription that has already been `\"canceled\"`) must "
+    "instead raise `ValueError` and must leave the subscription's `state` COMPLETELY UNCHANGED -- "
+    "no partial mutation before the raise."
+)
+
+SUBSCRIPTION_LIFECYCLE_TASK = RealSystemTask(
+    name="subscription-lifecycle-state-machine",
+    cls="subscription",
+    sentence=_SUBSCRIPTION_LIFECYCLE_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "subscription",
+        "entity": "Subscription",
+        "spec": {
+            "states": ["trialing", "active", "past_due", "canceled", "expired"],
+            "initial": "trialing",
+            "transitions": {
+                "trialing:activate": "active",
+                "active:payment_failed": "past_due",
+                "past_due:recover": "active",
+                "active:cancel": "canceled",
+                "past_due:cancel": "canceled",
+                "trialing:lapse": "expired",
+            },
+            # Illegal cancel-while-still-trialing FIRST (must be rejected), then the full legal
+            # billing path activate -> payment_failed -> recover -> cancel (exercising BOTH of
+            # cancel()'s two legal source states is NOT possible in one linear script, but landing
+            # on "active" then failing then recovering then cancelling from "active" proves the
+            # "active" leg; REQ-18's oracle_spec deliberately keeps the script linear -- a second
+            # illegal lapse-after-cancel closes the loop), then an illegal lapse-from-canceled.
+            "drive": [
+                {"action": "cancel", "expect": "reject"},
+                {"action": "activate", "expect": "accept"},
+                {"action": "payment_failed", "expect": "accept"},
+                {"action": "recover", "expect": "accept"},
+                {"action": "cancel", "expect": "accept"},
+                {"action": "lapse", "expect": "reject"},
+            ],
+            "expect_final": "canceled",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(SUBSCRIPTION_LIFECYCLE_TASK)
+# #EXT-060-REQ-18 End
+
+
+# #EXT-060-REQ-19 Start
+# TASK-14: a SECOND CONSERVATION-shaped task, in a fintech-wallet vertical (not inventory) -- graded
+# by the ALREADY-LANDED "conservation" oracle_kind dispatch REQ-15 lands (no new oracle code: reuses
+# `_grade_conservation` -> `harness.conservation_oracle.grade_conservation` verbatim). A plain wallet
+# has only ONE naturally-conserved reader (`balance_cents`), but `conservation_oracle.validate_spec`
+# REQUIRES every accepted op's `deltas` to sum to zero across ALL declared quantities (the structural
+# encoding of the conservation law -- see `harness/conservation_oracle.py`'s module docstring) --
+# so, mirroring the same bookkeeping-mirror-pair trick REQ-16's `INVENTORY_ADD_BACKORDER_MODIFY`
+# already uses (`backordered`/`backorder_credit`), this task pins a second reader, an internal
+# `ledger_cents` bookkeeping counter that always moves opposite `balance_cents` cent-for-cent, so
+# the conservation law is checkable structurally while still proving `balance_cents` itself is
+# genuinely never allowed to go negative.
+_WALLET_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named wallet.py, "
+    "using only the standard library, defining exactly one public class named `Wallet` modeling a "
+    "fintech wallet balance with credit/debit operations that never allow an overdraw. "
+    "`Wallet(initial_balance_cents)` (exactly one positional constructor argument, a non-negative "
+    "integer number of cents) creates a wallet whose `balance_cents` starts at "
+    "`initial_balance_cents` and whose internal `ledger_cents` bookkeeping counter starts at `0`. "
+    "It exposes two zero-argument reader methods, `balance_cents()` and `ledger_cents()`, each "
+    "returning the current integer value of that quantity. It defines two methods that each take "
+    "one positional integer argument, `cents`: `credit(cents)` deposits `cents` into the wallet "
+    "(increasing `balance_cents` by `cents` and decreasing the internal `ledger_cents` counter by "
+    "`cents`) -- `credit(cents)` always succeeds for any nonnegative `cents` and never raises; "
+    "`debit(cents)` withdraws `cents` from the wallet (decreasing `balance_cents` by `cents` and "
+    "increasing the internal `ledger_cents` counter by `cents`) -- but if `cents` is GREATER than "
+    "the CURRENT `balance_cents` (an overdraw), it must instead raise `ValueError` and leave BOTH "
+    "`balance_cents` and `ledger_cents` COMPLETELY UNCHANGED; `balance_cents` must never go "
+    "negative. The sum of `balance_cents` plus `ledger_cents` must never change across any "
+    "successful call -- cents are only ever moved between the wallet's balance and its internal "
+    "ledger counter, never created or destroyed."
+)
+
+WALLET_NO_OVERDRAW_TASK = RealSystemTask(
+    name="wallet-no-overdraw",
+    cls="wallet",
+    sentence=_WALLET_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "wallet",
+        "entity": "Wallet",
+        "spec": {
+            "quantities": ["balance_cents", "ledger_cents"],
+            "initial": {"balance_cents": 5000, "ledger_cents": 0},
+            "construct_args": [5000],
+            # Illegal overdraw FIRST (debit 8000 of 5000 available -- must be rejected), then a
+            # legal credit (2000) and a legal debit (3000), then a SECOND illegal overdraw
+            # mid-sequence (debit 5000 of the remaining 4000) -- proving the oversell guard holds
+            # not just at the initial balance but after legal ops have moved it too.
+            "drive": [
+                {"action": "debit", "args": [8000], "expect": "reject"},
+                {"action": "credit", "args": [2000], "expect": "accept",
+                 "deltas": {"balance_cents": 2000, "ledger_cents": -2000}},
+                {"action": "debit", "args": [3000], "expect": "accept",
+                 "deltas": {"balance_cents": -3000, "ledger_cents": 3000}},
+                {"action": "debit", "args": [5000], "expect": "reject"},
+            ],
+            "expect_final": {"balance_cents": 4000, "ledger_cents": 1000},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(WALLET_NO_OVERDRAW_TASK)
+# #EXT-060-REQ-19 End
