@@ -349,7 +349,49 @@
       "endLine": 237
     }
   ],
+  "REQ-65": [
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 187,
+      "endLine": 282
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 381,
+      "endLine": 392
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 568,
+      "endLine": 580
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 679,
+      "endLine": 682
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 692,
+      "endLine": 694
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 722,
+      "endLine": 724
+    }
+  ],
   "REQ-51": [
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 395,
+      "endLine": 581
+    },
+    {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 684,
+      "endLine": 709
+    },
     {
       "file": "harness/system_builder.py",
       "startLine": 1128,
@@ -364,28 +406,18 @@
       "file": "tests/test_ext036_routing_contract.py",
       "startLine": 48,
       "endLine": 365
-    },
-    {
-      "file": "harness/http_service_scaffold.py",
-      "startLine": 267,
-      "endLine": 435
-    },
-    {
-      "file": "harness/http_service_scaffold.py",
-      "startLine": 534,
-      "endLine": 555
     }
   ],
   "REQ-48": [
     {
+      "file": "harness/http_service_scaffold.py",
+      "startLine": 51,
+      "endLine": 755
+    },
+    {
       "file": "harness/system_builder.py",
       "startLine": 3474,
       "endLine": 3491
-    },
-    {
-      "file": "harness/http_service_scaffold.py",
-      "startLine": 35,
-      "endLine": 596
     }
   ],
   "REQ-46": [
@@ -439,23 +471,6 @@
       "file": "harness/system_builder.py",
       "startLine": 4752,
       "endLine": 5223
-    }
-  ],
-  "REQ-50": [
-    {
-      "file": "harness/port_coercion.py",
-      "startLine": 26,
-      "endLine": 144
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3454,
-      "endLine": 3472
-    },
-    {
-      "file": "tests/test_ext036_port_coercion.py",
-      "startLine": 11,
-      "endLine": 197
     }
   ],
   "REQ-6": [
@@ -516,6 +531,23 @@
       "file": "harness/system_builder.py",
       "startLine": 3567,
       "endLine": 3607
+    }
+  ],
+  "REQ-50": [
+    {
+      "file": "harness/port_coercion.py",
+      "startLine": 26,
+      "endLine": 144
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3454,
+      "endLine": 3472
+    },
+    {
+      "file": "tests/test_ext036_port_coercion.py",
+      "startLine": 11,
+      "endLine": 197
     }
   ],
   "REQ-20": [

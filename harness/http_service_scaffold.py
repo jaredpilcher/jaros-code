@@ -31,6 +31,22 @@ already has a real serve loop (``serve_forever(``/``HTTPServer(``/``ThreadingHTT
 ``TCPServer(``) -- an already-working service, a Flask/FastAPI service (covered by the OTHER
 oracle path, ``harness.server_oracle.detect_web_service``), or a spec that isn't a web service at
 all, is left untouched. Never raises.
+
+REQ-65 (TASK-80) -- DB/state-init detection: MEASURED
+(`scratchpad/batch3_diag_urlshort_d1.out`) that ``url-shortener-http-service`` fails with
+"Remote end closed connection without response" because gemma's own ``route()``/dispatch module
+defines a correct zero-arg ``initialize_db()`` (creates the SQLite table) and calls it from ITS
+OWN (bypassed) ``start_server()``, but the deterministic scaffold's generated main never called
+it -- only ``HTTPServer(...).serve_forever()`` ran, so the first real request crashed with
+``sqlite3.OperationalError: no such table``. :func:`find_init_functions` now recognizes a
+confident, generic zero-arg init/setup export (name matching ``initialize_db``/``init_db``/
+``initialise_db``/``create_table(s)``/``setup_db``/``init_storage``/``setup_database``,
+case-insensitive) reachable from the routing/logic module(s), and both
+:func:`generate_skeleton` and :func:`generate_route_skeleton` now import + CALL each candidate
+ONCE, in module order, right BEFORE the server binds. The call is NOT wrapped in a
+try/except -- an init failure PROPAGATES, so a service whose init genuinely fails to start
+fails HONESTLY at startup rather than silently serving a broken handler. No candidates found ->
+the generated skeleton is byte-identical to before this requirement existed.
 """
 # #EXT-036-REQ-48 Start
 from __future__ import annotations
@@ -168,6 +184,104 @@ def find_dispatch_handler(modules: "dict[str, str] | None") -> "dict | None":
     return None
 
 
+# #EXT-036-REQ-65 Start
+# TASK-80: DB/state-init detection. MEASURED (`scratchpad/batch3_diag_urlshort_d1.out`):
+# url-shortener-http-service fails "Remote end closed connection without response" -- gemma's
+# own `route()`/dispatch module defines a correct zero-arg `initialize_db()` (creates the
+# SQLite table) and calls it from ITS OWN `start_server()`, but the deterministic scaffold's
+# generated main NEVER calls it -- only `HTTPServer(...).serve_forever()` runs, so the first
+# real request hits `sqlite3.OperationalError: no such table` and the handler dies mid-request
+# (a connection reset, not a clean HTTP error). The scaffold must carry forward the app's own
+# initialization, not just its routing.
+_INIT_FUNC_NAME_RE = re.compile(
+    r"^(initialize_db|init_db|initialise_db|create_tables?|setup_db|init_storage|"
+    r"setup_database)$",
+    re.IGNORECASE,
+)
+
+
+def _zero_required_args(func_node: "ast.FunctionDef") -> bool:
+    """True when ``func_node`` (a plain top-level function, no ``self``/``cls`` to drop) can
+    be called with zero arguments -- no positional/keyword arg lacking a default and no
+    required keyword-only arg. A trailing ``*args``/``**kwargs`` never makes a call
+    'required'. Mirrors :func:`_init_all_defaulted`'s logic, minus the ``self`` drop."""
+    n_params = len(func_node.args.args)
+    n_defaults = len(func_node.args.defaults)
+    required = max(0, n_params - n_defaults)
+    kwonly_required = sum(1 for d in (func_node.args.kw_defaults or []) if d is None)
+    return required == 0 and kwonly_required == 0
+
+
+def find_init_functions(modules: "dict[str, str] | None") -> "list[dict]":
+    """Best-effort, NEVER-RAISE AST scan of ``{filename: source}`` module SOURCES for
+    TOP-LEVEL, zero-arg DB/state-init exports the generated scaffold main must call before
+    ``serve_forever()`` (REQ-65): a top-level ``def`` whose name matches
+    ``_INIT_FUNC_NAME_RE`` (``initialize_db``/``init_db``/``initialise_db``/``create_table(s)``/
+    ``setup_db``/``init_storage``/``setup_database``, case-insensitive) AND is callable with
+    zero required arguments (:func:`_zero_required_args`). A same-named method NESTED inside a
+    class, or a nested/inner function, is ignored -- only a genuine top-level, module-scope
+    function counts (mirrors :func:`find_route_function`'s top-level-only discipline).
+
+    Returns candidates in MODULE ORDER (the dict's iteration order), then top-to-bottom source
+    order within a module, as ``{"module": <stem>, "callable": <name>}`` dicts -- the exact
+    order the generated skeleton calls them in. Empty list on no match or any malformed
+    input. Never raises."""
+    candidates: "list[dict]" = []
+    try:
+        items = list((modules or {}).items())
+    except (AttributeError, TypeError):
+        return candidates
+    for name, code in items:
+        try:
+            if not name or not str(name).endswith(".py") or not code:
+                continue
+            tree = ast.parse(str(code))
+        except (SyntaxError, TypeError, ValueError):
+            continue
+        stem = str(name)[:-3]
+        try:
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef) and _INIT_FUNC_NAME_RE.match(node.name):
+                    if _zero_required_args(node):
+                        candidates.append({"module": stem, "callable": node.name})
+        except Exception:
+            continue
+    return candidates
+
+
+def _init_calls_block(init_candidates: "list[dict] | None", entry_stem: "str | None") -> "tuple[str, str]":
+    """Given ordered init candidates (:func:`find_init_functions`'s return) and the STEM
+    (filename minus ``.py``) of the generated skeleton module itself, build
+    ``(import_lines, call_lines)``: ``import_lines`` are ``from <module> import <callable>\\n``
+    for every candidate whose module DIFFERS from ``entry_stem`` (deduplicated ``(module,
+    callable)`` pairs, first-seen order -- a candidate already defined IN the entry module
+    needs no import, it's already in scope once appended/generated there); ``call_lines`` are
+    4-space-indented ``<callable>()\\n`` calls, ONE PER CANDIDATE, in the given (module) order
+    -- 'call them in module order' when several exist. Returns ``("", "")`` for no candidates.
+    Deliberately NO try/except around each call -- an init failure must PROPAGATE (a service
+    whose init fails should fail to start honestly, not silently serve broken -- see REQ-65).
+    Never raises itself (malformed candidate entries are just skipped)."""
+    if not init_candidates:
+        return "", ""
+    import_lines: "list[str]" = []
+    seen: "set[tuple[str, str]]" = set()
+    call_lines: "list[str]" = []
+    for c in init_candidates:
+        try:
+            mod = c["module"]
+            fn_name = c["callable"]
+        except Exception:
+            continue
+        if mod != entry_stem:
+            key = (mod, fn_name)
+            if key not in seen:
+                import_lines.append(f"from {mod} import {fn_name}\n")
+                seen.add(key)
+        call_lines.append(f"    {fn_name}()\n")
+    return "".join(import_lines), "".join(call_lines)
+# #EXT-036-REQ-65 End
+
+
 _SKELETON_HEADER = (
     "import json\n"
     "import os\n"
@@ -225,7 +339,7 @@ class _ScaffoldHTTPHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
-    HTTPServer(("", port), _ScaffoldHTTPHandler).serve_forever()
+{init_calls}    HTTPServer(("", port), _ScaffoldHTTPHandler).serve_forever()
 '''
 
 
@@ -242,7 +356,9 @@ def _instantiate_line(handler: dict) -> str:
 
 
 def generate_skeleton(handler: dict, *, same_module: bool,
-                       existing_code: "str | None" = None) -> str:
+                       existing_code: "str | None" = None,
+                       init_candidates: "list[dict] | None" = None,
+                       entry_stem: "str | None" = None) -> str:
     """Build the DETERMINISTIC ``http.server`` MAIN skeleton wired to ``handler`` (a dict from
     :func:`find_dispatch_handler`): reads ``PORT`` via ``os.environ.get("PORT", "8000")``,
     defines a ``BaseHTTPRequestHandler`` subclass whose ``do_GET``/``do_POST``/``do_PUT``/
@@ -253,15 +369,27 @@ def generate_skeleton(handler: dict, *, same_module: bool,
     When ``same_module`` is True (the handler is already defined in the entry module itself),
     the wiring block is APPENDED to ``existing_code`` (no import needed -- the handler is
     already in scope). Otherwise a fresh, self-contained module is generated that imports the
-    handler from ``handler['module']``. Pure string composition -- never executes anything."""
+    handler from ``handler['module']``. Pure string composition -- never executes anything.
+
+    ``init_candidates``/``entry_stem`` (REQ-65, TASK-80): when ``init_candidates`` (a
+    :func:`find_init_functions` result) is non-empty, each candidate is imported (unless
+    already in scope in ``entry_stem``, the generated module's own filename stem) and CALLED
+    ONCE, in order, right BEFORE ``HTTPServer(...).serve_forever()`` -- carrying forward the
+    app's own DB/state init the way its own (bypassed) entrypoint would have. Omitted/empty ->
+    byte-identical to before this parameter existed."""
     instantiate = _instantiate_line(handler)
-    body = _SERVER_BLOCK_TEMPLATE.format(dispatch_call=_dispatch_call_expr(handler))
+    # #EXT-036-REQ-65 Start
+    init_import_lines, init_call_lines = _init_calls_block(init_candidates, entry_stem)
+    body = _SERVER_BLOCK_TEMPLATE.format(
+        dispatch_call=_dispatch_call_expr(handler), init_calls=init_call_lines,
+    )
     if same_module:
         base = (existing_code or "").rstrip("\n")
-        return base + "\n\n\n" + _SKELETON_HEADER + "\n" + instantiate + body.lstrip("\n")
+        return base + "\n\n\n" + _SKELETON_HEADER + init_import_lines + "\n" + instantiate + body.lstrip("\n")
     target = handler.get("class") or handler["callable"]
     import_line = f"from {handler['module']} import {target}\n"
-    return _SKELETON_HEADER + import_line + "\n" + instantiate + body.lstrip("\n")
+    return _SKELETON_HEADER + import_line + init_import_lines + "\n" + instantiate + body.lstrip("\n")
+    # #EXT-036-REQ-65 End
 
 
 # #EXT-036-REQ-51 Start
@@ -407,12 +535,14 @@ class _RouteHTTPHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
-    HTTPServer(("", port), _RouteHTTPHandler).serve_forever()
+{init_calls}    HTTPServer(("", port), _RouteHTTPHandler).serve_forever()
 '''
 
 
 def generate_route_skeleton(handler: dict, *, same_module: bool,
-                             existing_code: "str | None" = None) -> str:
+                             existing_code: "str | None" = None,
+                             init_candidates: "list[dict] | None" = None,
+                             entry_stem: "str | None" = None) -> str:
     """Build the DETERMINISTIC ``http.server`` MAIN driver wired to the ROUTING CONTRACT
     function found by :func:`find_route_function`: a ``BaseHTTPRequestHandler`` subclass whose
     ``do_GET``/``do_POST``/``do_PUT``/``do_DELETE``/``do_PATCH`` parse the method/path/JSON
@@ -426,12 +556,28 @@ def generate_route_skeleton(handler: dict, *, same_module: bool,
     (:func:`_strip_main_guard`) and the driver is APPENDED to what remains -- ``route`` is
     already in scope, no import needed. Otherwise a fresh, self-contained module is generated
     that imports ``route`` from ``handler['module']``. Pure string composition -- never
-    executes anything."""
+    executes anything.
+
+    ``init_candidates``/``entry_stem`` (REQ-65, TASK-80 -- MEASURED
+    `scratchpad/batch3_diag_urlshort_d1.out`, url-shortener-http-service): when
+    ``init_candidates`` (a :func:`find_init_functions` result) is non-empty, each candidate is
+    imported (unless already in scope in ``entry_stem``) and CALLED ONCE, in order, right
+    BEFORE ``HTTPServer(...).serve_forever()`` -- the scaffold now carries forward the app's
+    own DB/state initialization that ``route()`` depends on, instead of only wiring routing.
+    Omitted/empty -> byte-identical to before this parameter existed."""
+    # #EXT-036-REQ-65 Start
+    if same_module:
+        stem = entry_stem if entry_stem is not None else handler["module"]
+    else:
+        stem = entry_stem
+    init_import_lines, init_call_lines = _init_calls_block(init_candidates, stem)
+    server_block = _ROUTE_SERVER_BLOCK.format(init_calls=init_call_lines)
     if same_module:
         base = _strip_main_guard(existing_code or "").rstrip("\n")
-        return base + "\n\n\n" + _ROUTE_SKELETON_HEADER + _ROUTE_SERVER_BLOCK.lstrip("\n")
+        return base + "\n\n\n" + _ROUTE_SKELETON_HEADER + init_import_lines + server_block.lstrip("\n")
     import_line = f"from {handler['module']} import route\n"
-    return _ROUTE_SKELETON_HEADER + import_line + "\n" + _ROUTE_SERVER_BLOCK.lstrip("\n")
+    return _ROUTE_SKELETON_HEADER + import_line + init_import_lines + "\n" + server_block.lstrip("\n")
+    # #EXT-036-REQ-65 End
 # #EXT-036-REQ-51 End
 
 
@@ -530,6 +676,10 @@ def apply_http_service_scaffold(modules: "dict[str, str]", spec_text: "str | Non
             pass
 
         entry_name = _resolve_entry_name(mods, spec_text)
+        # #EXT-036-REQ-65 Start
+        entry_stem = entry_name[:-3] if entry_name.endswith(".py") else entry_name
+        init_candidates = find_init_functions(mods)
+        # #EXT-036-REQ-65 End
 
         # #EXT-036-REQ-51 Start
         route_handler = find_route_function(mods)
@@ -537,8 +687,12 @@ def apply_http_service_scaffold(modules: "dict[str, str]", spec_text: "str | Non
             same_module = (route_handler["module"] + ".py") == entry_name and entry_name in mods
             existing = mods.get(entry_name) if same_module else None
             try:
-                new_code = generate_route_skeleton(route_handler, same_module=same_module,
-                                                     existing_code=existing)
+                new_code = generate_route_skeleton(
+                    route_handler, same_module=same_module, existing_code=existing,
+                    # #EXT-036-REQ-65 Start
+                    init_candidates=init_candidates, entry_stem=entry_stem,
+                    # #EXT-036-REQ-65 End
+                )
                 ast.parse(new_code)
             except SyntaxError as exc:
                 notes.append(f"generated route() skeleton failed to parse -- no-op: {exc}")
@@ -563,7 +717,12 @@ def apply_http_service_scaffold(modules: "dict[str, str]", spec_text: "str | Non
             same_module = (handler["module"] + ".py") == entry_name and entry_name in mods
             existing = mods.get(entry_name) if same_module else None
             try:
-                new_code = generate_skeleton(handler, same_module=same_module, existing_code=existing)
+                new_code = generate_skeleton(
+                    handler, same_module=same_module, existing_code=existing,
+                    # #EXT-036-REQ-65 Start
+                    init_candidates=init_candidates, entry_stem=entry_stem,
+                    # #EXT-036-REQ-65 End
+                )
                 ast.parse(new_code)
             except SyntaxError as exc:
                 notes.append(f"generated skeleton failed to parse -- no-op: {exc}")
