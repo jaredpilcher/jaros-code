@@ -3270,6 +3270,21 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _sig_contract_notes = apply_signature_contract(built, spec)
     # #EXT-036-REQ-45 End
 
+    # #EXT-036-REQ-46 Start
+    # TASK-59: deterministic spec-demanded filename/entrypoint normalization. MEASURED
+    # (`.jaros-data/filename_norm_probe.py`, `.jaros-data/entrypoint_norm_probe.py`): a built
+    # module's LOGIC can be entirely correct while its FILENAME is wrong (e.g. `test_memoize.py`
+    # instead of the spec-demanded `memoize.py`) or no runnable entrypoint exists (a multi-module
+    # build with correct logic but no `main.py` / no `__main__` guard) -- the real-systems
+    # import/cli-exact oracle then can't find it at all. Wired in the same spot/pattern as the
+    # import-resolver, guard-index, and signature-contract repairs above -- additive, AST-only,
+    # never-raising, leak-free (the demanded target filename comes only from `spec`, the visible
+    # build spec, never a hidden oracle/test): a no-op for any spec/module without this exact
+    # defect shape.
+    from harness.filename_contract import apply_filename_contract
+    built, _filename_contract_notes = apply_filename_contract(built, spec)
+    # #EXT-036-REQ-46 End
+
     # 3. ASSEMBLE
     _beat("ASSEMBLE")  # #EXT-040-REQ-3
     try:

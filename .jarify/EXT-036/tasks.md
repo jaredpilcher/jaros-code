@@ -2675,3 +2675,41 @@ AST repair (analog of the import-resolver / guard-index repairs) that restores i
 #### Implements
 - [REQ-45] Deterministic signature-contract repair — restore a documented default parameter gemma's
   build silently dropped
+
+### [TASK-59] Deterministic spec-demanded filename/entrypoint normalization (REQ-46)
+
+Fix the MEASURED convergent failure where gemma writes CORRECT code but packages it under the wrong
+filename/without a runnable entrypoint (memoize-lib and INI cli-exact cases), so the real-systems
+import/cli-exact oracle can't find it. Add a deterministic AST repair (analog of the import-resolver /
+guard-index / signature-contract repairs) that renames the spec-demanded entrypoint module and injects
+a `__main__` guard when needed.
+
+#### Steps
+1. Reuse the validated prototypes `.jaros-data/filename_norm_probe.py` (single-module rename) and
+   `.jaros-data/entrypoint_norm_probe.py` (multi-module entrypoint designation + `__main__` guard
+   injection) as the starting point for a new module `harness/filename_contract.py` exposing
+   `demanded_filenames(spec_text)`, `normalize_entrypoint(modules: dict[str, str], spec_text: str) ->
+   tuple[dict, list[str]]` (a UNIFIED repair covering both prototype shapes, IMPROVED to inspect
+   `main`'s parameter count via `ast` and call `main(sys.argv[1:])` only when it has >=1 positional
+   param, else `main()`), and a thin wrapper `apply_filename_contract(modules, spec_text) ->
+   tuple[dict, list[str]]` mapping the repair over the demanded filenames. Never mutate the input
+   dict; never raise; no-op when the demanded file is already present, the entrypoint is ambiguous, or
+   the code doesn't parse. Wrap the new code with `# #EXT-036-REQ-46 Start`/`End` markers.
+2. Wire `apply_filename_contract(built, spec)` into `harness/system_builder.py`'s `build_system`, as a
+   deterministic pass over `built` using `spec`, in the SAME seam/style as the import-resolver
+   (EXT-035-REQ-3), guard-index (EXT-036-REQ-39), and signature-contract (EXT-036-REQ-45) repairs --
+   right after those, before the ASSEMBLE step -- wrapped in `# #EXT-036-REQ-46 Start`/`End` markers.
+   Minimal, localized diff.
+3. Add offline tests `tests/test_ext036_filename_contract.py` (NO model/Jetson calls) covering: (a)
+   the memoize single-module rename case -- result has `memoize.py`, and `exec`+`import` works; (b)
+   the INI multi-module case -- result has `main.py` renamed from `cli_handler.py` (with
+   `config_parser.py` untouched) with an injected `__main__` guard, and running `python main.py
+   <section> <key>` with seeded stdin produces the expected exact stdout; (c) no-op when the demanded
+   file is already present; (d) no-op/safe when the entrypoint is ambiguous (e.g. two
+   mutually-importing modules, or two candidate roots); (e) a `main()` with zero params gets an
+   injected guard calling `main()` not `main(sys.argv[1:])`; (f) never raises on unparseable code.
+4. Run ONLY `python -m pytest tests/test_ext036_filename_contract.py -q` (offline); confirm green.
+   Update `.jarify/EXT-036/index.json` (REQ-46 ranges) per jarify-manage-links.
+
+#### Implements
+- [REQ-46] Deterministic spec-demanded filename/entrypoint normalization

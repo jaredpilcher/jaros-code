@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2037,3 +2037,46 @@ confirmed via the full import-driver oracle (`accepted=True`).
       reproduction is repaired and the documented usage then works; an already-correct signature is a
       no-op (idempotent, `changed=False`); a documented default whose insertion would be illegal is
       left unchanged, never raising; a function not documented in the spec is untouched.
+
+### [REQ-46] Deterministic spec-demanded filename/entrypoint normalization
+
+MEASURED via two validated prototypes: `.jaros-data/filename_norm_probe.py` (memoize-lib case,
+`accepted=True`) -- gemma emits CORRECT `memoize(maxsize=128)` logic but names the file
+`test_memoize.py` instead of the spec-demanded `memoize.py`; the import oracle does `import memoize`
+-> `ModuleNotFoundError`. Renaming the sole module to the spec-demanded name greens the full import
+oracle. And `.jaros-data/entrypoint_norm_probe.py` (INI cli-exact case, `accepted=True`, exact stdout
+matched) -- gemma emits CORRECT logic split across `config_parser.py` + `cli_handler.py`, but there is
+no `main.py` and `cli_handler.py`'s top-level `main(args)` has no `if __name__ == '__main__'` guard, so
+the cli-exact grader finds no runnable entrypoint. The fix: pick the ROOT module (imports a local
+sibling, imported by no sibling) and rename it to the spec-demanded `main.py`, injecting a `__main__`
+guard that calls `main(sys.argv[1:])`. This is analogous to the already-landed deterministic
+import-resolver (EXT-035 REQ-3), guard-index repair (REQ-39), and signature-contract repair (REQ-45)
+already wired into `build_system` -- an AST-based, leak-free, non-degrading repair over the built
+modules, not a model re-call.
+
+#### Acceptance Criteria
+- [ ] `demanded_filenames(spec_text)` parses filenames the visible spec explicitly demands (e.g. a
+      "file named `X.py`" or "file named X.py" phrasing) via regex, deduplicated, order-preserving.
+- [ ] `normalize_entrypoint(modules, spec_text)` is a UNIFIED repair covering both measured shapes:
+      (a) single-module rename when exactly one module exists and the demanded filename is absent, and
+      (b) multi-module entrypoint designation -- the entrypoint is the unique module that imports a
+      local sibling and is imported by no sibling (the "root") -- renamed to the demanded filename; if
+      that entrypoint defines a top-level `main(...)` with no `if __name__ == '__main__'` guard, inject
+      one, calling `main(sys.argv[1:])` when `main` takes >=1 positional parameter (inspected via
+      `ast`) else `main()`.
+- [ ] Renaming is SAFE: only ever renames a module that is imported by no local sibling (so no
+      sibling's `import` statement breaks); sibling modules keep their original names.
+- [ ] Non-degrading: a no-op (returns the input modules unchanged, plus an explanatory note) when the
+      demanded filename is already present, when the entrypoint is ambiguous (zero or more than one
+      candidate root/single module), or when any relevant module's code fails to parse. Never raises.
+- [ ] Leak-free (Tenet 3): the demanded target filename(s) come ONLY from the visible build spec text
+      handed to `demanded_filenames`, never from a hidden oracle, test, or reference implementation.
+- [ ] `apply_filename_contract(modules, spec_text)` maps the repair across the demanded filenames and
+      is wired into `harness/system_builder.py`'s `build_system`, as a deterministic pass over `built`
+      using `spec`, in the same seam/style as the import-resolver (EXT-035-REQ-3), guard-index
+      (EXT-036-REQ-39), and signature-contract (EXT-036-REQ-45) repairs, before the ASSEMBLE step.
+- [ ] Proven OFFLINE (no model/Jetson call) with tests covering: the memoize single-module rename
+      case; the INI multi-module entrypoint-designation + `__main__` guard injection case (verifying
+      the injected call matches `main`'s arity); a no-op when the demanded file is already present; a
+      no-op/safe outcome when the entrypoint is ambiguous; correct `main()` vs `main(sys.argv[1:])`
+      guard-call selection; never raising on unparseable code.
