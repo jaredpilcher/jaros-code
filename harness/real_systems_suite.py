@@ -69,6 +69,13 @@ SERVICE_DEFAULT_STARTUP_TIMEOUT_S = 15.0
 SERVICE_DEFAULT_REQUEST_TIMEOUT_S = 5.0
 # #EXT-060-REQ-9 End
 
+# #EXT-060-REQ-11 Start
+# TASK-9: reuse (not reimplement) the already-landed agent-loop oracle (EXT-059 REQ-6) for the
+# first AGENT-shaped ("agent" oracle_kind) grading path -- never a new stub-model/tool-sandbox
+# mechanism, never a real model/Jetson call.
+from harness.agent_oracle import check_agent, drive_agent, final_turn, tool_call_turn
+# #EXT-060-REQ-11 End
+
 
 @dataclass
 class RealSystemTask:
@@ -116,6 +123,13 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
       is torn down, INDEPENDENTLY re-opens the resulting SQLite file (``harness.datastore_oracle``)
       and asserts the persisted row count -- never trusting the service's own HTTP responses for
       durability. For a stdlib REST/SQLite-backed service (no framework, no CLI/stdout contract).
+    - ``"agent"``: ``task.oracle_spec`` is ``{"entry": str, "script": [...], "tools": {...},
+      "goal": str, "expect_tool_calls": [...], "expect_final_contains": str | None,
+      "expect_terminated": bool, "max_steps": int | None, "timeout": float | None}``. Drives the
+      built entrypoint as a real agent process against a SCRIPTED stub model + controlled tool
+      sandbox (``harness.agent_oracle.drive_agent``) and grades the ORDERED tool-call sequence it
+      actually made, never its reasoning (``harness.agent_oracle.check_agent``) -- for a
+      multi-step, tool-calling AGENT system (no CLI/stdout/HTTP-service contract at all).
 
     Returns ``(accepted, note)``. NEVER RAISES: an unknown ``oracle_kind``, a malformed
     ``oracle_spec``, or any exception during grading is an honest ``(False, <reason>)`` -- never a
@@ -135,6 +149,10 @@ def grade_real_system_task(task: "RealSystemTask", root: Any, *,
         if task.oracle_kind == "service":
             return _grade_service(spec, root, python_exe)
         # #EXT-060-REQ-9 End
+        # #EXT-060-REQ-11 Start
+        if task.oracle_kind == "agent":
+            return _grade_agent(spec, root, python_exe)
+        # #EXT-060-REQ-11 End
         return False, f"unknown oracle_kind: {task.oracle_kind!r}"
     except Exception as exc:  # never raise -- an honest diagnostic result instead
         return False, f"grade_real_system_task raised unexpectedly: {exc}"
@@ -313,6 +331,49 @@ def _grade_service(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool
 
     return True, "ok: service http checks passed"
 # #EXT-060-REQ-9 End
+
+
+# #EXT-060-REQ-11 Start
+# TASK-9: the ``oracle_kind == "agent"`` grading path -- for a multi-step, TOOL-CALLING agent
+# system (no CLI/stdout/HTTP-service contract at all). Wires (never reimplements)
+# ``harness.agent_oracle.drive_agent``/``check_agent`` -- the scripted-stub-model + controlled-
+# tool-sandbox oracle already landed for EXT-059 REQ-6, exactly the "grade the orchestration
+# control flow, never the model's reasoning" discipline that module documents.
+def _grade_agent(oracle_spec: dict, root: Any, python_exe: str) -> "tuple[bool, str]":
+    """The ``oracle_kind == "agent"`` grading path: run the built entrypoint named
+    ``oracle_spec.get("entry", "main.py")`` against a SCRIPTED stub model + controlled tool
+    sandbox (``harness.agent_oracle.drive_agent``), then assert the ORDERED tool-call sequence it
+    actually made and its final answer against ``oracle_spec``'s declared expectations
+    (``harness.agent_oracle.check_agent``). ``oracle_spec`` mirrors ``drive_agent``/``check_agent``'s
+    own keyword vocabulary directly (``entry``, ``script``, ``tools``, ``goal``,
+    ``expect_tool_calls``, ``expect_final_contains``, ``expect_terminated``, plus optional
+    ``max_steps``/``timeout`` passthrough) -- never a divergent grading path. Never raises: both
+    ``drive_agent`` and ``check_agent`` are themselves never-raise (see ``harness/agent_oracle.py``),
+    and this helper adds no exception-prone logic of its own."""
+    entry = oracle_spec.get("entry") or "main.py"
+    script = oracle_spec.get("script") or []
+    tools = oracle_spec.get("tools") or {}
+    goal = oracle_spec.get("goal", "")
+    drive_kwargs: dict = {}
+    if oracle_spec.get("max_steps") is not None:
+        drive_kwargs["max_steps"] = oracle_spec["max_steps"]
+    if oracle_spec.get("timeout") is not None:
+        drive_kwargs["timeout"] = oracle_spec["timeout"]
+
+    result = drive_agent(root, entry, script=script, tools=tools, goal=goal,
+                          python_exe=python_exe, **drive_kwargs)
+
+    expect_tool_calls = oracle_spec.get("expect_tool_calls") or []
+    expect_final_contains = oracle_spec.get("expect_final_contains")
+    expect_terminated = oracle_spec.get("expect_terminated", True)
+    ok, note = check_agent(
+        result, expect_tool_calls=expect_tool_calls,
+        expect_final_contains=expect_final_contains, expect_terminated=bool(expect_terminated),
+    )
+    if not ok:
+        return False, f"{note} (drive_agent note: {result.get('note')!r})"
+    return True, result.get("note") or "ok"
+# #EXT-060-REQ-11 End
 
 
 def _rates(results: "list[dict]") -> dict:
@@ -1157,6 +1218,71 @@ if __name__ == "__main__":
 # #EXT-060-REQ-9 End
 
 
+# #EXT-060-REQ-11 Start
+# TASK-9: the FIRST AGENT-shaped task -- a plain, stdlib-only, single-file tool-calling agent,
+# graded by the new "agent" oracle_kind (a scripted stub model + controlled tool sandbox,
+# `harness.agent_oracle`, no real model/Jetson call anywhere in this measurement). jaros-code is
+# itself a Jaros agent system, so this is a high-priority real-systems class. The sentence pins
+# the EXACT injection contract `harness/agent_oracle.py` fixes (env vars, request/response
+# shapes, the final-answer sentinel) -- the SAME agent code graded here is the one a real build
+# would point at the Jetson llama.cpp endpoint instead, only the endpoint ever changes.
+_PLAIN_AGENT_SENTENCE = (
+    "Write a single-file Python program using only the standard library (no third-party "
+    "packages) in a file named main.py, implementing a minimal tool-calling AGENT LOOP against "
+    "an OpenAI-compatible chat-completions endpoint. On startup, read the goal from the first "
+    "command-line argument (sys.argv[1]). Read the base URL for the chat-completions endpoint "
+    "from the OPENAI_BASE_URL environment variable, and the base URL for tool invocations from "
+    "the JAROS_TOOL_URL environment variable. Maintain a list of chat messages, starting with "
+    "exactly one message `{\"role\": \"user\", \"content\": <goal>}`. Repeatedly: send an HTTP "
+    "POST request with a JSON body `{\"model\": \"stub\", \"messages\": <the current message "
+    "list>}` to `f\"{OPENAI_BASE_URL}/chat/completions\"`, and parse the JSON response's "
+    "`response[\"choices\"][0][\"message\"]`. If that message has a non-empty `\"tool_calls\"` "
+    "list, take its first entry, whose `[\"function\"][\"name\"]` is the tool name to call and "
+    "whose `[\"function\"][\"arguments\"]` is a JSON-encoded STRING of the tool's arguments "
+    "(parse it with `json.loads`); append that assistant message (including its `\"tool_calls\"`) "
+    "to the message list, then send an HTTP POST request with the parsed arguments as a JSON "
+    "body to `f\"{JAROS_TOOL_URL}/<tool_name>\"`, read the JSON response's `\"observation\"` "
+    "value, append a message `{\"role\": \"tool\", \"tool_call_id\": <that tool call's \"id\">, "
+    "\"content\": json.dumps(<the observation value>)}` to the message list, and repeat the loop "
+    "(send another chat-completions request). Otherwise (the message has no tool_calls), take "
+    "its `\"content\"` string as the final answer: print EXACTLY the string "
+    "`\"__JAROS_AGENT_FINAL__\"` followed by that content followed by `\"__END__\"`, with no "
+    "other output anywhere, then exit with status 0."
+)
+
+PLAIN_AGENT_TASK = RealSystemTask(
+    name="plain-tool-calling-agent",
+    cls="agent",
+    sentence=_PLAIN_AGENT_SENTENCE,
+    oracle_kind="agent",
+    oracle_spec={
+        "entry": "main.py",
+        # A 2-tool-call-then-final script -- a correct agent must call BOTH tools, in order, with
+        # the exact arguments the scripted model names, feed each observation back into the next
+        # request, then print the final answer once the model stops naming a tool.
+        "script": [
+            tool_call_turn("list_files", {"path": "."}),
+            tool_call_turn("read_file", {"path": "notes.txt"}),
+            final_turn("the notes say: remember the milk"),
+        ],
+        "tools": {
+            "list_files": {"files": ["notes.txt"]},
+            "read_file": {"content": "remember the milk"},
+        },
+        "goal": "find and read the notes file",
+        "expect_tool_calls": [
+            {"name": "list_files", "args": {"path": "."}},
+            {"name": "read_file", "args": {"path": "notes.txt"}},
+        ],
+        "expect_final_contains": "remember the milk",
+        "expect_terminated": True,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(PLAIN_AGENT_TASK)
+# #EXT-060-REQ-11 End
+
+
 # #EXT-060-REQ-10 Start
 # TASK-8: the first SaaS-shaped MODIFY task -- add a `PUT /items/<id>` endpoint to the baseline
 # CRUD service above. Graded by the SAME "service" oracle_kind dispatcher REQ-9 lands -- no new
@@ -1199,3 +1325,96 @@ REST_SQLITE_ADD_UPDATE_MODIFY = RealSystemModifyTask(
 
 REAL_SYSTEMS_MODIFY_TASKS.append(REST_SQLITE_ADD_UPDATE_MODIFY)
 # #EXT-060-REQ-10 End
+
+
+# #EXT-060-REQ-12 Start
+# TASK-9: the FIRST AGENT-shaped MODIFY task -- add a maximum-steps guard to the plain agent
+# above, graded by the SAME "agent" oracle_kind dispatcher REQ-11 lands (no new oracle code,
+# mirroring how REQ-7/REQ-10's MODIFY tasks reuse their CREATE half's oracle dispatch verbatim).
+# `start_system` is the UNGUARDED baseline (an unbounded `while True:` loop -- it never stops
+# asking the model what to do next); a correct modification must recognize when it has made 3
+# tool calls in a row without ever getting a final (non-tool-call) answer and stop itself.
+_AGENT_UNGUARDED_BASELINE_PY = '''import json
+import os
+import sys
+import urllib.request
+
+
+def _post(url, payload):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def main():
+    goal = sys.argv[1] if len(sys.argv) > 1 else ""
+    base_url = os.environ["OPENAI_BASE_URL"]
+    tool_url = os.environ["JAROS_TOOL_URL"]
+    messages = [{"role": "user", "content": goal}]
+
+    while True:
+        resp = _post(base_url + "/chat/completions", {"model": "stub", "messages": messages})
+        message = resp["choices"][0]["message"]
+        tool_calls = message.get("tool_calls")
+        if tool_calls:
+            call = tool_calls[0]
+            name = call["function"]["name"]
+            args = json.loads(call["function"]["arguments"])
+            messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            observed = _post(tool_url + "/" + name, args)
+            messages.append({
+                "role": "tool", "tool_call_id": call["id"],
+                "content": json.dumps(observed.get("observation")),
+            })
+            continue
+        content = message.get("content") or ""
+        print("__JAROS_AGENT_FINAL__" + content + "__END__", flush=True)
+        return
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+_AGENT_STEP_GUARD_MOD_SENTENCE = (
+    "Modify main.py so that it ALSO tracks how many tool calls it has made IN A ROW without yet "
+    "receiving a final (non-tool-call) answer from the model. If that count reaches 3 tool calls "
+    "without a final answer, STOP making any further chat-completions requests: print EXACTLY "
+    "the string `\"__JAROS_AGENT_FINAL__gave up after 3 tool calls__END__\"`, with no other "
+    "output anywhere, and exit with status 0 -- instead of continuing the loop. Every other "
+    "existing aspect of its behavior (reading the goal from sys.argv[1], the "
+    "OPENAI_BASE_URL/JAROS_TOOL_URL request/response shapes, following an ordinary tool call, "
+    "and printing an ordinary final answer when the model actually returns one before the count "
+    "reaches 3) is completely unchanged."
+)
+
+AGENT_ADD_STEP_GUARD_MODIFY = RealSystemModifyTask(
+    name="plain-agent-add-step-guard-modify",
+    cls="agent-modify",
+    start_system={"main.py": _AGENT_UNGUARDED_BASELINE_PY},
+    mod_sentence=_AGENT_STEP_GUARD_MOD_SENTENCE,
+    oracle_kind="agent",
+    oracle_spec={
+        "entry": "main.py",
+        # A single tool_call turn -- `agent_oracle`'s stub repeats the LAST scripted turn once
+        # the script is exhausted, so this same turn is served for every chat-completions
+        # request the agent makes -- NEVER a final turn, so an UNGUARDED agent would keep asking
+        # forever (a script that "would loop forever without the guard"). `max_steps` is kept
+        # small and well past the guard's pinned count (3) so an unguarded baseline's failure is
+        # caught FAST (the stub starts refusing further requests once max_steps is exceeded,
+        # which an unguarded agent's own unhandled HTTP error surfaces as a prompt crash) rather
+        # than waiting out the oracle's full overall timeout.
+        "script": [tool_call_turn("poll", {})],
+        "tools": {"poll": "still going"},
+        "goal": "poll until done",
+        "max_steps": 8,
+        "expect_tool_calls": [{"name": "poll"}, {"name": "poll"}, {"name": "poll"}],
+        "expect_final_contains": "gave up",
+        "expect_terminated": True,
+    },
+)
+
+REAL_SYSTEMS_MODIFY_TASKS.append(AGENT_ADD_STEP_GUARD_MODIFY)
+# #EXT-060-REQ-12 End

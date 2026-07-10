@@ -228,3 +228,72 @@ existing oracle dispatch.
       after the full check sequence.
 - [x] Offline-testable: a hand-authored CORRECT post-modification module (baseline + `PUT`) is accepted;
       the unmodified baseline (no `PUT`) is rejected by the new checks.
+
+### [REQ-11] `oracle_kind="agent"` + first plain-Python AGENT-SYSTEM CREATE task
+
+The canonical scoreboard's first AGENT-shaped task -- a high-priority class since jaros-code is
+itself a Jaros agent system. A `_grade_agent` grader wires the already-landed EXT-059 REQ-6
+agent-loop oracle (`harness/agent_oracle.py`'s `drive_agent`/`check_agent`) into
+`grade_real_system_task` under a new `oracle_kind="agent"` dispatch -- no new process-launch,
+stub-model, or tool-sandbox mechanism, reusing that oracle verbatim (the same
+"never trusts the built agent's own claims, only its observed control flow" discipline every other
+`_grade_*` helper already follows). `PLAIN_AGENT_TASK` (`RealSystemTask`, `cls="agent"`,
+`oracle_kind="agent"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+stdlib-only, single-file plain-Python agent `main.py` that implements a tool-calling loop against
+the EXACT protocol `harness/agent_oracle.py` pins (reads `OPENAI_BASE_URL`, POSTs OpenAI-shape chat
+completions to `f"{OPENAI_BASE_URL}/chat/completions"`, takes the goal from `sys.argv[1]`, on a
+`tool_calls` response POSTs the tool's name+args as JSON to `f"{JAROS_TOOL_URL}/<tool_name>"` and
+feeds the returned `"observation"` back into the next request's messages, on a final-content
+response prints exactly `__JAROS_AGENT_FINAL__<content>__END__` and exits 0).
+
+#### Acceptance Criteria
+- [x] `grade_real_system_task` dispatches `oracle_kind="agent"` to a new `_grade_agent(oracle_spec,
+      root, python_exe)` that maps `oracle_spec` (`{"entry": str, "script": [...], "tools": {...},
+      "goal": str, "expect_tool_calls": [...], "expect_final_contains": str, "expect_terminated":
+      bool (default True)}`) to `harness.agent_oracle.drive_agent(...)` then
+      `harness.agent_oracle.check_agent(...)`, returning `(accepted, note)`. NEVER raises (reuses
+      `agent_oracle`'s own never-raise contract) -- a missing entrypoint, malformed spec, or a
+      crashing/never-terminating agent is an honest `(False, <reason>)`.
+- [x] `PLAIN_AGENT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the agent
+      contract (env vars, chat-completions endpoint/shape, tool-call POST route/shape, the
+      observation-feedback loop, the exact final-sentinel line + exit 0) with every oracle-checked
+      value (the scripted tool-call sequence, canned tool observations, the goal string, the
+      expected final substring) derivable from that same visible sentence (no hidden key, no leak
+      of the oracle's internal script into the build prompt beyond what the sentence states).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written agent fixtures only): a CORRECT
+      plain-Python agent fixture is accepted by `grade_real_system_task(PLAIN_AGENT_TASK, ...)`; a
+      BROKEN fixture (ignores the tool observation, never terminates, or calls the wrong tool) is
+      rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-12] First AGENT-SYSTEM MODIFY task: add a maximum-steps guard
+
+The canonical scoreboard's first AGENT-shaped MODIFY task, mirroring how REQ-7/REQ-10 reuse their
+CREATE half's oracle dispatch with zero new oracle code. `AGENT_ADD_STEP_GUARD_MODIFY`
+(`RealSystemModifyTask`, `cls="agent-modify"`, `oracle_kind="agent"`) is added to
+`REAL_SYSTEMS_MODIFY_TASKS`: `start_system` is a hand-authored CORRECT baseline plain-Python agent
+matching REQ-11's original contract exactly (no step guard -- it loops forever against a script
+that never scripts a final turn); `mod_sentence` asks for an added maximum-steps guard pinned to a
+concrete step count N (e.g. "if the agent has made N tool calls without receiving a final answer,
+stop, print the final marker with a message indicating it gave up, then exit 0").
+
+#### Acceptance Criteria
+- [x] `AGENT_ADD_STEP_GUARD_MODIFY` is added to `REAL_SYSTEMS_MODIFY_TASKS`, graded by the SAME
+      `oracle_kind="agent"` dispatcher REQ-11 lands (no new oracle code, reusing
+      `grade_real_system_task` exactly as REQ-7/REQ-10's MODIFY tasks reuse their CREATE half's
+      dispatch).
+- [x] `mod_sentence` pins a concrete step-count N and the exact gave-up-final-marker behavior; every
+      oracle-checked value in `oracle_spec` (the all-tool-call script with no final turn, the
+      expected non-termination of an UNGUARDED baseline vs. the clean termination + gave-up
+      substring of a GUARDED agent) is derivable from that same visible `mod_sentence` (no hidden
+      key, no leak).
+- [x] Offline-testable (no real model/Jetson, hand-written agent fixtures only): a hand-authored
+      GUARDED post-modification agent fixture is accepted (terminates cleanly, prints the gave-up
+      final message) against an oracle script that would otherwise loop forever; the UNMODIFIED
+      baseline (no guard) is rejected (never terminates within the oracle's bounded `max_steps`/
+      `timeout`, exactly as `agent_oracle.drive_agent` reports honestly for a runaway loop -- never
+      a hang in the test itself).
+- [x] Leaves-OFF enforced identically to every other MODIFY task (static
+      `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.

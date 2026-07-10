@@ -110,3 +110,45 @@ creation suite, `harness/modification_suite.py`, and `harness/daily_driver.py`. 
 fast local regression signals and as a source of new task shapes to graduate into EXT-060's fixed,
 growing roster — but the number that gets quoted, trended, and steered from is EXT-060's combined
 pass@1, and only that.
+
+## The first AGENT rung (REQ-11/REQ-12): `oracle_kind="agent"`
+
+jaros-code is itself a Jaros agent system, so agent-shaped systems (multi-step tool-calling loops) are
+a high-priority real-systems class. Grading composes the ALREADY-LANDED EXT-059 REQ-6 agent-loop oracle
+verbatim — no new process-launch, stub-model, or tool-sandbox mechanism:
+
+```text
+        PLAIN_AGENT_TASK.sentence              AGENT_ADD_STEP_GUARD_MODIFY.mod_sentence
+                    |                                            |
+              build_system(...)                         modify_system(start_system, ...)
+                    |                                            |
+                    +--------------------+-----------------------+
+                                         |
+                          grade_real_system_task(task, root)
+                             oracle_kind="agent"
+                                         |
+                                  _grade_agent(spec, root, python_exe)
+                                         |
+                    +--------------------+-----------------------+
+                    |                                             |
+     drive_agent(root, entry, script=..., tools=...,     check_agent(result,
+       goal=..., python_exe=...)  -- scripted stub          expect_tool_calls=...,
+       model + controlled tool sandbox on one               expect_final_contains=...,
+       ephemeral localhost port (harness/agent_oracle.py,   expect_terminated=...)
+       unchanged launch/poll/teardown machinery)            -- pure, never-raise assertion
+                    |                                             |
+                    +--------------------+-----------------------+
+                                         |
+                        (accepted, note) -- never raises,
+                        same shape every other oracle_kind returns
+```
+
+`PLAIN_AGENT_TASK` (CREATE) pins the exact stdlib agent contract `harness/agent_oracle.py` already
+fixes (`OPENAI_BASE_URL` chat-completions POST, `JAROS_TOOL_URL/<tool>` tool-call POST, the
+`__JAROS_AGENT_FINAL__...__END__` sentinel) so the SAME agent code graded here is the one a real build
+would point at the Jetson llama.cpp endpoint. `AGENT_ADD_STEP_GUARD_MODIFY` (MODIFY) reuses that same
+dispatch with zero new oracle code (mirroring how REQ-7/REQ-10's MODIFY tasks reuse their CREATE
+half's dispatch): a scripted oracle with only tool-call turns (never a final turn) makes an UNGUARDED
+baseline agent loop forever (caught honestly as non-termination, never a test hang, by
+`agent_oracle.drive_agent`'s own `max_steps`/`timeout` bounds), while a GUARDED agent stops and prints
+the gave-up final message once it hits its pinned step count N.

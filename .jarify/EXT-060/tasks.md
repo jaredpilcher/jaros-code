@@ -249,3 +249,46 @@
 #### Implements
 - [REQ-9] `oracle_kind="service"` + first REST/SQLite CRUD service CREATE task (the first SaaS rung)
 - [REQ-10] First REST/SQLite CRUD MODIFY task (add a `PUT` endpoint)
+
+### [TASK-9] `oracle_kind="agent"` + first plain-Python AGENT-SYSTEM CREATE+MODIFY tasks (REQ-11, REQ-12)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, import `drive_agent`/`check_agent` from
+   `harness.agent_oracle`. Add `_grade_agent(oracle_spec, root, python_exe)` that maps
+   `oracle_spec` (`{"entry", "script", "tools", "goal", "expect_tool_calls",
+   "expect_final_contains", "expect_terminated"}` plus optional `max_steps`/`timeout`
+   passthrough) to `drive_agent(root, oracle_spec["entry"], script=..., tools=..., goal=...,
+   python_exe=python_exe, ...)` then `check_agent(result, expect_tool_calls=...,
+   expect_final_contains=..., expect_terminated=...)`, returning `(accepted, note)`; never
+   raises. Wire `oracle_kind == "agent"` into `grade_real_system_task`'s dispatch.
+2. Add `PLAIN_AGENT_TASK` (`RealSystemTask`, `cls="agent"`, `oracle_kind="agent"`) to
+   `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only single-file plain-Python
+   agent `main.py` implementing the `agent_oracle` protocol (`OPENAI_BASE_URL` chat-completions
+   POST, `sys.argv[1]` goal, `JAROS_TOOL_URL/<tool>` tool-call POST feeding the returned
+   `"observation"` back into the loop, `__JAROS_AGENT_FINAL__<content>__END__` sentinel + exit
+   0). `oracle_spec`: a `script` of 2 tool_call turns then a final turn, `tools` returning
+   canned observations, a `goal`, `expect_tool_calls` = those 2 in order, `expect_final_contains`
+   = a substring of the final.
+3. Add `AGENT_ADD_STEP_GUARD_MODIFY` (`RealSystemModifyTask`, `cls="agent-modify"`,
+   `oracle_kind="agent"`) to `REAL_SYSTEMS_MODIFY_TASKS`: `start_system` = a hand-authored
+   CORRECT baseline agent (matching `PLAIN_AGENT_TASK`'s contract, no step guard); `mod_sentence`
+   asks for an added maximum-N-tool-calls-without-a-final-answer guard that prints the final
+   marker with a gave-up message and exits 0; `oracle_spec`'s `script` is all tool_call turns (no
+   final turn) scripted past N so an UNGUARDED baseline never terminates (`accepted=False`) and a
+   GUARDED agent terminates cleanly (`accepted=True`).
+4. Add `tests/test_ext060_agent_task.py` (OFFLINE, no model/Jetson, hand-written agent fixtures
+   only): (a) a CORRECT plain-Python agent fixture ->
+   `grade_real_system_task(PLAIN_AGENT_TASK, root, python_exe=...)` accepted True; (b) a BROKEN
+   fixture (ignores the tool observation / never terminates / wrong tool) -> accepted False; (c)
+   leaves-OFF (`leaf_for_spec(PLAIN_AGENT_TASK.sentence) is None`) + `PLAIN_AGENT_TASK` is a
+   member of `REAL_SYSTEMS_TASKS`; (d) the MODIFY task's oracle accepts a hand-written guarded
+   agent fixture and rejects a hand-written unguarded one, and `AGENT_ADD_STEP_GUARD_MODIFY` is a
+   member of `REAL_SYSTEMS_MODIFY_TASKS` with `leaf_for_spec(mod_sentence) is None`.
+5. Run `python -m pytest tests/test_ext060_agent_task.py tests/test_ext060_real_systems_suite.py
+   -q`; confirm green (offline only -- do not run the full suite). Update
+   `.jarify/EXT-060/index.json` (REQ-11/REQ-12 ranges, via `jarify-manage-links`) and flip the
+   REQ-11/REQ-12 acceptance boxes + `status` toward `covered` if both requirements are fully met.
+
+#### Implements
+- [REQ-11] `oracle_kind="agent"` + first plain-Python AGENT-SYSTEM CREATE task
+- [REQ-12] First AGENT-SYSTEM MODIFY task: add a maximum-steps guard
