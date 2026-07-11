@@ -766,6 +766,15 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ BOARD +4 CREATE wave-8 import-tier libs — EXT-060 REQ-48..51 (2026-07-10)]** commit **37fd308**:
+  four pure-function library classes across four verticals, all graded by the existing `import` oracle —
+  **net-present-value-calculator** (fintech), **interval-merge** (scheduling), **base32-codec** (devtools,
+  RFC 4648), **haversine-distance** (logistics/geo). CREATE roster **34 → 38**. Builder AND architect BOTH
+  independently recomputed every vector from scratch (npv 243.43, interval touching-merge [[1,5]], base32
+  MZXW6YTBOI======, haversine Warsaw→Poznan **278.4550198592262**) — the builder caught+corrected my own
+  wrong Warsaw guess (279); every BROKEN fixture rejected; leaves-off confirmed. 232 EXT-060 tests green.
+  **Measuring N=3 on the Jetson now** (gemma-4-e2b served). Build-mode continues: the import/math-lib tier
+  is cheap to add and greens readily.
 - **[★ BOARD +4 CREATE spanning ALL 4 landed oracles — EXT-060 REQ-44..47 (2026-07-10)]** commit **72f5ba8**:
   four new CREATE classes, one per landed oracle KIND, to keep the board exercising the full oracle
   substrate as it grows — **background-job-lifecycle** (state_machine), **event-seat-hold** (conservation,
