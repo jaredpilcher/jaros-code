@@ -766,6 +766,16 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ BOARD +4 CREATE spanning ALL 4 landed oracles — EXT-060 REQ-44..47 (2026-07-10)]** commit **72f5ba8**:
+  four new CREATE classes, one per landed oracle KIND, to keep the board exercising the full oracle
+  substrate as it grows — **background-job-lifecycle** (state_machine), **event-seat-hold** (conservation,
+  available/held/sold sum=100), **accounts-receivable-payment-application** (double_entry, int-cents
+  balance), **check-digit-validator** (import, Luhn/ISBN-13/EAN-13 hand-verified vectors). CREATE roster
+  **30 → 34**; architect independently recomputed every check-digit vector + balance + the conservation
+  mirror-pair + the state-machine transition table, and confirmed leaves-OFF for all 4 sentences (incl. the
+  `"queued"` state-name edge case). 217 EXT-060 tests green. **Measuring N=3 on the Jetson now** (gemma-4-e2b
+  confirmed served). This is the build-mode drive: the bottleneck is BUILDING atlas classes onto the board,
+  not mapping (research plane converged at atlas 547, no new oracle KIND needed).
 - **[★★ NEW CANONICAL HEADLINE — 32/37 (86%) on a board GROWN 18→37 CLASSES IN ONE DAY (2026-07-10)]** the
   fresh full-board EXT-060 run: **create 22/26, modify 10/11 = 32/37 (86%)** (N=1, leaves-OFF, independent
   oracles). The board nearly doubled (prior headline 19/21=90% was an 18-class board) so the 4pt dip is
