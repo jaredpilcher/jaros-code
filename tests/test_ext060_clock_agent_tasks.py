@@ -509,11 +509,12 @@ def test_real_systems_tasks_roster_grew_by_the_three_new_tasks():
     # REQ-44/45/46/47 (tests/test_ext060_atlas_batch4_tasks.py), REQ-48/49/50/51
     # (tests/test_ext060_wave8_import_tasks.py), REQ-52/53/54/55
     # (tests/test_ext060_batch5_tasks.py), REQ-56/57/58/59 (tests/test_ext060_batch6_tasks.py), and
-    # REQ-60/61/62/63 (tests/test_ext060_batch7_tasks.py) each added four more CREATE tasks after
-    # this module's own REQ-28/29/30 landed.
-    assert len(REAL_SYSTEMS_TASKS) == 50  # was 19 (REQ-24..27), +3 (REQ-28/29/30), +4 (REQ-31..34),
+    # REQ-60/61/62/63 (tests/test_ext060_batch7_tasks.py), and REQ-64/65/66/67
+    # (tests/test_ext060_batch8_tasks.py) each added four more CREATE tasks after this module's own
+    # REQ-28/29/30 landed.
+    assert len(REAL_SYSTEMS_TASKS) == 54  # was 19 (REQ-24..27), +3 (REQ-28/29/30), +4 (REQ-31..34),
     # +4 (REQ-40..43), +4 (REQ-44..47), +4 (REQ-48..51), +4 (REQ-52..55), +4 (REQ-56..59),
-    # +4 (REQ-60..63)
+    # +4 (REQ-60..63), +4 (REQ-64..67)
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "account-lockout-backoff-lib" in names
     assert "llm-output-parser-lib" in names

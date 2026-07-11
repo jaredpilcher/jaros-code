@@ -523,12 +523,13 @@ def test_lockout_admin_unlock_modify_task_is_leaves_off_and_a_roster_member():
 # (tests/test_ext060_atlas_wave7_tasks.py) grew it to 30, then REQ-44..47
 # (tests/test_ext060_atlas_batch4_tasks.py) grew it to 34, REQ-48..51 (tests/test_ext060_
 # wave8_import_tasks.py) grew it to 38, REQ-52..55 (tests/test_ext060_batch5_tasks.py) grew it
-# to 42, REQ-56..59 (tests/test_ext060_batch6_tasks.py) grew it to 46, and REQ-60..63
-# (tests/test_ext060_batch7_tasks.py) grew it to 50 -- all unrelated to this MODIFY wave).
+# to 42, REQ-56..59 (tests/test_ext060_batch6_tasks.py) grew it to 46, REQ-60..63
+# (tests/test_ext060_batch7_tasks.py) grew it to 50, and REQ-64..67
+# (tests/test_ext060_batch8_tasks.py) grew it to 54 -- all unrelated to this MODIFY wave).
 # ================================================================================================
 
 def test_modify_roster_grew_by_exactly_five_tasks():
-    assert len(REAL_SYSTEMS_TASKS) == 50
+    assert len(REAL_SYSTEMS_TASKS) == 54
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 11
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert {

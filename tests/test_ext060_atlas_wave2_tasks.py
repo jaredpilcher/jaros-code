@@ -431,8 +431,8 @@ def test_real_systems_tasks_roster_grew_by_the_four_new_tasks():
     # REQ-48..51 (tests/test_ext060_wave8_import_tasks.py) added four more, then REQ-52..55
     # (tests/test_ext060_batch5_tasks.py) added four more, then REQ-56..59
     # (tests/test_ext060_batch6_tasks.py) and REQ-60..63 (tests/test_ext060_batch7_tasks.py) each
-    # added four more.
-    assert len(REAL_SYSTEMS_TASKS) == 50
+    # added four more, then REQ-64..67 (tests/test_ext060_batch8_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 54
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "backup-retention-gfs-pruning-lib" in names
     assert "ci-job-matrix-expansion-lib" in names

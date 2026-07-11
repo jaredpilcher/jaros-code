@@ -2029,3 +2029,145 @@ checkpoints), distinct from the two prior clock tasks (both auth-vertical validi
       real wall clock (`time.time()`) instead of the injected `now_fn` is rejected; the task is a
       member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-60/61/62/63
       tasks (length 46 -> 50), covering all four non-import oracle kinds exactly once.
+
+### [REQ-64] Twenty-ninth CREATE task ("batch-8"), the batch's import member, in a NEW devtools/build-systems vertical (DAG topological sort)
+
+A TWENTY-NINTH held-out CREATE task ("batch-8", picked for ORACLE-KIND DIVERSITY across FOUR
+genuinely real production verticals -- devtools/build-systems, e-commerce, fintech/marketplace,
+saas/auth -- this is the batch's `import` member), in a NEW devtools/build-systems vertical, graded
+by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `DAG_TOPO_SORT_TASK`
+(`RealSystemTask`, `cls="devtools"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `dag_topo_sort.py` defining
+`topo_sort(nodes, edges)`/`has_cycle(nodes, edges)` -- a build-system-style dependency-graph
+resolver with a PINNED deterministic tie-break (Kahn's algorithm, ties broken by ascending
+lexicographic node id).
+
+#### Acceptance Criteria
+- [x] `DAG_TOPO_SORT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the contract
+      (filename `dag_topo_sort.py`, the two function names/signatures, the edge-direction
+      convention, the lexicographic tie-break rule, and the raise-on-cycle contract) with every
+      oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] Five hand-recomputed vectors, independently re-derived via the exact pinned Kahn's-algorithm-
+      with-lexicographic-tie-break rule before being added to the roster:
+      `topo_sort(["a","b","c","d"], [["a","b"],["a","c"],["b","d"],["c","d"]]) == ["a","b","c","d"]`;
+      `topo_sort(["c","a","b"], []) == ["a","b","c"]` (pure lexicographic tie-break, proven by using
+      a non-alphabetical input order with no edges at all); `topo_sort(["a","b"],
+      [["a","b"],["b","a"]])` raises `ValueError` (a 2-cycle); `has_cycle` returns `False` for the
+      diamond DAG and `True` for the 2-cycle. A build that ignores the lexicographic tie-break (uses
+      raw input-list order instead) or never detects a cycle (returns a partial list instead of
+      raising) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No banned leaf keyword (queue/stack/cache/hold/
+      buffer fingerprints) appears in the sentence, confirmed both by a literal substring scan and
+      `leaf_for_spec(...) is None`.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `dag_topo_sort.py` fixture is accepted by `grade_real_system_task(DAG_TOPO_SORT_TASK, ...)`; a
+      BROKEN fixture that ignores the lexicographic tie-break and never detects a cycle is rejected;
+      the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-65] Thirtieth CREATE task ("batch-8"), the batch's state_machine member, in a NEW e-commerce/fulfillment vertical (order fulfillment)
+
+A THIRTIETH held-out CREATE task ("batch-8"), the batch's `state_machine` member, in a NEW
+e-commerce/fulfillment vertical, graded by the ALREADY-LANDED `oracle_kind="state_machine"`
+dispatch REQ-13 lands (no new oracle code: reuses `_grade_state_machine` ->
+`harness.state_machine_oracle.grade_state_machine` verbatim). DISTINCT from the existing
+`ORDER_LIFECYCLE_TASK` (`cls="lifecycle"`, REQ-13: a simple 5-state order with no branching
+cancel/refund sources): this models a RICHER 8-state fulfillment pipeline
+(placed/paid/picked/packed/shipped/delivered/cancelled/refunded) where `cancel` is legal from
+exactly two source states and `refund` is legal from five source states.
+`ORDER_FULFILLMENT_TASK` (`RealSystemTask`, `cls="fulfillment"`, `oracle_kind="state_machine"`) is
+added to `REAL_SYSTEMS_TASKS`.
+
+#### Acceptance Criteria
+- [x] `ORDER_FULFILLMENT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      lifecycle contract (filename `order_fulfillment.py`, the class name, the `state` property, all
+      seven action methods and each of their exact legal source state(s)) with every oracle-checked
+      value derivable from that same visible sentence (no hidden key, no leak).
+- [x] An eight-op driven script, hand-walked against `spec['transitions']` before being added to the
+      roster, exercising all three REQUIRED illegal cases (`ship()` from `"placed"` -- skipping
+      payment/picking/packing, `cancel()` from `"shipped"` -- too late, `pick()` from `"placed"` --
+      unpaid), interleaved with the full legal `pay -> pick -> pack -> ship -> deliver` path, landing
+      on `expect_final="delivered"`. A build that lets `ship()` fire while `state` is `"placed"`
+      (skipping straight past payment, picking, and packing) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No banned leaf keyword appears in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `order_fulfillment.py` fixture is accepted by `grade_real_system_task(ORDER_FULFILLMENT_TASK,
+      ...)`; a BROKEN fixture whose `ship()` never checks the current state (ships straight from
+      `"placed"`) is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-66] Thirty-first CREATE task ("batch-8"), the batch's double_entry member, in a NEW fintech/marketplace vertical (escrow ledger)
+
+A THIRTY-FIRST held-out CREATE task ("batch-8"), the batch's `double_entry` member, in a NEW
+fintech/marketplace (escrow) vertical, graded by the ALREADY-LANDED `oracle_kind="double_entry"`
+dispatch REQ-17 lands (no new oracle code: reuses `_grade_double_entry` ->
+`harness.double_entry_oracle.grade_double_entry` verbatim). DISTINCT from every prior double-entry
+task (general cash/revenue/expense journal, accounts-receivable invoicing/aging, payroll): this
+models a two-sided marketplace's buyer/escrow/seller/platform-fee accounting across a
+fund-then-release-or-refund workflow. `MARKETPLACE_ESCROW_TASK` (`RealSystemTask`,
+`cls="marketplace"`, `oracle_kind="double_entry"`) is added to `REAL_SYSTEMS_TASKS`.
+
+#### Acceptance Criteria
+- [x] `MARKETPLACE_ESCROW_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      double-entry contract (filename `marketplace_escrow_ledger.py`, the class name, the four
+      account reader methods, the `post(legs)` signature and debit-ADDS/credit-SUBTRACTS
+      convention, the fund/release/refund posting conventions, the balanced-vs-unbalanced
+      accept/reject contract) with every oracle-checked value derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] A five-posting driven script, hand-verified via an independent debit-positive/credit-negative
+      shadow-math walk before being added to the roster: an unbalanced entry FIRST (debit escrow
+      10000, credit buyer_wallet 9000 -- off by 1000 cents, must be rejected), then order #1
+      ($100.00, 10% platform fee: fund escrow, then release on delivery) and order #2 ($50.00:
+      fund escrow, then refund before delivery), landing on `expect_final={"buyer_wallet": -10000,
+      "escrow": 0, "seller_wallet": 9000, "platform_fee": 1000}` -- independently verified to sum
+      to exactly 0 across all four accounts (the double-entry invariant). A build that lets an
+      unbalanced posting succeed is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `marketplace_escrow_ledger.py` fixture is accepted by
+      `grade_real_system_task(MARKETPLACE_ESCROW_TASK, ...)`; a BROKEN fixture whose `post()` never
+      checks debits==credits (accepts an unbalanced posting) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-67] Thirty-second CREATE task ("batch-8"), the batch's clock member, in a NEW saas/auth vertical (sliding session idle-timeout)
+
+A THIRTY-SECOND held-out CREATE task ("batch-8"), the batch's `clock` member, in a NEW saas/auth
+vertical, graded by the ALREADY-LANDED `oracle_kind="clock"` dispatch REQ-28 lands (no new oracle
+code: reuses `_grade_clock` -> `harness.clock_oracle.grade_clock` verbatim). This completes
+batch-8's ORACLE-KIND DIVERSITY goal -- one task each for import/state_machine/double_entry/clock,
+across four genuinely real production verticals. DISTINCT from the existing
+`TOKEN_VALIDITY_TASK`/`LOCKOUT_BACKOFF_TASK` clock tasks (a fixed-window token expiry, and a
+growing lockout backoff window): this models a SLIDING idle-timeout session store, where every
+`touch()` slides the window forward rather than counting from a fixed start. `SESSION_IDLE_
+TIMEOUT_TASK` (`RealSystemTask`, `cls="auth"`, `oracle_kind="clock"`) is added to
+`REAL_SYSTEMS_TASKS`.
+
+#### Acceptance Criteria
+- [x] `SESSION_IDLE_TIMEOUT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      injected-clock contract (filename `session_idle_timeout.py`, the class name, the `now_fn`
+      clock-param contract, the `idle_seconds` constructor argument, the `touch`/`is_active`
+      method contracts, and the STRICT less-than boundary convention) with every oracle-checked
+      value derivable from that same visible sentence (no hidden key, no leak).
+- [x] An eight-step hand-walked timeline (idle_seconds=30), independently re-derived before being
+      added to the roster: a never-touched session is inactive; touch/create "s1" at t=0 is active
+      at t=0 and t=29 (elapsed < 30); touching "s1" again at t=29 SLIDES the window forward, so "s1"
+      is active again at t=58 (elapsed 29 since the t=29 touch) but inactive at t=59 (elapsed
+      exactly 30 -- the PINNED strict "<" boundary) and t=60 (elapsed 31). A build that reads the
+      real wall clock instead of the injected `now_fn`, or that uses a fixed (non-sliding) expiry
+      from first-touch instead of the most recent touch, is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. The sentence avoids "expire"/"expiry" entirely
+      (uses "idle"/"gone idle" instead) and every other banned leaf-fingerprinting token.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `session_idle_timeout.py` fixture is accepted by
+      `grade_real_system_task(SESSION_IDLE_TIMEOUT_TASK, ...)`; a BROKEN fixture that reads the
+      real wall clock (`time.time()`) instead of the injected `now_fn` is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four
+      REQ-64/65/66/67 tasks (length 50 -> 54), one per import/state_machine/double_entry/clock
+      oracle kind, in four genuinely real production verticals.

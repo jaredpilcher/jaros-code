@@ -1939,3 +1939,136 @@
 
 #### Implements
 - [REQ-63] Twenty-eighth CREATE task ("batch-7"), the batch's clock member, in a NEW saas/infra vertical (API rate limiter)
+
+### [TASK-59] Twenty-ninth CREATE task ("batch-8"), the batch's import member, in a NEW devtools/build-systems vertical (DAG topological sort) (REQ-64)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `DAG_TOPO_SORT_TASK` (`RealSystemTask`, `cls="devtools"`,
+   `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only single-file module
+   `dag_topo_sort.py` defining `topo_sort(nodes, edges)`/`has_cycle(nodes, edges)` -- a
+   build-system-style dependency-graph resolver. PIN a deterministic tie-break convention (Kahn's
+   algorithm, ties broken by ascending lexicographic node id) so the returned order is fully
+   deterministic. Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-recompute (a standalone scratch walk of the exact pinned tie-break rule, not trusted
+   blindly) five vectors before adding the task to the roster:
+   `topo_sort(["a","b","c","d"], [["a","b"],["a","c"],["b","d"],["c","d"]]) == ["a","b","c","d"]`;
+   `topo_sort(["c","a","b"], []) == ["a","b","c"]` (pure lexicographic tie-break, using a
+   non-alphabetical input order with no edges); `topo_sort(["a","b"], [["a","b"],["b","a"]])` raises
+   `ValueError` (a cycle); `has_cycle` returns `False`/`True` on the same two graphs respectively.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(DAG_TOPO_SORT_TASK.sentence) is None` (run
+   this LIVE, not assumed).
+4. Create `tests/test_ext060_batch8_tasks.py` (OFFLINE, no model/Jetson): a CORRECT
+   `dag_topo_sort.py` fixture (implementing the pinned Kahn's-algorithm-with-lexicographic-tie-break
+   rule) is accepted by `grade_real_system_task(DAG_TOPO_SORT_TASK, ...)`; a BROKEN fixture that
+   ignores the tie-break (uses raw input-list order) and never detects a cycle (returns a partial
+   list instead of raising) is rejected; leaves-OFF holds; the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch8_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-64 ranges, via `jarify-manage-links`) and flip the
+   REQ-64 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-64] Twenty-ninth CREATE task ("batch-8"), the batch's import member, in a NEW devtools/build-systems vertical (DAG topological sort)
+
+### [TASK-60] Thirtieth CREATE task ("batch-8"), the batch's state_machine member, in a NEW e-commerce/fulfillment vertical (order fulfillment) (REQ-65)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `ORDER_FULFILLMENT_TASK` (`RealSystemTask`,
+   `cls="fulfillment"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a
+   stdlib-only single-file module `order_fulfillment.py` defining `OrderFulfillment`: a `state`
+   property over exactly eight states (`placed`/`paid`/`picked`/`packed`/`shipped`/`delivered`/
+   `cancelled`/`refunded`) and seven zero-argument action methods, with `cancel` legal from
+   `placed`/`paid` ONLY and `refund` legal from `paid`/`picked`/`packed`/`shipped`/`delivered`.
+   Reuse the ALREADY-LANDED `_grade_state_machine` dispatch (REQ-13) -- no new oracle code.
+2. Hand-walk (against `spec['transitions']`, not trusted blindly) an eight-step `drive` script
+   before adding the task to the roster: illegal `ship`-from-`placed` FIRST (skip), then illegal
+   `pick`-from-`placed` (unpaid), then the full legal path `pay -> pick -> pack -> ship`, then
+   illegal `cancel`-from-`shipped` (too late), then the legal `deliver`, landing on
+   `expect_final="delivered"`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(ORDER_FULFILLMENT_TASK.sentence) is None`
+   (run this LIVE, not assumed).
+4. Extend `tests/test_ext060_batch8_tasks.py` (same file TASK-59 creates, OFFLINE, no model/
+   Jetson): a CORRECT `order_fulfillment.py` fixture (a real transition-table class) is accepted by
+   `grade_real_system_task(ORDER_FULFILLMENT_TASK, ...)`; a BROKEN fixture whose `ship()` never
+   checks the current state (ships straight from `placed`) is rejected; leaves-OFF holds; the task
+   is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch8_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-65 ranges, via `jarify-manage-links`) and flip the
+   REQ-65 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-65] Thirtieth CREATE task ("batch-8"), the batch's state_machine member, in a NEW e-commerce/fulfillment vertical (order fulfillment)
+
+### [TASK-61] Thirty-first CREATE task ("batch-8"), the batch's double_entry member, in a NEW fintech/marketplace vertical (escrow ledger) (REQ-66)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `MARKETPLACE_ESCROW_TASK` (`RealSystemTask`,
+   `cls="marketplace"`, `oracle_kind="double_entry"`) with a contract-exact sentence for a
+   stdlib-only single-file module `marketplace_escrow_ledger.py` defining
+   `MarketplaceEscrowLedger`: a double-entry ledger over `buyer_wallet`/`escrow`/`seller_wallet`/
+   `platform_fee`, `post(legs)` applying debit-ADDS/credit-SUBTRACTS legs and rejecting an
+   unbalanced entry. Reuse the ALREADY-LANDED `_grade_double_entry` dispatch (REQ-17) -- no new
+   oracle code.
+2. Hand-verify (via an independent debit-positive/credit-negative shadow-math walk, not trusted
+   blindly) a five-posting `drive` script before adding the task to the roster: an unbalanced entry
+   FIRST (debit escrow 10000, credit buyer_wallet 9000 -- must be rejected), then order #1
+   ($100.00, 10% platform fee: fund escrow, then release on delivery) and order #2 ($50.00: fund
+   escrow, then refund before delivery), landing on `expect_final={"buyer_wallet": -10000,
+   "escrow": 0, "seller_wallet": 9000, "platform_fee": 1000}` -- independently confirm this sums to
+   exactly 0 across all four accounts.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(MARKETPLACE_ESCROW_TASK.sentence) is None`
+   (run this LIVE, not assumed).
+4. Extend `tests/test_ext060_batch8_tasks.py` (same file TASK-59/60 create, OFFLINE, no
+   model/Jetson): a CORRECT `marketplace_escrow_ledger.py` fixture is accepted by
+   `grade_real_system_task(MARKETPLACE_ESCROW_TASK, ...)`; a BROKEN fixture whose `post()` never
+   checks debits==credits (accepts an unbalanced posting) is rejected; leaves-OFF holds; the task
+   is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch8_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-66 ranges, via `jarify-manage-links`) and flip the
+   REQ-66 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-66] Thirty-first CREATE task ("batch-8"), the batch's double_entry member, in a NEW fintech/marketplace vertical (escrow ledger)
+
+### [TASK-62] Thirty-second CREATE task ("batch-8"), the batch's clock member, in a NEW saas/auth vertical (sliding session idle-timeout) (REQ-67)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `SESSION_IDLE_TIMEOUT_TASK` (`RealSystemTask`,
+   `cls="auth"`, `oracle_kind="clock"`) with a contract-exact sentence for a stdlib-only
+   single-file module `session_idle_timeout.py` defining `SessionStore`: `SessionStore(idle_seconds,
+   now_fn)`, `touch(session_id)` refreshing/sliding last-activity to now, `is_active(session_id)`
+   returning `True` iff elapsed seconds since the last touch is STRICTLY LESS THAN `idle_seconds`.
+   Reuse the ALREADY-LANDED `_grade_clock` dispatch (REQ-28) -- no new oracle code. Say "idle"/
+   "gone idle" (never "expire"/"expiry") and avoid every other banned leaf-fingerprinting token.
+2. Hand-walk (idle_seconds=30, not trusted blindly) an eight-step `timeline` before adding the task
+   to the roster: a never-touched session is inactive; touch/create "s1" at t=0 -> active at t=0 and
+   t=29; touch "s1" again at t=29 (SLIDES the window) -> active at t=58 (elapsed 29 since the t=29
+   touch) but inactive at t=59 (elapsed exactly 30 -- the PINNED strict "<" boundary) and t=60
+   (elapsed 31).
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(SESSION_IDLE_TIMEOUT_TASK.sentence) is None`
+   (run this LIVE, not assumed).
+4. Extend `tests/test_ext060_batch8_tasks.py` (same file TASK-59/60/61 create, OFFLINE, no
+   model/Jetson): a CORRECT `session_idle_timeout.py` fixture is accepted by
+   `grade_real_system_task(SESSION_IDLE_TIMEOUT_TASK, ...)`; a BROKEN fixture that reads the real
+   wall clock (`time.time()`) instead of the injected `now_fn` is rejected; leaves-OFF holds; the
+   task is a member of `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting
+   `REAL_SYSTEMS_TASKS` grew by exactly these four REQ-64/65/66/67 tasks (length 50 -> 54), one per
+   import/state_machine/double_entry/clock oracle kind.
+5. Bump the twelve pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 50` -> `== 54`) in `tests/test_ext060_atlas_batch4_tasks.py`,
+   `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_atlas_wave2_tasks.py`,
+   `tests/test_ext060_atlas_wave7_tasks.py`, `tests/test_ext060_batch5_tasks.py`,
+   `tests/test_ext060_batch6_tasks.py`, `tests/test_ext060_batch7_tasks.py`,
+   `tests/test_ext060_clock_agent_tasks.py`, `tests/test_ext060_modify_wave2.py`,
+   `tests/test_ext060_spec_hint.py`, `tests/test_ext060_ticket_booking_invoice.py`, and
+   `tests/test_ext060_wave8_import_tasks.py`.
+6. Run `python -m pytest tests/test_ext060_*.py -q`; confirm green (offline only; 54-item CREATE
+   roster). Update `.jarify/EXT-060/index.json` (REQ-67 ranges, via `jarify-manage-links`) and flip
+   the REQ-67 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-67] Thirty-second CREATE task ("batch-8"), the batch's clock member, in a NEW saas/auth vertical (sliding session idle-timeout)

@@ -152,8 +152,8 @@ def test_roster_size_unchanged():
     # (tests/test_ext060_batch7_tasks.py) each added four more. The CREATE count is still unchanged
     # by this file. MODIFY bumped 6 -> 11: REQ-35..39 (tests/test_ext060_modify_wave2.py) added
     # five more MODIFY tasks, growing the previously lopsided 26-CREATE-vs-6-MODIFY split (now
-    # 50-vs-11).
-    assert len(REAL_SYSTEMS_TASKS) == 50
+    # 54-vs-11).
+    assert len(REAL_SYSTEMS_TASKS) == 54
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 11
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert names == {

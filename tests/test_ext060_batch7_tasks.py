@@ -520,8 +520,9 @@ def test_batch7_tasks_cover_all_four_non_import_oracle_kinds_exactly_once():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_batch7_tasks():
-    # bumped 46 -> 50: this module's own REQ-60/61/62/63 add four more CREATE tasks.
-    assert len(REAL_SYSTEMS_TASKS) == 50
+    # bumped 46 -> 50: this module's own REQ-60/61/62/63 add four more CREATE tasks (then
+    # REQ-64..67 in tests/test_ext060_batch8_tasks.py bumped it again, 50 -> 54).
+    assert len(REAL_SYSTEMS_TASKS) == 54
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "elevator-dispatch-state-machine" in names
     assert "hotel-room-inventory-conservation" in names

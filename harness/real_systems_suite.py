@@ -5626,3 +5626,368 @@ TOKEN_BUCKET_RATE_LIMITER_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(TOKEN_BUCKET_RATE_LIMITER_TASK)
 # #EXT-060-REQ-63 End
+
+
+# #EXT-060-REQ-64 Start
+# TASK-59: a TWENTY-NINTH held-out CREATE task ("batch-8", picked for ORACLE-KIND DIVERSITY across
+# FOUR genuinely real production verticals -- devtools/build-systems, e-commerce, fintech/
+# marketplace, saas/auth), the batch's `import` member, in a NEW devtools/build-systems vertical --
+# graded by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code:
+# reuses `_grade_import` -> `harness.import_driver.drive_import` verbatim). `DAG_TOPO_SORT_TASK`
+# (`RealSystemTask`, `cls="devtools"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+# contract-exact sentence for a stdlib-only, single-file module `dag_topo_sort.py` defining
+# `topo_sort(nodes, edges)`/`has_cycle(nodes, edges)` -- a build-system-style dependency-graph
+# resolver. Every vector below was independently RECOMPUTED (a standalone scratch walk of the
+# PINNED Kahn's-algorithm-with-lexicographic-tie-break rule the sentence itself pins) before this
+# task was added to the roster:
+#   topo_sort(["a","b","c","d"], [["a","b"],["a","c"],["b","d"],["c","d"]]): in-degrees a=0,b=1,
+#     c=1,d=2 -> emit a (only in-degree-0 node) -> b,c drop to 0, tie-break lexicographic smallest
+#     -> emit b -> d drops to 1 -> emit c (only remaining candidate) -> d drops to 0 -> emit d ->
+#     ["a","b","c","d"].
+#   topo_sort(["c","a","b"], []): no edges, every node in-degree 0 from the start -- PURE
+#     lexicographic tie-break every step -> ["a","b","c"] (proves the tie-break, independent of any
+#     edge-driven ordering, since the input list order is deliberately NOT alphabetical).
+#   topo_sort(["a","b"], [["a","b"],["b","a"]]): in-degrees a=1(from b), b=1(from a) -- no node
+#     ever reaches in-degree 0 -- a cycle -> raises ValueError.
+#   has_cycle(...) mirrors the same two graphs: False for the diamond DAG, True for the 2-cycle.
+_DAG_TOPO_SORT_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "dag_topo_sort.py, using only the standard library, defining exactly two public functions, "
+    "`topo_sort(nodes, edges)` and `has_cycle(nodes, edges)`, that together resolve a build-system "
+    "style dependency graph into a valid build order. Both functions take the SAME two positional "
+    "arguments: `nodes`, a list of unique node identifiers (each a short plain-text label), and "
+    "`edges`, a list of 2-element lists `[u, v]` where each `[u, v]` means node `u` must appear "
+    "BEFORE node `v` in any valid ordering (u is a direct prerequisite of v); every id referenced "
+    "by `edges` is always also a member of `nodes`. `topo_sort(nodes, edges)` returns a NEW list "
+    "containing every id from `nodes` exactly once, ordered so that for EVERY `[u, v]` in `edges`, "
+    "`u` appears somewhere before `v` in the returned list. Because more than one valid ordering "
+    "can exist for the same graph, the exact order returned is PINNED by this deterministic "
+    "tie-break rule (Kahn's algorithm with a lexicographic tie-break): at each step, from among "
+    "all ids not yet placed in the result whose every prerequisite (every `u` of an `[u, v]` edge "
+    "targeting that id) has ALREADY been placed, `topo_sort` must place the one that sorts "
+    "lexicographically SMALLEST (plain ascending comparison of the id text) next -- so for the "
+    "same `nodes`/`edges` input, the returned order is always identical across runs. If `edges` "
+    "describes a CYCLE (some subset of ids has a circular prerequisite chain, so no id in that "
+    "subset ever becomes eligible and no valid ordering exists at all), `topo_sort(nodes, edges)` "
+    "must instead raise `ValueError` and must never return a partial or incomplete list. "
+    "`has_cycle(nodes, edges)` performs the SAME prerequisite analysis and returns `True` when "
+    "`edges` describes a cycle (no valid ordering exists) or `False` when the graph is a valid DAG "
+    "(a full ordering exists) -- unlike `topo_sort`, `has_cycle` must NEVER raise `ValueError`, "
+    "regardless of whether the graph actually has a cycle."
+)
+
+DAG_TOPO_SORT_TASK = RealSystemTask(
+    name="dag-topological-sort-lib",
+    cls="devtools",
+    sentence=_DAG_TOPO_SORT_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "dag_topo_sort",
+        "api_calls": [
+            {"id": "topo_sort_diamond", "target": "topo_sort",
+             "args": [["a", "b", "c", "d"],
+                      [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"]]], "kwargs": {}},
+            {"id": "topo_sort_no_edges", "target": "topo_sort",
+             "args": [["c", "a", "b"], []], "kwargs": {}},
+            {"id": "topo_sort_cycle", "target": "topo_sort",
+             "args": [["a", "b"], [["a", "b"], ["b", "a"]]], "kwargs": {}},
+            {"id": "has_cycle_false", "target": "has_cycle",
+             "args": [["a", "b", "c", "d"],
+                      [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"]]], "kwargs": {}},
+            {"id": "has_cycle_true", "target": "has_cycle",
+             "args": [["a", "b"], [["a", "b"], ["b", "a"]]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "topo_sort_diamond",
+             "expected": ["a", "b", "c", "d"]},
+            {"kind": "returns_equals", "call_id": "topo_sort_no_edges",
+             "expected": ["a", "b", "c"]},
+            {"kind": "raises", "call_id": "topo_sort_cycle", "exception": "ValueError"},
+            {"kind": "returns_equals", "call_id": "has_cycle_false", "expected": False},
+            {"kind": "returns_equals", "call_id": "has_cycle_true", "expected": True},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(DAG_TOPO_SORT_TASK)
+# #EXT-060-REQ-64 End
+
+
+# #EXT-060-REQ-65 Start
+# TASK-60: a THIRTIETH held-out CREATE task ("batch-8"), the batch's `state_machine` member, in a
+# NEW e-commerce/fulfillment vertical -- graded by the ALREADY-LANDED `oracle_kind="state_machine"`
+# dispatch REQ-13 lands (no new oracle code: reuses `_grade_state_machine` ->
+# `harness.state_machine_oracle.grade_state_machine` verbatim). DISTINCT from the existing
+# `ORDER_LIFECYCLE_TASK` (`cls="lifecycle"`, REQ-13: a simple 5-state created/paid/shipped/
+# delivered/cancelled order with no branching cancel/refund sources): this models a RICHER 8-state
+# fulfillment pipeline (placed/paid/picked/packed/shipped/delivered/cancelled/refunded) where
+# `cancel` is legal from exactly TWO source states and `refund` is legal from FIVE source states.
+# `ORDER_FULFILLMENT_TASK` (`RealSystemTask`, `cls="fulfillment"`, `oracle_kind="state_machine"`) is
+# added to `REAL_SYSTEMS_TASKS`. The eight-op drive script below was hand-walked against
+# `spec['transitions']` (see the inline shadow-state comment) before this task was added to the
+# roster:
+#   placed --ship(reject: skip)--> placed --pick(reject: unpaid)--> placed --pay(accept)--> paid
+#   --pick(accept)--> picked --pack(accept)--> packed --ship(accept)--> shipped
+#   --cancel(reject: too late)--> shipped --deliver(accept)--> delivered
+# landing on expect_final="delivered", exercising all three REQUIRED illegal cases (ship-from-
+# placed/skip, cancel-from-shipped/too-late, pick-from-placed/unpaid).
+_ORDER_FULFILLMENT_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "order_fulfillment.py, using only the standard library, defining exactly one public class "
+    "named `OrderFulfillment` modeling one e-commerce order's fulfillment lifecycle from placement "
+    "through delivery (or an early cancellation, or a later refund). `OrderFulfillment()` (no "
+    "constructor arguments) creates an order whose lifecycle starts in the `\"placed\"` state (the "
+    "order has been placed but not yet paid for). It exposes a read-only property named `state` "
+    "(accessed as an attribute, never called) that always returns the order's CURRENT lifecycle "
+    "state as one of exactly eight state names: `\"placed\"`, `\"paid\"`, `\"picked\"`, "
+    "`\"packed\"`, `\"shipped\"`, `\"delivered\"`, `\"cancelled\"`, or `\"refunded\"`. It defines "
+    "exactly seven zero-argument action methods. `pay()` moves the order from `\"placed\"` to "
+    "`\"paid\"` (payment has been captured) -- legal ONLY from `\"placed\"`. `pick()` moves the "
+    "order from `\"paid\"` to `\"picked\"` (warehouse staff have pulled the items) -- legal ONLY "
+    "from `\"paid\"`. `pack()` moves the order from `\"picked\"` to `\"packed\"` -- legal ONLY "
+    "from `\"picked\"`. `ship()` moves the order from `\"packed\"` to `\"shipped\"` -- legal ONLY "
+    "from `\"packed\"` (an order can never ship before it has actually been picked and packed). "
+    "`deliver()` moves the order from `\"shipped\"` to `\"delivered\"` -- legal ONLY from "
+    "`\"shipped\"`. `cancel()` moves the order to `\"cancelled\"` -- legal ONLY from `\"placed\"` "
+    "OR `\"paid\"` (a customer may cancel before the warehouse has started picking the order, but "
+    "NOT once picking has begun -- it is too late to cancel a `\"picked\"`, `\"packed\"`, "
+    "`\"shipped\"`, or `\"delivered\"` order). `refund()` moves the order to `\"refunded\"` -- "
+    "legal from `\"paid\"`, `\"picked\"`, `\"packed\"`, `\"shipped\"`, OR `\"delivered\"` (any "
+    "state once payment has actually been captured), but NEVER from `\"placed\"` (nothing has been "
+    "paid yet, so there is nothing to refund) and NEVER from the terminal `\"cancelled\"` or "
+    "`\"refunded\"` states themselves. Calling ANY of these seven methods when the order is not in "
+    "one of that method's legal source states must instead raise `ValueError` and must leave "
+    "`state` COMPLETELY UNCHANGED -- for example, calling `ship()` while `state` is `\"placed\"` "
+    "(skipping straight past payment, picking, and packing), calling `cancel()` while `state` is "
+    "`\"shipped\"` (too late to cancel), or calling `pick()` while `state` is `\"placed\"` (the "
+    "order has not been paid for yet) must all raise `ValueError` without changing `state`."
+)
+
+ORDER_FULFILLMENT_TASK = RealSystemTask(
+    name="order-fulfillment-state-machine",
+    cls="fulfillment",
+    sentence=_ORDER_FULFILLMENT_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "order_fulfillment",
+        "entity": "OrderFulfillment",
+        "spec": {
+            "states": ["placed", "paid", "picked", "packed", "shipped", "delivered",
+                       "cancelled", "refunded"],
+            "initial": "placed",
+            "transitions": {
+                "placed:pay": "paid",
+                "paid:pick": "picked",
+                "picked:pack": "packed",
+                "packed:ship": "shipped",
+                "shipped:deliver": "delivered",
+                "placed:cancel": "cancelled",
+                "paid:cancel": "cancelled",
+                "paid:refund": "refunded",
+                "picked:refund": "refunded",
+                "packed:refund": "refunded",
+                "shipped:refund": "refunded",
+                "delivered:refund": "refunded",
+            },
+            # Illegal ship-from-"placed" FIRST (skip), then illegal pick-from-"placed" (unpaid),
+            # then the full legal path pay -> pick -> pack -> ship, then illegal
+            # cancel-from-"shipped" (too late), then the legal deliver, landing on "delivered".
+            "drive": [
+                {"action": "ship", "expect": "reject"},
+                {"action": "pick", "expect": "reject"},
+                {"action": "pay", "expect": "accept"},
+                {"action": "pick", "expect": "accept"},
+                {"action": "pack", "expect": "accept"},
+                {"action": "ship", "expect": "accept"},
+                {"action": "cancel", "expect": "reject"},
+                {"action": "deliver", "expect": "accept"},
+            ],
+            "expect_final": "delivered",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(ORDER_FULFILLMENT_TASK)
+# #EXT-060-REQ-65 End
+
+
+# #EXT-060-REQ-66 Start
+# TASK-61: a THIRTY-FIRST held-out CREATE task ("batch-8"), the batch's `double_entry` member, in a
+# NEW fintech/marketplace (escrow) vertical -- graded by the ALREADY-LANDED
+# `oracle_kind="double_entry"` dispatch REQ-17 lands (no new oracle code: reuses
+# `_grade_double_entry` -> `harness.double_entry_oracle.grade_double_entry` verbatim). DISTINCT
+# from every prior double-entry task (general cash/revenue/expense journal, accounts-receivable
+# invoicing/aging, payroll): this models a two-sided marketplace's buyer/escrow/seller/platform-fee
+# accounting across a fund-then-release-or-refund workflow. `MARKETPLACE_ESCROW_TASK`
+# (`RealSystemTask`, `cls="marketplace"`, `oracle_kind="double_entry"`) is added to
+# `REAL_SYSTEMS_TASKS`. `expect_final` is hand-derived from the debit-positive/credit-negative
+# shadow math (independently re-walked below) before this task was added to the roster:
+#   unbalanced FIRST: debit escrow 10000, credit buyer_wallet 9000 -- signed total 10000-9000=1000
+#     != 0 -- rejected, every balance stays 0.
+#   order #1 ($100.00, 10% platform fee): fund escrow (debit escrow +10000, credit buyer_wallet
+#     -10000) -> buyer_wallet=-10000, escrow=10000; release on delivery (debit seller_wallet +9000,
+#     debit platform_fee +1000, credit escrow -10000) -> escrow=0, seller_wallet=9000,
+#     platform_fee=1000.
+#   order #2 ($50.00, refunded before delivery): fund escrow (debit escrow +5000, credit
+#     buyer_wallet -5000) -> buyer_wallet=-15000, escrow=5000; refund (debit buyer_wallet +5000,
+#     credit escrow -5000) -> buyer_wallet=-10000, escrow=0.
+#   FINAL: buyer_wallet=-10000, escrow=0, seller_wallet=9000, platform_fee=1000 -- sums to exactly
+#   0 across all four accounts (the double-entry invariant), matching `expect_final` below.
+_MARKETPLACE_ESCROW_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "marketplace_escrow_ledger.py, using only the standard library, defining exactly one public "
+    "class named `MarketplaceEscrowLedger` modeling a two-sided marketplace's escrow accounting "
+    "over exactly four named accounts: `buyer_wallet`, `escrow`, `seller_wallet`, and "
+    "`platform_fee`. `MarketplaceEscrowLedger()` (no constructor arguments) creates a ledger where "
+    "all four accounts start at a balance of `0` (an exact integer number of cents). It exposes "
+    "four zero-argument reader methods, `buyer_wallet()`, `escrow()`, `seller_wallet()`, and "
+    "`platform_fee()`, each returning that account's CURRENT integer balance in cents. It defines "
+    "exactly one method, `post(legs)`, taking one positional argument -- a list of leg dicts, each "
+    "either `{\"account\": <name>, \"debit\": <cents>}` or `{\"account\": <name>, \"credit\": "
+    "<cents>}`, where `<name>` is one of the four account names above and `<cents>` is a positive "
+    "integer. Posting a leg to an account with `debit` ADDS that many cents to the account's "
+    "balance; posting a leg with `credit` SUBTRACTS that many cents from the account's balance. "
+    "When a buyer's payment for an order is captured into escrow (the marketplace keeps the funds "
+    "in trust until the order is delivered), it is recorded by posting legs that DEBIT `escrow` "
+    "for the full order amount and CREDIT `buyer_wallet` for the same amount. When that order is "
+    "later marked delivered and the escrowed funds are released, it is recorded by posting legs "
+    "that CREDIT `escrow` for the full order amount, DEBIT `seller_wallet` for the seller's net "
+    "payout, and DEBIT `platform_fee` for the marketplace's commission (the seller's payout plus "
+    "the commission always equals the full order amount). If instead an escrowed order is "
+    "refunded before delivery, it is recorded by posting legs that CREDIT `escrow` for the full "
+    "order amount and DEBIT `buyer_wallet` for the same amount (the funds return to the buyer). "
+    "If the legs in one call to `post(legs)` are BALANCED (the sum of every `debit` amount in the "
+    "list equals the sum of every `credit` amount in the list), `post(legs)` must apply EVERY leg "
+    "to its account's balance and return normally. If the legs are UNBALANCED (the sum of the "
+    "`debit` amounts does not equal the sum of the `credit` amounts), `post(legs)` must instead "
+    "raise `ValueError` and leave EVERY account's balance COMPLETELY UNCHANGED -- no partial "
+    "posting of any leg from an unbalanced call."
+)
+
+MARKETPLACE_ESCROW_TASK = RealSystemTask(
+    name="marketplace-escrow-double-entry-ledger",
+    cls="marketplace",
+    sentence=_MARKETPLACE_ESCROW_SENTENCE,
+    oracle_kind="double_entry",
+    oracle_spec={
+        "module": "marketplace_escrow_ledger",
+        "entity": "MarketplaceEscrowLedger",
+        "spec": {
+            "accounts": ["buyer_wallet", "escrow", "seller_wallet", "platform_fee"],
+            "initial": {"buyer_wallet": 0, "escrow": 0, "seller_wallet": 0, "platform_fee": 0},
+            "post_method": "post",
+            # Unbalanced entry FIRST (debit escrow 10000, credit buyer_wallet 9000 -- credits fall
+            # short by 1000 cents, must be rejected), then order #1 ($100.00, 10% platform fee):
+            # fund escrow (debit escrow 10000 / credit buyer_wallet 10000), release on delivery
+            # (debit seller_wallet 9000 / debit platform_fee 1000 / credit escrow 10000); then
+            # order #2 ($50.00, refunded before delivery): fund escrow (debit escrow 5000 / credit
+            # buyer_wallet 5000), refund (debit buyer_wallet 5000 / credit escrow 5000) -- landing
+            # on buyer_wallet=-10000, escrow=0, seller_wallet=9000, platform_fee=1000.
+            "drive": [
+                {"legs": [{"account": "escrow", "debit": 10000},
+                          {"account": "buyer_wallet", "credit": 9000}],
+                 "expect": "reject"},
+                {"legs": [{"account": "escrow", "debit": 10000},
+                          {"account": "buyer_wallet", "credit": 10000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "seller_wallet", "debit": 9000},
+                          {"account": "platform_fee", "debit": 1000},
+                          {"account": "escrow", "credit": 10000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "escrow", "debit": 5000},
+                          {"account": "buyer_wallet", "credit": 5000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "buyer_wallet", "debit": 5000},
+                          {"account": "escrow", "credit": 5000}],
+                 "expect": "accept"},
+            ],
+            "expect_final": {
+                "buyer_wallet": -10000, "escrow": 0, "seller_wallet": 9000, "platform_fee": 1000,
+            },
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(MARKETPLACE_ESCROW_TASK)
+# #EXT-060-REQ-66 End
+
+
+# #EXT-060-REQ-67 Start
+# TASK-62: a THIRTY-SECOND held-out CREATE task ("batch-8"), the batch's `clock` member, in a NEW
+# saas/auth vertical -- graded by the ALREADY-LANDED `oracle_kind="clock"` dispatch REQ-28 lands
+# (no new oracle code: reuses `_grade_clock` -> `harness.clock_oracle.grade_clock` verbatim). This
+# completes batch-8's ORACLE-KIND DIVERSITY goal -- one task each for import/state_machine/
+# double_entry/clock, across four genuinely real production verticals. DISTINCT from the existing
+# `TOKEN_VALIDITY_TASK`/`LOCKOUT_BACKOFF_TASK` clock tasks (a fixed-window token expiry, and a
+# growing lockout backoff window): this models a SLIDING idle-timeout session store, where every
+# `touch()` slides the window forward rather than counting from a fixed start. `SESSION_IDLE_
+# TIMEOUT_TASK` (`RealSystemTask`, `cls="auth"`, `oracle_kind="clock"`) is added to
+# `REAL_SYSTEMS_TASKS`. PINNED conventions (both in the sentence and re-derived below, not trusted
+# blindly): `is_active` uses a STRICT less-than boundary (elapsed seconds EQUAL TO `idle_seconds`
+# already counts as inactive); `touch` always SLIDES the window (resets the last-activity reading
+# to the current time), never a fixed absolute expiry from first-touch.
+_SESSION_IDLE_TIMEOUT_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "session_idle_timeout.py, using only the standard library, defining exactly one public class "
+    "named `SessionStore` modeling a SaaS auth session store with a SLIDING idle-timeout window. "
+    "`SessionStore(idle_seconds, now_fn)` accepts exactly two arguments: one positional integer, "
+    "`idle_seconds` (the number of seconds of inactivity after which a session is no longer "
+    "active), and the keyword `now_fn`: a zero-argument callable that returns the current time as "
+    "an integer number of epoch seconds. The class must determine EVERY time-based decision by "
+    "calling `now_fn()` at the moment it needs to know the current time -- it must never read the "
+    "real system clock (`time.time()`, `datetime.datetime.now()`, or any other wall-clock source) "
+    "for any purpose. At construction, the store contains no sessions at all. It exposes exactly "
+    "two methods. `touch(session_id)` takes one positional argument, `session_id` (a text "
+    "identifier), and records that session's last-activity reading as the CURRENT `now_fn()` "
+    "value -- if `session_id` has never been seen before, this CREATES a new session for it "
+    "(starting it out active); if `session_id` already exists, this REFRESHES (slides forward) "
+    "its last-activity reading to the current time, exactly as if the user had just made a new "
+    "request. `touch(session_id)` returns `None`. `is_active(session_id)` takes one positional "
+    "`session_id` argument and returns `True` when `session_id` names a session that has been "
+    "`touch`-ed at least once AND the number of elapsed seconds since that session's MOST RECENT "
+    "`touch` (computed as the current `now_fn()` value minus that session's last-activity reading) "
+    "is STRICTLY LESS THAN `idle_seconds` -- elapsed seconds EQUAL TO or GREATER than "
+    "`idle_seconds` means the session has gone idle and `is_active(session_id)` must return "
+    "`False`. `is_active(session_id)` must also return `False` (never raise) for a `session_id` "
+    "that has never been `touch`-ed at all."
+)
+
+SESSION_IDLE_TIMEOUT_TASK = RealSystemTask(
+    name="session-idle-timeout-lib",
+    cls="auth",
+    sentence=_SESSION_IDLE_TIMEOUT_SENTENCE,
+    oracle_kind="clock",
+    oracle_spec={
+        "module": "session_idle_timeout",
+        "entity": "SessionStore",
+        "spec": {
+            "clock_param": "now_fn",
+            "construct_args": [30],
+            "construct_kwargs": {},
+            # Hand-walked timeline (idle_seconds=30, strict "<" boundary PINNED): a never-touched
+            # session is inactive; touch/create "s1" at t=0 -> active at t=0 (elapsed 0) and at
+            # t=29 (elapsed 29); touch "s1" again at t=29 (SLIDES the window forward) -> active
+            # again at t=58 (elapsed 29 since the t=29 touch); at t=59 elapsed since the t=29 touch
+            # is exactly 30 -- the PINNED strict "<" boundary means this is already inactive
+            # (False), reconfirmed at t=60 (elapsed 31).
+            "timeline": [
+                {"at": 0, "call": "is_active", "args": ["ghost"], "expect": {"returns": False}},
+                {"at": 0, "call": "touch", "args": ["s1"], "expect": {"returns": None}},
+                {"at": 0, "call": "is_active", "args": ["s1"], "expect": {"returns": True}},
+                {"at": 29, "call": "is_active", "args": ["s1"], "expect": {"returns": True}},
+                {"at": 29, "call": "touch", "args": ["s1"], "expect": {"returns": None}},
+                {"at": 58, "call": "is_active", "args": ["s1"], "expect": {"returns": True}},
+                {"at": 59, "call": "is_active", "args": ["s1"], "expect": {"returns": False}},
+                {"at": 60, "call": "is_active", "args": ["s1"], "expect": {"returns": False}},
+            ],
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(SESSION_IDLE_TIMEOUT_TASK)
+# #EXT-060-REQ-67 End
