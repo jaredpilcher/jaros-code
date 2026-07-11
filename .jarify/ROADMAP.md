@@ -655,6 +655,16 @@ ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
 
 ## LATER (weeks — the hard bar + the flywheel)
 
+- **[★★ THE TERMINAL GOAL — SELF-DEVELOPMENT (owner directive 2026-07-10, PRIME-001 intent)]** the final,
+  hardest class: jaros-code becomes good enough to **develop ITSELF on the Jetson under all the same
+  constraints** ($0 local model only, two-plane, honest oracles, spec-first) — planning/building/testing/
+  shipping changes to its own harness through its own Jarify workflow, verified by its own oracles, no
+  paid/cloud/off-device inference ever. This is the true asymptote of the pursuit; every NOW/NEXT item is
+  a rung toward it. Approach INCREMENTALLY + honestly: the board's own path is to add jaros-code-harness
+  self-modification tasks (fix a real harness bug / add a small deterministic lever from a prompt) graded
+  by the existing test-suite + oracle as an independent judge — a self-change counts ONLY when its oracle
+  passes with no regression. Not near-term buildable as a whole; it is the north-star horizon that orders
+  the roadmap, never "done". — asymptote · PRIME-001 terminal intent.
 - **[roster growth]** admit a stronger **fast-trainable Jetson-fit base** model — med · a
   COMPLEMENTARY, SECONDARY lever for the SWE-bench ~13% bar. The PRIMARY lever is the deterministic
   PROSTHETIC toolset (EXT-056 + the ranked complete set — build the tool that makes each miss VISIBLE +

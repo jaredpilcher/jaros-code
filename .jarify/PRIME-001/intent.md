@@ -23,6 +23,19 @@ build-and-modify CLI is **not one feature among many; it is the point** — and 
 that measure it (the held-out creation + modification suites, graded end-to-end through the CLI by
 independent oracles) are therefore the headline scoreboard for the whole pursuit.
 
+**THE TERMINAL GOAL — SELF-DEVELOPMENT (owner directive, 2026-07-10).** The ultimate, final class of
+system this product must be able to build and evolve from a prompt is **jaros-code itself**: the harness
+must become so capable that it can **develop itself — on the Jetson Orin Nano, under every one of these
+same constraints** (all reasoning on the single small local model at $0, two-plane discipline, honest
+independent verification, spec-first governance). This is the last and hardest class — the system
+improving the system — and it is likely the final set of things the owner will need to hand it; it is
+the true asymptote of "as good as or better than Claude Code." It NEVER relaxes a tenet to get there:
+self-development means jaros-code planning, building, testing, and shipping changes to its own harness
+through its own Jarify workflow, verified by its own honest oracles, with no paid/cloud model and no
+off-device inference — ever. Progress toward it is measured, not asserted (a self-change only counts
+when its oracle passes and no regression lands), and it remains an asymptote we converge on without
+ever declaring "done."
+
 **REAL systems, increasingly complex — the ratchet (owner clarification, 2026-07-03).** "Complete
 software systems" means **REAL** ones, not toy stdin/stdout scripts: real web servers and API
 frameworks (Flask/FastAPI/Django), real data/graph/ML libraries (pandas, networkx, SQLAlchemy…),
