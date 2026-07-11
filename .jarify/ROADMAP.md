@@ -798,6 +798,16 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ #165 LIBRARY-SPEC FALSE-REJECT FIXED — EXT-036 REQ-67 (2026-07-10)]** commit **5fc5f0f**: `_is_library_spec`
+  guard stops `_minimum_acceptance` false-rejecting correct import-only library builds (it was mis-parsing prose
+  words "new"/"list" as CLI subcommands and failing a bogus round-trip on ~39 library tasks). False-done-safe (broken
+  libs still fail smoke), CLI specs byte-identical, 1015 tests. build_system now TRUSTS its own correct library work —
+  a concrete rung toward SELF-RUNNING + it UNBLOCKS best-of-k-on-self-acceptance for the marginal library tier.
+- **[★ BOARD +4 CREATE batch-7 oracle-diverse — EXT-060 REQ-60..63 (2026-07-10)]** commit **59864dd**, measured N=3
+  **12/12 CLEAN SWEEP** across 4 DIFFERENT oracle kinds: elevator-dispatch (state_machine), hotel-room-inventory
+  (conservation), payroll-run (double_entry), api-rate-limit-token-bucket (injectable-clock). Deliberately diversified
+  off the import-heavy roster; zero variance. CREATE roster 46→50; **48/50 measured-green**. Board = **50 create + 11
+  modify = 61 classes, ALL 6 oracle kinds in active service.**
 - **[★ BOARD +4 CREATE batch-6 import libs — EXT-060 REQ-56..59 (2026-07-10)]** commit **eecaa30**, measured N=3
   **12/12 CLEAN SWEEP**: roman-numeral-codec, bankers-rounding, run-length-codec, penny-allocation (all import/
   devtools+fintech+data). CREATE roster 42→46; now 44/46 measured-green. Zero variance — PINNING the exact
