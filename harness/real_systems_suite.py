@@ -3821,3 +3821,310 @@ LOCKOUT_ADMIN_UNLOCK_MODIFY = RealSystemModifyTask(
 
 REAL_SYSTEMS_MODIFY_TASKS.append(LOCKOUT_ADMIN_UNLOCK_MODIFY)
 # #EXT-060-REQ-39 End
+
+
+# #EXT-060-REQ-40 Start
+# TASK-35: a FIFTH import-oracle-shaped CREATE task, in a NEW reliability vertical -- a Stripe-style
+# recovery-point request executor -- pulled from the atlas's wave-7 engineering-blog-mining
+# "gradable-today" shortlist (docs/PRODUCTION-SYSTEMS-ATLAS.md EB9, simplified to the pure
+# decision-table shape this shortlist targets: no new idempotency-replay/workflow-replay oracle,
+# just the deterministic replay-decision logic itself), graded by the ALREADY-LANDED
+# `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code -- reuses `_grade_import` ->
+# `harness.import_driver.drive_import` verbatim). Every expected value below was hand-verified via
+# a scratch walk of the exact same before/at-or-after-the-checkpoint rule the sentence pins, before
+# being added to the roster.
+_RECOVERY_POINT_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "recovery_point.py, using only the standard library, defining exactly one public function "
+    "`replay_execution(steps, recovery_point)` that simulates resuming a crashed multi-step job "
+    "from a saved recovery point (the Stripe-style pattern: a checkpoint is recorded at the step "
+    "the job was AT when it stopped, not necessarily after that step finished). `steps` is a "
+    "list of dicts, each `{\"name\": <string>, \"kind\": \"idempotent\"|\"non_idempotent\"}`, "
+    "given in the exact order they must execute; `recovery_point` is an integer index into "
+    "`steps` marking the saved checkpoint. Replay every step in `steps`' original order and "
+    "decide, per step at index `i`, whether it actually runs: (1) if `i < recovery_point` (a "
+    "step that is known to have run to completion in the earlier, interrupted attempt) -- when "
+    "that step's `kind` is `\"idempotent\"`, run it again (it is safe to re-run, e.g. "
+    "re-writing the same database row, so record it in the result); when its `kind` is "
+    "`\"non_idempotent\"`, do NOT run it again (re-running it would have an unsafe duplicate "
+    "side effect, e.g. charging a customer's card a second time, so it must be OMITTED from the "
+    "result entirely); (2) if `i >= recovery_point` (the step the job was in the middle of when "
+    "it stopped, or had never yet reached), run it unconditionally regardless of its `kind`, "
+    "because a step at or after the checkpoint is not known to have completed. Return the list "
+    "of the `name` strings of every step that was actually run (re-run or run for the first "
+    "time), in `steps`' original order, never re-ordered and never deduplicated -- a step that "
+    "is skipped per rule (1) is simply absent from the returned list. `recovery_point` may be "
+    "`0` (nothing precedes it, so every step in `steps` runs unconditionally) or `len(steps) - "
+    "1` (only the very last step runs unconditionally; every step before it is governed by rule "
+    "(1))."
+)
+
+_RP_STEPS_ZERO = [
+    {"name": "A", "kind": "idempotent"},
+    {"name": "B", "kind": "non_idempotent"},
+    {"name": "C", "kind": "idempotent"},
+]
+_RP_STEPS_MID = [
+    {"name": "A", "kind": "idempotent"},
+    {"name": "B", "kind": "non_idempotent"},
+    {"name": "C", "kind": "idempotent"},
+    {"name": "D", "kind": "non_idempotent"},
+    {"name": "E", "kind": "idempotent"},
+]
+_RP_STEPS_END = [
+    {"name": "A", "kind": "idempotent"},
+    {"name": "B", "kind": "non_idempotent"},
+    {"name": "C", "kind": "idempotent"},
+    {"name": "D", "kind": "non_idempotent"},
+]
+
+RECOVERY_POINT_TASK = RealSystemTask(
+    name="reliability-recovery-point-executor-lib",
+    cls="reliability",
+    sentence=_RECOVERY_POINT_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "recovery_point",
+        "api_calls": [
+            # recovery_point=0: nothing precedes it, every step runs unconditionally.
+            {"id": "resume_from_zero", "target": "replay_execution",
+             "args": [_RP_STEPS_ZERO, 0], "kwargs": {}},
+            # recovery_point=3 (mid-list): before it, idempotent A/C re-run, non-idempotent B is
+            # skipped; at/after it, D/E run unconditionally.
+            {"id": "resume_mid_skip", "target": "replay_execution",
+             "args": [_RP_STEPS_MID, 3], "kwargs": {}},
+            # recovery_point=3 == len(steps)-1: only the trailing step D runs unconditionally;
+            # A/C (idempotent) re-run, B (non-idempotent) is skipped.
+            {"id": "resume_at_end", "target": "replay_execution",
+             "args": [_RP_STEPS_END, 3], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "resume_from_zero",
+             "expected": ["A", "B", "C"]},
+            {"kind": "returns_equals", "call_id": "resume_mid_skip",
+             "expected": ["A", "C", "D", "E"]},
+            {"kind": "returns_equals", "call_id": "resume_at_end",
+             "expected": ["A", "C", "D"]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(RECOVERY_POINT_TASK)
+# #EXT-060-REQ-40 End
+
+
+# #EXT-060-REQ-41 Start
+# TASK-36: a SIXTH import-oracle-shaped CREATE task, in a NEW authz vertical -- a Discord-style
+# layered permission-overwrite resolver -- pulled from the SAME atlas wave-7 shortlist (§3.9's
+# decision-table cluster), graded by the SAME ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3
+# lands (no new oracle code). Every expected value below was hand-verified via a scratch
+# clear-then-set bitmask walk of the exact same three-layer rule the sentence pins, before being
+# added to the roster.
+_PERMISSION_OVERWRITE_SENTENCE = (
+    "Write a single-file Python module (never a script) in a file named "
+    "permission_overwrite.py, using only the standard library, defining exactly one public "
+    "function `resolve_permissions(everyone_allow, everyone_deny, role_overwrites, "
+    "member_allow, member_deny)` that resolves a member's EFFECTIVE permission bitmask in one "
+    "channel, modeled on a Discord-style layered permission-overwrite system. Every permission "
+    "argument is a plain non-negative integer bitmask (each SET bit represents one distinct "
+    "permission flag being present); `role_overwrites` is a list of zero or more "
+    "`{\"allow\": <int bitmask>, \"deny\": <int bitmask>}` dicts, one per role the member holds "
+    "that has an overwrite configured for this channel, in ANY order (the algorithm below "
+    "unions every role's `deny` bits together and, separately, unions every role's `allow` bits "
+    "together, so the relative order of entries in `role_overwrites` never affects the result). "
+    "Starting from an all-clear permission value of `0`, apply exactly three layers IN THIS "
+    "ORDER, each layer first CLEARING its deny bits from the running value, THEN SETTING its "
+    "allow bits (deny-before-allow within each layer, so an allow bit in a layer always wins "
+    "over a deny bit from that SAME layer, but a LATER layer's deny always overrides an EARLIER "
+    "layer's allow): (1) the `@everyone` base layer -- clear every bit set in `everyone_deny`, "
+    "then set every bit set in `everyone_allow`; (2) the combined role-overwrite layer -- let "
+    "`role_deny` be the bitwise OR of every entry's `\"deny\"` in `role_overwrites` (`0` when "
+    "the list is empty) and `role_allow` be the bitwise OR of every entry's `\"allow\"`; clear "
+    "every bit set in `role_deny`, then set every bit set in `role_allow`; (3) the "
+    "member-specific layer -- clear every bit set in `member_deny`, then set every bit set in "
+    "`member_allow`. Return the final integer bitmask after all three layers have been applied "
+    "in that order (`@everyone` base, then role denies-then-allows, then member deny-then-allow) "
+    "-- a permission bit that no layer ever sets stays clear (denied) in the result."
+)
+
+PERMISSION_OVERWRITE_TASK = RealSystemTask(
+    name="discord-permission-overwrite-resolution-lib",
+    cls="authz",
+    sentence=_PERMISSION_OVERWRITE_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "permission_overwrite",
+        "api_calls": [
+            # a role DENIES bit 2, but the MEMBER-specific overwrite explicitly ALLOWS bit 2 --
+            # the later member layer must win: 0 -> role deny(2)->0 -> member allow(2) -> 2.
+            {"id": "member_overrides_role_deny", "target": "resolve_permissions",
+             "args": [0, 0, [{"allow": 0, "deny": 2}], 2, 0], "kwargs": {}},
+            # @everyone DENIES bit 1, but a ROLE explicitly ALLOWS bit 1 -- the later role layer
+            # must win over the earlier @everyone deny: 0 -> everyone deny(1)->0 -> role allow(1)->1.
+            {"id": "role_overrides_everyone_deny", "target": "resolve_permissions",
+             "args": [0, 1, [{"allow": 1, "deny": 0}], 0, 0], "kwargs": {}},
+            # @everyone allows bits 1+2 (value 3); nothing ever mentions bit 4 at any layer -- it
+            # must stay clear (denied) in the result, proving an ungranted permission is never
+            # fabricated. Also exercises an EMPTY `role_overwrites` list (no role overwrites).
+            {"id": "ungranted_permission_stays_denied", "target": "resolve_permissions",
+             "args": [3, 0, [], 0, 0], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "member_overrides_role_deny", "expected": 2},
+            {"kind": "returns_equals", "call_id": "role_overrides_everyone_deny", "expected": 1},
+            {"kind": "returns_equals", "call_id": "ungranted_permission_stays_denied",
+             "expected": 3},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(PERMISSION_OVERWRITE_TASK)
+# #EXT-060-REQ-41 End
+
+
+# #EXT-060-REQ-42 Start
+# TASK-37: a SEVENTH import-oracle-shaped CREATE task, reusing the `cls="payroll"` vertical
+# TAX_WITHHOLDING_TASK (REQ-26) already established -- an FLSA blended (weighted-average) overtime
+# calculator, pulled from the SAME atlas wave-7 shortlist, graded by the SAME ALREADY-LANDED
+# `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code). Every expected value below was
+# hand-verified via scratch arithmetic of the exact same total-straight-pay + blended-rate +
+# half-time-premium rule the sentence pins, before being added to the roster.
+_BLENDED_OVERTIME_SENTENCE = (
+    "Write a single-file Python module (never a script) in a file named blended_overtime.py, "
+    "using only the standard library, defining exactly one public function "
+    "`compute_blended_overtime_pay(entries)` that computes one week's total pay owed under the "
+    "U.S. FLSA blended (weighted-average) overtime rule for an hourly worker who worked at more "
+    "than one pay rate during the SAME workweek. `entries` is a list of `[rate_cents, hours]` "
+    "two-element lists (`rate_cents`: a non-negative integer, the hourly rate in whole cents; "
+    "`hours`: a non-negative int or float, the hours worked at that rate), covering every hour "
+    "worked that week. Compute: `total_hours` = the sum of every entry's `hours`; "
+    "`total_straight_pay_cents` = the sum, over every entry, of `rate_cents * hours` (each "
+    "entry's own straight-time pay at its own rate; this value already pays EVERY hour, "
+    "including any overtime hours, once at its own straight rate). When `total_hours` is less "
+    "than or equal to `40`, no overtime premium is owed and the amount owed is simply "
+    "`total_straight_pay_cents`. When `total_hours` is greater than `40`: the "
+    "`blended_regular_rate` (in cents per hour) is `total_straight_pay_cents / total_hours` -- "
+    "the weighted average of every rate actually worked that week, per 29 CFR 778.115; "
+    "`overtime_hours` = `total_hours - 40`; the overtime PREMIUM owed on top of the straight pay "
+    "already counted above is `0.5 * blended_regular_rate * overtime_hours` (only the extra "
+    "HALF of the required time-and-a-half, since the other 1x was already paid via "
+    "`total_straight_pay_cents`); the amount owed is `total_straight_pay_cents` plus that "
+    "overtime premium. In every case (overtime or not), round the final amount owed to the "
+    "nearest whole cent using ROUND-HALF-UP (a value ending in exactly `.5` cents rounds UP, "
+    "e.g. `100.5` rounds to `101`, never Python's default round-half-to-even/'banker's "
+    "rounding'), and return it as a single integer number of cents."
+)
+
+BLENDED_OVERTIME_TASK = RealSystemTask(
+    name="flsa-blended-overtime-calculator-lib",
+    cls="payroll",
+    sentence=_BLENDED_OVERTIME_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "blended_overtime",
+        "api_calls": [
+            # under 40h -- no overtime at all: 2000 cents/hr * 30h = 60000 cents.
+            {"id": "under_40_no_ot", "target": "compute_blended_overtime_pay",
+             "args": [[[2000, 30]]], "kwargs": {}},
+            # over 40h, a SINGLE rate: 1500*45=67500 straight; blended rate == the same 1500
+            # (single rate); OT premium = 0.5*1500*5 = 3750; total = 71250.
+            {"id": "over_40_single_rate", "target": "compute_blended_overtime_pay",
+             "args": [[[1500, 45]]], "kwargs": {}},
+            # over 40h, TWO rates (the blended case): straight = 1000*20 + 2000*25 = 70000;
+            # total_hours=45; blended = 70000/45 = 1555.555...; OT premium =
+            # 0.5*1555.555...*5 = 3888.888...; total = 73888.888... -> rounds (half-up) to 73889.
+            {"id": "over_40_two_rates_blended", "target": "compute_blended_overtime_pay",
+             "args": [[[1000, 20], [2000, 25]]], "kwargs": {}},
+            # exactly 40h -- the boundary is NOT overtime ("greater than 40" required): 1200*40 =
+            # 48000 straight, no premium.
+            {"id": "exactly_40_boundary", "target": "compute_blended_overtime_pay",
+             "args": [[[1200, 40]]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "under_40_no_ot", "expected": 60000},
+            {"kind": "returns_equals", "call_id": "over_40_single_rate", "expected": 71250},
+            {"kind": "returns_equals", "call_id": "over_40_two_rates_blended", "expected": 73889},
+            {"kind": "returns_equals", "call_id": "exactly_40_boundary", "expected": 48000},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(BLENDED_OVERTIME_TASK)
+# #EXT-060-REQ-42 End
+
+
+# #EXT-060-REQ-43 Start
+# TASK-38: an EIGHTH import-oracle-shaped CREATE task, in a NEW comms vertical -- a Twilio-style
+# SMS segmentation calculator -- pulled from the SAME atlas wave-7 shortlist (docs/PRODUCTION-
+# SYSTEMS-ATLAS.md EB16), graded by the SAME ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3
+# lands (no new oracle code). Every expected value below was hand-verified via scratch ceiling-
+# division arithmetic of the exact same GSM-7-vs-UCS-2 + 160/153-vs-70/67 rule the sentence pins,
+# before being added to the roster. Deliberately a SIMPLIFIED GSM-7 detection rule (plain visible
+# ASCII + newline) rather than the real GSM 03.38 extension-table charset -- the sentence says so
+# explicitly ("for THIS simplified... model"), so no oracle leak: every expected value is derived
+# from that same simplified, visible contract.
+_SMS_SEGMENT_SENTENCE = (
+    "Write a single-file Python module (never a script) in a file named sms_segments.py, using "
+    "only the standard library, defining exactly one public function `segment_sms(message)` "
+    "that computes the SMS segmentation of a text message the way a carrier gateway (e.g. "
+    "Twilio) would, for THIS simplified GSM-7-vs-UCS-2 model. `message` is a Python string. "
+    "First classify its encoding: the message is GSM-7-ENCODABLE when every character in it is "
+    "either a visible ASCII character (Unicode code point `0x20` through `0x7E` inclusive) or "
+    "the newline character `\\n` (code point `0x0A`); if `message` contains ANY OTHER character "
+    "(any accented letter, emoji, or other non-ASCII symbol), it must be sent as UCS-2 instead. "
+    "The special case of the EMPTY string (`\"\"`, zero characters) is defined to be "
+    "GSM-7-encodable (vacuously -- it contains no character outside the allowed set). Let `n` "
+    "be the number of characters in `message` (Python's `len(message)`). Then compute the "
+    "segment count: for GSM-7, a message with `n <= 160` fits in exactly 1 segment, and a "
+    "message with `n > 160` is SPLIT across multiple concatenated segments of `153` characters' "
+    "worth of payload each (segment count = the smallest integer `s` such that `s * 153 >= n`, "
+    "i.e. ceiling division of `n` by `153`); for UCS-2, a message with `n <= 70` fits in exactly "
+    "1 segment, and a message with `n > 70` is split across multiple concatenated segments of "
+    "`67` characters' worth of payload each (segment count = the ceiling of `n` divided by "
+    "`67`). The empty string is always exactly 1 segment (it is GSM-7-encodable per the rule "
+    "above and `0 <= 160`). Return a 3-element sequence `(encoding, segment_count, n)` where "
+    "`encoding` is the exact string `\"GSM-7\"` or `\"UCS-2\"`, `segment_count` is a positive "
+    "integer, and `n` is `message`'s character count as defined above."
+)
+
+SMS_SEGMENT_TASK = RealSystemTask(
+    name="sms-segmentation-calculator-lib",
+    cls="comms",
+    sentence=_SMS_SEGMENT_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "sms_segments",
+        "api_calls": [
+            # exactly 160 plain-ASCII chars -- fits in exactly 1 GSM-7 segment.
+            {"id": "gsm_160", "target": "segment_sms", "args": ["A" * 160], "kwargs": {}},
+            # 161 plain-ASCII chars -- one over the single-segment limit, must split at 153/seg:
+            # ceil(161/153) = 2.
+            {"id": "gsm_161", "target": "segment_sms", "args": ["A" * 161], "kwargs": {}},
+            # a single BMP emoji (U+263A) plus 69 ASCII chars = 70 total -- the emoji forces
+            # UCS-2, and 70 fits in exactly 1 UCS-2 segment.
+            {"id": "ucs2_70", "target": "segment_sms",
+             "args": ["☺" + "A" * 69], "kwargs": {}},
+            # same emoji plus 70 ASCII chars = 71 total -- one over the UCS-2 single-segment
+            # limit, must split at 67/seg: ceil(71/67) = 2.
+            {"id": "ucs2_71", "target": "segment_sms",
+             "args": ["☺" + "A" * 70], "kwargs": {}},
+            # the empty string is always exactly 1 GSM-7 segment, 0 characters.
+            {"id": "empty_message", "target": "segment_sms", "args": [""], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "gsm_160", "expected": ["GSM-7", 1, 160]},
+            {"kind": "returns_equals", "call_id": "gsm_161", "expected": ["GSM-7", 2, 161]},
+            {"kind": "returns_equals", "call_id": "ucs2_70", "expected": ["UCS-2", 1, 70]},
+            {"kind": "returns_equals", "call_id": "ucs2_71", "expected": ["UCS-2", 2, 71]},
+            {"kind": "returns_equals", "call_id": "empty_message", "expected": ["GSM-7", 1, 0]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(SMS_SEGMENT_TASK)
+# #EXT-060-REQ-43 End

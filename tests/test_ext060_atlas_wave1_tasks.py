@@ -464,10 +464,11 @@ def test_court_deadline_task_is_leaves_off_and_a_roster_member():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_tasks():
-    # bumped 19 -> 22 -> 26: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py) added
-    # three more CREATE tasks after this module's own REQ-24..27 landed, then REQ-31..34
-    # (tests/test_ext060_atlas_wave2_tasks.py) added four more.
-    assert len(REAL_SYSTEMS_TASKS) == 26
+    # bumped 19 -> 22 -> 26 -> 30: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py)
+    # added three more CREATE tasks after this module's own REQ-24..27 landed, then REQ-31..34
+    # (tests/test_ext060_atlas_wave2_tasks.py) and REQ-40..43 (tests/test_ext060_atlas_wave7_
+    # tasks.py) each added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 30
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "helpdesk-ticket-sla-state-machine" in names
     assert "ranked-choice-irv-tally-cli" in names

@@ -1152,3 +1152,142 @@
 
 #### Implements
 - [REQ-39] Second `oracle_kind="clock"` MODIFY task: add `admin_unlock()` to the account lockout policy
+
+### [TASK-35] Fifth import-oracle CREATE task, in a NEW reliability vertical (Stripe-style recovery-point request executor) (REQ-40)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `RECOVERY_POINT_TASK` (`RealSystemTask`,
+   `cls="reliability"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `replay_execution(steps, recovery_point)` function in `recovery_point.py`: `steps`
+   is a list of `{"name": str, "kind": "idempotent"|"non_idempotent"}` dicts in execution order;
+   for `i < recovery_point`, re-run (record) idempotent steps, SKIP non-idempotent ones; for
+   `i >= recovery_point`, run every step unconditionally regardless of `kind`; return the `name`s
+   actually run, in original order. Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) --
+   no new oracle code.
+2. Hand-verify (via a scratch walk of the exact same rule) three fixtures before adding the task
+   to the roster: `recovery_point=0` (all steps run); a 5-step list with `recovery_point=3` (skips
+   one non-idempotent prefix step, reruns an idempotent prefix step, runs both trailing steps);
+   `recovery_point == len(steps) - 1` (only the trailing step runs unconditionally). Add all three
+   as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free; confirm the sentence contains none of the banned leaf keywords
+   (`expire`/`expiry`/`expiration`/`cache`/`ttl`/`queue`/`stack`/`ring buffer`/`circular
+   buffer`/`memoize`).
+4. Add `tests/test_ext060_atlas_wave7_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `replay_execution` fixture is accepted by `grade_real_system_task(RECOVERY_POINT_TASK, ...)`; a
+   BROKEN fixture that reruns every step before the checkpoint regardless of idempotency (unsafely
+   re-running a non-idempotent step) is rejected; leaves-OFF holds
+   (`leaf_for_spec(RECOVERY_POINT_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave7_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-40 ranges, via
+   `jarify-manage-links`) and flip the REQ-40 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-40] Fifth import-oracle CREATE task, in a NEW reliability vertical (Stripe-style recovery-point request executor)
+
+### [TASK-36] Sixth import-oracle CREATE task, in a NEW authz vertical (Discord-style layered permission-overwrite resolution) (REQ-41)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `PERMISSION_OVERWRITE_TASK` (`RealSystemTask`,
+   `cls="authz"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `resolve_permissions(everyone_allow, everyone_deny, role_overwrites, member_allow,
+   member_deny)` function in `permission_overwrite.py`: starting from `0`, apply the `@everyone`
+   layer (clear its deny bits, then set its allow bits), then the combined role layer (union every
+   role's deny bits and separately union every role's allow bits, clear-then-set), then the member
+   layer (clear-then-set); return the final bitmask. Reuse the ALREADY-LANDED `_grade_import`
+   dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via scratch bit math) three fixtures before adding the task to the roster: a
+   member-allow bit overriding a role-deny on the SAME bit; a role-allow bit overriding an
+   `@everyone`-deny on the SAME bit; a permission bit no layer ever grants staying clear in the
+   result (with an empty `role_overwrites` list). Add all three as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_wave7_tasks.py` (same file TASK-35 creates, OFFLINE, no
+   model/Jetson): a CORRECT `resolve_permissions` fixture is accepted by
+   `grade_real_system_task(PERMISSION_OVERWRITE_TASK, ...)`; a BROKEN fixture that applies the
+   member layer BEFORE the role layer (the wrong precedence order) is rejected; leaves-OFF holds
+   (`leaf_for_spec(PERMISSION_OVERWRITE_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave7_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-41 ranges, via
+   `jarify-manage-links`) and flip the REQ-41 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-41] Sixth import-oracle CREATE task, in a NEW authz vertical (Discord-style layered permission-overwrite resolution)
+
+### [TASK-37] Seventh import-oracle CREATE task, in the payroll vertical (FLSA blended-rate overtime calculator) (REQ-42)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `BLENDED_OVERTIME_TASK` (`RealSystemTask`,
+   `cls="payroll"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file `compute_blended_overtime_pay(entries)` function in `blended_overtime.py`:
+   `entries` is a list of `[rate_cents, hours]` pairs; `total_straight_pay_cents` = sum of
+   `rate_cents * hours`; when `total_hours <= 40`, owed = `total_straight_pay_cents`; when
+   `total_hours > 40`, `blended_regular_rate = total_straight_pay_cents / total_hours`,
+   `overtime_hours = total_hours - 40`, premium = `0.5 * blended_regular_rate * overtime_hours`,
+   owed = `total_straight_pay_cents + premium`; round the final owed amount to the nearest cent
+   using round-half-up and return it as an integer. Reuse the ALREADY-LANDED `_grade_import`
+   dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via scratch arithmetic) four fixtures before adding the task to the roster:
+   under-40-hours (no overtime, e.g. `[[2000, 30]]` -> `60000`); over-40-hours at a single rate
+   (e.g. `[[1500, 45]]` -> `71250`); over-40-hours at TWO rates -- the genuinely blended case
+   (e.g. `[[1000, 20], [2000, 25]]` -> `73889`, exercising the non-trivial blended-rate division);
+   exactly 40 hours (the boundary, still no overtime, e.g. `[[1200, 40]]` -> `48000`). Add all
+   four as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_wave7_tasks.py` (same file TASK-35/36 create, OFFLINE, no
+   model/Jetson): a CORRECT `compute_blended_overtime_pay` fixture is accepted by
+   `grade_real_system_task(BLENDED_OVERTIME_TASK, ...)`; a BROKEN fixture that computes the
+   overtime premium from only the first entry's rate instead of the true blended rate is rejected
+   (caught specifically by the two-rate check, since the single-rate check cannot distinguish this
+   bug); leaves-OFF holds (`leaf_for_spec(BLENDED_OVERTIME_TASK.sentence) is None`); the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_atlas_wave7_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-42 ranges, via
+   `jarify-manage-links`) and flip the REQ-42 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-42] Seventh import-oracle CREATE task, in the payroll vertical (FLSA blended-rate overtime calculator)
+
+### [TASK-38] Eighth import-oracle CREATE task, in a NEW comms vertical (Twilio-style SMS segmentation calculator) (REQ-43)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `SMS_SEGMENT_TASK` (`RealSystemTask`, `cls="comms"`,
+   `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only single-file
+   `segment_sms(message)` function in `sms_segments.py`: a SIMPLIFIED GSM-7-encodability rule
+   (visible ASCII `0x20`-`0x7E` plus `\n`, stated explicitly as a simplification) selects the
+   160-char single-segment / 153-char-per-segment thresholds; any other character forces UCS-2
+   (70 single / 67 per segment); segment count = ceiling division of the character count by the
+   per-segment threshold once it exceeds the single-segment threshold; the empty string is defined
+   GSM-7, 1 segment; return `(encoding, segment_count, n)`. Reuse the ALREADY-LANDED
+   `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via scratch ceiling-division arithmetic) five fixtures before adding the task to
+   the roster: exactly 160 GSM-7 chars (1 segment); 161 GSM-7 chars (2 segments, `ceil(161/153)`);
+   a message forced to UCS-2 by one non-ASCII (BMP-only, to avoid Python/UTF-16 surrogate-pair
+   counting differences) character at exactly 70 chars (1 segment) and 71 chars (2 segments,
+   `ceil(71/67)`); the empty string (GSM-7, 1 segment, 0 chars). Add all five as
+   `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_wave7_tasks.py` (same file TASK-35/36/37 create, OFFLINE, no
+   model/Jetson): a CORRECT `segment_sms` fixture is accepted by
+   `grade_real_system_task(SMS_SEGMENT_TASK, ...)`; a BROKEN fixture that always applies the
+   GSM-7 160/153 thresholds even for a UCS-2-encoded message is rejected (caught by the 71-char
+   UCS-2 check regressing to 1 segment instead of 2); leaves-OFF holds
+   (`leaf_for_spec(SMS_SEGMENT_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting `REAL_SYSTEMS_TASKS` grew by
+   exactly these four REQ-40/41/42/43 tasks (length 26 -> 30).
+5. Bump the six pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 26` -> `== 30`) in `tests/test_ext060_atlas_wave1_tasks.py`,
+   `tests/test_ext060_atlas_wave2_tasks.py`, `tests/test_ext060_clock_agent_tasks.py`,
+   `tests/test_ext060_modify_wave2.py`, `tests/test_ext060_spec_hint.py`, and
+   `tests/test_ext060_ticket_booking_invoice.py`.
+6. Run `python -m pytest tests/test_ext060_atlas_wave7_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; 30-item CREATE roster). Update `.jarify/EXT-060/index.json`
+   (REQ-43 ranges, via `jarify-manage-links`) and flip the REQ-43 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-43] Eighth import-oracle CREATE task, in a NEW comms vertical (Twilio-style SMS segmentation calculator)

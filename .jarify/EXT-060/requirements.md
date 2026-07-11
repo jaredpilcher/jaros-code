@@ -1241,3 +1241,140 @@ natural clear time).
       `leaf_for_spec(task.mod_sentence) is None`); no oracle leak.
 - [x] `REAL_SYSTEMS_MODIFY_TASKS` grew by exactly these five REQ-35/36/37/38/39 tasks (length 6 -> 11);
       `REAL_SYSTEMS_TASKS` (the CREATE half) is untouched by this wave (still 26).
+
+### [REQ-40] Fifth import-oracle CREATE task, in a NEW reliability vertical (Stripe-style recovery-point request executor)
+
+A FIFTH held-out import-oracle-shaped task pulled from the atlas's wave-7 engineering-blog-mining
+"gradable-today" shortlist (`docs/PRODUCTION-SYSTEMS-ATLAS.md` EB9, simplified here to the pure
+decision-table shape this shortlist targets -- no new idempotency-replay/workflow-replay oracle,
+just the deterministic replay-decision logic itself), graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code -- reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `RECOVERY_POINT_TASK` (`RealSystemTask`,
+`cls="reliability"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file `replay_execution(steps, recovery_point)` function in
+`recovery_point.py` that replays an ordered list of `idempotent`/`non_idempotent`-tagged steps
+from a saved recovery-point checkpoint -- steps before the checkpoint re-run only if idempotent
+(a non-idempotent one is skipped), every step at or after the checkpoint runs unconditionally.
+
+#### Acceptance Criteria
+- [x] `RECOVERY_POINT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the replay
+      contract (filename `recovery_point.py`, the function signature, the `steps`/`recovery_point`
+      shapes, the strict `i < recovery_point` vs `i >= recovery_point` decision rule, the
+      idempotent-reruns/non-idempotent-skipped-before-the-point rule, the unconditional-at-or-
+      after-the-point rule, the original-order/no-dedup return contract) with every oracle-checked
+      value derivable from that same visible sentence (no hidden key, no leak).
+- [x] Three driven checks, every expected sequence hand-verified (via a scratch walk of the exact
+      same rule) before being added to the roster: `recovery_point=0` (nothing precedes it, every
+      step runs); a mid-list checkpoint that skips a non-idempotent prefix step while re-running an
+      idempotent one; `recovery_point == len(steps) - 1` (only the trailing step runs
+      unconditionally, everything before it governed by idempotency). A build that reruns every
+      step before the checkpoint regardless of idempotency (unsafely re-running a non-idempotent
+      one) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `replay_execution` fixture is accepted by `grade_real_system_task(RECOVERY_POINT_TASK,
+      ...)`; a BROKEN fixture that reruns every step before the checkpoint regardless of
+      idempotency is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-41] Sixth import-oracle CREATE task, in a NEW authz vertical (Discord-style layered permission-overwrite resolution)
+
+A SIXTH held-out import-oracle-shaped task pulled from the SAME atlas wave-7 shortlist, graded by
+the SAME ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code).
+`PERMISSION_OVERWRITE_TASK` (`RealSystemTask`, `cls="authz"`, `oracle_kind="import"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file
+`resolve_permissions(everyone_allow, everyone_deny, role_overwrites, member_allow, member_deny)`
+function in `permission_overwrite.py` implementing a Discord-style layered permission-overwrite
+resolution: an `@everyone` base layer, then a combined role-overwrite layer (every role's deny
+bits unioned, then every role's allow bits unioned), then a member-specific layer -- each layer
+clearing its deny bits before setting its allow bits, later layers overriding earlier ones.
+
+#### Acceptance Criteria
+- [x] `PERMISSION_OVERWRITE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      three-layer, deny-before-allow, `@everyone` -> role -> member precedence contract (filename
+      `permission_overwrite.py`, the function signature, the bitmask/role-overwrite-list shapes,
+      the union-across-roles rule, the exact clear-then-set-per-layer algorithm) with every
+      oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] Three driven checks, every expected bitmask hand-verified via scratch bit math before being
+      added to the roster: a member-allow overriding a role-deny on the same bit; a role-allow
+      overriding an `@everyone`-deny on the same bit; a permission bit no layer ever grants staying
+      clear (denied) in the result (also exercising an empty `role_overwrites` list). A build that
+      applies the member layer BEFORE the role layer (the wrong precedence order) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `resolve_permissions` fixture is accepted by `grade_real_system_task(PERMISSION_OVERWRITE_
+      TASK, ...)`; a BROKEN fixture applying the layers in the wrong precedence order is rejected;
+      the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-42] Seventh import-oracle CREATE task, in the payroll vertical (FLSA blended-rate overtime calculator)
+
+A SEVENTH held-out import-oracle-shaped task, reusing the `cls="payroll"` vertical
+`TAX_WITHHOLDING_TASK` (REQ-26) already established, pulled from the SAME atlas wave-7 shortlist,
+graded by the SAME ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle
+code). `BLENDED_OVERTIME_TASK` (`RealSystemTask`, `cls="payroll"`, `oracle_kind="import"`) is
+added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file
+`compute_blended_overtime_pay(entries)` function in `blended_overtime.py` implementing the U.S.
+FLSA blended (weighted-average) overtime rule for a worker who worked at more than one pay rate in
+a single workweek: straight pay at each entry's own rate, plus (when total hours exceed 40) a
+half-time premium on the blended (weighted-average) regular rate for every overtime hour, the
+final total rounded to the nearest cent using round-half-up.
+
+#### Acceptance Criteria
+- [x] `BLENDED_OVERTIME_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      blended-overtime contract (filename `blended_overtime.py`, the function signature, the
+      `[rate_cents, hours]` entry shape, the `total_straight_pay_cents`/`blended_regular_rate`/
+      `overtime_hours`/half-time-premium formulas, the strict `> 40` overtime trigger, the
+      round-half-up final-rounding rule) with every oracle-checked value derivable from that same
+      visible sentence (no hidden key, no leak).
+- [x] Four driven checks, every expected cents value hand-verified via scratch arithmetic before
+      being added to the roster: under-40-hours (no overtime); over-40-hours at a SINGLE rate;
+      over-40-hours at TWO rates (the genuinely blended case); exactly 40 hours (the boundary,
+      still no overtime since the trigger is strictly `> 40`). A build that computes the overtime
+      premium from only the first entry's rate instead of the true blended rate is caught (the
+      single-rate check alone cannot distinguish this bug -- the two-rate check is what catches
+      it).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `compute_blended_overtime_pay` fixture is accepted by `grade_real_system_task(BLENDED_
+      OVERTIME_TASK, ...)`; a BROKEN fixture that uses only the first entry's rate instead of the
+      blended rate is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-43] Eighth import-oracle CREATE task, in a NEW comms vertical (Twilio-style SMS segmentation calculator)
+
+An EIGHTH held-out import-oracle-shaped task pulled from the SAME atlas wave-7 shortlist
+(`docs/PRODUCTION-SYSTEMS-ATLAS.md` EB16), graded by the SAME ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code). `SMS_SEGMENT_TASK`
+(`RealSystemTask`, `cls="comms"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file `segment_sms(message)` function in
+`sms_segments.py` implementing a simplified Twilio-style SMS segmentation calculator: GSM-7 (a
+simplified plain-visible-ASCII-plus-newline charset for this task, stated explicitly as such)
+messages fit 160 chars in one segment or split at 153/segment; any other character forces UCS-2
+(70 chars single-segment, 67/segment split); the empty string is defined GSM-7, 1 segment.
+
+#### Acceptance Criteria
+- [x] `SMS_SEGMENT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      segmentation contract (filename `sms_segments.py`, the function signature, the exact
+      simplified GSM-7-encodability rule stated as a simplification with its own precise charset
+      definition, the 160/153-vs-70/67 threshold pairs, the ceiling-division split-count formula,
+      the empty-string special case, the `(encoding, segment_count, n)` return shape) with every
+      oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] Five driven checks, every expected tuple hand-verified via scratch ceiling-division
+      arithmetic before being added to the roster: exactly 160 GSM-7 chars (1 segment); 161 GSM-7
+      chars (2 segments, split at 153); a message forced to UCS-2 by a single non-ASCII character
+      at exactly 70 chars (1 segment) and at 71 chars (2 segments, split at 67); the empty string
+      (GSM-7, 1 segment, 0 chars). A build that always applies the GSM-7 160/153 thresholds even
+      for a UCS-2-encoded message is caught (its 71-char UCS-2 check regresses to 1 segment
+      instead of the correct 2).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `segment_sms`
+      fixture is accepted by `grade_real_system_task(SMS_SEGMENT_TASK, ...)`; a BROKEN fixture that
+      uses the GSM-7 thresholds even for a UCS-2 message is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-40/41/42/43 tasks
+      (length 26 -> 30).

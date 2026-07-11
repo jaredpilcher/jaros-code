@@ -425,8 +425,9 @@ def test_token_validity_clock_spec_validates_and_task_is_leaves_off_and_a_roster
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_tasks():
-    # bumped 22 -> 26: this module's own REQ-31/32/33/34 add four more CREATE tasks.
-    assert len(REAL_SYSTEMS_TASKS) == 26
+    # bumped 22 -> 26 -> 30: this module's own REQ-31/32/33/34 add four more CREATE tasks, then
+    # EXT-060 REQ-40..43 (tests/test_ext060_atlas_wave7_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 30
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "backup-retention-gfs-pruning-lib" in names
     assert "ci-job-matrix-expansion-lib" in names
