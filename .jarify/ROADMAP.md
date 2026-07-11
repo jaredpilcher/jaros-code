@@ -793,6 +793,17 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ OWNER SECURITY DIRECTIVE COMPLETE — dependency-security gate, both phases (2026-07-10)]** Phase-1 **c622c5f**
+  (EXT-037 REQ-16, `harness/stdlib_safety.py`: deprecated/removed + dangerous-use stdlib denylist hardens the REQ-66
+  build hint + advisory EOL/deprecated-use finding) + Phase-2 **28374b9** (EXT-037 REQ-17, `harness/dep_advisory.py`:
+  third-party unpinned-dep warn + dated non-exhaustive known-CVE table + honest "not a full audit" note, wired advisory
+  into `system_finalize`). Both OFFLINE, NON-gating (proven: a `pyyaml==5.3` build still finalizes `ok=True`), egress gate
+  UNTOUCHED. Answers the owner's "gate on vulnerable dep versions" fully + honestly.
+- **[★ BOARD +4 CREATE batch-5 diverse verticals — EXT-060 REQ-52..55 (2026-07-10)]** commit **5138f4a**, measured N=3
+  **10/12**: loan-amortization 3/3 (fintech/import), incident-escalation 3/3 (devops/state_machine),
+  warehouse-stock-reservation 3/3 (logistics/conservation), running-median **1/3** (analytics/import — VARIANCE, passed 1 of
+  3, not a deterministic bug). CREATE roster 38→42; 41/42 measured-green. running-median → the first clean
+  best-of-k-on-real-oracle candidate (see NOW).
 - **[★ BOARD +4 CREATE wave-8 import-tier libs — EXT-060 REQ-48..51 (2026-07-10)]** commit **37fd308**:
   four pure-function library classes across four verticals, all graded by the existing `import` oracle —
   **net-present-value-calculator** (fintech), **interval-merge** (scheduling), **base32-codec** (devtools,
