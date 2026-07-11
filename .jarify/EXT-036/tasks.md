@@ -3275,3 +3275,54 @@ mid-request (a connection reset, not a clean HTTP error).
   scaffold threading that imports + calls it once, in module order, right before the server
   binds -- with the call left unguarded so an init failure fails the service honestly at
   startup)
+
+### [TASK-81] Spec-declared stdlib-affordance hint for the build prompt (REQ-66, owner directive 2026-07-10 -- closes a measured `base32-codec-lib` 0/3)
+
+MEASURED MOTIVATION (EXT-060 board, code-dump diagnosis): `base32-codec-lib`'s task sentence
+explicitly says "using only the standard library (the `base64` module is allowed)", yet gemma
+HAND-ROLLS the RFC 4648 codec anyway and ships two bugs (right-aligns the final partial 5-bit
+group instead of left-aligning it; crashes in `decode`). The spec HANDS the model a trivial
+correct path (`base64.b32encode`/`b32decode`) and it ignores it. GENERIC gap: when a spec
+explicitly names a permitted stdlib convenience module, the build prompt should surface that
+affordance more prominently so the model prefers delegating over a buggy hand-roll.
+
+#### Steps
+1. `harness/system_builder.py`: add `spec_declared_stdlib_affordances(sentence: str) -> list[str]`
+   — a deterministic (no model call) scan for phrases that explicitly PERMIT/RECOMMEND a named
+   standard-library module: `"the `X` module is allowed/permitted"`, `"using the X module"`,
+   `"you may use `X`"`, `"with the X module"` (backtick-optional, case-insensitive). Gate every
+   captured name on `sys.stdlib_module_names` (case-insensitively, normalized to the canonical
+   lowercase stdlib name) so a hallucinated/third-party name (e.g. `requests`) is always dropped.
+   Return the de-duplicated list in FIRST-APPEARANCE order; `[]` when none found or the sentence
+   is falsy/empty. Pure, never raises.
+2. Add `_spec_affordance_hint(spec) -> str`: renders the ONE-LINE hint text — "Note: the
+   specification explicitly permits the standard-library module(s): X, Y. Prefer using them
+   directly where they already implement the required behavior, instead of re-implementing that
+   behavior by hand." — when `spec_declared_stdlib_affordances(spec)` is non-empty, else `""`.
+3. In `_build_module` (the per-module free-form build prompt that assembles `BUILD_PROMPT`),
+   compute the hint and, ONLY when non-empty, APPEND it (`"\n\n" + hint`) to the already-formatted
+   `BUILD_PROMPT.format(...)` string before it is sent to the model — never woven into the
+   template itself. This guarantees the CRITICAL non-degradation property by construction: when
+   the spec names no stdlib module, the sent prompt is BYTE-IDENTICAL to the pre-lever prompt
+   (`BUILD_PROMPT.format(...)` unchanged) — zero blast radius on every task that doesn't name a
+   module.
+4. HONESTY (Tenet 3): this uses ONLY information already present in the spec/sentence text the
+   model already receives in full via `{spec}` — never the oracle, expected outputs, test
+   vectors, or any other hidden information. It purely re-emphasizes a spec-declared affordance
+   the model is already free to use. No leak.
+5. Tests `tests/test_ext036_spec_affordance_hint.py` (OFFLINE, no live model/network): (a)
+   `spec_declared_stdlib_affordances` extracts the right module across all four phrasings +
+   case/backtick variants + dedup/first-appearance ordering; a non-stdlib named module (e.g.
+   `requests`) is gated out to `[]`; a sentence naming no module returns `[]`; `None`/empty input
+   never raises; the real `harness.real_systems_suite.BASE32_CODEC_TASK.sentence` extracts
+   `["base64"]`. (b) `_build_module`'s captured prompt (via a capturing stub `llm`) CONTAINS the
+   hint substring for a module-naming spec, and is asserted BYTE-IDENTICAL to
+   `BUILD_PROMPT.format(...)` for a spec naming no module. Run `python -m pytest
+   tests/test_ext036_spec_affordance_hint.py tests/test_ext036_*.py tests/test_ext060_*.py -q`
+   (all green, no regression). Update `.jarify/EXT-036/index.json` per jarify-manage-links. Do
+   NOT touch `harness/real_systems_suite.py` or any other spec's files.
+
+#### Implements
+- [REQ-66] Surface a spec-declared stdlib-module affordance in the build prompt (a deterministic
+  extraction + gated, byte-identical-when-absent hint appended to the per-module free-form build
+  prompt, closing the measured `base32-codec-lib` hand-roll-instead-of-delegate gap generically)

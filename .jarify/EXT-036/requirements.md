@@ -2632,3 +2632,47 @@ app's own initialization, not just its routing.
   and matches case-insensitively. No regression: `tests/test_ext036_routing_contract.py` (REQ-51)
   and `tests/test_ext036_http_service_scaffold.py` (REQ-48) stay green alongside the new file
   (60 passed together).
+
+### [REQ-66] Surface a spec-declared stdlib-module affordance in the build prompt (DONE — EXT-036 TASK-81, 2026-07-10)
+
+MEASURED MOTIVATION (EXT-060 board `base32-codec-lib`, 0/3, code-dump diagnosis): the task
+sentence explicitly says "using only the standard library (the `base64` module is allowed)",
+yet gemma HAND-ROLLS the RFC 4648 codec from scratch and ships two bugs (right-aligns the
+final partial 5-bit group instead of left-aligning it; crashes in `decode`). The spec HANDS
+the model a trivial correct path (`base64.b32encode`/`b32decode`) and it ignores it. GENERIC
+gap (not `base32`-specific): when a spec explicitly NAMES a permitted standard-library
+convenience module, the build prompt should surface that affordance more prominently so the
+model prefers delegating to it over a buggy hand-roll.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::spec_declared_stdlib_affordances(sentence) -> list[str]` —
+  DONE 2026-07-10: a deterministic (no model call) scan of the build sentence for phrases that
+  explicitly PERMIT/RECOMMEND a named standard-library module (`"the `X` module is
+  allowed/permitted"`, `"using the X module"`, `"you may use `X`"`, `"with the X module"`,
+  backtick-optional, case-insensitive). Every candidate name is gated on
+  `sys.stdlib_module_names` (case-insensitively, normalized to the canonical lowercase stdlib
+  name) — a hallucinated or genuinely third-party name (e.g. `requests`) is silently dropped,
+  so this function can NEVER surface a non-stdlib or made-up module name. Returns the
+  de-duplicated list in FIRST-APPEARANCE order, `[]` when none found or the sentence is
+  falsy. Pure, never raises.
+- [x] The per-module build prompt (`harness/system_builder.py::_build_module`/`BUILD_PROMPT`)
+  appends ONE concise hint line — "Note: the specification explicitly permits the
+  standard-library module(s): X, Y. Prefer using them directly where they already implement
+  the required behavior, instead of re-implementing that behavior by hand." — ONLY when
+  `spec_declared_stdlib_affordances` is non-empty (via `_spec_affordance_hint`). The hint is
+  APPENDED to the already-formatted `BUILD_PROMPT.format(...)` string, never woven into the
+  template itself, so the CRITICAL non-degradation property holds by construction: when the
+  spec names no stdlib module, the sent prompt is BYTE-IDENTICAL to the pre-lever prompt (zero
+  blast radius on every task that doesn't name a module) — proven directly by asserting the
+  captured prompt equals `BUILD_PROMPT.format(...)` with the same arguments.
+- [x] HONESTY (Tenet 3): this uses ONLY information already present in the spec/sentence text
+  the model already receives in full via `{spec}` — it never references the oracle, expected
+  outputs, test vectors, or any other hidden information; it purely re-emphasizes a
+  spec-declared affordance the model is already free to use. No leak.
+- [x] Proven OFFLINE (`tests/test_ext036_spec_affordance_hint.py`, 15 tests, no live model/
+  network): extraction across all four phrasings + case/backtick variants + dedup/ordering,
+  non-stdlib names gated out (`requests`), `None`/empty input never raises; the real
+  `BASE32_CODEC_TASK.sentence` (EXT-060 board) extracts `["base64"]`; the assembled
+  `_build_module` prompt CONTAINS the hint substring for a module-naming spec and is
+  BYTE-IDENTICAL to `BUILD_PROMPT.format(...)` for a spec naming no module. No regression:
+  full `tests/test_ext036_*.py tests/test_ext060_*.py` (1052 tests) stays green.

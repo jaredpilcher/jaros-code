@@ -1169,6 +1169,77 @@ def _routing_contract_guidance(spec: "str | None") -> str:
 # #EXT-036-REQ-51 End
 
 
+# #EXT-036-REQ-66 Start
+# TASK-81: MEASURED (EXT-060 board, `base32-codec-lib`, 0/3): the task sentence explicitly says
+# "using only the standard library (the `base64` module is allowed)", yet gemma HAND-ROLLS the
+# RFC 4648 codec anyway and ships two bugs (right-aligns the final partial 5-bit group instead of
+# left-aligning it; crashes in decode). The spec HANDS the model a trivial correct path
+# (`base64.b32encode`/`b32decode`) and it ignores it. Generic gap: when a spec explicitly names a
+# permitted stdlib convenience module, surface that affordance more prominently in the build
+# prompt so the model prefers delegating to it over a buggy hand-roll -- honest, since this uses
+# ONLY information already present in the spec sentence the model already receives (never the
+# oracle/expected outputs/test vectors), it just re-emphasizes it.
+_STDLIB_AFFORDANCE_PATTERNS = [
+    re.compile(r"the\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s+module\s+is\s+(?:allowed|permitted)",
+               re.IGNORECASE),
+    re.compile(r"using\s+the\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s+module", re.IGNORECASE),
+    re.compile(r"you\s+may\s+use\s+`?([A-Za-z_][A-Za-z0-9_]*)`?", re.IGNORECASE),
+    re.compile(r"with\s+the\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s+module", re.IGNORECASE),
+]
+
+
+def spec_declared_stdlib_affordances(sentence: "str | None") -> list[str]:
+    """Scan `sentence` (the build spec) for phrases that explicitly PERMIT/RECOMMEND a named
+    standard-library module -- e.g. "the `base64` module is allowed", "using the difflib
+    module", "you may use `textwrap`", "with the shlex module" -- and return the module names
+    mentioned, de-duplicated, in FIRST-APPEARANCE order.
+
+    Gated on `sys.stdlib_module_names` (case-insensitively): a captured name that is NOT an
+    actual standard-library module (e.g. a hallucinated or third-party name like `requests`)
+    is silently dropped -- this function can never surface a non-stdlib or made-up module
+    name. Returns `[]` when `sentence` is falsy or no permitted module is named. Pure,
+    deterministic, never raises."""
+    if not sentence:
+        return []
+    try:
+        raw_matches: list[tuple[int, str]] = []
+        for pat in _STDLIB_AFFORDANCE_PATTERNS:
+            for mo in pat.finditer(sentence):
+                name = mo.group(1)
+                if name:
+                    raw_matches.append((mo.start(1), name))
+        raw_matches.sort(key=lambda t: t[0])
+        seen: set[str] = set()
+        result: list[str] = []
+        for _, name in raw_matches:
+            canonical = name if name in sys.stdlib_module_names else name.lower()
+            if canonical not in sys.stdlib_module_names:
+                continue
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            result.append(canonical)
+        return result
+    except Exception:
+        return []
+
+
+def _spec_affordance_hint(spec: "str | None") -> str:
+    """Render the ONE-LINE hint text to append to a build prompt when `spec` explicitly
+    permits one or more stdlib modules (see `spec_declared_stdlib_affordances`). Returns
+    "" (a no-op) when none are named -- callers must skip appending anything in that case
+    so the prompt stays byte-identical to before this function existed. Never raises."""
+    mods = spec_declared_stdlib_affordances(spec)
+    if not mods:
+        return ""
+    return (
+        "Note: the specification explicitly permits the standard-library module(s): "
+        + ", ".join(mods) + ". Prefer using them directly where they already implement "
+        "the required behavior, instead of re-implementing that behavior by hand."
+    )
+# #EXT-036-REQ-66 End
+
+
 def _build_module(spec: str, m: dict, built: dict, llm, *,
                    max_repair: int = MAX_REPAIR_ATTEMPTS,
                    # #EXT-036-REQ-41 Start
@@ -1196,10 +1267,18 @@ def _build_module(spec: str, m: dict, built: dict, llm, *,
     # #EXT-036-REQ-51 Start
     routing = _routing_contract_guidance(spec)
     # #EXT-036-REQ-51 End
-    code = _strip_fences(_call(llm, BUILD_PROMPT.format(
+    prompt = BUILD_PROMPT.format(
         name=name, spec=spec, resp=m.get("responsibility", ""), sigs=sigs,
-        ledger=ledger, routing=routing, deps=deps),
-        max_tokens=BUILD_MAX_TOKENS))
+        ledger=ledger, routing=routing, deps=deps)
+    # #EXT-036-REQ-66 Start
+    # TASK-81: only APPEND when the spec names a permitted stdlib module -- an empty
+    # affordance list leaves `prompt` untouched, so the sent prompt is byte-identical to
+    # before this task on every spec that doesn't name one.
+    affordance_hint = _spec_affordance_hint(spec)
+    if affordance_hint:
+        prompt = prompt + "\n\n" + affordance_hint
+    # #EXT-036-REQ-66 End
+    code = _strip_fences(_call(llm, prompt, max_tokens=BUILD_MAX_TOKENS))
     ok, err = syntax_ok(code)
     for _ in range(max_repair):
         if ok:
