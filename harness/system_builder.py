@@ -3635,6 +3635,24 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     built, _filename_contract_notes = apply_filename_contract(built, spec)
     # #EXT-036-REQ-46 End
 
+    # #EXT-036-REQ-68 Start
+    # TASK-83: deterministic server-address TUPLE repair. MEASURED (reproduced locally with the
+    # exact traceback, canonical-board `url-shortener-http-service`): gemma writes correct
+    # routing/DB logic but the generated entrypoint calls the stdlib server constructor with a
+    # BARE-STRING server_address and THREE positional args (`HTTPServer("", port,
+    # _RouteHTTPHandler)`) instead of the correct `HTTPServer((host, port), Handler)` -- so
+    # `socket.bind("")` raises `TypeError: bind(): AF_INET address must be tuple, not str` and the
+    # server never binds. `apply_port_coercion` below does NOT fix this shape (it only int-wraps a
+    # port already inside a tuple). Wired in the same spot/pattern as the sibling contract repairs
+    # above -- additive, AST-only, never-raising, leak-free (reads only the built module's own
+    # AST, never spec text/an oracle/a test), and NON-DEGRADING: an already-correct 2-positional-
+    # arg (or tuple-first-arg) call is left untouched (idempotent). Placed BEFORE the port-
+    # coercion repair immediately below so a subsequently str-typed port gets int-wrapped INSIDE
+    # the newly-formed tuple rather than left dangling as a bare positional argument.
+    from harness.server_address_tuple import apply_server_address_tuple
+    built = apply_server_address_tuple(built)
+    # #EXT-036-REQ-68 End
+
     # #EXT-036-REQ-50 Start
     # TASK-63: deterministic PORT int-coercion repair. MEASURED
     # (`scratchpad/saas_crud_diag.out`, the canonical-board rest-sqlite-crud CREATE and rest-put
@@ -4558,17 +4576,18 @@ def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | No
                                   *, llm=None) -> "dict[str, str]":
     """Run the build path's deterministic repair chain, in the SAME order `build_system` applies
     it, over an arbitrary CANDIDATE ``{name: code}`` module set: `apply_signature_contract` ->
-    `apply_endpoint_shape` (REQ-53, TASK-66) -> `apply_port_coercion` ->
-    `apply_http_service_scaffold` -> `apply_agent_scaffold`.
+    `apply_endpoint_shape` (REQ-53, TASK-66) -> `apply_server_address_tuple` (REQ-68, TASK-83) ->
+    `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_agent_scaffold`.
 
     Deliberately EXCLUDES `apply_filename_contract` -- a rename is safe at CREATE time (nothing
     yet depends on the chosen filename) but NOT at MODIFY time, where a rename could break an
     EXISTING system's already-agreed-upon import/entrypoint expectations (a sibling module, the
     caller, or the regression-gate oracle itself may already reference the CURRENT filename).
 
-    Tolerates each repair's own return shape (`apply_port_coercion` and `apply_endpoint_shape`
-    return a plain dict; the other three return a `(dict, notes)` tuple) by unpacking exactly the
-    way the build path already does. Returns a NEW dict (never mutates ``modules``). Never raises
+    Tolerates each repair's own return shape (`apply_port_coercion`, `apply_endpoint_shape`, and
+    `apply_server_address_tuple` return a plain dict; the other three return a `(dict, notes)`
+    tuple) by unpacking exactly the way the build path already does. Returns a NEW dict (never
+    mutates ``modules``). Never raises
     -- on ANY internal failure (an import error, an unexpected exception from a repair) returns
     ``modules`` completely UNCHANGED, so a repair-chain defect can never itself cause work to be
     lost."""
@@ -4585,6 +4604,16 @@ def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | No
         from harness.endpoint_shape import apply_endpoint_shape
         result = apply_endpoint_shape(result, spec_text)
         # #EXT-036-REQ-53 End
+        # #EXT-036-REQ-68 Start
+        # TASK-83: deterministic server-address TUPLE repair (REQ-68), wired into the MODIFY
+        # chain in the SAME relative position as the build path (harness.server_address_tuple
+        # module docstring has the measured motivation) -- a regenerated MODIFY candidate can
+        # reintroduce the same bare-string/3-positional-arg server-constructor bug the build path
+        # already fixes for CREATE. Placed BEFORE `apply_port_coercion` immediately below, same as
+        # the build path.
+        from harness.server_address_tuple import apply_server_address_tuple
+        result = apply_server_address_tuple(result)
+        # #EXT-036-REQ-68 End
         from harness.port_coercion import apply_port_coercion
         result = apply_port_coercion(result)
         from harness.http_service_scaffold import apply_http_service_scaffold

@@ -3403,3 +3403,65 @@ from being imported) ..." sentence shape covers 39 library tasks in
   deriving a bogus CLI round-trip from prose words (a deterministic, conservative
   `_is_library_spec` classifier guards the three CLI-shaped derivations, keeping the smoke
   floor always-on and leaving every CLI-shaped spec's checklist byte-identical)
+
+### [TASK-83] Deterministic server-address TUPLE repair (REQ-68, MEASURED root cause reproduced locally on `url-shortener-http-service`)
+
+MEASURED ROOT CAUSE (reproduced locally with the exact traceback): the canonical-board SaaS-HTTP
+class `url-shortener-http-service` fails because gemma writes correct routing/DB logic but the
+generated ENTRYPOINT calls the stdlib server constructor with a BARE-STRING `server_address` and
+THREE positional args — `HTTPServer("", port, _RouteHTTPHandler).serve_forever()` — instead of the
+correct `HTTPServer((host, port), Handler)`. `socket.bind("")` then raises `TypeError: bind():
+AF_INET address must be tuple, not str`, so the server never binds and every http check fails.
+`harness/port_coercion.py` (REQ-50) does NOT fix this shape — it only int-wraps a port ALREADY
+inside a tuple; here there is no tuple at all. Direct analog of the already-landed contract repairs
+(signature-contract REQ-45, filename-contract REQ-46, endpoint-shape REQ-53, port-coercion REQ-50):
+a mechanical AST pass, never a model re-call.
+
+#### Steps
+1. Create `harness/server_address_tuple.py` with `apply_server_address_tuple_to_code(code: str) ->
+   str`: parse with `ast`; for each `ast.Call` whose rightmost callee name (bare or
+   attribute-qualified, mirroring `harness/port_coercion.py`'s `_callee_name`) is in the
+   recognized server-constructor set `{"HTTPServer", "ThreadingHTTPServer", "TCPServer",
+   "ThreadingTCPServer"}` (same set as `port_coercion.py`'s `_SERVER_CTORS`) — IF the call has
+   THREE OR MORE positional args AND `args[0]` is NOT already an `ast.Tuple`/`ast.List`: rewrite
+   the call's positional args to `[Tuple(args[0], args[1]), *args[2:]]` (wrap host+port into a
+   tuple, keep any remaining positional args like `bind_and_activate` and all keywords unchanged).
+   ELSE (already a tuple/list first arg, or fewer than 3 positional args): NO-OP, byte-identical.
+   Wrap in `# #EXT-036-REQ-68 Start`/`End` markers.
+2. Idempotent + non-degrading: once wrapped, `args[0]` is an `ast.Tuple`, so re-running is a
+   strict no-op. Never raise (any parse/unparse failure, or no recognized broken shape, returns
+   the code unchanged) — mirror `port_coercion.py`'s guard style exactly. Only re-serialize (via
+   `ast.unparse`) a module that actually changed.
+3. Add `apply_server_address_tuple(built: dict) -> dict`: apply
+   `apply_server_address_tuple_to_code` to each module's source, returning a NEW dict (only
+   changed modules differ) — same shape as `port_coercion.py`'s `apply_port_coercion`.
+4. Wire `apply_server_address_tuple(built)` into `harness/system_builder.py`'s `build_system`
+   deterministic-repair pass, IMMEDIATELY BEFORE the existing `from harness.port_coercion import
+   apply_port_coercion` / `built = apply_port_coercion(built)` block (REQ-50) — so port coercion
+   then int-wraps the port INSIDE the newly-formed tuple. Wrap in `# #EXT-036-REQ-68 Start`/`End`
+   markers. Also add the same call to the candidate best-of-k repair pipeline
+   (`_apply_deterministic_repairs`), inserted right before its `apply_port_coercion` call, for
+   parity with the MODIFY path.
+5. Add offline tests `tests/test_ext036_server_address_tuple.py` (NO model/Jetson calls)
+   covering: (a) the EXACT reproduced defect (`HTTPServer("", port, H).serve_forever()`) — after
+   repair, `ast.parse` shows the first positional arg is a 2-tuple `("", port)` and there are 2
+   positional args (assert via AST inspection or the unparsed text containing
+   `HTTPServer(("", port)`, no live socket needed); (b) composed with `port_coercion`: after
+   `apply_server_address_tuple` THEN `apply_port_coercion`, a `("", os.getenv("PORT"))`-style
+   bare-str port ends up int-wrapped inside the tuple; (c) idempotency — applying twice equals
+   applying once; (d) no-op/byte-identical cases: already-correct `TCPServer(("", int(port)), H)`,
+   a non-server call `foo("", port, bar)`, `HTTPServer(("", port), H, False)`
+   (`bind_and_activate` — arg0 already tuple), and a 2-positional `HTTPServer(addr, H)`; (e) never
+   raises on unparseable/odd input; (f) attribute-qualified `socketserver.TCPServer("", port, H)`
+   is also repaired.
+6. Run `python -m pytest tests/test_ext036_server_address_tuple.py tests/ -k "port_coercion or
+   server_address or http_service" -q` (offline); confirm green. Also run `python -c "import
+   harness.system_builder, harness.server_address_tuple"` (clean import smoke). Update
+   `.jarify/EXT-036/index.json` (REQ-68 ranges) per jarify-manage-links. Scope: ONLY
+   `harness/server_address_tuple.py`, the two wiring edits in `harness/system_builder.py`, the
+   new test file, and `.jarify/EXT-036` docs. Do NOT touch `harness/server_oracle.py`,
+   `harness/real_systems_suite.py`, or any other repair module.
+
+#### Implements
+- [REQ-68] Deterministic server-address TUPLE repair — fix a bare-string/3-positional-arg server
+  bind site

@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py", "harness/endpoint_shape.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py", "harness/endpoint_shape.py", "harness/server_address_tuple.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2736,3 +2736,53 @@ one-off.
   the library minimum checklist. Full `tests/test_ext036_*.py tests/test_ext058_*.py
   tests/test_ext059_*.py` stays green (no regression, esp. the datastore/kv/CLI acceptance
   tests unchanged).
+
+### [REQ-68] Deterministic server-address TUPLE repair — fix a bare-string/3-positional-arg server bind site (DONE — EXT-036 TASK-83)
+
+MEASURED ROOT CAUSE (reproduced locally with the exact traceback, canonical-board
+`url-shortener-http-service`): gemma writes correct routing/DB logic but the generated ENTRYPOINT
+(`main.py`) calls the stdlib server constructor with a BARE-STRING `server_address` and THREE
+positional args:
+
+    HTTPServer("", port, _RouteHTTPHandler).serve_forever()
+
+The correct signature is `HTTPServer(server_address, RequestHandlerClass)` where
+`server_address` is a `(host, port)` TUPLE. Passing `("", port, handler)` (3 positional, arg0 a
+str) makes `socket.bind("")` raise `TypeError: bind(): AF_INET address must be tuple, not str` so
+the server never binds and every http check fails. `harness/port_coercion.py` (REQ-50) does NOT
+fix this: it only int-wraps a port that is ALREADY inside a tuple `(("", port), handler)`; here
+there is no tuple at all. This is the direct analog of the already-landed contract repairs
+(signature-contract REQ-45, filename-contract REQ-46, endpoint-shape REQ-53, port-coercion
+REQ-50): a mechanical AST pass, never a model re-call.
+
+#### Acceptance Criteria
+- [x] `harness/server_address_tuple.py::apply_server_address_tuple_to_code(code)` parses with
+  `ast`; for each `ast.Call` whose rightmost callee name is in the recognized server-constructor
+  set (`HTTPServer`/`ThreadingHTTPServer`/`TCPServer`/`ThreadingTCPServer`, bare or
+  attribute-qualified, e.g. `socketserver.TCPServer`/`http.server.HTTPServer`) with THREE OR MORE
+  positional args where `args[0]` is NOT already an `ast.Tuple`/`ast.List`, rewrites the call so
+  the new positional args become `[Tuple(args[0], args[1]), *args[2:]]` (wraps host+port into a
+  single tuple; keeps any remaining positional args and all keywords unchanged).
+- [x] Ambiguous/already-correct shapes are LEFT ALONE (byte-identical no-op): `args[0]` already a
+  tuple/list (the correct 2-arg form, or a 3-arg form with a trailing `bind_and_activate=False`),
+  or fewer than 3 positional args.
+- [x] Idempotent + non-degrading: once wrapped, `args[0]` is an `ast.Tuple` so a second pass is a
+  strict no-op. Never raises: any parse/unparse failure, or a module with no recognized broken
+  bind site, leaves the code byte-identical. Leak-free: reads only the module's own AST, never
+  spec/oracle/test text.
+- [x] `apply_server_address_tuple(built)` maps `apply_server_address_tuple_to_code` across a
+  `{module: code}` dict, returning a NEW dict where only the modules that actually got a rewrite
+  differ from the input — same shape as `harness/port_coercion.py`'s `apply_port_coercion`.
+- [x] Wired into `harness/system_builder.py`'s `build_system` deterministic-repair pass,
+  IMMEDIATELY BEFORE the existing port-coercion repair (REQ-50) — so a subsequently str-typed
+  port gets int-wrapped INSIDE the newly-formed tuple rather than left dangling. Also wired into
+  the candidate best-of-k repair pipeline (`_apply_deterministic_repairs`) in the same relative
+  position, for parity with the MODIFY path.
+- [x] Proven OFFLINE (`tests/test_ext036_server_address_tuple.py`, no model/Jetson call): the
+  EXACT reproduced defect (`HTTPServer("", port, H).serve_forever()`) is repaired to a 2-tuple
+  first positional arg; composed with `apply_port_coercion` afterward, a bare-str port inside the
+  newly-formed tuple ends up int-wrapped; idempotency (applying twice equals applying once);
+  no-op on already-correct 2-arg calls, a non-server call, a 3-arg call with `args[0]` already a
+  tuple (`bind_and_activate`), and a 2-positional-arg call; never raises on
+  unparseable/odd input; attribute-qualified `socketserver.TCPServer("", port, H)` is also
+  repaired.
