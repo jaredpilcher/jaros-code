@@ -2676,3 +2676,63 @@ model prefers delegating to it over a buggy hand-roll.
   `_build_module` prompt CONTAINS the hint substring for a module-naming spec and is
   BYTE-IDENTICAL to `BUILD_PROMPT.format(...)` for a spec naming no module. No regression:
   full `tests/test_ext036_*.py tests/test_ext060_*.py` (1052 tests) stays green.
+
+### [REQ-67] `_minimum_acceptance` must not false-REJECT a pure import-only LIBRARY spec by deriving a bogus CLI round-trip from prose words (DONE — EXT-036 TASK-82, 2026-07-10 — task #165)
+
+MEASURED MOTIVATION (`.jaros-data/rmed_accept_probe.py`, `running-median-lib`): for a spec that
+explicitly declares an import-only, no-side-effect-on-import LIBRARY module (e.g.
+`running_median.py`, "must not run anything, print anything, or have any side effect merely
+from being imported"), `_minimum_acceptance` still derives a CLI-shaped round-trip check by
+matching PROSE WORDS as if they were CLI subcommands — `_derive_roundtrip_pair` matches "new"
+(from "returns a NEW list") as an add-command and "list" (from "Python `list`") as a
+list-command, then runs `python running_median.py new <sentinel>` / `... list` as if it were a
+CLI. There is no `__main__` dispatch (the spec forbids one), so both invocations produce NO
+output and the round-trip check ("minimum: 'new'+'list' round-trip persists") genuinely FAILS —
+even though the code is correct and the independent EXT-060 import oracle passes it. This false
+`done=False` blocks best-of-k selection and is antithetical to the self-running goal (a model
+that rejects its own correct work can't self-operate). CONFIRMED via
+`.jaros-data/rmed_diag_out/draw2/running_median.py` (a known-correct sample) against the exact
+`RUNNING_MEDIAN_TASK.sentence`. This same sentence shape ("Write a single-file Python module
+(never a script -- it must not run anything, print anything, or have any side effect merely
+from being imported) ...") is used by 39 distinct library tasks in
+`harness/real_systems_suite.py`, so this is a generic, high-leverage false-reject class, not a
+one-off.
+
+#### Acceptance Criteria
+- [x] `harness/system_builder.py::_is_library_spec(spec: str) -> bool` — a deterministic (no
+  model call), CONSERVATIVE classifier: `True` only when the spec text contains at least one
+  UNAMBIGUOUS import-only/no-CLI signal (e.g. "must not run anything", "print anything", "side
+  effect merely from being imported"/"no side effect ... import", "importable module",
+  "library, never a script"/"module (never a script", "defining exactly ... public
+  function(s)", "do not ... print") AND contains none of a set of explicit CLI-shape markers
+  (e.g. "argv", "run the command", "stdin"/"standard input", "command-line"/"command line",
+  "prints", an "add ... list" command pairing) — a spec naming BOTH is treated as CLI-shaped
+  (conservative: under-trigger, never over-trigger). Returns `False` on falsy/non-string input
+  or when no library signal is present; never raises.
+- [x] `_minimum_acceptance` guards its CLI-shaped derivations with `if not
+  _is_library_spec(spec):` — when the spec IS a library, the per-command
+  `_extract_command_tokens` no-crash loop and the add/list (`_derive_roundtrip_pair`) / set-get
+  (`_derive_kv_roundtrip`) round-trip derivations are SKIPPED entirely (they are structurally
+  inapplicable to an import-only library — there is no CLI to round-trip). The usage/`--help`
+  no-crash check and `_smoke_checklist` (import + `hasattr` on every declared export) are
+  ALWAYS still included — the floor beneath every build, library or not. Byte-identical
+  behavior for any spec where `_is_library_spec` is `False` (every existing CLI/datastore
+  acceptance path, incl. REQ-27/REQ-40's round-trip checks, is completely unchanged).
+- [x] FALSE-DONE SAFETY (Tenet 3): the guarded checks can only ever false-FAIL a correct
+  library (they were never applicable), never manufacture a pass for a broken one — a library
+  module that is missing its declared export, or raises on import, still fails the
+  always-kept `_smoke_checklist`. The independent EXT-060 import oracle is untouched by this
+  change.
+- [x] Proven OFFLINE (`tests/test_ext036_library_spec_acceptance.py`, no live model/network):
+  (a) `_is_library_spec` is `True` for the real `RUNNING_MEDIAN_TASK.sentence` and a synthetic
+  "must not run anything, print anything, or have any side effect merely from being imported
+  ... defining exactly one public function" sentence, and `False` for a CLI notes-app sentence
+  naming "add and list commands"/`argv`/"prints"; (b) `_minimum_acceptance(library_spec, mods)`
+  contains no check whose name/code references an add/list or set/get CLI round-trip, but DOES
+  contain the smoke/import check, while `_minimum_acceptance(cli_spec, mods)` still contains
+  the round-trip check unchanged; (c) a BROKEN library module (missing the declared export, or
+  one that raises on import) still FAILS the library minimum checklist; (d) the real
+  known-correct `running_median.py` sample (from `.jaros-data/rmed_diag_out/draw2/`) now PASSES
+  the library minimum checklist. Full `tests/test_ext036_*.py tests/test_ext058_*.py
+  tests/test_ext059_*.py` stays green (no regression, esp. the datastore/kv/CLI acceptance
+  tests unchanged).

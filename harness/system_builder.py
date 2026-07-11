@@ -2062,6 +2062,60 @@ def _extract_command_tokens(spec: str) -> list[str]:
     return found[:MAX_MINIMUM_COMMANDS]
 
 
+# #EXT-036-REQ-67 Start
+# TASK-82 (REQ-67, task #165): closes a MEASURED false-REJECT of a correct pure-LIBRARY build.
+# `.jaros-data/rmed_accept_probe.py` showed `_minimum_acceptance` deriving a bogus CLI
+# round-trip for `running-median-lib` (an import-only, no-side-effect-on-import module) by
+# matching PROSE words as CLI subcommands -- "new" (from "returns a NEW list") as an add-verb
+# and "list" (from "Python `list`") as a list-verb -- then running `python <module>.py new
+# <sentinel>` / `... list` as if it were a CLI. The spec explicitly forbids a `__main__`
+# dispatch, so both invocations produce no output and the round-trip genuinely "fails" even
+# though the code is correct (confirmed against the independent EXT-060 import oracle). The
+# same sentence shape covers 39 library tasks in `harness/real_systems_suite.py`.
+_LIBRARY_SPEC_SIGNAL_RES = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"must not run anything",
+    r"\bprint anything\b",
+    r"side effect[s]?\s+merely from being imported",
+    r"no side effect[s]?\b.{0,40}\bimport",
+    r"\bimportable module\b",
+    r"\blibrary,\s*never a script\b",
+    r"\bmodule\s*\(never a script\b",
+    r"defining exactly\b.{0,60}\bpublic (function|class)",
+    r"\bdo not\b.{0,40}\bprint\b",
+))
+_CLI_SHAPE_SIGNAL_RES = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"\badd\b.{0,30}\blist\b",
+    r"\bargv\b",
+    r"\brun the command\b",
+    r"\bstdin\b",
+    r"\bstandard input\b",
+    r"\bcommand[- ]line\b",
+    r"\bprints\b",
+))
+
+
+def _is_library_spec(spec: str) -> bool:
+    """Deterministic, CONSERVATIVE classifier (REQ-67): `True` only when the spec text names
+    an import-only, no-side-effect-on-import LIBRARY module -- at least one UNAMBIGUOUS
+    no-CLI/no-side-effect-on-import signal is present (`_LIBRARY_SPEC_SIGNAL_RES`) AND none of
+    a fixed set of explicit CLI-shape markers (`_CLI_SHAPE_SIGNAL_RES`) are present. A spec
+    naming BOTH a library signal and a CLI-shape marker is treated as CLI-shaped -- under-
+    trigger rather than over-trigger, since this classification can only SKIP checks (see
+    `_minimum_acceptance`), never manufacture a pass. `False` on falsy/non-string input or
+    when no library signal is found. Never raises."""
+    try:
+        if not isinstance(spec, str) or not spec.strip():
+            return False
+        if not any(p.search(spec) for p in _LIBRARY_SPEC_SIGNAL_RES):
+            return False
+        if any(p.search(spec) for p in _CLI_SHAPE_SIGNAL_RES):
+            return False
+        return True
+    except Exception:
+        return False
+# #EXT-036-REQ-67 End
+
+
 def _minimum_entry_filename(mods: list[dict], plan: "dict | None" = None) -> "str | None":
     """Best-effort, DETERMINISTIC entrypoint filename for the minimum checklist -- prefers
     the plan's own declared `entrypoint` (mirrors `harness.system_suite._resolve_entry`),
@@ -2167,7 +2221,14 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
     multi-command SESSION protocol, a KEY-VALUE-shaped round-trip check
     (`_roundtrip_kv_acceptance_check`) is added INSTEAD of the add/list one -- it reads back
     BY THE SAME KEY it just wrote, via two INDEPENDENT subprocess invocations, so it genuinely
-    verifies cross-process persistence and still fails a non-persistent (in-memory-only) store."""
+    verifies cross-process persistence and still fails a non-persistent (in-memory-only) store.
+    STRENGTHENED AGAIN (REQ-67, TASK-82, task #165): the per-command loop and both round-trip
+    derivations above assume a CLI-shaped entrypoint; for a spec that declares an import-only,
+    no-side-effect-on-import LIBRARY (`_is_library_spec`), they are structurally inapplicable
+    (there is no CLI to round-trip) and were MEASURED to false-REJECT correct library builds by
+    matching prose words as bogus CLI subcommands (e.g. "new"/"list" from "returns a NEW ...
+    `list`"). All three are now SKIPPED for a detected library spec -- the usage/`--help` check
+    and `_smoke_checklist` remain the always-on floor. Byte-identical for every non-library spec."""
     if not mods:
         return []
     checks = list(_smoke_checklist(mods))
@@ -2175,31 +2236,43 @@ def _minimum_acceptance(spec: str, mods: list[dict], plan: "dict | None" = None)
     if entry:
         checks.append(_no_crash_subprocess_check(
             "minimum: usage/--help runs without crashing", entry, [[], ["--help"]]))
-        for cmd in _extract_command_tokens(spec):
-            checks.append(_no_crash_subprocess_check(
-                f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]],
-                # #EXT-036-REQ-28 Start
-                allow_usage_validation=True,
-                # #EXT-036-REQ-28 End
-            ))
-        # #EXT-036-REQ-27 Start
-        # #EXT-036-REQ-40 Start
-        # TASK-52 (REQ-40): a detected SET/GET key-value contract takes PRECEDENCE over the
-        # generic add/list pair -- see `_derive_kv_roundtrip`'s docstring for why the add/list
-        # derivation mis-picks a prose word ("create") as the write verb, and why a bare
-        # add/list round-trip structurally cannot verify a `set <key> <value>`/`get <key>`
-        # contract, for a spec like `sqlite-persistent-kv-cli`.
-        kv_pair = _derive_kv_roundtrip(spec)
-        if kv_pair:
-            set_cmd, get_cmd = kv_pair
-            checks.append(_roundtrip_kv_acceptance_check(entry, set_cmd, get_cmd))
-        else:
-            pair = _derive_roundtrip_pair(spec)
-            if pair:
-                add_cmd, list_cmd = pair
-                checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
-        # #EXT-036-REQ-40 End
-        # #EXT-036-REQ-27 End
+        # #EXT-036-REQ-67 Start
+        # TASK-82 (REQ-67, task #165): the per-command no-crash loop and the add/list /
+        # set-get round-trip derivations below all assume a CLI-shaped entrypoint (a
+        # `__main__` dispatch invoked as `<entry> <verb> <args>`). For a spec that declares an
+        # import-only, no-side-effect-on-import LIBRARY, there is no CLI to round-trip -- these
+        # derivations can only ever false-FAIL a correct library (see `_is_library_spec`'s
+        # docstring), never catch a real bug the always-kept `_smoke_checklist` wouldn't
+        # itself catch. Guarding them here is purely SUBTRACTIVE for a detected library spec;
+        # every non-library spec's checklist is completely unaffected (`_is_library_spec`
+        # returns `False`, so this `if` is a no-op and the code below runs exactly as before).
+        if not _is_library_spec(spec):
+            for cmd in _extract_command_tokens(spec):
+                checks.append(_no_crash_subprocess_check(
+                    f"minimum: '{cmd}' command runs without crashing", entry, [[cmd, "x"]],
+                    # #EXT-036-REQ-28 Start
+                    allow_usage_validation=True,
+                    # #EXT-036-REQ-28 End
+                ))
+            # #EXT-036-REQ-27 Start
+            # #EXT-036-REQ-40 Start
+            # TASK-52 (REQ-40): a detected SET/GET key-value contract takes PRECEDENCE over the
+            # generic add/list pair -- see `_derive_kv_roundtrip`'s docstring for why the add/list
+            # derivation mis-picks a prose word ("create") as the write verb, and why a bare
+            # add/list round-trip structurally cannot verify a `set <key> <value>`/`get <key>`
+            # contract, for a spec like `sqlite-persistent-kv-cli`.
+            kv_pair = _derive_kv_roundtrip(spec)
+            if kv_pair:
+                set_cmd, get_cmd = kv_pair
+                checks.append(_roundtrip_kv_acceptance_check(entry, set_cmd, get_cmd))
+            else:
+                pair = _derive_roundtrip_pair(spec)
+                if pair:
+                    add_cmd, list_cmd = pair
+                    checks.append(_roundtrip_acceptance_check(entry, add_cmd, list_cmd))
+            # #EXT-036-REQ-40 End
+            # #EXT-036-REQ-27 End
+        # #EXT-036-REQ-67 End
         # #EXT-056-REQ-1 Start
         # TASK-2: the ADT differential-oracle check (EXT-056/REQ-1) -- CONSERVATIVE by
         # construction: `classify_confident` only returns a class when the SPEC TEXT itself

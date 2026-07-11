@@ -3326,3 +3326,80 @@ affordance more prominently so the model prefers delegating over a buggy hand-ro
 - [REQ-66] Surface a spec-declared stdlib-module affordance in the build prompt (a deterministic
   extraction + gated, byte-identical-when-absent hint appended to the per-module free-form build
   prompt, closing the measured `base32-codec-lib` hand-roll-instead-of-delegate gap generically)
+
+### [TASK-82] `_minimum_acceptance` must not false-REJECT a pure LIBRARY spec via a bogus CLI round-trip (REQ-67, task #165)
+
+ROOT CAUSE, already diagnosed, deterministic, model-independent (`.jaros-data/rmed_accept_probe.py`):
+for an import-only, no-side-effect-on-import LIBRARY spec (e.g. `running-median-lib`),
+`_minimum_acceptance` derives a bogus CLI round-trip check by matching PROSE words as CLI
+subcommands — `_derive_roundtrip_pair` matches "new" (from "returns a NEW list") as an
+add-command and "list" (from "Python `list`") as a list-command, then runs `python
+<module>.py new <sentinel>` / `... list`, gets NO output (the spec forbids a `__main__`
+dispatch), so the round-trip "fails" -> `done=False` even though the code is correct and the
+independent EXT-060 import oracle passes it. This same "Write a single-file Python module
+(never a script -- it must not run anything, print anything, or have any side effect merely
+from being imported) ..." sentence shape covers 39 library tasks in
+`harness/real_systems_suite.py`, so this is a generic, high-leverage class.
+
+#### Steps
+1. `harness/system_builder.py`: add `_is_library_spec(spec: str) -> bool` — a deterministic (no
+   model call) classifier: `True` when the spec text contains at least one UNAMBIGUOUS
+   import-only/no-CLI signal (case-insensitive regex OR over a fixed list: "must not run
+   anything", "print anything", "side effect merely from being imported" / "no side effect
+   ... import", "importable module", "library, never a script" / "module (never a script",
+   "defining exactly ... public function(s)", "do not ... print") AND contains none of a fixed
+   set of explicit CLI-shape markers ("argv", "run the command", "stdin"/"standard input",
+   "command-line"/"command line", "prints", an "add ... list" command pairing) — if BOTH a
+   library signal and a CLI-shape marker are present, treat it as CLI-shaped (conservative:
+   under-trigger, never over-trigger the library classification). `False` on falsy/non-string
+   input or when no library signal is present; never raises.
+2. In `_minimum_acceptance(spec, mods, plan=...)`: guard the CLI-shaped derivations with `if
+   not _is_library_spec(spec):` — specifically SKIP the `_extract_command_tokens` per-command
+   no-crash loop AND the `_derive_roundtrip_pair`/`_derive_kv_roundtrip` round-trip derivations
+   (and their appended checks) when the spec IS a library — they are structurally inapplicable
+   to an import-only library (no CLI exists to round-trip). ALWAYS keep the usage/`--help`
+   no-crash check and `_smoke_checklist` (import + `hasattr` on every declared export) —
+   the floor beneath every build. Do NOT touch the ADT differential-oracle check
+   (`adt_oracle.classify_confident`/`acceptance_check`) — it is already keyword-gated
+   conservatively and out of this task's scope. Byte-identical behavior for any spec where
+   `_is_library_spec` returns `False` — every existing CLI/datastore acceptance path (incl.
+   REQ-27/REQ-40's round-trip checks) is completely unchanged.
+3. In-process behavioral floor for libraries (OPTIONAL, only if it reuses existing helpers
+   cleanly): if straightforward, add one additional check that imports the module and calls
+   each declared public function with a small fixed input, asserting it returns without
+   raising — never asserting a specific VALUE (that would risk inventing a wrong convention,
+   the very false-reject class this task fixes). If wiring this generically (arbitrary
+   arities/types across the 39 library sentences) is non-trivial, SKIP it and rely on the
+   always-kept smoke check + the model's own proposed behavioral/property checks — document
+   the decision in the task report. Prefer under-asserting to hallucinating.
+4. HONESTY / FALSE-DONE SAFETY (Tenet 3, must hold + be tested): the removed CLI checks are
+   structurally inapplicable to a library (there is no CLI to round-trip), so they can only
+   ever false-FAIL a correct library, never catch a real library bug that the always-kept
+   `_smoke_checklist` wouldn't itself catch (missing/broken export, import-time exception).
+   The guard is purely spec-driven (`_is_library_spec`), so CLI specs keep every existing CLI
+   check unmodified. The independent EXT-060 oracle is untouched.
+5. Tests `tests/test_ext036_library_spec_acceptance.py` (OFFLINE, no live model/network): (a)
+   `_is_library_spec` is `True` for the real `harness.real_systems_suite.RUNNING_MEDIAN_TASK
+   .sentence` and a synthetic "must not run anything, print anything, or have any side effect
+   merely from being imported ... defining exactly one public function" sentence; `False` for
+   a CLI notes-app sentence naming "add and list commands" / `argv` / "prints". (b)
+   `_minimum_acceptance(library_spec, mods)` contains NO check whose `name`/`code` references
+   an add/list or set/get CLI round-trip, but DOES contain the smoke/import check;
+   `_minimum_acceptance(cli_spec, mods)` STILL contains the round-trip check, unchanged. (c)
+   FALSE-DONE-SAFETY: a BROKEN library module (missing the declared export, or one that raises
+   on import) still FAILS the library minimum checklist when actually run. (d) Using the real
+   known-correct `.jaros-data/rmed_diag_out/draw2/running_median.py` sample (or an inline exact
+   copy of its source), assert the library minimum checklist now genuinely PASSES it when run.
+   Run `python -m pytest tests/test_ext036_library_spec_acceptance.py -q` (all pass), then a
+   broad `python -m pytest tests/test_ext036_*.py tests/test_ext058_*.py tests/test_ext059_*.py
+   -q` to prove no regression (esp. datastore/kv/CLI acceptance tests byte-identical). Update
+   `.jarify/EXT-036/index.json` per jarify-manage-links. OFFLINE only — do NOT call the Jetson.
+   Scope: ONLY `harness/system_builder.py` + the new test file + `.jarify/EXT-036` docs. Do NOT
+   touch `harness/real_systems_suite.py`, `harness/stdlib_safety.py`, `harness/dep_advisory.py`,
+   `harness/secure_exec.py`, or any other spec's files.
+
+#### Implements
+- [REQ-67] `_minimum_acceptance` must not false-REJECT a pure import-only LIBRARY spec by
+  deriving a bogus CLI round-trip from prose words (a deterministic, conservative
+  `_is_library_spec` classifier guards the three CLI-shaped derivations, keeping the smoke
+  floor always-on and leaving every CLI-shaped spec's checklist byte-identical)
