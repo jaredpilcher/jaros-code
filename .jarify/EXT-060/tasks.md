@@ -1291,3 +1291,148 @@
 
 #### Implements
 - [REQ-43] Eighth import-oracle CREATE task, in a NEW comms vertical (Twilio-style SMS segmentation calculator)
+
+### [TASK-39] Ninth CREATE task, in a NEW background-job-processing vertical (background-job lifecycle) (REQ-44)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `JOB_QUEUE_LIFECYCLE_TASK` (`RealSystemTask`,
+   `cls="jobs"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a stdlib-only
+   single-file `Job` class in `job.py`: states `"queued"`/`"running"`/`"succeeded"`/`"failed"`/
+   `"retrying"`/`"dead"`; `start()` legal from `"queued"` OR `"retrying"` (moves to `"running"`);
+   `succeed()` legal from `"running"` (moves to `"succeeded"`); `fail()` legal from `"running"`
+   (moves to `"failed"`); `retry()` legal from `"failed"` (moves to `"retrying"`); `kill()` legal
+   from `"queued"`/`"running"`/`"failed"`/`"retrying"` (moves to `"dead"`). Phrase the sentence as
+   a "background-job processor" throughout (never "job queue"/"task queue") -- the required
+   literal state name `"queued"` stays safe against the leaf classifier regardless (confirmed via
+   `harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS`, which never lists the bare token `"queue"`).
+   Reuse the ALREADY-LANDED `_grade_state_machine` dispatch (REQ-13) -- no new oracle code.
+2. Hand-verify (via a scratch walk of the exact same transition table) a drive script before
+   adding the task to the roster: illegal `succeed()` from `"queued"` (reject), then a full legal
+   path through ONE retry cycle (`start` -> `fail` -> `retry` -> `start` -> `succeed`, exercising
+   `start()` from BOTH `"queued"` and `"retrying"`), then a SECOND illegal transition -- `retry()`
+   from `"succeeded"` (reject). `expect_final` is `"succeeded"`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free; confirm the sentence contains none of the banned leaf keywords
+   (`expire`/`expiry`/`expiration`/`cache`/`ttl`/`stack`/`ring buffer`/`circular buffer`/
+   `memoize`/`fifo`/`priority queue`) and that `leaf_for_spec(JOB_QUEUE_LIFECYCLE_TASK.sentence)`
+   is genuinely `None` (not just a literal substring scan) despite the required `"queued"` state
+   name.
+4. Add `tests/test_ext060_atlas_batch4_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `Job` fixture is accepted by `grade_real_system_task(JOB_QUEUE_LIFECYCLE_TASK, ...)`; a BROKEN
+   fixture that allows an illegal transition (e.g. `succeed()` unconditionally, from any state) is
+   rejected; leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`; its `oracle_spec`
+   validates via `harness.state_machine_oracle.validate_spec`.
+5. Run `python -m pytest tests/test_ext060_atlas_batch4_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-44 ranges, via
+   `jarify-manage-links`) and flip the REQ-44 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-44] Ninth CREATE task, in a NEW background-job-processing vertical (background-job lifecycle)
+
+### [TASK-40] Tenth CREATE task, in the ticketing vertical (event seat hold/confirm/release) (REQ-45)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `SEAT_HOLD_TASK` (`RealSystemTask`, `cls="ticketing"`,
+   `oracle_kind="conservation"`) with a contract-exact sentence for a stdlib-only single-file
+   `SeatHold` class in `seat_hold.py`: `SeatHold(total_seats)` starts `available=total_seats`,
+   `held=0`, `sold=0`; `hold(n)` moves `n` from `available` to `held` (reject if `n > available`,
+   raise `ValueError`, leave every quantity unchanged); `confirm(n)` moves `n` from `held` to
+   `sold` (reject if `n > held`); `release(n)` moves `n` from `held` back to `available`.
+   `available() + held() + sold()` always equals `total_seats`. Reuse the ALREADY-LANDED
+   `_grade_conservation` dispatch (REQ-15) -- no new oracle code.
+2. Hand-verify (via a scratch delta walk) a drive script before adding the task to the roster:
+   illegal over-hold FIRST (150 of 100 available -- reject), then a legal hold (60) and a legal
+   partial confirm (40 of the 60 held), then a SECOND illegal op -- confirming 30 when only 20
+   remain held (reject, proving the guard holds mid-sequence too), then a legal release (10) and
+   a legal final confirm (10), landing on `expect_final = {"available": 50, "held": 0, "sold":
+   50}`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_batch4_tasks.py` (same file TASK-39 creates, OFFLINE, no
+   model/Jetson): a CORRECT `SeatHold` fixture is accepted by
+   `grade_real_system_task(SEAT_HOLD_TASK, ...)`; a BROKEN fixture that never checks `available`
+   before `hold()` (allows an over-hold) is rejected; leaves-OFF holds
+   (`leaf_for_spec(SEAT_HOLD_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`; its `oracle_spec` validates via
+   `harness.conservation_oracle.validate_spec`.
+5. Run `python -m pytest tests/test_ext060_atlas_batch4_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-45 ranges, via
+   `jarify-manage-links`) and flip the REQ-45 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-45] Tenth CREATE task, in the ticketing vertical (event seat hold/confirm/release)
+
+### [TASK-41] Eleventh CREATE task, in the fintech vertical (AR partial-payment application ledger) (REQ-46)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `INVOICE_AR_AGING_TASK` (`RealSystemTask`,
+   `cls="fintech"`, `oracle_kind="double_entry"`) with a contract-exact sentence for a
+   stdlib-only single-file `ARPaymentLedger` class in `ar_payment_application.py`, over the SAME
+   `accounts_receivable`/`revenue`/`cash` three-account shape and debit-ADDS/credit-SUBTRACTS
+   sign convention `INVOICE_AR_TASK` (REQ-22) already uses: `post(legs)` applies a BALANCED entry
+   (sum of `debit` legs == sum of `credit` legs) and returns normally, or raises `ValueError` and
+   leaves every balance unchanged for an UNBALANCED entry. Reuse the ALREADY-LANDED
+   `_grade_double_entry` dispatch (REQ-17) -- no new oracle code.
+2. Hand-verify (via `harness.double_entry_oracle.validate_spec` and a scratch debit/credit sum
+   walk) a drive script before adding the task to the roster: an UNBALANCED posting FIRST (debit
+   accounts_receivable 100000 / credit revenue 90000 -- reject), then one balanced $1000.00
+   invoice posting (debit accounts_receivable / credit revenue), then TWO balanced partial-
+   payment postings ($400.00 then $600.00, each debit cash / credit accounts_receivable) that
+   together exactly clear the invoice -- landing on `expect_final = {"accounts_receivable": 0,
+   "revenue": -100000, "cash": 100000}`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_batch4_tasks.py` (same file TASK-39/40 create, OFFLINE, no
+   model/Jetson): a CORRECT `ARPaymentLedger` fixture is accepted by
+   `grade_real_system_task(INVOICE_AR_AGING_TASK, ...)`; a BROKEN fixture that never checks
+   debits equal credits (accepts an unbalanced posting) is rejected; leaves-OFF holds
+   (`leaf_for_spec(INVOICE_AR_AGING_TASK.sentence) is None`); the task is a member of
+   `REAL_SYSTEMS_TASKS`; its `oracle_spec` validates via
+   `harness.double_entry_oracle.validate_spec`.
+5. Run `python -m pytest tests/test_ext060_atlas_batch4_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-46 ranges, via
+   `jarify-manage-links`) and flip the REQ-46 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-46] Eleventh CREATE task, in the fintech vertical (AR partial-payment application ledger)
+
+### [TASK-42] Twelfth CREATE task, in a NEW validation-library vertical (Luhn/ISBN-13/EAN-13 check digits) (REQ-47)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `CHECK_DIGIT_TASK` (`RealSystemTask`,
+   `cls="validation"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `check_digits.py` defining `luhn_valid(number)` (standard Luhn checksum:
+   double every second digit from the right, subtract 9 when the doubled value exceeds 9, sum
+   every digit, valid when the total is divisible by 10), `isbn13_valid(s)`, and `ean13_valid(s)`
+   (both applying the IDENTICAL EAN-13 weighted checksum -- alternating weights 1/3 across all 13
+   positions left-to-right including the check digit, valid when the weighted sum is divisible by
+   10) -- each returning a `bool`, and returning `False` (never raising) for a non-digit or
+   wrong-length argument. Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new
+   oracle code.
+2. Hand-verify (via scratch checksum arithmetic against REAL published test vectors) six fixtures
+   before adding the task to the roster: Luhn `4539148803436467` (valid, checksum total 80) /
+   `1234567890123456` (invalid, checksum total 64); ISBN-13 `9780306406157` (valid, weighted sum
+   100) / `9780306406158` (invalid, weighted sum 101); EAN-13 `4006381333931` (valid, weighted sum
+   90) / `4006381333932` (invalid, weighted sum 91). Add all six as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence.
+4. Extend `tests/test_ext060_atlas_batch4_tasks.py` (same file TASK-39/40/41 create, OFFLINE, no
+   model/Jetson): a CORRECT `check_digits.py` fixture is accepted by
+   `grade_real_system_task(CHECK_DIGIT_TASK, ...)`; a BROKEN fixture whose `luhn_valid` only
+   checks digit format (never doubles/sums, so it wrongly accepts the invalid Luhn number) is
+   rejected; leaves-OFF holds (`leaf_for_spec(CHECK_DIGIT_TASK.sentence) is None`); the task is a
+   member of `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting `REAL_SYSTEMS_TASKS`
+   grew by exactly these four REQ-44/45/46/47 tasks (length 30 -> 34).
+5. Bump the seven pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 30` -> `== 34`) in `tests/test_ext060_atlas_wave1_tasks.py`,
+   `tests/test_ext060_atlas_wave2_tasks.py`, `tests/test_ext060_clock_agent_tasks.py`,
+   `tests/test_ext060_modify_wave2.py`, `tests/test_ext060_spec_hint.py`,
+   `tests/test_ext060_ticket_booking_invoice.py`, and
+   `tests/test_ext060_atlas_wave7_tasks.py`.
+6. Run `python -m pytest tests/test_ext060_atlas_batch4_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; 34-item CREATE roster). Update `.jarify/EXT-060/index.json`
+   (REQ-47 ranges, via `jarify-manage-links`) and flip the REQ-47 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-47] Twelfth CREATE task, in a NEW validation-library vertical (Luhn/ISBN-13/EAN-13 check digits)

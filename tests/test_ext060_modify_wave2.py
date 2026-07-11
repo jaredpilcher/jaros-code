@@ -520,11 +520,12 @@ def test_lockout_admin_unlock_modify_task_is_leaves_off_and_a_roster_member():
 # ================================================================================================
 # Roster-wide: the MODIFY half grew by exactly these five tasks (6 -> 11); the CREATE half is
 # untouched by this file (26 at the time this module landed; EXT-060 REQ-40..43
-# (tests/test_ext060_atlas_wave7_tasks.py) later grew it to 30 -- unrelated to this MODIFY wave).
+# (tests/test_ext060_atlas_wave7_tasks.py) grew it to 30, then REQ-44..47
+# (tests/test_ext060_atlas_batch4_tasks.py) grew it to 34 -- both unrelated to this MODIFY wave).
 # ================================================================================================
 
 def test_modify_roster_grew_by_exactly_five_tasks():
-    assert len(REAL_SYSTEMS_TASKS) == 30
+    assert len(REAL_SYSTEMS_TASKS) == 34
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 11
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert {

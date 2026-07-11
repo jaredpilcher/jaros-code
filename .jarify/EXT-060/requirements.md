@@ -1378,3 +1378,133 @@ messages fit 160 chars in one segment or split at 153/segment; any other charact
       uses the GSM-7 thresholds even for a UCS-2 message is rejected; the task is a member of
       `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-40/41/42/43 tasks
       (length 26 -> 30).
+
+### [REQ-44] Ninth CREATE task, in a NEW background-job-processing vertical (background-job lifecycle)
+
+A NINTH held-out CREATE task, spreading the roster across the ALREADY-LANDED `oracle_kind="state_machine"`
+dispatch REQ-13 lands (no new oracle code: reuses `_grade_state_machine` ->
+`harness.state_machine_oracle.grade_state_machine` verbatim). `JOB_QUEUE_LIFECYCLE_TASK`
+(`RealSystemTask`, `cls="jobs"`, `oracle_kind="state_machine"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file `Job` class in `job.py` modeling a background-job
+processor's lifecycle -- `"queued"`/`"running"`/`"succeeded"`/`"failed"`/`"retrying"`/`"dead"` states,
+`start()`/`succeed()`/`fail()`/`retry()`/`kill()` actions, with `start()` legal from BOTH `"queued"` (the
+first attempt) and `"retrying"` (resuming after a retry) -- a shape none of the prior lifecycle tasks
+(`ORDER_LIFECYCLE_TASK`/`HELPDESK_SLA_TASK`) exercises.
+
+#### Acceptance Criteria
+- [x] `JOB_QUEUE_LIFECYCLE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the six-state,
+      five-action lifecycle contract (filename `job.py`, the class name, the exact legal source state(s)
+      per action -- including `start()`'s two legal sources -- the `ValueError`-on-illegal-transition-
+      with-unchanged-state contract, and the `state` property) with every oracle-checked value derivable
+      from that same visible sentence (no hidden key, no leak).
+- [x] At least TWO illegal transitions are driven and rejected, hand-verified via a scratch walk of the
+      exact same transition table before being added to the roster: `succeed()` from `"queued"` (never
+      started) and `retry()` from `"succeeded"` (already terminal) -- proving the guard holds both before
+      any legal op and after the job has already reached its terminal state.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. The state name `"queued"` (a required literal FSM
+      state) is confirmed SAFE against the real leaf classifier -- `harness.adt_oracle._KEYWORDS`/
+      `_METHOD_TOKENS` never lists the bare token `"queue"`, only the full phrases `"fifo"`/
+      `"first-in-first-out"` and `"priority queue"`/`"priority-queue"`, none of which this sentence ever
+      forms -- verified directly via `leaf_for_spec(...) is None`, not just a literal substring scan.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Job` fixture is
+      accepted by `grade_real_system_task(JOB_QUEUE_LIFECYCLE_TASK, ...)`; a BROKEN fixture that allows an
+      illegal transition (e.g. `succeed()` from any state) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-45] Tenth CREATE task, in the ticketing vertical (event seat hold/confirm/release)
+
+A TENTH held-out CREATE task, in the SAME `cls="ticketing"` vertical `SEAT_BOOKING_TASK` (REQ-21) already
+established but modeling a DISTINCT three-quantity hold/confirm/release workflow (not the plain two-
+quantity reserve/release flow), graded by the ALREADY-LANDED `oracle_kind="conservation"` dispatch REQ-15
+lands (no new oracle code: reuses `_grade_conservation` -> `harness.conservation_oracle.grade_conservation`
+verbatim). `SEAT_HOLD_TASK` (`RealSystemTask`, `cls="ticketing"`, `oracle_kind="conservation"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `SeatHold` class in
+`seat_hold.py` modeling `hold(n)` (available->held), `confirm(n)` (held->sold), and `release(n)`
+(held->available), over a mirror-pair bookkeeping of `available`/`held`/`sold` that always sums to
+`total_seats`.
+
+#### Acceptance Criteria
+- [x] `SEAT_HOLD_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the three-quantity
+      hold/confirm/release contract (filename `seat_hold.py`, the class name, the constructor shape, the
+      three reader methods, the exact deltas each action causes, the `ValueError`-on-over-hold/over-
+      confirm-with-unchanged-quantities contract) with every oracle-checked value derivable from that same
+      visible sentence (no hidden key, no leak).
+- [x] TWO illegal ops are driven and rejected, hand-verified via a scratch walk of the exact same
+      available/held/sold delta bookkeeping before being added to the roster: holding MORE seats than are
+      currently available, and confirming MORE seats than are currently held (mid-sequence, after a
+      partial confirm has already moved the balance) -- proving the guard holds both at the very start and
+      after legal ops have moved the balance.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `SeatHold` fixture is
+      accepted by `grade_real_system_task(SEAT_HOLD_TASK, ...)`; a BROKEN fixture that allows an over-hold
+      (never checks `available` before moving seats to `held`) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-46] Eleventh CREATE task, in the fintech vertical (AR partial-payment application ledger)
+
+An ELEVENTH held-out CREATE task, in the SAME `cls="fintech"` double-entry vertical `INVOICE_AR_TASK`
+(REQ-22) already established but modeling a DISTINCT partial-payment-application scenario (multiple
+partial payments applied against a single invoice, rather than two invoices plus one full payment), graded
+by the ALREADY-LANDED `oracle_kind="double_entry"` dispatch REQ-17 lands (no new oracle code: reuses
+`_grade_double_entry` -> `harness.double_entry_oracle.grade_double_entry` verbatim, and the SAME
+`accounts_receivable`/`revenue`/`cash` three-account shape/sign convention `INVOICE_AR_TASK` already
+uses). `INVOICE_AR_AGING_TASK` (`RealSystemTask`, `cls="fintech"`, `oracle_kind="double_entry"`) is added
+to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `ARPaymentLedger` class
+in `ar_payment_application.py` implementing `post(legs)` over the three accounts, with an invoice issued
+once and then TWO separate partial payments posted that together exactly clear the invoice's outstanding
+balance to `0`.
+
+#### Acceptance Criteria
+- [x] `INVOICE_AR_AGING_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      partial-payment-application contract (filename `ar_payment_application.py`, the class name, the
+      three reader methods, the `post(legs)` balanced/unbalanced posting rule, the debit-ADDS/credit-
+      SUBTRACTS convention) with every oracle-checked value derivable from that same visible sentence (no
+      hidden key, no leak).
+- [x] An UNBALANCED posting is driven and rejected FIRST, hand-verified via `harness.double_entry_oracle.
+      validate_spec` and a scratch debit/credit sum walk before being added to the roster; then one
+      balanced invoice posting and TWO balanced partial-payment postings are driven, landing on
+      `accounts_receivable=0` (the invoice fully applied/cleared), matching `expect_final`.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `ARPaymentLedger`
+      fixture is accepted by `grade_real_system_task(INVOICE_AR_AGING_TASK, ...)`; a BROKEN fixture that
+      never checks debits equal credits (accepts an unbalanced posting) is rejected; the task is a member
+      of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-47] Twelfth CREATE task, in a NEW validation-library vertical (Luhn/ISBN-13/EAN-13 check digits)
+
+A TWELFTH held-out CREATE task, in a NEW validation vertical, graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `CHECK_DIGIT_TASK` (`RealSystemTask`, `cls="validation"`,
+`oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only,
+single-file module `check_digits.py` defining three functions -- `luhn_valid(number)` (the standard Luhn
+checksum), `isbn13_valid(s)` and `ean13_valid(s)` (the identical EAN-13 weighted 1/3 checksum, since a
+real ISBN-13 code IS a valid EAN-13 number) -- each returning a `bool`.
+
+#### Acceptance Criteria
+- [x] `CHECK_DIGIT_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins all three checksum
+      algorithms (filename `check_digits.py`, the three function signatures, the exact digit-doubling-
+      from-the-right Luhn rule with the >9-subtract-9 correction, the exact 13-position 1/3 alternating-
+      weight rule shared by `isbn13_valid`/`ean13_valid`, the non-digit/wrong-length-returns-`False`
+      contract) with every oracle-checked value derivable from that same visible sentence (no hidden key,
+      no leak).
+- [x] Six driven checks -- a KNOWN-good and a KNOWN-bad value per algorithm, every expected boolean
+      hand-verified via scratch checksum arithmetic against REAL published test vectors before being added
+      to the roster: Luhn `4539148803436467` (valid, checksum total 80) / `1234567890123456` (invalid,
+      checksum total 64); ISBN-13 `9780306406157` (valid, weighted sum 100) / `9780306406158` (invalid,
+      weighted sum 101); EAN-13 `4006381333931` (valid, weighted sum 90) / `4006381333932` (invalid,
+      weighted sum 91). A build that skips the Luhn doubling step entirely (only checks digit format) is
+      caught by the `luhn_bad` check (it wrongly accepts the invalid number).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `check_digits.py`
+      fixture is accepted by `grade_real_system_task(CHECK_DIGIT_TASK, ...)`; a BROKEN fixture that
+      accepts a numerically-invalid Luhn number (format-only check, no real checksum) is rejected; the
+      task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four
+      REQ-44/45/46/47 tasks (length 30 -> 34).

@@ -4128,3 +4128,334 @@ SMS_SEGMENT_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(SMS_SEGMENT_TASK)
 # #EXT-060-REQ-43 End
+
+
+# #EXT-060-REQ-44 Start
+# TASK-39: a NINTH CREATE task, in a NEW background-job-processing vertical -- graded by the
+# ALREADY-LANDED "state_machine" oracle_kind dispatch REQ-13 lands (no new oracle code: reuses
+# `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine` verbatim). Distinct
+# from every prior "state_machine" task (ORDER_LIFECYCLE_TASK/HELPDESK_SLA_TASK): this models a
+# background job's queued/running/succeeded/failed/retrying/dead lifecycle, including a RETRY
+# CYCLE where the SAME `start()` action legally fires from TWO different source states
+# (`"queued"` for the very first attempt, `"retrying"` after a failure) -- a shape none of the
+# existing lifecycle tasks exercises. Deliberately phrased as a "background-job processor"
+# throughout (never "job queue"/"task queue") so the state name `"queued"` (an ordinary status
+# adjective, required by the task spec) can never be mistaken for the FIFO-queue leaf's own
+# vocabulary -- see the leaf-fingerprint note on the banned-keyword test in this REQ's test module
+# for why this is provably safe, not just cautious phrasing.
+_JOB_LIFECYCLE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named job.py, "
+    "using only the standard library, defining exactly one public class named `Job` modeling "
+    "the lifecycle of one unit of work inside a background-job processor (the kind of "
+    "asynchronous worker system that runs deferred tasks outside an HTTP request, distinct from "
+    "a simple pay/ship/deliver order workflow). `Job()` (no constructor arguments) creates a "
+    "new job whose initial state is the string `\"queued\"`. The class exposes a real Python "
+    "`@property` named `state` that returns the job's current state as one of the strings "
+    "`\"queued\"`, `\"running\"`, `\"succeeded\"`, `\"failed\"`, `\"retrying\"`, or `\"dead\"`. "
+    "It defines exactly five zero-argument action methods: `start()` moves the job to "
+    "`\"running\"` -- legal from EITHER `\"queued\"` (the job's very first start) OR "
+    "`\"retrying\"` (resuming after a retry) -- the SAME method resumes a retried job that "
+    "originally started it; `succeed()` moves the job from `\"running\"` to `\"succeeded\"`; "
+    "`fail()` moves the job from `\"running\"` to `\"failed\"`; `retry()` moves the job from "
+    "`\"failed\"` to `\"retrying\"` -- a failed job is scheduled for another attempt, and "
+    "calling `start()` again then moves it from `\"retrying\"` back to `\"running\"` exactly "
+    "like the original start, so a job cycles through this bounded failed/retrying/running loop "
+    "as many times as `retry()`/`start()` are legally called before finally succeeding or being "
+    "killed; `kill()` moves the job to `\"dead\"` -- legal from `\"queued\"`, `\"running\"`, "
+    "`\"failed\"`, OR `\"retrying\"` (a job is force-killed before it ever reaches a terminal "
+    "`\"succeeded\"` state). Each of these five methods is legal ONLY from the exact source "
+    "state(s) named above; calling any of them from any OTHER current state (for example "
+    "calling `succeed()` on a job that has never been started, or calling `retry()` on a job "
+    "that already succeeded) must instead raise `ValueError` and must leave the job's `state` "
+    "COMPLETELY UNCHANGED -- no partial mutation before the raise."
+)
+
+JOB_QUEUE_LIFECYCLE_TASK = RealSystemTask(
+    name="background-job-lifecycle-state-machine",
+    cls="jobs",
+    sentence=_JOB_LIFECYCLE_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "job",
+        "entity": "Job",
+        "spec": {
+            "states": ["queued", "running", "succeeded", "failed", "retrying", "dead"],
+            "initial": "queued",
+            "transitions": {
+                "queued:start": "running",
+                "retrying:start": "running",
+                "running:succeed": "succeeded",
+                "running:fail": "failed",
+                "failed:retry": "retrying",
+                "queued:kill": "dead",
+                "running:kill": "dead",
+                "failed:kill": "dead",
+                "retrying:kill": "dead",
+            },
+            # Illegal succeed-from-"queued" FIRST (must be rejected -- succeed() requires
+            # "running"), then the full legal path through ONE retry cycle (start -> fail ->
+            # retry -> start -> succeed, exercising the SAME start() action from both "queued"
+            # AND "retrying"), then a SECOND illegal transition -- retry-from-"succeeded" (must
+            # ALSO be rejected, proving the guard holds after the job has already reached its
+            # terminal state, not just at construction).
+            "drive": [
+                {"action": "succeed", "expect": "reject"},
+                {"action": "start", "expect": "accept"},
+                {"action": "fail", "expect": "accept"},
+                {"action": "retry", "expect": "accept"},
+                {"action": "start", "expect": "accept"},
+                {"action": "succeed", "expect": "accept"},
+                {"action": "retry", "expect": "reject"},
+            ],
+            "expect_final": "succeeded",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(JOB_QUEUE_LIFECYCLE_TASK)
+# #EXT-060-REQ-44 End
+
+
+# #EXT-060-REQ-45 Start
+# TASK-40: a TENTH CREATE task, in the SAME `cls="ticketing"` vertical SEAT_BOOKING_TASK (REQ-21)
+# already established -- but DISTINCT from it: SEAT_BOOKING_TASK is a plain two-quantity
+# reserve/release flow, while this models a THREE-quantity HOLD/confirm/release workflow (a
+# temporary hold that must be explicitly confirmed into a final sale, or released back to
+# inventory) -- graded by the ALREADY-LANDED "conservation" oracle_kind dispatch REQ-15 lands (no
+# new oracle code: reuses `_grade_conservation` -> `harness.conservation_oracle.grade_conservation`
+# verbatim). Every driven delta below was hand-verified via a scratch walk of the exact same
+# available/held/sold mirror-pair bookkeeping the sentence pins (their sum always equals
+# `total_seats`, the conservation invariant) before this task was added to the roster.
+_SEAT_HOLD_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "seat_hold.py, using only the standard library, defining exactly one public class named "
+    "`SeatHold` modeling an event's seat inventory through a HOLD/confirm/release workflow -- "
+    "distinct from a plain reserve/release booking flow in that a seat passes through an "
+    "intermediate TEMPORARY HOLD (e.g. while a buyer is completing checkout) before being "
+    "permanently SOLD. `SeatHold(total_seats)` (exactly one positional constructor argument, a "
+    "non-negative integer) creates tracking for an event whose `available` seats start at "
+    "`total_seats`, whose `held` seats start at `0`, and whose `sold` seats start at `0`. It "
+    "exposes three zero-argument reader methods, `available()`, `held()`, and `sold()`, each "
+    "returning the current integer value of that quantity; `available() + held() + sold()` "
+    "must always equal `total_seats`, since a seat is only ever MOVED between these three "
+    "buckets, never created or destroyed. It defines three methods that each take one "
+    "positional integer argument, `n`: `hold(n)` moves `n` seats from `available` to `held` "
+    "(decreasing `available` by `n` and increasing `held` by `n`) -- but if `n` is GREATER than "
+    "the CURRENT `available` count, it must instead raise `ValueError` and leave "
+    "`available`/`held`/`sold` COMPLETELY UNCHANGED; `confirm(n)` moves `n` seats from `held` "
+    "to `sold` (decreasing `held` by `n` and increasing `sold` by `n`) -- the buyer has "
+    "completed checkout and the hold becomes a final sale -- but if `n` is GREATER than the "
+    "CURRENT `held` count, it must instead raise `ValueError` and leave "
+    "`available`/`held`/`sold` COMPLETELY UNCHANGED; `release(n)` moves `n` seats from `held` "
+    "back to `available` (increasing `available` by `n` and decreasing `held` by `n`) -- a "
+    "stale or abandoned hold is released back into inventory."
+)
+
+SEAT_HOLD_TASK = RealSystemTask(
+    name="event-seat-hold-conservation",
+    cls="ticketing",
+    sentence=_SEAT_HOLD_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "seat_hold",
+        "entity": "SeatHold",
+        "spec": {
+            "quantities": ["available", "held", "sold"],
+            "initial": {"available": 100, "held": 0, "sold": 0},
+            "construct_args": [100],
+            # Illegal over-hold FIRST (150 of 100 available -- must be rejected), then a legal
+            # hold (60) and a legal partial confirm (40 of the 60 held), then a SECOND illegal
+            # op -- confirming 30 when only 20 remain held (must ALSO be rejected, proving the
+            # guard holds after legal ops have moved the balance too), then a legal release (10)
+            # and a legal final confirm (10) landing on a concrete expect_final.
+            "drive": [
+                {"action": "hold", "args": [150], "expect": "reject"},
+                {"action": "hold", "args": [60], "expect": "accept",
+                 "deltas": {"available": -60, "held": 60}},
+                {"action": "confirm", "args": [40], "expect": "accept",
+                 "deltas": {"held": -40, "sold": 40}},
+                {"action": "confirm", "args": [30], "expect": "reject"},
+                {"action": "release", "args": [10], "expect": "accept",
+                 "deltas": {"held": -10, "available": 10}},
+                {"action": "confirm", "args": [10], "expect": "accept",
+                 "deltas": {"held": -10, "sold": 10}},
+            ],
+            "expect_final": {"available": 50, "held": 0, "sold": 50},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(SEAT_HOLD_TASK)
+# #EXT-060-REQ-45 End
+
+
+# #EXT-060-REQ-46 Start
+# TASK-41: an ELEVENTH CREATE task, in the SAME `cls="fintech"` double-entry vertical
+# INVOICE_AR_TASK (REQ-22) already established -- but DISTINCT from it: INVOICE_AR_TASK issues
+# two invoices then ONE full payment, while this models MULTIPLE PARTIAL payments applied against
+# a SINGLE invoice over time until it is fully paid off -- graded by the ALREADY-LANDED
+# "double_entry" oracle_kind dispatch REQ-17 lands (no new oracle code: reuses
+# `_grade_double_entry` -> `harness.double_entry_oracle.grade_double_entry` verbatim, and the SAME
+# `accounts_receivable`/`revenue`/`cash` three-account shape/debit-positive-credit-negative sign
+# convention INVOICE_AR_TASK already uses). `expect_final` is hand-derived from the debit-
+# positive/credit-negative shadow math (verified via `harness.double_entry_oracle.validate_spec`
+# before this task was added to the roster): an unbalanced posting is rejected FIRST, then one
+# invoice is issued, then TWO separate partial payments are posted that together exactly clear
+# the invoice's outstanding `accounts_receivable` balance down to `0`.
+_AR_PAYMENT_APPLICATION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "ar_payment_application.py, using only the standard library, defining exactly one public "
+    "class named `ARPaymentLedger` modeling an accounts-receivable double-entry ledger over "
+    "exactly three named accounts -- `accounts_receivable`, `revenue`, and `cash` -- with a "
+    "focus on applying MULTIPLE PARTIAL payments against a single invoice until it is fully "
+    "paid off (distinct from a simple single-payment invoice flow). `ARPaymentLedger()` (no "
+    "constructor arguments) creates a ledger where all three accounts start at a balance of `0` "
+    "(an exact integer number of cents). It exposes three zero-argument reader methods, "
+    "`accounts_receivable()`, `revenue()`, and `cash()`, each returning that account's CURRENT "
+    "integer balance in cents. It defines exactly one method, `post(legs)`, taking one "
+    "positional argument -- a list of leg dicts, each either `{\"account\": <name>, \"debit\": "
+    "<cents>}` or `{\"account\": <name>, \"credit\": <cents>}`, where `<name>` is one of "
+    "`accounts_receivable`/`revenue`/`cash` and `<cents>` is a positive integer. Posting a leg "
+    "to an account with `debit` ADDS that many cents to the account's balance; posting a leg "
+    "with `credit` SUBTRACTS that many cents from the account's balance. Issuing an invoice is "
+    "recorded by posting legs that DEBIT `accounts_receivable` and CREDIT `revenue` for the "
+    "same amount. Receiving a PARTIAL payment against an outstanding invoice is recorded by "
+    "posting legs that DEBIT `cash` and CREDIT `accounts_receivable` for the amount actually "
+    "received (which may be less than the full invoice amount) -- a caller may post several "
+    "such partial-payment entries over time, one per payment received, until the invoice's "
+    "`accounts_receivable` balance is fully paid down to zero. If the legs in one call to "
+    "`post(legs)` are BALANCED (the sum of every `debit` amount in the list equals the sum of "
+    "every `credit` amount in the list), `post(legs)` must apply EVERY leg to its account's "
+    "balance and return normally. If the legs are UNBALANCED (the sum of the `debit` amounts "
+    "does not equal the sum of the `credit` amounts), `post(legs)` must instead raise "
+    "`ValueError` and leave EVERY account's balance COMPLETELY UNCHANGED -- no partial posting "
+    "of any leg from an unbalanced call."
+)
+
+INVOICE_AR_AGING_TASK = RealSystemTask(
+    name="accounts-receivable-payment-application-ledger",
+    cls="fintech",
+    sentence=_AR_PAYMENT_APPLICATION_SENTENCE,
+    oracle_kind="double_entry",
+    oracle_spec={
+        "module": "ar_payment_application",
+        "entity": "ARPaymentLedger",
+        "spec": {
+            "accounts": ["accounts_receivable", "revenue", "cash"],
+            "initial": {"accounts_receivable": 0, "revenue": 0, "cash": 0},
+            "post_method": "post",
+            # Unbalanced entry FIRST (debit accounts_receivable 100000, credit revenue 90000 --
+            # off by 10000 cents, must be rejected), then one balanced $1000.00 invoice posting
+            # (debit accounts_receivable / credit revenue), then TWO balanced partial-payment
+            # postings ($400.00 then $600.00, each debiting cash / crediting
+            # accounts_receivable) that together exactly clear the invoice -- landing on
+            # accounts_receivable=0 (fully applied), revenue=-100000, cash=100000.
+            "drive": [
+                {"legs": [{"account": "accounts_receivable", "debit": 100000},
+                          {"account": "revenue", "credit": 90000}],
+                 "expect": "reject"},
+                {"legs": [{"account": "accounts_receivable", "debit": 100000},
+                          {"account": "revenue", "credit": 100000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "cash", "debit": 40000},
+                          {"account": "accounts_receivable", "credit": 40000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "cash", "debit": 60000},
+                          {"account": "accounts_receivable", "credit": 60000}],
+                 "expect": "accept"},
+            ],
+            "expect_final": {"accounts_receivable": 0, "revenue": -100000, "cash": 100000},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INVOICE_AR_AGING_TASK)
+# #EXT-060-REQ-46 End
+
+
+# #EXT-060-REQ-47 Start
+# TASK-42: a TWELFTH CREATE task, in a NEW validation-library vertical -- a check-digit
+# identifier validator -- graded by the ALREADY-LANDED "import" oracle_kind dispatch REQ-3 lands
+# (no new oracle code: reuses `_grade_import` -> `harness.import_driver.drive_import` verbatim).
+# Every expected boolean below was hand-verified via scratch Luhn/EAN-13 checksum arithmetic
+# against real published test vectors (Luhn: 4539148803436467 is a well-known valid test credit-
+# card number; ISBN-13 9780306406157 and EAN-13 4006381333931 are the canonical valid examples
+# from the ISBN-13/EAN-13 Wikipedia articles) before this task was added to the roster.
+_CHECK_DIGIT_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "check_digits.py, using only the standard library, defining exactly three public functions "
+    "that each validate one kind of numeric identifier by its CHECK DIGIT and return a plain "
+    "Python `bool`. Every argument is a Python `str` of ONLY decimal digit characters (never "
+    "converted to `int` internally in a way that would drop leading zeros); an argument "
+    "containing any non-digit character, or of the wrong length for that function, must make "
+    "the function return `False` (never raise). (1) `luhn_valid(number)` validates `number` "
+    "(any length of 2 or more digits, e.g. a credit-card number) using the standard Luhn "
+    "checksum algorithm: starting from the RIGHTMOST digit (the check digit itself, NOT "
+    "doubled) and moving left, double the value of every SECOND digit (the digits at position "
+    "2, 4, 6, ... counting from the right); whenever doubling a digit produces a value greater "
+    "than 9, replace it with the sum of ITS two digits (equivalently, subtract 9); sum EVERY "
+    "digit of the number (the untouched odd-position digits plus the possibly-replaced "
+    "even-position digits); `number` is valid when that total sum is evenly divisible by 10. "
+    "(2) `isbn13_valid(s)` and (3) `ean13_valid(s)` each validate a 13-digit identifier (`s` "
+    "must be EXACTLY 13 digit characters, else return `False`) using the IDENTICAL EAN-13 "
+    "weighted checksum algorithm (a real ISBN-13 code IS a valid EAN-13 barcode number, so both "
+    "functions apply the same formula here, with no extra prefix restriction in this "
+    "simplified library): number the 13 digits left-to-right as positions 1 through 13; "
+    "multiply each digit at an ODD position (1, 3, 5, 7, 9, 11, 13) by weight `1` and each "
+    "digit at an EVEN position (2, 4, 6, 8, 10, 12) by weight `3`; sum all 13 weighted values "
+    "(the 13th digit, the check digit itself, is included in the sum at weight `1` just like "
+    "every other odd position); the identifier is valid when that total weighted sum is evenly "
+    "divisible by 10."
+)
+
+CHECK_DIGIT_TASK = RealSystemTask(
+    name="check-digit-validator-lib",
+    cls="validation",
+    sentence=_CHECK_DIGIT_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "check_digits",
+        "api_calls": [
+            # Luhn: 4539148803436467 is a well-known VALID test credit-card number (sum of
+            # digits after doubling every second digit from the right == 80, divisible by 10).
+            {"id": "luhn_good", "target": "luhn_valid",
+             "args": ["4539148803436467"], "kwargs": {}},
+            # Luhn: 1234567890123456 is INVALID (the same checksum walk sums to 64, NOT
+            # divisible by 10).
+            {"id": "luhn_bad", "target": "luhn_valid",
+             "args": ["1234567890123456"], "kwargs": {}},
+            # ISBN-13: 9780306406157 is a well-known VALID ISBN-13 (weighted 1/3 checksum sums
+            # to 100, divisible by 10).
+            {"id": "isbn13_good", "target": "isbn13_valid",
+             "args": ["9780306406157"], "kwargs": {}},
+            # ISBN-13: 9780306406158 (the valid one with its check digit incremented by 1) is
+            # INVALID (weighted sum becomes 101, NOT divisible by 10).
+            {"id": "isbn13_bad", "target": "isbn13_valid",
+             "args": ["9780306406158"], "kwargs": {}},
+            # EAN-13: 4006381333931 is the canonical VALID EAN-13 example (weighted 1/3 checksum
+            # sums to 90, divisible by 10).
+            {"id": "ean13_good", "target": "ean13_valid",
+             "args": ["4006381333931"], "kwargs": {}},
+            # EAN-13: 4006381333932 (the valid one with its check digit incremented by 1) is
+            # INVALID (weighted sum becomes 91, NOT divisible by 10).
+            {"id": "ean13_bad", "target": "ean13_valid",
+             "args": ["4006381333932"], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "luhn_good", "expected": True},
+            {"kind": "returns_equals", "call_id": "luhn_bad", "expected": False},
+            {"kind": "returns_equals", "call_id": "isbn13_good", "expected": True},
+            {"kind": "returns_equals", "call_id": "isbn13_bad", "expected": False},
+            {"kind": "returns_equals", "call_id": "ean13_good", "expected": True},
+            {"kind": "returns_equals", "call_id": "ean13_bad", "expected": False},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(CHECK_DIGIT_TASK)
+# #EXT-060-REQ-47 End

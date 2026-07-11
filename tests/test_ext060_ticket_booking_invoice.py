@@ -352,11 +352,12 @@ def test_invoice_ar_task_is_leaves_off_and_a_roster_member():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_three_new_tasks():
-    # bumped 19 -> 22 -> 26 -> 30: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_tasks.py)
-    # added three more CREATE tasks after this module's own REQ-20/21/22 landed, then REQ-31..34
-    # (tests/test_ext060_atlas_wave2_tasks.py) and REQ-40..43 (tests/test_ext060_atlas_wave7_
-    # tasks.py) each added four more.
-    assert len(REAL_SYSTEMS_TASKS) == 30
+    # bumped 19 -> 22 -> 26 -> 30 -> 34: EXT-060 REQ-28/29/30 (tests/test_ext060_clock_agent_
+    # tasks.py) added three more CREATE tasks after this module's own REQ-20/21/22 landed, then
+    # REQ-31..34 (tests/test_ext060_atlas_wave2_tasks.py), REQ-40..43 (tests/test_ext060_atlas_
+    # wave7_tasks.py), and REQ-44..47 (tests/test_ext060_atlas_batch4_tasks.py) each added four
+    # more.
+    assert len(REAL_SYSTEMS_TASKS) == 34
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "support-ticket-workflow-state-machine" in names
     assert "seat-booking-no-double-book" in names
