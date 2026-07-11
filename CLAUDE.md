@@ -118,8 +118,8 @@ timeouts (1200–3600s, sized to the class); never kill on "slow," only on a tru
 (b) Dep installs (LangGraph, frameworks) are AUTHORIZED under supervised autonomy — install SAFELY
 (isolated venv + vetted allowlist + size cap) and UNINSTALL to reclaim storage; the runtime egress gate on
 BUILT systems stays. (c) STORAGE is tight — prefer in-process mocks, check disk before heavy ops, prune
-artifacts. (d) REGULAR NTFY every tick (never silent; quiet hours 02:00–07:59 America/Denver → morning
-digest). (e) A 2nd inference node (this laptop, CPU/llama.cpp, thread-capped, same model+quant, best
+artifacts. (d) REGULAR NTFY every tick (never silent) — **send ntfy 24/7, NO quiet hours** (owner directive
+2026-07-10: "you can now send me ntfy messages 24/7 … continue sending them indefinitely"). (e) A 2nd inference node (this laptop, CPU/llama.cpp, thread-capped, same model+quant, best
 overnight) can roughly double throughput — wire the runner to target whichever node is free.
 (f) **CLAUDE TOKENS ARE NOT A CONSTRAINT — USE AS MANY AS YOU NEED (owner directive, 2026-07-09):** the
 owner has purchased ample tokens ("we literally couldn't use it all up") for MY (Claude Code) operation,
@@ -221,7 +221,8 @@ thing" (owner). Add cloud-mock-fidelity research to the roadmap's research-plane
 **REGULAR NTFY IS PART OF THE GOVERNANCE LOOP (owner 2026-07-09):** sending regular, high-signal ntfy
 status is an INTRINSIC loop duty (baked into `jarify-governance-loop`'s Notifications section) — every tick
 sends a concise honest status (result, not "still running"), plus immediately on any significant event; the
-loop never goes silent. Respect quiet hours (02:00–07:59 America/Denver → buffer to the morning digest).
+loop never goes silent. **NTFY runs 24/7 — there are NO quiet hours** (owner directive 2026-07-10, supersedes
+the earlier quiet-hours/morning-digest rule): send messages at any hour, indefinitely.
 
 **STORAGE DISCIPLINE — THIS MACHINE IS STORAGE-CONSTRAINED (owner 2026-07-09):** manage disk carefully.
 BEFORE pulling any Docker image, installing a framework, or writing large artifacts, check free space
@@ -281,7 +282,7 @@ SWE-bench/solve paths into `record_verified`, pull sovereign open datasets, gene
 synthetic); (3) start with the cheapest tier that pays (micro-models 1-100M, then a LoRA specialist),
 probe-gated with a pre-registered kill criterion.
 
-## ⏰ NO QUIET HOURS FOR WORK — THE GRIND IS ALWAYS ON, 24/7 (owner directive, 2026-07-02)
+## ⏰ NO QUIET HOURS — THE GRIND *AND* THE NOTIFICATIONS ARE ALWAYS ON, 24/7 (owner directive, 2026-07-02; notifications updated 2026-07-10)
 
 **There are NO quiet hours for WORK.** The convergence grind runs continuously, 24/7, **including the
 Jetson** — SWE-bench/Jetson/training runs, builds, and evals all proceed overnight exactly as in the
@@ -289,11 +290,11 @@ day. The experiment chain never idles at any hour. This SUPERSEDES every earlier
 only / defer Jetson grinds to active hours" instruction (in cron prompts or memory) — that was wrong;
 overnight is prime unattended compute and must be used at full intensity.
 
-**Quiet hours apply ONLY to PUSH NOTIFICATIONS, nothing else.** Do not send phone `PushNotification`
-between **02:00 and 07:59 local (America/Denver)** — "just don't wake me up in the middle of the night."
-Instead append `- HH:MM <event>` to `.jaros-data/artifacts/overnight_events.md`, and at the first watch
-with local hour ≥ 8 send ONE digest push of the night's events, then reset that file. Work does not
-stop; only the phone stays quiet. (A true unrecoverable breakage may still warrant a night push.)
+**There are NO quiet hours for NOTIFICATIONS either (owner directive, 2026-07-10 — supersedes the earlier
+02:00–07:59 quiet-hours / overnight-digest rule).** Owner: "you can now send me ntfy messages 24/7 … continue
+sending them indefinitely." Send ntfy (and push) at ANY hour — no buffering, no `overnight_events.md`, no
+morning digest. Keep the standing cadence (unique, high-signal, ≤15 min between messages, never "still
+running") around the clock, indefinitely.
 
 ## ⚠️ MULTI-MODEL PIVOT (owner directive, 2026-06-28) — supersedes the single-model founding assumption below
 
@@ -402,11 +403,10 @@ on the goal (match Claude Code on Opus 4.8, small-local-model-only). Ownership i
   should-have-but-didn't (chain stalled/unrevivable, no net-positive in ~3-4 active hours).
   **Do NOT gate on whether the owner "seems engaged"** — the tool is auto-suppressed while the
   terminal has focus, so it only reaches the phone when they're away; pushing is harmless when
-  present. Err toward not sending only for ROUTINE progress. **QUIET HOURS: send NO push between
-  02:00 and 08:00 local (America/Denver)** — instead append `- HH:MM <event>` to
-  `.jaros-data/artifacts/overnight_events.md`, and at the first watch with local hour ≥ 8 send ONE
-  digest push of the night's events, then reset that file. Mirrored in memory
-  [[jaros-code-autonomous-loop]] — never forget this again.
+  present. Err toward not sending only for ROUTINE progress. **NO QUIET HOURS — send 24/7 (owner directive,
+  2026-07-10, supersedes the earlier 02:00–08:00 quiet-hours/overnight-digest rule):** push/ntfy at any
+  hour, indefinitely; no buffering to `overnight_events.md`, no morning digest. Mirrored in memory
+  [[jaros-code-autonomous-loop]] and [[jaros-code-ntfy-cadence]].
 
 See `.claude` memory `jaros-code-ownership` for the why. This mandate is non-negotiable
 and must survive context loss — re-read it at the start of every session.
