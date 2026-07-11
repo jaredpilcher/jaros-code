@@ -3598,3 +3598,68 @@ no-ops and REQ-65's logic never runs.
 #### Implements
 - [REQ-70] Deterministic DB/state-INIT-CALL repair — call the model's own zero-arg init before the
   server binds, when the model kept its OWN real serve loop
+
+### [TASK-86] Syntax-gate single-file rescue — don't abort the whole build over one unparseable module (REQ-71, MEASURED root cause reproduced on `url-shortener-http-service`, task #162)
+
+MEASURED (2026-07-11, url-shortener-http-service): `build_system`'s module-build loop
+(`harness/system_builder.py`, ~lines 3559-3575) aborts the ENTIRE build the instant ANY single
+planned module still fails the per-module syntax gate after its bounded `MAX_REPAIR_ATTEMPTS`
+repair rounds — a fresh gemma draw frequently emits ONE unparseable module (e.g. `server.py`)
+that the 2-round syntax repair can't fix, wasting a fully-plannable system at 322s. This is
+high-variance BUILD-PROCESS loss, not a model coding-ability limit — the model CAN produce a
+working single-file version of the SAME system, PROVEN by the EXISTING REQ-43 single-file-retry
+mechanism (`_build_single_file`) that already recovers over-decomposed builds AFTER acceptance
+fails. This is a GENERAL fix that rescues syntax-variance draws across ALL classes.
+
+#### Steps
+1. In `harness/system_builder.py::build_system`'s module-build loop, add a
+   `_syntax_rescue_fired = False` tracking flag before the loop (wrap in
+   `# #EXT-036-REQ-71 Start`/`End` markers).
+2. In the loop's `if not ok:` branch (a module still fails the syntax gate after bounded
+   repair), instead of immediately returning the abort `_result(...)`, call
+   `_build_single_file(spec, llm)` (the SAME clean-prompt direct builder REQ-43 already uses —
+   do NOT duplicate its prompt/logic). If it returns `single_ok=True` AND the returned code is
+   genuinely non-blank (a blank/whitespace-only reply is syntactically "valid" but must NOT be
+   treated as a rescue — it would trivially satisfy the deterministic minimum's import-only
+   smoke check against an empty file, a false-done surface): collapse `built`/`mods`/`plan`/
+   `order`/`names` to the single-file shape (`entry = plan.get("entrypoint") or "main.py"`,
+   `built = {entry: single_code}`, a one-module `mods`/`plan` mirroring REQ-43's own
+   `single_mods`/`single_plan` shape), set `_syntax_rescue_fired = True`, and `break` out of the
+   loop — never re-entered, fires at most once per build. If the rescue also fails (unparseable
+   OR blank after its own bounded repair rounds), return the SAME honest failure `_result(...)`
+   as before, with a note explaining both attempts failed.
+3. Change the pre-existing `build_path = "free-form"` initialization (right before the REQ-43
+   single-file-retry block) to
+   `build_path = "single-file-syntax-rescue" if _syntax_rescue_fired else "free-form"` — mirrors
+   the existing `"free-form"` / `"single-file-retry"` / `"leaf:<class>"` convention. Since the
+   rescue collapses `mods` to exactly one module, the REQ-43 single-file-retry block's own
+   `len(mods) > 1` gate correctly never fires afterward (no double-dipping).
+4. Do NOT touch any oracle (`harness/server_oracle.py`, `harness/real_systems_suite.py`) or any
+   other repair module — scope is strictly the rescue block in `build_system`'s module-build
+   loop + the one `build_path` initialization line.
+5. Add offline tests in a new `tests/test_ext036_syntax_rescue.py` (NO model/Jetson calls,
+   mirrors the `_CannedLlm`/prompt-substring-routing convention used by the REQ-43 sibling tests
+   in `tests/test_ext036_system_builder.py`): (a) a module that deterministically never becomes
+   syntax-clean, with a genuinely valid single-file rescue reply, ships via the rescue and
+   reaches a real DONE acceptance verdict (`build_path == "single-file-syntax-rescue"`, the old
+   abort note is absent, the rescue fires exactly once); (b) the rescue candidate ALSO never
+   becoming syntax-clean returns the honest pre-existing failure shape (no crash, note names
+   both failed attempts); (c) a blank-but-syntactically-valid rescue reply is rejected by the
+   non-empty guard (same honest-failure shape, no false-done); (d) NON-DEGRADING — an
+   all-modules-syntax-clean build never reaches the rescue branch at all (`build_path` stays
+   `"free-form"`, the rescue's own prompt is never sent, `modules` unchanged); (e) a
+   maximally-degenerate llm (every call returns `""`) never raises.
+6. Run `python -m pytest tests/test_ext036_system_builder.py tests/test_ext036_modify.py tests/test_ext036_syntax_rescue.py -q`
+   (offline) and confirm the two PRE-EXISTING tests whose canned stubs happen to also return `""`
+   for the single-file prompt (`test_module_still_broken_after_bounded_repair_fails_shipping`,
+   `test_best_of_k_honest_when_every_attempt_fails`) stay green UNCHANGED — the blank-rescue
+   guard in step 2 is exactly what keeps their old abort-on-syntax-failure assertions honest
+   under the new rescue path. Then run the broader `tests/test_ext036_*.py -q` (877 tests) and
+   `python -c "import harness.system_builder"` (clean import smoke). Update
+   `.jarify/EXT-036/index.json` (REQ-71 ranges) per jarify-manage-links. Scope: ONLY the rescue
+   block + the `build_path` init line in `harness/system_builder.py`, the new test file, and
+   `.jarify/EXT-036` docs.
+
+#### Implements
+- [REQ-71] Syntax-gate SINGLE-FILE RESCUE — don't abort the whole build over one unparseable
+  module

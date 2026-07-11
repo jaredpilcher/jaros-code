@@ -2907,3 +2907,54 @@ class.
   owning constructor, multiple candidates, multiple serve sites, an unresolvable class/function
   name, a Flask/FastAPI service, a non-web spec, and no real serve loop are all byte-identical
   no-ops; garbage/malformed input never raises.
+
+### [REQ-71] Syntax-gate SINGLE-FILE RESCUE — don't abort the whole build over one unparseable module (DONE — EXT-036 TASK-86)
+
+MEASURED ROOT CAUSE (2026-07-11, canonical-board `url-shortener-http-service`): `build_system`'s
+module-build loop aborts the ENTIRE build the instant any ONE planned module still fails the
+per-module syntax gate after its `MAX_REPAIR_ATTEMPTS` bounded repair rounds — even though the
+plan is otherwise fine and the model CAN produce a working single-file version of the SAME
+system. A fresh gemma draw frequently emits ONE unparseable module (e.g. `server.py`) that the
+2-round syntax repair can't fix, wasting a fully-plannable build at the abort. This is
+high-variance BUILD-PROCESS loss, not a model coding-ability limit — a GENERAL fix that rescues
+syntax-variance draws across ALL classes, not a leaf/class-specific one.
+
+#### Acceptance Criteria
+- [x] On a per-module syntax-gate failure, `build_system` falls through to a SINGLE-FILE RESCUE
+  instead of returning the abort result: it regenerates the whole system as one file via the
+  EXISTING `_build_single_file(spec, llm)` (the same clean-prompt direct builder the REQ-43
+  single-file-retry already uses, deliberately independent of the plan-laden `_build_module`/
+  `BUILD_PROMPT` path that just failed).
+- [x] If the rescued single file passes ITS OWN syntax gate AND is genuinely non-blank, `built`/
+  `mods`/`plan`/`order`/`names` are collapsed to the single-file shape (entrypoint =
+  `plan.get("entrypoint") or "main.py"`) and the module-build loop `break`s — never re-entered,
+  fires AT MOST ONCE per build — so every downstream stage (deterministic-repair chain, assembly,
+  security scan, acceptance derivation, system repair, the pre-existing REQ-43 single-file-retry)
+  runs COMPLETELY UNCHANGED against the rescued single file, reusing all of it with zero
+  duplication.
+- [x] A blank/whitespace-only rescue reply is syntactically "valid" (an empty module compiles)
+  but is NOT treated as a successful rescue — MEASURED that adopting it would trivially satisfy
+  the deterministic minimum's import-only smoke check against an empty file, a false-done surface
+  this task must not open. Required non-empty content in addition to `syntax_ok`.
+- [x] If the single-file rescue ALSO fails (unparseable, or blank, after its own bounded repair
+  rounds), `build_system` returns the SAME HONEST failure shape as before this task — never
+  crashes, never silently swallows the failure, note explains both attempts failed.
+- [x] `build_path` records `"single-file-syntax-rescue"` when it wins (mirrors the existing
+  `"free-form"` / `"single-file-retry"` / `"leaf:<class>"` convention) so a caller can see which
+  path actually shipped.
+- [x] NON-DEGRADING: a build whose modules all pass the syntax gate never reaches this branch at
+  all — byte-identical to before this task (proven — every pre-existing `tests/
+  test_ext036_system_builder.py` / `tests/test_ext036_modify.py` test stays green unchanged).
+  HONEST (Tenet 3): `done` is still gated by the SAME real acceptance checklist every other path
+  uses — this can only convert an abort into a real graded build, it can NEVER manufacture a
+  false-done. Leak-free: `_build_single_file` sees only `spec`, unchanged. Never introduces an
+  infinite loop (the rescue fires at most once per build; it replaces the module loop, then
+  `break`s — it does not re-enter the loop).
+- [x] Proven OFFLINE (`tests/test_ext036_syntax_rescue.py`, no live model): a module that
+  deterministically never becomes syntax-clean, with a genuinely valid single-file rescue,
+  ships via the rescue and reaches a REAL acceptance verdict (`build_path` records the rescue,
+  the old abort note is gone); the rescue ALSO failing syntax returns the honest pre-existing
+  failure shape; a blank-but-syntactically-valid rescue reply is rejected as a false-done guard;
+  an all-modules-syntax-clean build is completely unaffected (`build_path` stays `"free-form"`,
+  the rescue's own prompt is never sent); a maximally-degenerate llm never raises. Full
+  `tests/test_ext036_system_builder.py` + `tests/test_ext036_modify.py` regression stays green.

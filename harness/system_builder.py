@@ -3557,6 +3557,12 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
 
     # 2. BUILD, leaves-first (REQ-3: syntax gate + bounded repair per module)
     built: dict[str, str] = {}
+    # #EXT-036-REQ-71 Start
+    # TASK-86: tracks whether the syntax-gate rescue below fired, so the later `build_path`
+    # initialization (right before the REQ-43 single-file-retry block) can record it. See the
+    # rescue block itself for the full rationale.
+    _syntax_rescue_fired = False
+    # #EXT-036-REQ-71 End
     for name in order:
         m = next((x for x in mods if x.get("name") == name), None)
         if m is None:
@@ -3569,8 +3575,47 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
             return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
                             note=f"build failed for {name}: {exc}")
         if not ok:
+            # #EXT-036-REQ-71 Start
+            # TASK-86 (REQ-71, SYNTAX-GATE SINGLE-FILE RESCUE): MEASURED (2026-07-11,
+            # url-shortener-http-service) that a fresh gemma draw frequently emits ONE
+            # unparseable module the bounded per-module syntax repair can't fix, which used
+            # to ABORT THE WHOLE BUILD here even though the plan is otherwise fine and the
+            # model CAN produce a working single-file version of the same system -- this is
+            # high-variance BUILD-PROCESS loss, not a model coding-ability limit. Instead of
+            # aborting, fall through to the SAME single-file rescue REQ-43 already uses
+            # (`_build_single_file`, the clean-prompt direct builder, deliberately independent
+            # of the plan-laden `_build_module`/`BUILD_PROMPT` path that just failed). If the
+            # single file passes ITS OWN syntax gate, collapse `built`/`mods`/`plan`/`order`/
+            # `names` to the single-file shape and `break` out of this loop -- it is NEVER
+            # re-entered (fires at most once per build) -- so the rest of `build_system`
+            # (deterministic repairs, assembly, acceptance, system repair, the pre-existing
+            # single-file-retry) runs UNCHANGED against the rescued single file, exactly as it
+            # would for any other single-module plan. NON-DEGRADING: a build whose modules all
+            # pass the syntax gate never reaches this branch at all -- byte-identical to before
+            # this task. HONEST (Tenet 3): `done` is still gated by the SAME real acceptance
+            # checklist every other path uses -- this can only convert an abort into a real
+            # graded build, never manufacture a false-done. If the single-file rescue ALSO
+            # fails its syntax gate, return the same honest failure as before, noting both
+            # attempts failed.
+            single_code, single_ok = _build_single_file(spec, llm)
+            # A blank/whitespace-only reply is syntactically "valid" (an empty module
+            # compiles) but is NOT a real rescue -- adopting it would trivially satisfy the
+            # deterministic minimum's import-only smoke check on an empty file, a genuine
+            # false-done surface this task must not open. Require real, non-empty content.
+            if single_ok and (single_code or "").strip():
+                entry = plan.get("entrypoint") or "main.py"
+                built = {entry: single_code}
+                mods = [{"name": entry, "responsibility": "the ENTIRE system",
+                         "exports": [], "imports": []}]
+                plan = {"entrypoint": entry, "modules": mods}
+                names = [entry]
+                order = [entry]
+                _syntax_rescue_fired = True
+                break
             return _result(modules=built, shipped=False, done=False, plan=plan, plan_repair=plan_repair,
-                            note=f"module {name} failed the syntax gate after {MAX_REPAIR_ATTEMPTS} repair attempt(s)")
+                            note=f"module {name} failed the syntax gate after {MAX_REPAIR_ATTEMPTS} "
+                                 "repair attempt(s); single-file rescue produced no usable module either")
+            # #EXT-036-REQ-71 End
         built[name] = code
 
     # #EXT-035-REQ-3 Start
@@ -3969,7 +4014,12 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # (and the single-file candidate is only ever ADOPTED into `root` once it independently
     # re-verifies against `root` itself, mirroring the leaf-adopt atomicity/rollback pattern
     # (TASK-7) so a failed adopt can never leave a half-swapped root).
-    build_path = "free-form"
+    # #EXT-036-REQ-71 Start
+    # TASK-86: honestly record the syntax-gate rescue as the winning `build_path` when it
+    # fired above; every other build (the overwhelming common case) is unaffected --
+    # byte-identical to the pre-existing "free-form" default.
+    build_path = "single-file-syntax-rescue" if _syntax_rescue_fired else "free-form"
+    # #EXT-036-REQ-71 End
     if unmet and len(mods) > 1:
         _beat("SINGLE-FILE-RETRY")  # #EXT-040-REQ-3
         try:
