@@ -1762,3 +1762,130 @@ of `on_hand`/`reserved`/`shipped` that always sums to `total_units`. Deliberatel
       fixture that allows an over-reserve (never checks `on_hand` before moving units to `reserved`) is
       rejected; the task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the
       four REQ-52/53/54/55 tasks (length 38 -> 42).
+
+### [REQ-56] Twenty-first CREATE task ("batch-6"), in a NEW devtools vertical (Roman-numeral codec)
+
+A TWENTY-FIRST held-out CREATE task ("batch-6"), in a NEW devtools vertical, graded by the
+ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `ROMAN_NUMERAL_CODEC_TASK`
+(`RealSystemTask`, `cls="devtools"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `roman_numeral_codec.py` defining
+`to_roman(n)` (1..3999 -> uppercase Roman numeral, SUBTRACTIVE notation pinned exactly, e.g. `"IV"`
+never `"IIII"`) and `from_roman(s)` (the inverse), round-tripping.
+
+#### Acceptance Criteria
+- [x] `ROMAN_NUMERAL_CODEC_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the codec
+      contract (filename `roman_numeral_codec.py`, both function signatures, the exact subtractive-
+      notation rule for every four-and-nine place value) with every oracle-checked value derivable
+      from that same visible sentence (no hidden key, no leak).
+- [x] Seven driven checks, every expected value hand-verified via an independent scratch Python walk
+      of the classical value/symbol table (not trusted blindly) before being added to the roster:
+      `to_roman(4) == "IV"`; `to_roman(9) == "IX"`; `to_roman(58) == "LVIII"`; `to_roman(1994) ==
+      "MCMXCIV"`; `to_roman(3999) == "MMMCMXCIX"`; `from_roman("MCMXCIV") == 1994`; a chained
+      round-trip check (`from_roman` applied to the prior `to_roman_444` call's own result via a
+      `__jaros_ref__`) equals `444`. A build using ADDITIVE-ONLY notation (no subtractive pairs, e.g.
+      `to_roman(4) == "IIII"`) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `roman_numeral_codec.py` fixture is accepted by
+      `grade_real_system_task(ROMAN_NUMERAL_CODEC_TASK, ...)`; a BROKEN fixture using additive-only
+      notation is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-57] Twenty-second CREATE task ("batch-6"), in a NEW fintech vertical (banker's rounding)
+
+A TWENTY-SECOND held-out CREATE task ("batch-6"), in a NEW fintech vertical distinct from every
+prior fintech task (a rounding PRIMITIVE, not a ledger/calculator/schedule), graded by the
+ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `BANKERS_ROUNDING_TASK`
+(`RealSystemTask`, `cls="fintech"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `bankers_rounding.py` defining one
+function `round_half_even(x, ndigits=0)` implementing round-half-to-EVEN (banker's rounding), with
+the exact convention (which of the two halfway candidates wins) spelled out in the sentence itself.
+
+#### Acceptance Criteria
+- [x] `BANKERS_ROUNDING_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully PINS the
+      round-half-to-even convention in plain language (a value exactly halfway between two candidates
+      rounds to whichever candidate has an EVEN final digit, never always-up or always-down), the
+      `decimal.Decimal(str(x))` construction rule (never `decimal.Decimal(x)` directly, to avoid
+      binary float representation error), and the int-vs-float return contract by `ndigits`.
+- [x] Six driven checks, every expected value independently recomputed with
+      `decimal.Decimal(str(x)).quantize(..., rounding=decimal.ROUND_HALF_EVEN)` (not trusted blindly),
+      and every literal chosen to be EXACTLY representable in IEEE-754 binary (2.5, 3.5, 0.5, 1.5,
+      0.125, 0.375 -- never an ambiguous literal like 2.675) so the class is unambiguous:
+      `round_half_even(2.5) == 2`; `round_half_even(3.5) == 4`; `round_half_even(0.5) == 0`;
+      `round_half_even(1.5) == 2`; `round_half_even(0.125, 2) == 0.12`; `round_half_even(0.375, 2) ==
+      0.38`. A build using round-HALF-UP is caught (diverges on the 2.5/0.5/0.125 vectors).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `bankers_rounding.py` fixture is accepted by `grade_real_system_task(BANKERS_ROUNDING_TASK,
+      ...)`; a BROKEN fixture using round-half-up is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-58] Twenty-third CREATE task ("batch-6"), in a NEW data-pipeline vertical (run-length codec)
+
+A TWENTY-THIRD held-out CREATE task ("batch-6"), in a NEW data-pipeline/devtools vertical, graded
+by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `RUN_LENGTH_CODEC_TASK`
+(`RealSystemTask`, `cls="data"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `run_length_codec.py` defining
+`encode(s)` (a `str` -> a list of `[character, count]` maximal-run pairs) and `decode(pairs)` (the
+inverse), round-tripping.
+
+#### Acceptance Criteria
+- [x] `RUN_LENGTH_CODEC_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the codec
+      contract (filename `run_length_codec.py`, both function signatures, the exact `[character,
+      count]` pair shape, the MAXIMAL-run rule including that the FINAL run must never be dropped)
+      with every oracle-checked value derivable from that same visible sentence (no hidden key, no
+      leak).
+- [x] Five driven checks, every expected value hand-verified via an independent scratch maximal-run
+      walk (not trusted blindly) before being added to the roster: `encode("aaabbc") == [["a", 3],
+      ["b", 2], ["c", 1]]`; `encode("") == []`; `encode("aaaa") == [["a", 4]]`; `decode([["a", 3],
+      ["b", 2], ["c", 1]]) == "aaabbc"`; a chained round-trip check (`decode` applied to the prior
+      `encode_mixed` call's own result via a `__jaros_ref__`) also equals `"aaabbc"`. A build that
+      forgets to flush the FINAL run after its scan loop ends (dropping the trailing run) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `run_length_codec.py` fixture is accepted by `grade_real_system_task(RUN_LENGTH_CODEC_TASK,
+      ...)`; a BROKEN fixture that drops the final run is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-59] Twenty-fourth CREATE task ("batch-6"), in a NEW fintech-billing vertical (penny allocation)
+
+A TWENTY-FOURTH held-out CREATE task ("batch-6"), in a NEW fintech-billing vertical distinct from
+every prior fintech task (a cent-exact proportional-SPLIT primitive, not a
+ledger/calculator/schedule/rounding function), graded by the ALREADY-LANDED `oracle_kind="import"`
+dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `PENNY_ALLOCATION_TASK` (`RealSystemTask`,
+`cls="fintech"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence
+for a stdlib-only, single-file module `penny_allocation.py` defining one function
+`allocate(total_cents, weights)` splitting an integer cent amount proportionally by integer floor
+division, with the leftover-remainder rule PINNED exactly: add 1 cent to each of the FIRST
+`remainder` parts in index order (never the last parts, never a largest-fractional-remainder sort).
+
+#### Acceptance Criteria
+- [x] `PENNY_ALLOCATION_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      proportional-split contract (filename `penny_allocation.py`, the function signature, the
+      integer-floor-division base-share formula `(total_cents * weights[i]) // sum(weights)`, and the
+      EXACT remainder-distribution rule -- 1 cent to each of the FIRST `remainder` parts in index
+      order) with every oracle-checked value derivable from that same visible sentence (no hidden key,
+      no leak).
+- [x] Four driven checks, every expected value independently recomputed via the exact pinned algorithm
+      (not trusted blindly) before being added to the roster: `allocate(100, [1, 1, 1]) == [34, 33,
+      33]`; `allocate(100, [1, 1]) == [50, 50]`; `allocate(1000, [7, 3]) == [700, 300]`; `allocate(5,
+      [1, 1, 1]) == [2, 2, 1]`. A build that computes the base floor shares but never redistributes the
+      leftover remainder (losing cents, e.g. `allocate(100, [1, 1, 1])` summing to only `99`) is
+      caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `penny_allocation.py` fixture is accepted by `grade_real_system_task(PENNY_ALLOCATION_TASK,
+      ...)`; a BROKEN fixture that never redistributes the remainder is rejected; the task is a member
+      of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-56/57/58/59 tasks
+      (length 42 -> 46).

@@ -4998,3 +4998,291 @@ WAREHOUSE_STOCK_RESERVATION_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(WAREHOUSE_STOCK_RESERVATION_TASK)
 # #EXT-060-REQ-55 End
+
+
+# #EXT-060-REQ-56 Start
+# TASK-51: a TWENTY-FIRST held-out CREATE task ("batch-6"), in a NEW devtools vertical, graded by
+# the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code. Every
+# vector below was hand-verified via an independent scratch Python walk of the classical Roman-
+# numeral value/symbol table before this task was added to the roster.
+_ROMAN_NUMERAL_CODEC_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "roman_numeral_codec.py, using only the standard library, defining exactly two public "
+    "functions implementing a classical Roman-numeral codec for a documentation/devtools "
+    "formatting utility: `to_roman(n)` takes a positive integer `n` in the range 1 to 3999 "
+    "inclusive and returns its STANDARD Roman-numeral representation as an uppercase Python "
+    "`str`, using SUBTRACTIVE notation for every four-and-nine place value (`\"IV\"` for 4, "
+    "`\"IX\"` for 9, `\"XL\"` for 40, `\"XC\"` for 90, `\"CD\"` for 400, `\"CM\"` for 900 -- "
+    "NEVER the additive form `\"IIII\"` for 4 or `\"VIIII\"` for 9); `from_roman(s)` takes a "
+    "Roman-numeral `str` produced by that same subtractive convention and returns the positive "
+    "integer value it represents, so that `from_roman(to_roman(n)) == n` for every `n` in "
+    "1..3999."
+)
+
+# Hand-verified (recomputed independently via the standard value/symbol table, not trusted
+# blindly) before being added to the roster:
+# to_roman(4) == "IV"; to_roman(9) == "IX"
+# to_roman(58) == "L" (50) + "VIII" (8) == "LVIII"
+# to_roman(1994) == "M" (1000) + "CM" (900) + "XC" (90) + "IV" (4) == "MCMXCIV"
+# to_roman(3999) == "MMM" (3000) + "CM" (900) + "XC" (90) + "IX" (9) == "MMMCMXCIX"
+# from_roman("MCMXCIV") == 1994
+# to_roman(444) == "CD" (400) + "XL" (40) + "IV" (4) == "CDXLIV"; from_roman("CDXLIV") == 444
+#   (round-trip, chained via a `__jaros_ref__` back into the prior `to_roman_444` call's result)
+# A broken fixture using ADDITIVE-ONLY notation (no subtractive pairs) gives to_roman(4) ==
+# "IIII" and to_roman(1994) == "MDCCCCLXXXXIIII" -- both diverge from the pinned vectors above.
+ROMAN_NUMERAL_CODEC_TASK = RealSystemTask(
+    name="roman-numeral-codec-lib",
+    cls="devtools",
+    sentence=_ROMAN_NUMERAL_CODEC_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "roman_numeral_codec",
+        "api_calls": [
+            {"id": "to_roman_4", "target": "to_roman", "args": [4], "kwargs": {}},
+            {"id": "to_roman_9", "target": "to_roman", "args": [9], "kwargs": {}},
+            {"id": "to_roman_58", "target": "to_roman", "args": [58], "kwargs": {}},
+            {"id": "to_roman_1994", "target": "to_roman", "args": [1994], "kwargs": {}},
+            {"id": "to_roman_3999", "target": "to_roman", "args": [3999], "kwargs": {}},
+            {"id": "from_roman_1994", "target": "from_roman",
+             "args": ["MCMXCIV"], "kwargs": {}},
+            {"id": "to_roman_444", "target": "to_roman", "args": [444], "kwargs": {}},
+            {"id": "from_roman_roundtrip_444", "target": "from_roman",
+             "args": [{"__jaros_ref__": "to_roman_444"}], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "to_roman_4", "expected": "IV"},
+            {"kind": "returns_equals", "call_id": "to_roman_9", "expected": "IX"},
+            {"kind": "returns_equals", "call_id": "to_roman_58", "expected": "LVIII"},
+            {"kind": "returns_equals", "call_id": "to_roman_1994", "expected": "MCMXCIV"},
+            {"kind": "returns_equals", "call_id": "to_roman_3999", "expected": "MMMCMXCIX"},
+            {"kind": "returns_equals", "call_id": "from_roman_1994", "expected": 1994},
+            {"kind": "returns_equals", "call_id": "from_roman_roundtrip_444", "expected": 444},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(ROMAN_NUMERAL_CODEC_TASK)
+# #EXT-060-REQ-56 End
+
+
+# #EXT-060-REQ-57 Start
+# TASK-52: a TWENTY-SECOND held-out CREATE task ("batch-6"), in a NEW fintech vertical distinct
+# from every prior fintech task (a rounding PRIMITIVE, not a ledger/calculator/schedule), graded
+# by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code. Every
+# vector below was independently recomputed with Python's own `decimal.Decimal(str(x)).quantize(
+# ..., rounding=decimal.ROUND_HALF_EVEN)` (the reference implementation for banker's rounding),
+# NOT trusted blindly, and chosen specifically to be UNAMBIGUOUS under binary floating-point
+# representation (every literal below -- 2.5, 3.5, 0.5, 1.5, 0.125, 0.375 -- is EXACTLY
+# representable in IEEE-754 binary, so there is no float-repr ambiguity the way e.g. 2.675 has).
+_BANKERS_ROUNDING_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "bankers_rounding.py, using only the standard library (the `decimal` module is allowed), "
+    "defining exactly one public function `round_half_even(x, ndigits=0)` for a fintech ledger's "
+    "rounding step, implementing BANKER'S ROUNDING (round-half-to-even). THE EXACT RULE: when the "
+    "value being rounded is EXACTLY halfway between the two nearest values representable at "
+    "`ndigits` decimal places, round to whichever of those two candidates has an EVEN final "
+    "digit (NEVER always round halfway values up, and NEVER always round them down -- e.g. "
+    "halfway between `2` and `3` rounds to `2` because `2` is even, but halfway between `3` and "
+    "`4` rounds to `4` because `4` is even); when the value is NOT exactly halfway, round to "
+    "the single nearest candidate as usual. `x` is a Python `int` or `float`; `ndigits` is a "
+    "non-negative integer defaulting to `0`. When `ndigits == 0`, return a plain Python `int`; "
+    "when `ndigits > 0`, return a plain Python `float` rounded to exactly that many decimal "
+    "places. To avoid binary floating-point representation error corrupting the halfway test, "
+    "perform the rounding by converting `x` to a `decimal.Decimal` via `decimal.Decimal(str(x))` "
+    "(never `decimal.Decimal(x)` directly, which would preserve `x`'s float representation "
+    "error) and rounding that `Decimal` with `decimal.ROUND_HALF_EVEN`."
+)
+
+# Hand-verified via an independent scratch Python walk using `decimal.Decimal(str(x)).quantize(
+# ..., rounding=decimal.ROUND_HALF_EVEN)` (not trusted blindly, and cross-checked that Python's
+# own plain `round()` -- which already implements round-half-to-even for exactly-representable
+# binary values -- agrees) before being added to the roster:
+# round_half_even(2.5) == 2   (halfway between 2 and 3 -> 2 is even)
+# round_half_even(3.5) == 4   (halfway between 3 and 4 -> 4 is even)
+# round_half_even(0.5) == 0   (halfway between 0 and 1 -> 0 is even)
+# round_half_even(1.5) == 2   (halfway between 1 and 2 -> 2 is even)
+# round_half_even(0.125, 2) == 0.12   (0.125 is EXACT in binary; halfway between 0.12 and 0.13
+#   at 2 decimal places -> 0.12's final digit 2 is even)
+# round_half_even(0.375, 2) == 0.38   (0.375 is EXACT in binary; halfway between 0.37 and 0.38
+#   at 2 decimal places -> 0.38's final digit 8 is even)
+# A broken fixture using round-HALF-UP (always away from zero) diverges on the 2.5/0.5/0.125
+# vectors: round_half_even(2.5) would give 3 (not 2), round_half_even(0.5) would give 1 (not 0),
+# round_half_even(0.125, 2) would give 0.13 (not 0.12) -- independently recomputed with
+# `decimal.ROUND_HALF_UP` before being written into this comment.
+BANKERS_ROUNDING_TASK = RealSystemTask(
+    name="bankers-rounding-lib",
+    cls="fintech",
+    sentence=_BANKERS_ROUNDING_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "bankers_rounding",
+        "api_calls": [
+            {"id": "round_2_5", "target": "round_half_even", "args": [2.5], "kwargs": {}},
+            {"id": "round_3_5", "target": "round_half_even", "args": [3.5], "kwargs": {}},
+            {"id": "round_0_5", "target": "round_half_even", "args": [0.5], "kwargs": {}},
+            {"id": "round_1_5", "target": "round_half_even", "args": [1.5], "kwargs": {}},
+            {"id": "round_0_125_2", "target": "round_half_even",
+             "args": [0.125, 2], "kwargs": {}},
+            {"id": "round_0_375_2", "target": "round_half_even",
+             "args": [0.375, 2], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "round_2_5", "expected": 2},
+            {"kind": "returns_equals", "call_id": "round_3_5", "expected": 4},
+            {"kind": "returns_equals", "call_id": "round_0_5", "expected": 0},
+            {"kind": "returns_equals", "call_id": "round_1_5", "expected": 2},
+            {"kind": "returns_equals", "call_id": "round_0_125_2", "expected": 0.12},
+            {"kind": "returns_equals", "call_id": "round_0_375_2", "expected": 0.38},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(BANKERS_ROUNDING_TASK)
+# #EXT-060-REQ-57 End
+
+
+# #EXT-060-REQ-58 Start
+# TASK-53: a TWENTY-THIRD held-out CREATE task ("batch-6"), in a NEW data-pipeline/devtools
+# vertical, graded by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new
+# oracle code. Every vector below was hand-verified via an independent scratch Python walk of the
+# exact maximal-run rule the sentence pins.
+_RUN_LENGTH_CODEC_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "run_length_codec.py, using only the standard library, defining exactly two public "
+    "functions implementing run-length encoding for a data-pipeline compression utility: "
+    "`encode(s)` takes a Python `str` `s` and returns a NEW Python `list` of exactly "
+    "`[character, count]` two-element `list`s, one per MAXIMAL run of identical consecutive "
+    "characters in `s`, in the order those runs occur (so `\"aaabbc\"` produces one run of 3 "
+    "`\"a\"`s, then one run of 2 `\"b\"`s, then one run of 1 `\"c\"` -- INCLUDING the FINAL run "
+    "of the string, which must NEVER be dropped or under-counted); an empty input `s` returns an "
+    "empty `list`. `decode(pairs)` takes a `list` in that exact `[character, count]` shape and "
+    "returns the Python `str` it represents by repeating each character `count` times in order "
+    "and concatenating every run, so that `decode(encode(x)) == x` for every string `x`."
+)
+
+# Hand-verified (recomputed independently via a scratch maximal-run walk, not trusted blindly)
+# before being added to the roster:
+# encode("aaabbc") == [["a", 3], ["b", 2], ["c", 1]]   (three maximal runs, final run "c" kept)
+# encode("") == []
+# encode("aaaa") == [["a", 4]]   (a single run spanning the whole string)
+# decode([["a", 3], ["b", 2], ["c", 1]]) == "aaabbc"
+# decode(encode("aaabbc")) == "aaabbc"   (round-trip, chained via a `__jaros_ref__` back into the
+#   prior `encode_mixed` call's own result)
+# A broken fixture that forgets to flush the FINAL run after its scan loop ends gives
+# encode("aaabbc") == [["a", 3], ["b", 2]] (drops the "c" run entirely) -- diverges from the
+# pinned vector above, and its round-trip decode gives "aaabb" (missing the trailing "c") instead
+# of "aaabbc".
+RUN_LENGTH_CODEC_TASK = RealSystemTask(
+    name="run-length-codec-lib",
+    cls="data",
+    sentence=_RUN_LENGTH_CODEC_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "run_length_codec",
+        "api_calls": [
+            {"id": "encode_mixed", "target": "encode", "args": ["aaabbc"], "kwargs": {}},
+            {"id": "encode_empty", "target": "encode", "args": [""], "kwargs": {}},
+            {"id": "encode_single_run", "target": "encode", "args": ["aaaa"], "kwargs": {}},
+            {"id": "decode_mixed", "target": "decode",
+             "args": [[["a", 3], ["b", 2], ["c", 1]]], "kwargs": {}},
+            {"id": "decode_roundtrip_mixed", "target": "decode",
+             "args": [{"__jaros_ref__": "encode_mixed"}], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "encode_mixed",
+             "expected": [["a", 3], ["b", 2], ["c", 1]]},
+            {"kind": "returns_equals", "call_id": "encode_empty", "expected": []},
+            {"kind": "returns_equals", "call_id": "encode_single_run",
+             "expected": [["a", 4]]},
+            {"kind": "returns_equals", "call_id": "decode_mixed", "expected": "aaabbc"},
+            {"kind": "returns_equals", "call_id": "decode_roundtrip_mixed",
+             "expected": "aaabbc"},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(RUN_LENGTH_CODEC_TASK)
+# #EXT-060-REQ-58 End
+
+
+# #EXT-060-REQ-59 Start
+# TASK-54: a TWENTY-FOURTH held-out CREATE task ("batch-6"), in a NEW fintech-billing vertical
+# distinct from every prior fintech task (a cent-exact proportional-SPLIT primitive, not a
+# ledger/calculator/schedule/rounding function), graded by the ALREADY-LANDED
+# `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code. Every vector below was
+# independently recomputed via a scratch Python walk of the exact integer-floor-division +
+# first-N-parts remainder rule the sentence pins (never float division, so there is no rounding
+# ambiguity at all).
+_PENNY_ALLOCATION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "penny_allocation.py, using only the standard library, defining exactly one public function "
+    "`allocate(total_cents, weights)` for a fintech billing system's proportional-split step, "
+    "splitting an integer cent amount `total_cents` (a non-negative integer) across "
+    "`len(weights)` parts proportional to `weights` (a Python `list` of positive integers), "
+    "returning a NEW Python `list` of `len(weights)` non-negative integers whose SUM is EXACTLY "
+    "`total_cents` (never a cent more or less). THE EXACT ALGORITHM: compute each part's BASE "
+    "share as `share[i] = (total_cents * weights[i]) // sum(weights)` using Python's integer "
+    "floor division `//` (NEVER float division, which would introduce rounding error); this "
+    "always leaves a non-negative integer `remainder = total_cents - sum(share)` of leftover "
+    "cents still to distribute, where `remainder` is always strictly less than `len(weights)`. "
+    "Distribute that `remainder` by adding exactly `1` to each of the FIRST `remainder` parts in "
+    "index order (`share[0]` first, then `share[1]`, and so on) -- NEVER to the LAST parts, and "
+    "NEVER via any largest-fractional-remainder sort. Return the resulting `share` list."
+)
+
+# Hand-verified (recomputed independently via the exact pinned algorithm, not trusted blindly)
+# before being added to the roster:
+# allocate(100, [1, 1, 1]): sum(weights) = 3; share[i] = (100*1)//3 = 33 for each of the 3 parts
+#   -> base [33, 33, 33], sum = 99, remainder = 100 - 99 = 1 -> add 1 cent to the FIRST 1 part(s)
+#   -> [34, 33, 33] (sum = 100)
+# allocate(100, [1, 1]): sum(weights) = 2; share[i] = (100*1)//2 = 50 for each of the 2 parts ->
+#   base [50, 50], sum = 100, remainder = 0 -> unchanged -> [50, 50]
+# allocate(1000, [7, 3]): sum(weights) = 10; share[0] = (1000*7)//10 = 700; share[1] =
+#   (1000*3)//10 = 300 -> base [700, 300], sum = 1000, remainder = 0 -> unchanged -> [700, 300]
+# allocate(5, [1, 1, 1]): sum(weights) = 3; share[i] = (5*1)//3 = 1 for each of the 3 parts ->
+#   base [1, 1, 1], sum = 3, remainder = 5 - 3 = 2 -> add 1 cent to the FIRST 2 parts ->
+#   [2, 2, 1] (sum = 5)
+# A broken fixture that computes the base floor shares but never redistributes the leftover
+# remainder at all gives allocate(100, [1, 1, 1]) == [33, 33, 33] (sum 99, LOSES a cent) and
+# allocate(5, [1, 1, 1]) == [1, 1, 1] (sum 3, LOSES two cents) -- both diverge from the pinned
+# vectors above.
+PENNY_ALLOCATION_TASK = RealSystemTask(
+    name="penny-allocation-lib",
+    cls="fintech",
+    sentence=_PENNY_ALLOCATION_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "penny_allocation",
+        "api_calls": [
+            {"id": "allocate_equal_three", "target": "allocate",
+             "args": [100, [1, 1, 1]], "kwargs": {}},
+            {"id": "allocate_equal_two", "target": "allocate",
+             "args": [100, [1, 1]], "kwargs": {}},
+            {"id": "allocate_weighted", "target": "allocate",
+             "args": [1000, [7, 3]], "kwargs": {}},
+            {"id": "allocate_small_remainder", "target": "allocate",
+             "args": [5, [1, 1, 1]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "allocate_equal_three",
+             "expected": [34, 33, 33]},
+            {"kind": "returns_equals", "call_id": "allocate_equal_two",
+             "expected": [50, 50]},
+            {"kind": "returns_equals", "call_id": "allocate_weighted",
+             "expected": [700, 300]},
+            {"kind": "returns_equals", "call_id": "allocate_small_remainder",
+             "expected": [2, 2, 1]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(PENNY_ALLOCATION_TASK)
+# #EXT-060-REQ-59 End

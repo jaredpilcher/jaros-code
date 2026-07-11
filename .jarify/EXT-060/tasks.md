@@ -1686,3 +1686,130 @@
 
 #### Implements
 - [REQ-55] Twentieth CREATE task ("batch-5"), in a NEW logistics vertical (warehouse stock reservation)
+
+### [TASK-51] Twenty-first CREATE task ("batch-6"), in a NEW devtools vertical (Roman-numeral codec) (REQ-56)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `ROMAN_NUMERAL_CODEC_TASK` (`RealSystemTask`,
+   `cls="devtools"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `roman_numeral_codec.py` defining `to_roman(n)` (1..3999 -> uppercase Roman
+   numeral using SUBTRACTIVE notation for every four-and-nine place value, e.g. `"IV"` never
+   `"IIII"`) and `from_roman(s)` (the inverse). Reuse the ALREADY-LANDED `_grade_import` dispatch
+   (REQ-3) -- no new oracle code.
+2. Hand-verify (via an independent scratch Python walk of the classical value/symbol table, not
+   trusted blindly) seven vectors before adding the task to the roster: `to_roman(4) == "IV"`;
+   `to_roman(9) == "IX"`; `to_roman(58) == "LVIII"`; `to_roman(1994) == "MCMXCIV"`;
+   `to_roman(3999) == "MMMCMXCIX"`; `from_roman("MCMXCIV") == 1994`; a chained round-trip
+   (`from_roman(to_roman(444)) == 444`, via a `__jaros_ref__`). Add all as `api_calls`/`checks`
+   entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free; confirm no banned leaf keyword appears in the sentence and
+   `leaf_for_spec(ROMAN_NUMERAL_CODEC_TASK.sentence) is None`.
+4. Add `tests/test_ext060_batch6_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `roman_numeral_codec.py` fixture is accepted by
+   `grade_real_system_task(ROMAN_NUMERAL_CODEC_TASK, ...)`; a BROKEN fixture using ADDITIVE-ONLY
+   notation (no subtractive pairs, so `to_roman(4) == "IIII"`) is rejected; leaves-OFF holds; the
+   task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch6_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-56 ranges, via
+   `jarify-manage-links`) and flip the REQ-56 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-56] Twenty-first CREATE task ("batch-6"), in a NEW devtools vertical (Roman-numeral codec)
+
+### [TASK-52] Twenty-second CREATE task ("batch-6"), in a NEW fintech vertical (banker's rounding) (REQ-57)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `BANKERS_ROUNDING_TASK` (`RealSystemTask`,
+   `cls="fintech"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `bankers_rounding.py` defining one function `round_half_even(x,
+   ndigits=0)`: PIN the exact round-half-to-EVEN convention in plain language (a value exactly
+   halfway between two candidates rounds to whichever candidate has an EVEN final digit, never
+   always-up or always-down), require constructing the `decimal.Decimal` via
+   `decimal.Decimal(str(x))` (never `decimal.Decimal(x)` directly, to avoid binary float
+   representation error), and pin the int-vs-float return contract by `ndigits`. Reuse the
+   ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via `decimal.Decimal(str(x)).quantize(..., rounding=decimal.ROUND_HALF_EVEN)`,
+   not trusted blindly) six vectors chosen to be EXACTLY representable in IEEE-754 binary (never
+   an ambiguous literal like `2.675`) before adding the task to the roster: `round_half_even(2.5)
+   == 2`; `round_half_even(3.5) == 4`; `round_half_even(0.5) == 0`; `round_half_even(1.5) == 2`;
+   `round_half_even(0.125, 2) == 0.12`; `round_half_even(0.375, 2) == 0.38`. Add all as
+   `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(BANKERS_ROUNDING_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch6_tasks.py` (same file TASK-51 creates, OFFLINE, no
+   model/Jetson): a CORRECT `bankers_rounding.py` fixture is accepted by
+   `grade_real_system_task(BANKERS_ROUNDING_TASK, ...)`; a BROKEN fixture using round-HALF-UP
+   (always away from zero) is rejected (caught by the 2.5/0.5/0.125 vectors diverging); leaves-OFF
+   holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch6_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-57 ranges, via
+   `jarify-manage-links`) and flip the REQ-57 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-57] Twenty-second CREATE task ("batch-6"), in a NEW fintech vertical (banker's rounding)
+
+### [TASK-53] Twenty-third CREATE task ("batch-6"), in a NEW data-pipeline vertical (run-length codec) (REQ-58)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `RUN_LENGTH_CODEC_TASK` (`RealSystemTask`,
+   `cls="data"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `run_length_codec.py` defining `encode(s)` (a `str` -> a `list` of exactly
+   `[character, count]` two-element pairs, one per MAXIMAL run of identical consecutive
+   characters, INCLUDING the final run) and `decode(pairs)` (the inverse). Reuse the
+   ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via an independent scratch maximal-run walk, not trusted blindly) five vectors
+   before adding the task to the roster: `encode("aaabbc") == [["a", 3], ["b", 2], ["c", 1]]`;
+   `encode("") == []`; `encode("aaaa") == [["a", 4]]`; `decode([["a", 3], ["b", 2], ["c", 1]]) ==
+   "aaabbc"`; a chained round-trip (`decode(encode("aaabbc")) == "aaabbc"`, via a
+   `__jaros_ref__`). Add all as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(RUN_LENGTH_CODEC_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch6_tasks.py` (same file TASK-51/52 create, OFFLINE, no
+   model/Jetson): a CORRECT `run_length_codec.py` fixture is accepted by
+   `grade_real_system_task(RUN_LENGTH_CODEC_TASK, ...)`; a BROKEN fixture that forgets to flush
+   the FINAL run after its scan loop ends (dropping the trailing run) is rejected; leaves-OFF
+   holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch6_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-58 ranges, via
+   `jarify-manage-links`) and flip the REQ-58 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-58] Twenty-third CREATE task ("batch-6"), in a NEW data-pipeline vertical (run-length codec)
+
+### [TASK-54] Twenty-fourth CREATE task ("batch-6"), in a NEW fintech-billing vertical (penny allocation) (REQ-59)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `PENNY_ALLOCATION_TASK` (`RealSystemTask`,
+   `cls="fintech"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `penny_allocation.py` defining one function `allocate(total_cents,
+   weights)`: base share `share[i] = (total_cents * weights[i]) // sum(weights)` (integer floor
+   division, never float), with the leftover-remainder rule PINNED exactly: add 1 cent to each of
+   the FIRST `remainder` parts in index order (never the last parts, never a
+   largest-fractional-remainder sort). Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3)
+   -- no new oracle code.
+2. Hand-verify (via the exact pinned algorithm, not trusted blindly) four vectors before adding
+   the task to the roster: `allocate(100, [1, 1, 1]) == [34, 33, 33]`; `allocate(100, [1, 1]) ==
+   [50, 50]`; `allocate(1000, [7, 3]) == [700, 300]`; `allocate(5, [1, 1, 1]) == [2, 2, 1]`. Add
+   all as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(PENNY_ALLOCATION_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch6_tasks.py` (same file TASK-51/52/53 create, OFFLINE, no
+   model/Jetson): a CORRECT `penny_allocation.py` fixture is accepted by
+   `grade_real_system_task(PENNY_ALLOCATION_TASK, ...)`; a BROKEN fixture that computes the base
+   floor shares but never redistributes the remainder (losing cents) is rejected; leaves-OFF
+   holds; the task is a member of `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting
+   `REAL_SYSTEMS_TASKS` grew by exactly these four REQ-56/57/58/59 tasks (length 42 -> 46).
+5. Bump the ten pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 42` -> `== 46`) in `tests/test_ext060_atlas_batch4_tasks.py`,
+   `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_atlas_wave2_tasks.py`,
+   `tests/test_ext060_atlas_wave7_tasks.py`, `tests/test_ext060_batch5_tasks.py`,
+   `tests/test_ext060_clock_agent_tasks.py`, `tests/test_ext060_modify_wave2.py`,
+   `tests/test_ext060_spec_hint.py`, `tests/test_ext060_ticket_booking_invoice.py`, and
+   `tests/test_ext060_wave8_import_tasks.py`.
+6. Run `python -m pytest tests/test_ext060_*.py -q`; confirm green (offline only; 46-item CREATE
+   roster). Update `.jarify/EXT-060/index.json` (REQ-59 ranges, via `jarify-manage-links`) and flip
+   the REQ-59 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-59] Twenty-fourth CREATE task ("batch-6"), in a NEW fintech-billing vertical (penny allocation)
