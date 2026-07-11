@@ -77,17 +77,23 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
 - **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): the canonical
-  EXT-060 board is now a **37-class roster (26 create + 11 modify)**, and the **NEW CANONICAL HEADLINE**
-  (N=1, leaves-OFF, independent oracles, fresh full-board run) is **create 22/26, modify 10/11 = 32/37
-  (86%)** — measured on a board GROWN 18→37 classes in one day (the prior 19/21=90% was an 18-class board;
-  the number dipped 4pts only because the roster nearly doubled with harder rungs, honest). Against the
-  547-class atlas denominator that 37-class verified/capable roster is coverage ≈ **32-passing (N=1) of 37
-  board / 547 mapped** (the % is small because the MAP got more complete — capability did not regress).
-  **All 5 misses are honest + characterized:** 3 = the SaaS url-shortener class (create + delete-modify,
-  behavioral per-draw variance, PARKED as a best-of-k-on-real-oracle candidate); 1 = schema-validation-retry
-  (parked agent, token-cap truncation, #162); 1 = IRV-create 0/1 = N=1 noise (normally 2/3, IRV-modify
-  passed the same run). The **modify half is 10/11 (91%)** — the SaaS-modify flip (rest-put-modify) held on
-  the board. **ALL 6 oracle kinds are in active board service**; clock + state-machine + conservation alone
+  EXT-060 board is now a **65-class roster (54 create + 11 modify)**, and the latest **FULL CANONICAL HEADLINE**
+  (2026-07-11, all 65 classes, leaves-OFF, independent oracles) is **create 46/54, modify 9/11 = total 55/65
+  (85%)** — ⚠️ this is an **N=1 PROVISIONAL** number; per the supervisor headline-integrity rule (#167) the REAL
+  headline is **verified@N≥3** (pending — the N=1 provisional set + misses get re-verified at N≥3, and board-adds
+  throttle past ~8 unverified). Honestly, the % **HELD at 85%** while the board grew **37→65 classes** (was 86%
+  on a 37-class board) — real capability progress on a nearly-doubled, harder roster, not inflation. Against the
+  547-class atlas denominator: coverage ≈ **55-passing(N=1) of 65 board / 547 mapped**. **ALL 10 misses honest +
+  characterized, ZERO ceilings:** the ONE real create frontier is the **SaaS-HTTP tier** — url-shortener-http
+  (create), url-shortener-add-delete-endpoint (modify), rest-sqlite-items-crud (create) [attack next per the
+  starvation floor #166: verify sometimes-correct rate → best-of-k-real-oracle or mechanical code-dump]; 3
+  PARKED-with-named-reason (base32 RFC4648 tail-align, csv-groupby-etl aggregation gap, schema-validation-retry
+  #162); running-median (~50% model even-median division-bug); 2 N=1-FLICKER on N≥3-solid classes (account-lockout
+  3/3@N≥3, IRV 2/3); 1 NEW modify miss to verify@N≥3 (ini-section-query-default-flag-modify). **HARD-SLICE
+  CO-HEADLINE (#166, pending re-run):** uncurated SWE-bench-Lite ~13% — reserve ≥1-in-5 ticks for it +
+  large-repo/multi-file modify; that number is reported alongside the board pass@1. **Modify:create ratio 11:54
+  is too create-heavy (#166) — grow modify + upper realism tiers (T3–T5).** **ALL 6 oracle kinds in active board
+  service**; clock + state-machine + conservation alone
   make **150+ of the 547 classes honestly gradable**. Rising board-verified under honest oracles is
   progress; "mapped rows" is not. (N=1 is a single-draw headline — reliably-verified = 3/3, tracked separately.)
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
