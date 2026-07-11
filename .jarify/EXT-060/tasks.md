@@ -1559,3 +1559,130 @@
 
 #### Implements
 - [REQ-51] Sixteenth CREATE task, in a NEW logistics/geo vertical (haversine distance)
+
+### [TASK-47] Seventeenth CREATE task ("batch-5"), in a NEW fintech-calculator vertical (loan amortization) (REQ-52)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `LOAN_AMORTIZATION_TASK` (`RealSystemTask`,
+   `cls="fintech"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `loan_amortization.py` defining one function `schedule(principal,
+   annual_rate, n_months)`: integer-cents throughout, level monthly payment `M = round(principal *
+   r / (1 - (1 + r) ** -n_months))` for every month except the last, with the FINAL month's
+   principal set to exactly the remaining balance (so the schedule always ends on `balance: 0`).
+   Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via an independent scratch Python walk of the exact formula, not trusted blindly)
+   two vectors before adding the task to the roster: `schedule(1200, 0.12, 1)` -> `[{"payment":
+   1212, "interest": 12, "principal": 1200, "balance": 0}]`; `schedule(120000, 0.12, 3)` -> a
+   three-row schedule with principal columns `39603/39999/40398` (summing to `120000`) and a final
+   `balance: 0`. Add both as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free; confirm no banned leaf keyword appears in the sentence and
+   `leaf_for_spec(LOAN_AMORTIZATION_TASK.sentence) is None`.
+4. Add `tests/test_ext060_batch5_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `loan_amortization.py` fixture is accepted by `grade_real_system_task(LOAN_AMORTIZATION_TASK,
+   ...)`; a BROKEN fixture that never special-cases the final month (reuses the level payment for
+   every row, so the final balance lands on `-1` cent instead of `0`) is rejected; leaves-OFF
+   holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch5_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-52 ranges, via
+   `jarify-manage-links`) and flip the REQ-52 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-52] Seventeenth CREATE task ("batch-5"), in a NEW fintech-calculator vertical (loan amortization)
+
+### [TASK-48] Eighteenth CREATE task ("batch-5"), in a NEW analytics vertical (running median) (REQ-53)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `RUNNING_MEDIAN_TASK` (`RealSystemTask`,
+   `cls="analytics"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `running_median.py` defining one function `running_medians(stream)`: for
+   each prefix `stream[0:i+1]`, an ODD-length prefix's median is the sorted middle value, an
+   EVEN-length prefix's median is the true-division mean of the two sorted middle values. Reuse
+   the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via an independent scratch Python walk, a plain sorted-insert simulation, not
+   trusted blindly) three vectors before adding the task to the roster: `running_medians([5, 15,
+   1, 3]) == [5, 10.0, 5, 4.0]`; `running_medians([2, 4]) == [2, 3.0]`; `running_medians([7]) ==
+   [7]`. Add all three as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(RUNNING_MEDIAN_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch5_tasks.py` (same file TASK-47 creates, OFFLINE, no
+   model/Jetson): a CORRECT `running_median.py` fixture is accepted by
+   `grade_real_system_task(RUNNING_MEDIAN_TASK, ...)`; a BROKEN fixture that returns the running
+   MEAN instead of the running median is rejected (caught by the mixed-length vector's 3rd/4th
+   entries diverging); leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch5_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-53 ranges, via
+   `jarify-manage-links`) and flip the REQ-53 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-53] Eighteenth CREATE task ("batch-5"), in a NEW analytics vertical (running median)
+
+### [TASK-49] Nineteenth CREATE task ("batch-5"), in a NEW devops/SaaS vertical (incident escalation) (REQ-54)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `INCIDENT_ESCALATION_TASK` (`RealSystemTask`,
+   `cls="devops"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a stdlib-only
+   single-file `Incident` class in `incident_escalation.py`: states `"open"`/`"acknowledged"`/
+   `"investigating"`/`"resolved"`/`"closed"`; actions `acknowledge()`/`investigate()`/`resolve()`/
+   `close()`/`reopen()`, with `reopen()` legal from EITHER `"resolved"` OR `"closed"` (mirroring
+   `JOB_QUEUE_LIFECYCLE_TASK`'s own two-source-state action shape). Reuse the ALREADY-LANDED
+   `_grade_state_machine` dispatch (REQ-13) -- no new oracle code.
+2. Hand-verify (via a scratch walk of the transition table) the driven script before adding the
+   task to the roster: illegal `resolve()`-from-`"open"` and `close()`-from-`"open"` (both
+   skip-ahead, must reject) FIRST, then the full legal path `acknowledge -> investigate -> resolve
+   -> close` to `"closed"`, then a third illegal `acknowledge()`-from-`"closed"` (must ALSO
+   reject, proving the guard holds after the terminal state). `expect_final == "closed"`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm none of
+   `acknowledge`/`investigate`/`resolve`/`close`/`reopen`/`incident`/`escalation` appears in
+   `harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS`, no banned leaf keyword appears in the
+   sentence, and `leaf_for_spec(INCIDENT_ESCALATION_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch5_tasks.py` (same file TASK-47/48 create, OFFLINE, no
+   model/Jetson): a CORRECT `Incident` fixture is accepted by
+   `grade_real_system_task(INCIDENT_ESCALATION_TASK, ...)`; a BROKEN fixture that allows an
+   illegal transition (e.g. `resolve()` from any state) is rejected; leaves-OFF holds; the task is
+   a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch5_tasks.py tests/test_ext060_*.py -q`; confirm
+   green (offline only). Update `.jarify/EXT-060/index.json` (REQ-54 ranges, via
+   `jarify-manage-links`) and flip the REQ-54 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-54] Nineteenth CREATE task ("batch-5"), in a NEW devops/SaaS vertical (incident escalation)
+
+### [TASK-50] Twentieth CREATE task ("batch-5"), in a NEW logistics vertical (warehouse stock reservation) (REQ-55)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `WAREHOUSE_STOCK_RESERVATION_TASK` (`RealSystemTask`,
+   `cls="logistics"`, `oracle_kind="conservation"`) with a contract-exact sentence for a
+   stdlib-only single-file `StockReservation` class in `warehouse_stock_reservation.py`:
+   quantities `on_hand`/`reserved`/`shipped`; `reserve(n)` (on_hand->reserved, rejects over-
+   reserve), `unreserve(n)` (reserved->on_hand), `ship(n)` (reserved->shipped, rejects over-ship).
+   Use "reservation"/"reserve"/"ship" throughout (never "hold"/"queue"/"cache"/"expire"/"stack"/
+   "buffer"/"ring"). Reuse the ALREADY-LANDED `_grade_conservation` dispatch (REQ-15) -- no new
+   oracle code.
+2. Hand-verify (via a scratch walk of the delta bookkeeping) the driven script before adding the
+   task to the roster: illegal `reserve(150)` (over the initial `on_hand=100`, must reject), then
+   legal `reserve(60)` and `ship(40)`, then illegal `ship(30)` (over the remaining `reserved=20`,
+   must ALSO reject), then legal `unreserve(20)`, `reserve(10)`, `ship(10)`, landing on
+   `expect_final == {"on_hand": 50, "reserved": 0, "shipped": 50}` (summing to the initial
+   `total_units` of `100`).
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and
+   `leaf_for_spec(WAREHOUSE_STOCK_RESERVATION_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch5_tasks.py` (same file TASK-47/48/49 create, OFFLINE, no
+   model/Jetson): a CORRECT `StockReservation` fixture is accepted by
+   `grade_real_system_task(WAREHOUSE_STOCK_RESERVATION_TASK, ...)`; a BROKEN fixture that allows
+   an over-reserve (never checks `on_hand`) is rejected; leaves-OFF holds; the task is a member of
+   `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting `REAL_SYSTEMS_TASKS` grew by
+   exactly these four REQ-52/53/54/55 tasks (length 38 -> 42).
+5. Bump the ten pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 38` -> `== 42`) in `tests/test_ext060_atlas_batch4_tasks.py`,
+   `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_atlas_wave2_tasks.py`,
+   `tests/test_ext060_atlas_wave7_tasks.py`, `tests/test_ext060_clock_agent_tasks.py`,
+   `tests/test_ext060_modify_wave2.py`, `tests/test_ext060_spec_hint.py`,
+   `tests/test_ext060_ticket_booking_invoice.py`, and `tests/test_ext060_wave8_import_tasks.py`.
+6. Run `python -m pytest tests/test_ext060_*.py -q`; confirm green (offline only; 42-item CREATE
+   roster). Update `.jarify/EXT-060/index.json` (REQ-55 ranges, via `jarify-manage-links`) and flip
+   the REQ-55 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-55] Twentieth CREATE task ("batch-5"), in a NEW logistics vertical (warehouse stock reservation)

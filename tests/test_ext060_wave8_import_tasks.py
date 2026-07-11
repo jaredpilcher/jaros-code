@@ -353,8 +353,9 @@ def test_no_new_wave8_task_has_a_leaf_fingerprint():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_wave8_tasks():
-    # bumped 34 -> 38: this module's own REQ-48/49/50/51 add four more CREATE tasks.
-    assert len(REAL_SYSTEMS_TASKS) == 38
+    # bumped 34 -> 38 -> 42: this module's own REQ-48/49/50/51 add four more CREATE tasks, then
+    # REQ-52..55 (tests/test_ext060_batch5_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 42
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "net-present-value-calculator-lib" in names
     assert "interval-merge-lib" in names

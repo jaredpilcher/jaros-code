@@ -1630,3 +1630,135 @@ using Earth radius `R = 6371.0`, returning the result rounded to 2 decimal place
       ...)`; a BROKEN fixture that never converts degrees to radians is rejected; the task is a
       member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-48/49/50/51
       tasks (length 34 -> 38).
+
+### [REQ-52] Seventeenth CREATE task ("batch-5"), in a NEW fintech-calculator vertical (loan amortization)
+
+A SEVENTEENTH held-out CREATE task ("batch-5"), in a NEW fintech vertical distinct from every prior
+fintech task (a structured amortization SCHEDULE, not a ledger and not a single-number calculator),
+graded by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `LOAN_AMORTIZATION_TASK`
+(`RealSystemTask`, `cls="fintech"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `loan_amortization.py` defining one
+function `schedule(principal, annual_rate, n_months)` computing a standard fixed-payment amortization
+schedule entirely in integer cents, with the final month's principal set to exactly the remaining
+balance so the schedule always lands on a `0` final balance.
+
+#### Acceptance Criteria
+- [x] `LOAN_AMORTIZATION_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      amortization contract (filename `loan_amortization.py`, the function signature, the integer-cents
+      contract, the level-payment formula `M = round(principal * r / (1 - (1 + r) ** -n_months))`, the
+      per-month interest/principal/balance derivation, and the FINAL-month override that zeroes the
+      rounding residue) with every oracle-checked value derivable from that same visible sentence (no
+      hidden key, no leak).
+- [x] Two driven checks, every cents value hand-verified via an independent scratch Python walk of the
+      exact same formula (not trusted blindly) before being added to the roster: `schedule(1200, 0.12,
+      1) == [{"payment": 1212, "interest": 12, "principal": 1200, "balance": 0}]`; `schedule(120000,
+      0.12, 3)` == the three-row schedule ending in `balance: 0` with principal columns summing to
+      `120000`. A build that never special-cases the final month (reuses the level payment for every
+      row) is caught: its final balance lands on `-1` cent instead of `0`.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `loan_amortization.py` fixture is accepted by `grade_real_system_task(LOAN_AMORTIZATION_TASK,
+      ...)`; a BROKEN fixture that never zeroes the final rounding residue is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-53] Eighteenth CREATE task ("batch-5"), in a NEW analytics vertical (running median)
+
+An EIGHTEENTH held-out CREATE task ("batch-5"), in a NEW analytics vertical, graded by the
+ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `RUNNING_MEDIAN_TASK`
+(`RealSystemTask`, `cls="analytics"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a
+contract-exact sentence for a stdlib-only, single-file module `running_median.py` defining one
+function `running_medians(stream)` returning the running median after each element of `stream`
+(the middle sorted value for an odd-length prefix, the true-division mean of the two middle sorted
+values for an even-length prefix).
+
+#### Acceptance Criteria
+- [x] `RUNNING_MEDIAN_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the running-median
+      contract (filename `running_median.py`, the function signature, the odd-length middle-value rule,
+      the even-length true-division-mean rule, the same-length-as-input/no-mutation contract) with
+      every oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] Three driven checks, every expected value hand-verified via an independent scratch Python walk
+      (a plain sorted-insert simulation) before being added to the roster:
+      `running_medians([5, 15, 1, 3]) == [5, 10.0, 5, 4.0]`; `running_medians([2, 4]) == [2, 3.0]`;
+      `running_medians([7]) == [7]`. A build that returns the running MEAN instead of the running
+      median is caught by the first vector (its 3rd/4th entries diverge: `7.0`/`6.0` vs. `5`/`4.0`).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `running_median.py` fixture is accepted by `grade_real_system_task(RUNNING_MEDIAN_TASK, ...)`; a
+      BROKEN fixture that returns the running mean instead of the running median is rejected; the task
+      is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-54] Nineteenth CREATE task ("batch-5"), in a NEW devops/SaaS vertical (incident escalation)
+
+A NINETEENTH held-out CREATE task ("batch-5"), in a NEW devops/SaaS incident-management vertical,
+graded by the ALREADY-LANDED `oracle_kind="state_machine"` dispatch REQ-13 lands (no new oracle code:
+reuses `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine` verbatim).
+`INCIDENT_ESCALATION_TASK` (`RealSystemTask`, `cls="devops"`, `oracle_kind="state_machine"`) is added
+to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file `Incident` class in
+`incident_escalation.py` modeling an on-call incident's `"open"`/`"acknowledged"`/`"investigating"`/
+`"resolved"`/`"closed"` lifecycle, with a `reopen()` action legal from EITHER `"resolved"` OR
+`"closed"` (mirroring `JOB_QUEUE_LIFECYCLE_TASK`'s own two-source-state action shape on a distinct
+vertical).
+
+#### Acceptance Criteria
+- [x] `INCIDENT_ESCALATION_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      five-state, five-action lifecycle contract (filename `incident_escalation.py`, the class name,
+      the exact legal source state(s) per action -- including `reopen()`'s two legal sources -- the
+      `ValueError`-on-illegal-transition-with-unchanged-state contract, and the `state` property) with
+      every oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] THREE illegal transitions are driven and rejected, hand-verified via a scratch walk of the exact
+      same transition table before being added to the roster: `resolve()` from `"open"` (skip-ahead),
+      `close()` from `"open"` (skip-ahead), and `acknowledge()` from `"closed"` (already terminal) --
+      proving the guard holds both before any legal op and after the incident has already reached its
+      terminal state. The driven legal path lands on `expect_final == "closed"`.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. None of `acknowledge`/`investigate`/`resolve`/
+      `close`/`reopen`/`incident`/`escalation` ever fingerprints a leaf keyword
+      (`harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS` lists none of them) -- verified directly via
+      `leaf_for_spec(...) is None`, not just a literal substring scan.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `Incident` fixture
+      is accepted by `grade_real_system_task(INCIDENT_ESCALATION_TASK, ...)`; a BROKEN fixture that
+      allows an illegal transition (e.g. `resolve()` from any state) is rejected; the task is a member
+      of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-55] Twentieth CREATE task ("batch-5"), in a NEW logistics vertical (warehouse stock reservation)
+
+A TWENTIETH held-out CREATE task ("batch-5"), in a NEW logistics/warehouse vertical, graded by the
+ALREADY-LANDED `oracle_kind="conservation"` dispatch REQ-15 lands (no new oracle code: reuses
+`_grade_conservation` -> `harness.conservation_oracle.grade_conservation` verbatim).
+`WAREHOUSE_STOCK_RESERVATION_TASK` (`RealSystemTask`, `cls="logistics"`, `oracle_kind="conservation"`)
+is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file
+`StockReservation` class in `warehouse_stock_reservation.py` modeling `reserve(n)` (on_hand->reserved),
+`unreserve(n)` (reserved->on_hand), and `ship(n)` (reserved->shipped), over a mirror-pair bookkeeping
+of `on_hand`/`reserved`/`shipped` that always sums to `total_units`. Deliberately phrased with
+"reservation"/"reserve"/"ship" throughout (never "hold"/"queue"/"cache"/"expire"/"stack"/"buffer"/
+"ring") so no leaf keyword is ever fingerprinted.
+
+#### Acceptance Criteria
+- [x] `WAREHOUSE_STOCK_RESERVATION_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      three-quantity reserve/unreserve/ship contract (filename `warehouse_stock_reservation.py`, the
+      class name, the constructor shape, the three reader methods, the exact deltas each action causes,
+      the `ValueError`-on-over-reserve/over-ship-with-unchanged-quantities contract) with every
+      oracle-checked value derivable from that same visible sentence (no hidden key, no leak).
+- [x] TWO illegal ops are driven and rejected, hand-verified via a scratch walk of the exact same
+      on_hand/reserved/shipped delta bookkeeping before being added to the roster: reserving MORE units
+      than are currently on_hand, and shipping MORE units than are currently reserved (mid-sequence,
+      after a partial ship has already moved the balance) -- proving the guard holds both at the very
+      start and after legal ops have moved the balance. The full driven sequence lands on
+      `expect_final == {"on_hand": 50, "reserved": 0, "shipped": 50}` (summing to the initial
+      `total_units` of `100`).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. Verified directly via `leaf_for_spec(...) is None`,
+      not just a literal substring scan.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `StockReservation`
+      fixture is accepted by `grade_real_system_task(WAREHOUSE_STOCK_RESERVATION_TASK, ...)`; a BROKEN
+      fixture that allows an over-reserve (never checks `on_hand` before moving units to `reserved`) is
+      rejected; the task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the
+      four REQ-52/53/54/55 tasks (length 38 -> 42).

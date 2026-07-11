@@ -4690,3 +4690,311 @@ HAVERSINE_DISTANCE_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(HAVERSINE_DISTANCE_TASK)
 # #EXT-060-REQ-51 End
+
+
+# #EXT-060-REQ-52 Start
+# TASK-47: a SEVENTEENTH held-out CREATE task ("batch-5"), in a NEW fintech-calculator vertical
+# (distinct from both the double-entry-ledger fintech tasks AND the plain-calculator NPV_CALCULATOR_TASK
+# above -- this one returns a STRUCTURED schedule, not a single number), graded by the ALREADY-LANDED
+# `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code. Every cents value below was
+# hand-verified via an independent scratch calculation (a standalone Python walk of the exact same
+# fixed-payment amortization formula the sentence pins) before this task was added to the roster: see the
+# recompute notes just below each vector.
+_LOAN_AMORTIZATION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "loan_amortization.py, using only the standard library, defining exactly one public function "
+    "`schedule(principal, annual_rate, n_months)` that computes a fixed-payment loan amortization "
+    "schedule for a lending system, with every returned monetary value expressed as an INTEGER "
+    "number of CENTS (never a float). `principal` is a positive integer number of cents (the loan "
+    "amount), `annual_rate` is a Python `float` (e.g. `0.12` for 12% APR), and `n_months` is a "
+    "positive integer (the number of monthly payments). Let the monthly interest rate be `r = "
+    "annual_rate / 12`. The function returns a Python `list` of exactly `n_months` dicts in "
+    "payment order, each with exactly four integer-cents keys: `\"payment\"` (the total cents paid "
+    "that month), `\"interest\"` (that month's interest portion), `\"principal\"` (that month's "
+    "principal portion), and `\"balance\"` (the remaining loan balance in cents AFTER that month's "
+    "payment is applied). For every month EXCEPT the last, the LEVEL monthly payment `M = "
+    "round(principal * r / (1 - (1 + r) ** -n_months))` (the standard fixed-payment amortization "
+    "formula, computed once and reused for every one of those months) is that month's "
+    "`\"payment\"`; that month's `\"interest\"` is `round(balance_before_that_month * r)`; its "
+    "`\"principal\"` is `M - interest`; its `\"balance\"` is the prior balance minus that month's "
+    "`\"principal\"`. The FINAL month is different: its `\"principal\"` is set to EXACTLY the "
+    "balance remaining before that month (so the resulting `\"balance\"` after the final month is "
+    "EXACTLY `0`, absorbing any rounding residue the earlier months' `round()` calls left behind); "
+    "its `\"interest\"` is still `round(balance_before_that_month * r)`; its `\"payment\"` is "
+    "`interest + principal` for that final month (which may therefore differ by a cent or two from "
+    "the level `M` every earlier month uses). Across the WHOLE returned schedule, the sum of every "
+    "month's `\"principal\"` value must exactly equal `principal`, and the last dict's "
+    "`\"balance\"` must be exactly `0`."
+)
+
+# Hand-verified via an independent scratch Python walk of the exact formula above (recomputed, not
+# trusted blindly) before being added to the roster:
+# schedule(1200, 0.12, 1): r=0.01, n=1 (a single-payment loan) -> M = round(1200*0.01/(1-1.01**-1))
+#   == round(1212.0) == 1212 (exactly P*(1+r), the n=1 special case of the formula); interest =
+#   round(1200*0.01) == 12; the ONE month is also the FINAL month, so principal = balance = 1200,
+#   payment = interest + principal = 1212, balance = 0.
+#   -> [{"payment": 1212, "interest": 12, "principal": 1200, "balance": 0}]
+# schedule(120000, 0.12, 3): r=0.01, n=3 -> M = round(120000*0.01/(1-1.01**-3)) == round(1200 /
+#   0.0297...) == 40803.
+#   month 1: interest = round(120000*0.01) = 1200; principal = 40803-1200 = 39603;
+#            balance = 120000-39603 = 80397
+#   month 2: interest = round(80397*0.01) = round(803.97) = 804; principal = 40803-804 = 39999;
+#            balance = 80397-39999 = 40398
+#   month 3 (FINAL, overridden): interest = round(40398*0.01) = round(403.98) = 404;
+#            principal = balance = 40398 (clears exactly); payment = 404+40398 = 40802; balance = 0
+#   -> sum of principal columns = 39603+39999+40398 = 120000 == principal; final balance == 0.
+LOAN_AMORTIZATION_TASK = RealSystemTask(
+    name="loan-amortization-schedule-lib",
+    cls="fintech",
+    sentence=_LOAN_AMORTIZATION_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "loan_amortization",
+        "api_calls": [
+            {"id": "schedule_single_month", "target": "schedule",
+             "args": [1200, 0.12, 1], "kwargs": {}},
+            {"id": "schedule_three_month", "target": "schedule",
+             "args": [120000, 0.12, 3], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "schedule_single_month",
+             "expected": [{"payment": 1212, "interest": 12, "principal": 1200, "balance": 0}]},
+            {"kind": "returns_equals", "call_id": "schedule_three_month",
+             "expected": [
+                 {"payment": 40803, "interest": 1200, "principal": 39603, "balance": 80397},
+                 {"payment": 40803, "interest": 804, "principal": 39999, "balance": 40398},
+                 {"payment": 40802, "interest": 404, "principal": 40398, "balance": 0},
+             ]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(LOAN_AMORTIZATION_TASK)
+# #EXT-060-REQ-52 End
+
+
+# #EXT-060-REQ-53 Start
+# TASK-48: an EIGHTEENTH held-out CREATE task ("batch-5"), in a NEW analytics vertical, graded by the
+# ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code. Every vector below was
+# hand-verified via an independent scratch Python walk (a plain sorted-insert simulation of the exact
+# median-of-prefix rule the sentence pins) before this task was added to the roster.
+_RUNNING_MEDIAN_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "running_median.py, using only the standard library, defining exactly one public function "
+    "`running_medians(stream)` for a real-time analytics system computing a running median over "
+    "an incoming numeric stream. `stream` is a Python `list` of numbers (ints and/or floats), "
+    "given all at once but to be treated as arriving ONE AT A TIME in list order. The function "
+    "returns a NEW Python `list` of the SAME length as `stream`, where the value at index `i` is "
+    "the median of `stream[0:i+1]` (every element seen so far, INCLUSIVE of `stream[i]` itself) "
+    "computed over that prefix SORTED ascending: when the prefix has an ODD number of elements, "
+    "the median is the single MIDDLE value of the sorted prefix, returned as whatever numeric "
+    "type that value already is; when the prefix has an EVEN number of elements, the median is "
+    "the arithmetic MEAN of the two MIDDLE values of the sorted prefix, computed with Python's "
+    "true-division `/` operator (which always produces a `float`, even when both middle values "
+    "are ints). `stream` itself must never be mutated."
+)
+
+# Hand-verified via an independent scratch Python walk (recomputed, not trusted blindly) before
+# being added to the roster:
+# running_medians([5, 15, 1, 3]):
+#   prefix [5] (odd, len 1) -> sorted [5] -> middle = 5
+#   prefix [5,15] (even, len 2) -> sorted [5,15] -> mean of the two middles = (5+15)/2 = 10.0
+#   prefix [5,15,1] (odd, len 3) -> sorted [1,5,15] -> middle = 5
+#   prefix [5,15,1,3] (even, len 4) -> sorted [1,3,5,15] -> mean of the two middles = (3+5)/2 = 4.0
+#   -> [5, 10.0, 5, 4.0]
+# running_medians([2, 4]):
+#   prefix [2] (odd) -> 2; prefix [2,4] (even) -> (2+4)/2 = 3.0 -> [2, 3.0]
+# running_medians([7]): prefix [7] (odd) -> 7 -> [7]
+# A broken fixture returning the running MEAN instead of the running median gives
+# [5.0, 10.0, 7.0, 6.0] for the first vector -- diverges from [5, 10.0, 5, 4.0] at the 3rd/4th
+# entries (mean-of-3 = 7.0 != median 5, mean-of-4 = 6.0 != median 4.0), so the check catches it.
+RUNNING_MEDIAN_TASK = RealSystemTask(
+    name="running-median-lib",
+    cls="analytics",
+    sentence=_RUNNING_MEDIAN_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "running_median",
+        "api_calls": [
+            {"id": "medians_mixed_lengths", "target": "running_medians",
+             "args": [[5, 15, 1, 3]], "kwargs": {}},
+            {"id": "medians_two_element", "target": "running_medians",
+             "args": [[2, 4]], "kwargs": {}},
+            {"id": "medians_single_element", "target": "running_medians",
+             "args": [[7]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "medians_mixed_lengths",
+             "expected": [5, 10.0, 5, 4.0]},
+            {"kind": "returns_equals", "call_id": "medians_two_element", "expected": [2, 3.0]},
+            {"kind": "returns_equals", "call_id": "medians_single_element", "expected": [7]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(RUNNING_MEDIAN_TASK)
+# #EXT-060-REQ-53 End
+
+
+# #EXT-060-REQ-54 Start
+# TASK-49: a NINETEENTH held-out CREATE task ("batch-5"), in a NEW devops/SaaS incident-management
+# vertical -- graded by the ALREADY-LANDED "state_machine" oracle_kind dispatch REQ-13 lands (no new
+# oracle code: reuses `_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine`
+# verbatim). Distinct from every prior "state_machine" task (ORDER_LIFECYCLE_TASK/HELPDESK_SLA_TASK/
+# JOB_QUEUE_LIFECYCLE_TASK): this models an on-call incident's open/acknowledged/investigating/resolved/
+# closed lifecycle, including a REOPEN action legally reachable from TWO different terminal-ish source
+# states (`"resolved"` when a fix turns out incomplete, `"closed"` when the incident recurs) -- mirroring
+# JOB_QUEUE_LIFECYCLE_TASK's own two-source-state shape for a single action, but on a distinct 5-state
+# vertical. None of `acknowledge`/`investigate`/`resolve`/`close`/`reopen`/`incident`/`escalation` ever
+# fingerprints any leaf keyword (`harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS` lists none of them) --
+# confirmed directly via `leaf_for_spec(...) is None`, not just a literal substring scan.
+_INCIDENT_ESCALATION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "incident_escalation.py, using only the standard library, defining exactly one public class "
+    "named `Incident` modeling the lifecycle of one incident inside an on-call incident-escalation "
+    "system (the kind of system a devops/SaaS team uses to track an outage or alert from first "
+    "report through resolution). `Incident()` (no constructor arguments) creates a new incident "
+    "whose initial state is the string `\"open\"`. The class exposes a real Python `@property` "
+    "named `state` that returns the incident's current state as one of the strings `\"open\"`, "
+    "`\"acknowledged\"`, `\"investigating\"`, `\"resolved\"`, or `\"closed\"`. It defines exactly "
+    "five zero-argument action methods: `acknowledge()` moves the incident from `\"open\"` to "
+    "`\"acknowledged\"` -- an on-call responder has seen the alert; `investigate()` moves the "
+    "incident from `\"acknowledged\"` to `\"investigating\"` -- the responder has started "
+    "root-causing it; `resolve()` moves the incident from `\"investigating\"` to `\"resolved\"` -- "
+    "a fix has been applied; `close()` moves the incident from `\"resolved\"` to `\"closed\"` -- "
+    "the incident is fully wrapped up; `reopen()` moves the incident back to `\"investigating\"` -- "
+    "legal from EITHER `\"resolved\"` (the fix turned out to be incomplete) OR `\"closed\"` (the "
+    "incident recurs after already being closed), in both cases resuming active investigation. "
+    "Each of these five methods is legal ONLY from the exact source state(s) named above; calling "
+    "any of them from any OTHER current state (for example resolving an incident straight from "
+    "`\"open\"` without ever acknowledging or investigating it, closing an incident straight from "
+    "`\"open\"`, or acknowledging an incident that is already `\"closed\"`) must instead raise "
+    "`ValueError` and must leave the incident's `state` COMPLETELY UNCHANGED -- no partial "
+    "mutation before the raise."
+)
+
+INCIDENT_ESCALATION_TASK = RealSystemTask(
+    name="incident-escalation-state-machine",
+    cls="devops",
+    sentence=_INCIDENT_ESCALATION_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "incident_escalation",
+        "entity": "Incident",
+        "spec": {
+            "states": ["open", "acknowledged", "investigating", "resolved", "closed"],
+            "initial": "open",
+            "transitions": {
+                "open:acknowledge": "acknowledged",
+                "acknowledged:investigate": "investigating",
+                "investigating:resolve": "resolved",
+                "resolved:close": "closed",
+                "resolved:reopen": "investigating",
+                "closed:reopen": "investigating",
+            },
+            # Two illegal skip-ahead transitions FIRST (resolve-from-"open" and close-from-"open",
+            # both must be rejected), then the full legal path from "open" all the way to "closed"
+            # (acknowledge -> investigate -> resolve -> close), then a THIRD illegal transition --
+            # acknowledge-from-"closed" (must ALSO be rejected, proving the guard holds after the
+            # incident has already reached its terminal state, not just at construction).
+            "drive": [
+                {"action": "resolve", "expect": "reject"},
+                {"action": "close", "expect": "reject"},
+                {"action": "acknowledge", "expect": "accept"},
+                {"action": "investigate", "expect": "accept"},
+                {"action": "resolve", "expect": "accept"},
+                {"action": "close", "expect": "accept"},
+                {"action": "acknowledge", "expect": "reject"},
+            ],
+            "expect_final": "closed",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INCIDENT_ESCALATION_TASK)
+# #EXT-060-REQ-54 End
+
+
+# #EXT-060-REQ-55 Start
+# TASK-50: a TWENTIETH held-out CREATE task ("batch-5"), in a NEW logistics/warehouse vertical --
+# graded by the ALREADY-LANDED "conservation" oracle_kind dispatch REQ-15 lands (no new oracle code:
+# reuses `_grade_conservation` -> `harness.conservation_oracle.grade_conservation` verbatim). Distinct
+# from SEAT_HOLD_TASK's three-quantity available/held/sold ticketing workflow: this models a warehouse
+# SKU's on_hand/reserved/shipped bookkeeping for an order-fulfillment reservation flow. Deliberately
+# phrased with "reservation"/"reserve"/"ship" throughout (never "hold"/"queue"/"cache"/"expire"/
+# "stack"/"buffer"/"ring") so no leaf keyword (`harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS`) is ever
+# fingerprinted -- confirmed directly via `leaf_for_spec(...) is None`, not just a literal substring
+# scan. Every driven delta below was hand-verified via a scratch walk of the exact same
+# on_hand/reserved/shipped mirror-pair bookkeeping the sentence pins (their sum always equals
+# `total_units`, the conservation invariant) before this task was added to the roster.
+_WAREHOUSE_STOCK_RESERVATION_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "warehouse_stock_reservation.py, using only the standard library, defining exactly one public "
+    "class named `StockReservation` modeling one SKU's stock through a warehouse "
+    "reservation/ship workflow -- inventory units move from being freely available, to being "
+    "reserved against an order, to finally being physically shipped out. "
+    "`StockReservation(total_units)` (exactly one positional constructor argument, a "
+    "non-negative integer) creates tracking for one SKU whose `on_hand` units start at "
+    "`total_units`, whose `reserved` units start at `0`, and whose `shipped` units start at `0`. "
+    "It exposes three zero-argument reader methods, `on_hand()`, `reserved()`, and `shipped()`, "
+    "each returning the current integer value of that quantity; `on_hand() + reserved() + "
+    "shipped()` must always equal `total_units`, since a unit is only ever MOVED between these "
+    "three buckets, never created or destroyed. It defines three methods that each take one "
+    "positional integer argument, `n`: `reserve(n)` moves `n` units from `on_hand` to `reserved` "
+    "(decreasing `on_hand` by `n` and increasing `reserved` by `n`) -- an order has claimed `n` "
+    "units against future shipment -- but if `n` is GREATER than the CURRENT `on_hand` count, it "
+    "must instead raise `ValueError` and leave `on_hand`/`reserved`/`shipped` COMPLETELY "
+    "UNCHANGED; `unreserve(n)` moves `n` units from `reserved` back to `on_hand` (increasing "
+    "`on_hand` by `n` and decreasing `reserved` by `n`) -- a claimed order is cancelled and its "
+    "units return to available stock; `ship(n)` moves `n` units from `reserved` to `shipped` "
+    "(decreasing `reserved` by `n` and increasing `shipped` by `n`) -- a reserved order has "
+    "physically left the warehouse -- but if `n` is GREATER than the CURRENT `reserved` count, it "
+    "must instead raise `ValueError` and leave `on_hand`/`reserved`/`shipped` COMPLETELY "
+    "UNCHANGED."
+)
+
+WAREHOUSE_STOCK_RESERVATION_TASK = RealSystemTask(
+    name="warehouse-stock-reservation-conservation",
+    cls="logistics",
+    sentence=_WAREHOUSE_STOCK_RESERVATION_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "warehouse_stock_reservation",
+        "entity": "StockReservation",
+        "spec": {
+            "quantities": ["on_hand", "reserved", "shipped"],
+            "initial": {"on_hand": 100, "reserved": 0, "shipped": 0},
+            "construct_args": [100],
+            # Illegal over-reserve FIRST (150 of 100 on_hand -- must be rejected), then a legal
+            # reserve (60) and a legal ship (40 of the 60 reserved), then a SECOND illegal op --
+            # shipping 30 when only 20 remain reserved (must ALSO be rejected, proving the guard
+            # holds after legal ops have moved the balance too), then a legal unreserve (20), a
+            # second legal reserve (10), and a final legal ship (10) landing on a concrete
+            # expect_final.
+            "drive": [
+                {"action": "reserve", "args": [150], "expect": "reject"},
+                {"action": "reserve", "args": [60], "expect": "accept",
+                 "deltas": {"on_hand": -60, "reserved": 60}},
+                {"action": "ship", "args": [40], "expect": "accept",
+                 "deltas": {"reserved": -40, "shipped": 40}},
+                {"action": "ship", "args": [30], "expect": "reject"},
+                {"action": "unreserve", "args": [20], "expect": "accept",
+                 "deltas": {"reserved": -20, "on_hand": 20}},
+                {"action": "reserve", "args": [10], "expect": "accept",
+                 "deltas": {"on_hand": -10, "reserved": 10}},
+                {"action": "ship", "args": [10], "expect": "accept",
+                 "deltas": {"reserved": -10, "shipped": 10}},
+            ],
+            "expect_final": {"on_hand": 50, "reserved": 0, "shipped": 50},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(WAREHOUSE_STOCK_RESERVATION_TASK)
+# #EXT-060-REQ-55 End

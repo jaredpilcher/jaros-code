@@ -514,9 +514,10 @@ def test_no_new_batch4_task_has_a_leaf_fingerprint():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_batch4_tasks():
-    # bumped 30 -> 34 -> 38: this module's own REQ-44/45/46/47 add four more CREATE tasks, then
-    # REQ-48..51 (tests/test_ext060_wave8_import_tasks.py) added four more.
-    assert len(REAL_SYSTEMS_TASKS) == 38
+    # bumped 30 -> 34 -> 38 -> 42: this module's own REQ-44/45/46/47 add four more CREATE tasks,
+    # then REQ-48..51 (tests/test_ext060_wave8_import_tasks.py) added four more, then REQ-52..55
+    # (tests/test_ext060_batch5_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 42
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "background-job-lifecycle-state-machine" in names
     assert "event-seat-hold-conservation" in names

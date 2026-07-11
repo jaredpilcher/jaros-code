@@ -750,5 +750,53 @@
       "startLine": 254,
       "endLine": 323
     }
+  ],
+  "REQ-52": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 4695,
+      "endLine": 4775
+    },
+    {
+      "file": "tests/test_ext060_batch5_tasks.py",
+      "startLine": 59,
+      "endLine": 148
+    }
+  ],
+  "REQ-53": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 4778,
+      "endLine": 4840
+    },
+    {
+      "file": "tests/test_ext060_batch5_tasks.py",
+      "startLine": 152,
+      "endLine": 219
+    }
+  ],
+  "REQ-54": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 4843,
+      "endLine": 4920
+    },
+    {
+      "file": "tests/test_ext060_batch5_tasks.py",
+      "startLine": 223,
+      "endLine": 333
+    }
+  ],
+  "REQ-55": [
+    {
+      "file": "harness/real_systems_suite.py",
+      "startLine": 4923,
+      "endLine": 5000
+    },
+    {
+      "file": "tests/test_ext060_batch5_tasks.py",
+      "startLine": 337,
+      "endLine": 445
+    }
   ]
 }
