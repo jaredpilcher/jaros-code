@@ -793,6 +793,11 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ BOARD +4 CREATE batch-6 import libs — EXT-060 REQ-56..59 (2026-07-10)]** commit **eecaa30**, measured N=3
+  **12/12 CLEAN SWEEP**: roman-numeral-codec, bankers-rounding, run-length-codec, penny-allocation (all import/
+  devtools+fintech+data). CREATE roster 42→46; now 44/46 measured-green. Zero variance — PINNING the exact
+  rounding/tie/remainder conventions (the running-median lesson) is the lever: a well-specified math/codec class greens
+  first-try. Board = **46 create + 11 modify = 57 classes**, all 6 oracle kinds in service.
 - **[★ OWNER SECURITY DIRECTIVE COMPLETE — dependency-security gate, both phases (2026-07-10)]** Phase-1 **c622c5f**
   (EXT-037 REQ-16, `harness/stdlib_safety.py`: deprecated/removed + dangerous-use stdlib denylist hardens the REQ-66
   build hint + advisory EOL/deprecated-use finding) + Phase-2 **28374b9** (EXT-037 REQ-17, `harness/dep_advisory.py`:
