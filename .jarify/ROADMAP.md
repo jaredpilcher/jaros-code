@@ -716,6 +716,18 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## PARKED (deferred, with reason — revisit triggers in GAP-MAP)
 
+- **[base32-codec-lib (EXT-060 REQ-50) — 0/3, the one open create class]** PARKED as a single genuine gemma
+  RFC 4648 reasoning slip (NOT a class incapability, NOT a ceiling). Code-dump diagnosis: the spec explicitly
+  allows `base64` but gemma hand-rolls the codec and deterministically (a) RIGHT-aligns the final partial 5-bit
+  group instead of LEFT-aligning it (encode([102])→"MG======" vs "MY======"), (b) crashes in decode (len() on
+  an int). The REQ-66 spec-affordance hint (5c609df, "prefer the permitted stdlib module") did NOT move gemma
+  off the hand-roll — measured 0/3 both before AND after (flip-test 924s). Because the bug is DETERMINISTIC,
+  best-of-k cannot rescue it. REVISIT TRIGGER: a generic **codec-tail-alignment AST repair** (detect a hand-rolled
+  power-of-2 base-N codec whose final partial group isn't left-aligned + zero-padded, and fix it) — a small but
+  genuinely reusable deterministic lever (base16/base32/base64-manual). The REQ-66 lever STAYS committed — it is
+  generically valuable for any task naming a convenience module; base32 just failed to be the case that proves it.
+  Anti-rut: do NOT grind base32 further before that AST-repair lever exists. Board create half = 37/38 measured-green.
+
 - **[SaaS url-shortener class (create + delete-modify) — the board's 3 remaining misses]** PARKED as
   behavioral per-draw VARIANCE (not a class incapability) — a checkable-behavior oracle (run the app + real
   HTTP + independent DB re-read) but no single k=1 draw reliably passes. REVISIT TRIGGER: the NOW
