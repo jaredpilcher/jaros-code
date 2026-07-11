@@ -135,6 +135,19 @@ measure BOTH suites PER-CLASS on the Jetson (independent oracle, no leak), focus
 trips on until they pass, then ratchet difficulty forever. This is the day-to-day steering wheel; the
 per-class pass/fail table is the metric (not one blended number).
 
+- **[SaaS-HTTP T3 tier · 4 deterministic levers LANDED, class NOT yet N≥3-green — honest 2026-07-11]** url-shortener-http-service
+  peeled layer-by-layer (each lever proven correct on reproduced/tested code, NOT a model ceiling): **REQ-68** server-address-tuple
+  (e3f6191, `HTTPServer("",p,h)`→tuple), **REQ-69** regen-sweep (2830592, repair rounds + single-file-retry now re-apply the
+  deterministic-repair chain instead of re-emitting the bug), **REQ-70** db-init-call (4a4cf97, injects gemma's uncalled zero-arg
+  `initialize_db()` before the bind — live-subprocess round-trip test), **REQ-71** syntax-gate single-file RESCUE (c42e4e2, a module
+  failing the syntax gate now falls through to `_build_single_file` instead of aborting the whole build — GENERAL, rescues
+  syntax-variance across ALL classes). Bind-crash symptom demonstrably moved 'server never bound'→'http checks failed'→db-init.
+  HONEST RESIDUAL: fresh draws NOT N≥3-green — dominated by BUILD-PROCESS variance (syntax-gate aborts + ~30-min non-convergent
+  repair loops), so the frontier moved from code-defects → build-orchestration reliability. high · e3f6191+2830592+4a4cf97+c42e4e2
+- **[SWE-bench-Lite external hard-bar co-headline — QUEUED (#169), infra gap surfaced honestly 2026-07-11]** starvation-floor rotation:
+  WSL Ubuntu + gemma + pure-core pipeline (swebench_live) present, but the dataset JSONL is absent at the default path AND the live
+  Docker+WSL orchestration is a deferred stub — a fresh measured slice needs infra reconstruction (dataset re-acquire + Docker sandbox
+  runner wired to the core). Prior VERIFIED django-12125 resolve stands (Jun-30, not fresh). Do NOT half-bake (Tenet 3). med · task #169
 - **[EXT-036 · create frontier ratchet — DONE, measured]** added 4 harder create classes; gemma splits them
   cleanly: infix-eval 3/3 solid, sqlite-store 1/3 shaky, mini-SQL 0/3 + json-path 0/3 failing. The ratchet
   re-opened headroom so the scoreboard discriminates again. high · 10316cc
