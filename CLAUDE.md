@@ -74,6 +74,28 @@ fixed roster that only GROWS, every task graded by an INDEPENDENT oracle, report
 The creation suite / modification_suite / daily_driver are DEMOTED to regression checks — never "the
 number." When a board saturates, GROW EXT-060; NEVER mint a new instrument (that sprawl was the mistake).
 
+**1a. MEASUREMENT DISCIPLINE (owner-accepted supervisor corrections, 2026-07-11 — non-negotiable):**
+- **The HEADLINE is verified-at-N≥3 / total. N=1 is PROVISIONAL, never "the number."** Board SIZE is an activity
+  metric — do NOT let a growing roster read as progress. THROTTLE board-adds whenever the provisional-not-yet-N≥3
+  backlog exceeds ~8 classes; finish the N≥3 follow-through before the next board expansion.
+- **STARVATION FLOOR (co-headline):** reserve a fixed **≥1-in-5 ticks for the HARD class** (uncurated SWE-bench +
+  large-repo/multi-file modify) and report that hard-slice number as a CO-HEADLINE. 24/7 impact×tractability
+  systematically starves the stated frontier; an all-easy-greening stream with a flat hard bar is a RUT.
+- **REALISM TIERS + modify:create guard:** tier every class (T1 algorithmic · T2 service+state · T3 DB-backed ·
+  T4 web-informed · T5 multi-file repo) and grow the UPPER tiers + the MODIFY half deliberately — the REAL-systems
+  ratchet needs T3–T5 to grow, not T1 count (~98%-stdlib-buildable = selection toward buildable over real).
+- **"Research plane" = "8-wave STABLE," not "converged (definitive)."** Tripwire: any class needing a NEW oracle
+  KIND is a headline event that reopens the research plane.
+- **ORACLE-FREEZE (PRIME-level, elevated 2026-07-11):** the oracle is authored, reviewed, and FROZEN before any
+  builder sees the task; oracle + solution NEVER co-evolve in one tick; provenance in the hash chain. A system that
+  authors the test that grades itself has no honest scoreboard — this outranks throughput.
+- **$0 is SCOPED:** runtime reasoning is $0 TODAY (present fact); the DEVELOPMENT loop is frontier-driven today —
+  build-time-$0 is TRAJECTORY (Tier-A self-running), not present fact. Never blur runtime vs build-time in any
+  public-facing text.
+- **SELF-RUNNING IS TWO-TIERED (PRIME-001):** Tier A (measure/green/board-add-from-Atlas/diagnose/build-specced-lever
+  = measurable → drive to $0-local now) vs Tier B (novel-oracle authorship / architecture / what-is-high-leverage =
+  frontier-gated until a measurable proxy — blinded A/B self-vs-frontier at equal budget — exists).
+
 **2. ONE MAP — the living PRODUCTION-SYSTEMS ATLAS (`docs/PRODUCTION-SYSTEMS-ATLAS.md`).** The exhaustive
 completeness ledger: every *vertical × system-category × concrete class*, each with its verification
 oracle, difficulty tier, CREATE/MODIFY, an example task sentence, and a STATUS (unmapped → mapped →
@@ -302,6 +324,14 @@ overnight is prime unattended compute and must be used at full intensity.
 sending them indefinitely." Send ntfy (and push) at ANY hour — no buffering, no `overnight_events.md`, no
 morning digest. Keep the standing cadence (unique, high-signal, ≤15 min between messages, never "still
 running") around the clock, indefinitely.
+
+**SIGNAL-TIERING (compatible refinement, supervisor 2026-07-11 — owner-attention is the system's binding
+resource):** keep sending 24/7 per the owner directive, but TAG each message by signal so it can be filtered —
+`[DECISION]` (owner input required), `[REGRESSION]`/`[SAFETY]` (act now), or `[routine]` (progress/measurement).
+⚠️ **FLAGGED CONFLICT, owner's call:** the supervisor recommends going further — *page only* on decision/
+regression/safety and *batch* everything else into a digest. That directly contradicts the standing 24/7 +
+"push often" directive (re-affirmed 2026-07-11), so it is NOT applied unilaterally — surface it and let the
+owner decide whether to switch to page-only. Until then: 24/7, signal-tagged.
 
 ## ⚠️ MULTI-MODEL PIVOT (owner directive, 2026-06-28) — supersedes the single-model founding assumption below
 

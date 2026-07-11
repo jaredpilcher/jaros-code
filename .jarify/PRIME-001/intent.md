@@ -53,6 +53,33 @@ bar (real design insight and impact, not just "it passes"). The quality bar is N
 is a small local model — until the system provably builds at that level, the frontier orchestrator remains the
 quality gate that reviews, curates, and raises self-built work to that standard.
 
+**SELF-RUNNING IS TWO-TIERED (owner-accepted supervisor correction, 2026-07-11 — resolves a real contradiction the
+repo's own evidence exposes: self-running removes the frontier from the loop, yet the quality bar above currently
+*requires* the frontier as gate, and "real design insight" has no oracle, so by Tenet 3 an unmeasurable bar cannot
+sit inside a self-running loop).**
+- **Tier A — the MECHANIZABLE loop is a legitimate on-device self-running target:** measure the board, green a
+  class, add a board-task *from the existing Atlas*, diagnose a miss, and build a *specced deterministic lever* —
+  all judged by frozen independent oracles + the scoreboard trend, which ARE measurable. Drive Tier A toward
+  $0-local autonomy now.
+- **Tier B — the GENERATIVE-JUDGMENT work stays frontier-gated until a measurable proxy exists:** authoring a
+  *novel* oracle kind, architecture decisions, and "what is high-leverage." These carry the Claude-grade quality
+  bar, which today has no on-device oracle — so Tier B remains frontier-orchestrated until a measurable proxy is
+  built and validated (e.g. a **blinded A/B: self-authored change vs frontier-authored change, scored on
+  scoreboard-trend at equal token budget**). Honest residual: design insight may be only *partially* capturable by
+  any proxy — that gap is named, not wished away, and it is the standing reason Tier B is not yet self-running.
+
+**ORACLE-INDEPENDENCE IS A PRIME-LEVEL NON-NEGOTIABLE (elevated 2026-07-11 — the central self-grading risk of the
+terminal goal: a system that authors the test that grades itself has no honest scoreboard).** For every task, the
+oracle is **authored, reviewed, and FROZEN before any builder (model or agent) sees the task**; the oracle and the
+solution NEVER co-evolve within one tick; the oracle's provenance (authored-at, frozen-at, hash) is recorded in the
+hash chain. A self-authored oracle is a *proposal* that must pass this freeze-then-build separation like any other —
+it may never be written to fit a solution already in hand. This binds Tier A and Tier B equally and outranks throughput.
+
+**$0 IS SCOPED — RUN-TIME vs BUILD-TIME (honesty, 2026-07-11):** the PRODUCT's runtime reasoning is $0 on-device
+TODAY (present fact, Tenet 2). The DEVELOPMENT loop is frontier-orchestrated today (build-time is NOT yet $0). Tier-A
+self-running is precisely the trajectory by which build-time also becomes $0 — so all public-facing text states
+build-time-$0 as **trajectory, not present fact**, and never lets the shorthand "$0" blur the runtime/build-time split.
+
 **REAL systems, increasingly complex — the ratchet (owner clarification, 2026-07-03).** "Complete
 software systems" means **REAL** ones, not toy stdin/stdout scripts: real web servers and API
 frameworks (Flask/FastAPI/Django), real data/graph/ML libraries (pandas, networkx, SQLAlchemy…),

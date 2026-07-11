@@ -30,9 +30,11 @@ signal to look harder and generate the next horizon, never to stop.
   canonical EXT-060 board is the execution surface; its verified roster IS the Atlas's `verified`
   tier. Atlas coverage today ≈ **37-class board roster, latest full headline 32/37 (86%) N=1 /
   547 mapped** (board grew 18→37 classes in a day; ALL 6 oracle kinds in active board service;
-  injectable-clock PROVEN on-device). ⭐ **RESEARCH PLANE CONVERGED (definitive, 8 waves): no new
-  oracle KIND needed** — the substrate vocabulary is complete in kind; the bottleneck is now
-  BUILDING (greening + board-adding), not MAPPING. Remaining work is demand-ranked instances.
+  injectable-clock PROVEN on-device). ⭐ **RESEARCH PLANE 8-WAVE STABLE (strong inductive evidence, NOT
+  proof): no new oracle KIND surfaced across 8 waves** — the substrate vocabulary appears complete in kind, so
+  the bottleneck is now BUILDING (greening + board-adding), not MAPPING. Remaining work is demand-ranked
+  instances. TRIPWIRE: any class that genuinely needs a NEW oracle kind is a headline event that REOPENS the
+  research plane.
 - **Item format:** `- **[<id|tag>]** <one line> — <priority> · <rationale / links to spec·REQ·GAP·#task>`
   where priority ∈ `high|med|low`. Sections carry status: NOW=in-flight, NEXT=planned-soon,
   LATER=planned-later, LANDED=recently-shipped trail, PARKED=deferred with a reason.
@@ -93,6 +95,28 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
   19/19=100%). Sole miss: build_hard_lru_cache (a MISSING-DETERMINISTIC-TOOL gap — the pointer-bug in its
   _move_to_head is invisible without a structural-invariant checker + execution feedback; NOT a model cap).
   Grow toward the 80-task mandate.
+
+### ★ MEASUREMENT DISCIPLINE — headline integrity + anti-starvation (owner-accepted supervisor corrections, 2026-07-11)
+
+1. **The HEADLINE is verified-at-N≥3 / total. N=1 is PROVISIONAL, never "the number."** An N=1 portfolio number
+   ("32/37 N=1") on a board grown 18→54 in days reads far stronger than it is — board size is an *activity* metric
+   in a progress costume, which this roadmap's own philosophy prohibits. So: report **verified@N≥3 (X/total)** as
+   the headline; label every N=1 full-board run **"provisional"**; and **THROTTLE board-adds whenever the
+   provisional-but-not-yet-N≥3-verified backlog exceeds ~8 classes** — finish the N≥3 follow-through before the next
+   board expansion. (The running full-board N=1 re-run is a provisional read; its misses get re-verified at N≥3.)
+2. **STARVATION FLOOR on the stated frontier (co-headline).** Impact×tractability run 24/7 systematically starves
+   the hard slice (easy-medium create greening is cheap; the SWE-bench ~13% + large-repo modify frontier doesn't
+   move). Reserve a **fixed ≥1-in-5 share of build/measure ticks for the HARD class** (uncurated SWE-bench slice +
+   large-repo / multi-file modify), and **report that hard-slice number as a CO-HEADLINE** so starvation is visible
+   the tick it starts — an all-easy-greening stream with a flat hard bar is a rut, not progress.
+3. **REALISM TIERING + modify:create guard.** Tier every board class by realism — **T1 algorithmic (single-file) ·
+   T2 service+state · T3 DB-backed · T4 web-informed · T5 multi-file repo** — and report **coverage per tier**, not
+   just a flat count. The PRIME-001 REAL-systems ratchet requires the UPPER tiers (T3–T5) to grow, not T1 count;
+   ~98%-stdlib-buildable adds signal selection toward *buildable* over *real*. Also hold a **modify:create ratio
+   guard** (currently 11:54 — too create-heavy); grow modify + the upper realism tiers deliberately.
+4. **"RESEARCH PLANE" wording: "8-wave STABLE", not "converged (definitive)."** Eight stable waves is strong
+   *inductive* evidence, not proof. Standing **TRIPWIRE:** any future class that genuinely needs a NEW oracle KIND
+   is a headline event that REOPENS the research plane.
 
 ---
 
