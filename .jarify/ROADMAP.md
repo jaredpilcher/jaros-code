@@ -135,6 +135,12 @@ measure BOTH suites PER-CLASS on the Jetson (independent oracle, no leak), focus
 trips on until they pass, then ratchet difficulty forever. This is the day-to-day steering wheel; the
 per-class pass/fail table is the metric (not one blended number).
 
+- **[★★ HEADLINE INTEGRITY — verified@N≥3 replaces provisional N=1 55/65 (supervisor #167, 2026-07-11)]** The 55/65 (85%) was N=1
+  PROVISIONAL. Ran an honest verified@N≥3 sweep (`.jaros-data/verify_n3.py`, each class ×3, independent oracle, gemma-served, serialized).
+  **CREATE-HALF verified@N≥3 = 30/35 strict-3/3 (86%), 33/35 majority-verified (94%)** over 35 classes (excl. 2 SaaS-HTTP-tier separately-worked).
+  Honest residual: 3 FLAKY-2/3 (running-median, ranked-choice-irv, progressive-tax-withholding = compute/exact-output edges), 1 PARKED-0/3
+  (base32-codec), 1 REAL-0/3 (schema-validation-retry-loop — retry-loop agent variant, task #170; plain-tool-calling-agent passes 3/3). N≥3
+  correctly caught 3 classes that would read as false-green at N=1. MODIFY half (11 classes ×3) in flight → create+modify verified@N≥3 = THE number. high · #167
 - **[SaaS-HTTP T3 tier · 4 deterministic levers LANDED, class NOT yet N≥3-green — honest 2026-07-11]** url-shortener-http-service
   peeled layer-by-layer (each lever proven correct on reproduced/tested code, NOT a model ceiling): **REQ-68** server-address-tuple
   (e3f6191, `HTTPServer("",p,h)`→tuple), **REQ-69** regen-sweep (2830592, repair rounds + single-file-retry now re-apply the
