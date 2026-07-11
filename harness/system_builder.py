@@ -3086,6 +3086,24 @@ def _repair_system(spec: str, root: Path, built: dict[str, str], checks: list[di
                                                     max_tokens=BUILD_MAX_TOKENS))
                         syn_ok, syn_err = syntax_ok(code)
                     if syn_ok:
+                        # #EXT-036-REQ-69 Start
+                        # TASK-84 (REQ-69): sweep THIS round's freshly-regenerated module
+                        # through the SAME deterministic repair chain the initial build pass /
+                        # the REQ-52 modify-loop already apply (signature-contract /
+                        # endpoint-shape / server-address-tuple[REQ-68] / port-coercion /
+                        # http-service-scaffold / agent-scaffold) BEFORE it is written to root
+                        # and re-checked -- otherwise a model repair round can reintroduce (or
+                        # leave in place) the exact mechanical protocol bug the initial
+                        # deterministic pass had already fixed (MEASURED:
+                        # url-shortener-http-service regenerated a bare-string
+                        # HTTPServer("", port, H) bind site that never binds). Scoped to ONLY
+                        # this round's regenerated module (never untouched siblings), mirroring
+                        # the REQ-52 block exactly. Idempotent/non-degrading no-op on code
+                        # without the defect shape -- `_apply_deterministic_repairs` itself
+                        # never raises.
+                        code = _apply_deterministic_repairs(
+                            {name: code}, spec, llm=llm).get(name, code)
+                        # #EXT-036-REQ-69 End
                         # #EXT-037-REQ-1 Start
                         # #EXT-037-REQ-11 Start
                         if _jailed_write(root, name, code, runtime) is None:
@@ -3967,6 +3985,17 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
             # through the dedicated direct-prompt builder -- see the block comment above.
             single_code, single_ok = _build_single_file(spec, llm)
             if single_ok:
+                # #EXT-036-REQ-69 Start
+                # TASK-84 (REQ-69): route the freshly model-regenerated single-file candidate
+                # through the SAME deterministic repair chain the multi-module build's initial
+                # pass already applies, BEFORE it is written to the candidate dir / checked /
+                # adopted -- otherwise a clean single-file retry could reintroduce (or leave
+                # in place) the exact mechanical protocol bug (e.g. REQ-68's bare-string
+                # HTTPServer bind) the multi-module build's initial repair had already fixed.
+                # Idempotent/non-degrading no-op on code without the defect shape.
+                single_code = _apply_deterministic_repairs(
+                    {"main.py": single_code}, spec, llm=llm).get("main.py", single_code)
+                # #EXT-036-REQ-69 End
                 with tempfile.TemporaryDirectory(prefix="ext036_singlefile_") as _sf_dir:
                     sf_cand_root = Path(_sf_dir)
                     (sf_cand_root / "main.py").write_text(single_code, encoding="utf-8")

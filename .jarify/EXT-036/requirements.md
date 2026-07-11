@@ -2786,3 +2786,49 @@ REQ-50): a mechanical AST pass, never a model re-call.
   tuple (`bind_and_activate`), and a 2-positional-arg call; never raises on
   unparseable/odd input; attribute-qualified `socketserver.TCPServer("", port, H)` is also
   repaired.
+
+### [REQ-69] Sweep model-REGENERATED code through the deterministic-repair chain at every regeneration site (DONE — EXT-036 TASK-84)
+
+MEASURED WIRING GAP (canonical-board `url-shortener-http-service`): REQ-68's deterministic
+server-address-tuple repair (`_apply_deterministic_repairs`) is proven CORRECT when applied to the
+exact shipped module set, but the MAIN acceptance-repair loop (`_repair_system`, driven from
+`build_system`'s REQ-5 stage) regenerates a module's body via the model to satisfy an unmet check,
+writes it straight to root, and re-checks — WITHOUT ever routing that regenerated body back through
+`_apply_deterministic_repairs`. So a repair round can re-emit (or leave standing) the exact
+mechanical protocol bug — `HTTPServer("", port, H).serve_forever()` — that the INITIAL
+deterministic pass had already fixed before the round ran, and the unrepaired regeneration is what
+ships. The REQ-52 `modify_system` new-behavior repair loop ALREADY does this correctly (sweeps its
+round's regenerated module(s) through `_apply_deterministic_repairs` before writing/checking them);
+`_repair_system` was the one call site missing that exact step. A SECOND instance of the same gap:
+the REQ-43 single-file-retry fallback (`_build_single_file`) writes/adopts its `single_code`
+candidate without ever routing it through the pipeline either.
+
+#### Acceptance Criteria
+- [x] `_repair_system` (the acceptance-driven REQ-5 repair loop `build_system` calls): after a
+  round's targeted fix for a failing check passes the syntax gate (`syn_ok`), and BEFORE it is
+  written to root (`_jailed_write`) and re-checked, the freshly-regenerated module is swept
+  through `_apply_deterministic_repairs({name: code}, spec, llm=llm)` and the repaired code is
+  what gets written/checked/kept — scoped to ONLY that round's regenerated module, mirroring the
+  REQ-52 block in `modify_system` exactly (same idempotent/non-degrading contract; a no-op for a
+  module without the exact defect shape). The loop's existing best-seen/regression/revert
+  semantics (REQ-5) are completely unchanged — this only changes WHAT `code` is before it is
+  written, never the accept/reject decision logic around it.
+- [x] The single-file-retry fallback (REQ-43, `_build_single_file`'s `single_code`): routed
+  through `_apply_deterministic_repairs({"main.py": single_code}, spec, llm=llm)` before it is
+  written to the candidate dir, checked, and (if it wins) adopted onto root. Idempotent; a no-op
+  for a candidate without the defect shape.
+- [x] Both call sites reuse `_apply_deterministic_repairs` unmodified (no reimplementation, no
+  change to the repair chain itself or REQ-68's own module) — leak-free (reads only module AST +
+  `spec`, never an oracle/test), never-raising (the function's own internal guard already
+  swallows any failure and returns the input unchanged), and non-degrading (idempotent no-op on
+  already-correct code, so this can only ever FIX a shipped build, never break a passing one).
+- [x] Proven OFFLINE (`tests/test_ext036_regen_deterministic_repair.py`, no model/Jetson call):
+  a `_repair_system` round whose canned targeted fix contains the exact reproduced
+  `HTTPServer("", port, H)` defect is repaired (the first positional arg becomes a tuple) both in
+  the returned `modules` dict AND on disk, while the round's own accept/reject/revert behavior
+  (proven by the pre-existing `tests/test_ext036_system_repair.py` suite, unmodified and still
+  green) is unaffected; a single-file-retry candidate carrying the same defect is likewise
+  repaired before adopt; the WIRING itself (that the regenerated-module subset actually reaches
+  `_apply_deterministic_repairs`) is proven via a recording spy at both call sites; an
+  already-correct regenerated/candidate module is left byte-identical (idempotent no-op) at both
+  sites.

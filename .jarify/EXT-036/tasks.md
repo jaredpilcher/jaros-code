@@ -3465,3 +3465,66 @@ a mechanical AST pass, never a model re-call.
 #### Implements
 - [REQ-68] Deterministic server-address TUPLE repair — fix a bare-string/3-positional-arg server
   bind site
+
+### [TASK-84] Sweep model-regenerated code through the deterministic-repair chain at every regeneration site (REQ-69, MEASURED wiring gap on `url-shortener-http-service`)
+
+MEASURED ROOT CAUSE: `harness.system_builder._apply_deterministic_repairs` (signature_contract →
+endpoint_shape → server_address_tuple[REQ-68] → port_coercion → http_service_scaffold →
+agent_scaffold) is proven correct against the exact shipped module set, but the MAIN acceptance-
+repair loop `_repair_system` (called from `build_system`'s REQ-5 stage) regenerates a module body
+via the model and writes/re-checks it WITHOUT ever routing it back through that chain — so a
+repair round can reintroduce (or leave standing) the exact mechanical protocol bug (a bare-string
+`HTTPServer("", port, H).serve_forever()`) the initial deterministic pass already fixed. The
+REQ-52 `modify_system` new-behavior repair loop already does this correctly (see the
+`# #EXT-036-REQ-52 Start` block); `_repair_system` was the one call site missing that exact step.
+A second instance: the REQ-43 single-file-retry fallback (`_build_single_file`'s `single_code`)
+also writes/adopts without ever routing through the pipeline.
+
+#### Steps
+1. In `harness/system_builder.py::_repair_system` (~line 3034): after a round's targeted fix for
+   a failing check (`_repair_module_for_check`) passes the syntax gate (`syn_ok`) and BEFORE it is
+   written via `_jailed_write` and re-checked, sweep it through `_apply_deterministic_repairs`:
+   `code = _apply_deterministic_repairs({name: code}, spec, llm=llm).get(name, code)`. Scope
+   strictly to that round's regenerated module (never untouched siblings), mirroring the REQ-52
+   block in `modify_system` exactly. Wrap in `# #EXT-036-REQ-69 Start`/`End` markers. Do NOT
+   touch the loop's existing best-seen/regression/revert semantics (REQ-5) — only what `code` is
+   before it is written changes, never the accept/reject decision logic.
+2. In the same file's single-file-retry block (~line 3956, REQ-43): immediately after
+   `single_code, single_ok = _build_single_file(spec, llm)` succeeds (`single_ok`) and BEFORE
+   `single_code` is written to the candidate temp dir / checked / adopted, sweep it too:
+   `single_code = _apply_deterministic_repairs({"main.py": single_code}, spec, llm=llm).get("main.py", single_code)`.
+   Wrap in `# #EXT-036-REQ-69 Start`/`End` markers.
+3. Reuse `_apply_deterministic_repairs` (already defined in this same module, ~line 4575)
+   completely unmodified — do not reimplement or alter the repair chain or any individual repair
+   module (`server_address_tuple.py`/`port_coercion.py`/`endpoint_shape.py`/
+   `http_service_scaffold.py`/`agent_scaffold.py`/`signature_contract.py`). Both new call sites
+   inherit its existing never-raise / leak-free / idempotent-no-op guarantees — no new try/except
+   needed beyond what the function itself already provides.
+4. Add offline tests (new file `tests/test_ext036_regen_deterministic_repair.py`, NO model/Jetson
+   calls) covering: (a) `_repair_system`, driven through `build_system` with a canned llm whose
+   targeted-fix response for a failing check embeds the exact `HTTPServer("", port, H)` defect —
+   after the repair round, the module returned in `result["modules"]` AND the on-disk file both
+   have the server-constructor call's first positional arg repaired to a tuple (assert via `ast`
+   inspection, not string matching, so ast.unparse formatting differences don't make the test
+   brittle); the check the round targets still resolves as intended (unaffected by the unrelated
+   server code); (b) the single-file-retry path (drive `build_system` with `_build_module`
+   monkeypatched to force the multi-module build not-done and `_build_single_file` monkeypatched
+   to return code containing the same defect) — the adopted `main.py` (both in the returned dict
+   and on disk) is repaired before/at adopt; (c) WIRING proof at both call sites: monkeypatch
+   `harness.system_builder._apply_deterministic_repairs` with a recording spy and assert it is
+   actually invoked with the exact regenerated-module subset (not the whole module set, not an
+   untouched sibling); (d) idempotency: a regenerated/candidate module that is ALREADY correct
+   passes through byte-identical (no spurious rewrite) at both sites; (e) confirm the full
+   pre-existing `tests/test_ext036_system_repair.py` and `tests/test_ext036_system_builder.py`
+   suites stay green byte-for-byte (this task must not change any existing repair-loop
+   accept/reject/revert outcome for a module with no defect shape).
+5. Run `python -m pytest tests/test_ext036_regen_deterministic_repair.py tests/test_ext036_system_repair.py tests/test_ext036_system_builder.py tests/test_ext036_server_address_tuple.py -q`
+   (offline); confirm green. Also run `python -c "import harness.system_builder"` (clean import
+   smoke). Update `.jarify/EXT-036/index.json` (REQ-69 ranges) per jarify-manage-links. Scope:
+   ONLY the two wiring insertions in `harness/system_builder.py`, the new test file, and
+   `.jarify/EXT-036` docs. Do NOT touch `harness/server_oracle.py`, `harness/real_systems_suite.py`,
+   `_apply_deterministic_repairs` itself, or any individual repair module.
+
+#### Implements
+- [REQ-69] Sweep model-regenerated code through the deterministic-repair chain at every
+  regeneration site
