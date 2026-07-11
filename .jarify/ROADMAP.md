@@ -798,6 +798,13 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★ BOARD +4 CREATE batch-8 REAL production verticals — EXT-060 REQ-64..67 (2026-07-11)]** commit **ac7a370**:
+  four genuinely-real, oracle-diverse classes held to the Claude-grade quality bar (not toys) — **dag-topological-sort**
+  (build-systems/import, Kahn + lexicographic tie-break + cycle-detect), **order-fulfillment** (e-commerce/state_machine,
+  8 states), **marketplace-escrow-ledger** (fintech/double_entry, buyer/escrow/seller/platform-fee balanced to 0),
+  **session-idle-timeout** (SaaS-auth/clock, sliding-window injected-clock). Architect independently recomputed the escrow
+  balance + topo determinism + session boundary; 295 EXT-060 tests. CREATE roster 50→54; board = **54 create + 11
+  modify = 65 classes**. Measuring N=3 on Jetson.
 - **[★ #165 LIBRARY-SPEC FALSE-REJECT FIXED — EXT-036 REQ-67 (2026-07-10)]** commit **5fc5f0f**: `_is_library_spec`
   guard stops `_minimum_acceptance` false-rejecting correct import-only library builds (it was mis-parsing prose
   words "new"/"list" as CLI subcommands and failing a bogus round-trip on ~39 library tasks). False-done-safe (broken
