@@ -226,6 +226,17 @@ import dataclasses
 from harness.code_quality import assess_quality
 # #EXT-037-REQ-8 End
 
+# #EXT-037-REQ-16 Start
+# TASK-20: deterministic, OFFLINE dependency-security signal (REQ-16) -- (a) hardens the
+# REQ-66 affordance hint so it can never recommend a dangerous/deprecated stdlib module, and
+# (b) attaches an ADVISORY (non-gating) `stdlib_security` field to build_system's result.
+from harness.stdlib_safety import (
+    interpreter_eol_warning,
+    is_safe_affordance,
+    stdlib_safety_findings,
+)
+# #EXT-037-REQ-16 End
+
 # #EXT-056-REQ-1 Start
 # TASK-2: wire the ADT differential oracle (EXT-056/REQ-1) into the deterministic acceptance
 # minimum -- see `_minimum_acceptance` below for the actual conservative classify+append.
@@ -1230,6 +1241,16 @@ def _spec_affordance_hint(spec: "str | None") -> str:
     "" (a no-op) when none are named -- callers must skip appending anything in that case
     so the prompt stays byte-identical to before this function existed. Never raises."""
     mods = spec_declared_stdlib_affordances(spec)
+    # #EXT-037-REQ-16 Start
+    # TASK-20: security coupling -- never RECOMMEND a dangerous/deprecated stdlib module as
+    # an affordance, even when a spec explicitly names it (e.g. "the `pickle` module is
+    # allowed"). This is a pure FILTER (can only shrink `mods`, never add to it), so the
+    # empty-list-when-nothing-safe path stays byte-identical to before this task.
+    try:
+        mods = [m for m in mods if is_safe_affordance(m)]
+    except Exception:
+        pass
+    # #EXT-037-REQ-16 End
     if not mods:
         return ""
     return (
@@ -3219,6 +3240,9 @@ def _leaf_differential_diverges(root: Path, mods: list[dict], plan: "dict | None
 # #EXT-036-REQ-4 Start
 def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, note: str = "",
             repairs=None, plan_repair: str = "", security=None, quality=None,
+            # #EXT-037-REQ-16 Start
+            stdlib_security=None,
+            # #EXT-037-REQ-16 End
             # #EXT-058-REQ-3 Start
             build_path: str = "free-form",
             # #EXT-058-REQ-3 End
@@ -3239,9 +3263,17 @@ def _result(*, modules=None, shipped: bool, done: bool, unmet=None, plan=None, n
     # them); only the single return path in `build_system` where a leaf candidate actually
     # WON overrides it to "leaf:<class>".
     # #EXT-058-REQ-3 End
+    # #EXT-037-REQ-16 Start
+    # TASK-20: `stdlib_security` is likewise additive/backward-compatible (default None) --
+    # ADVISORY only (never gates `done`), populated on the same relevant return paths as
+    # `quality` once modules exist and the REQ-7 security scan gate has already passed.
+    # #EXT-037-REQ-16 End
     return {"modules": modules or {}, "shipped": shipped, "done": done,
             "unmet": unmet or [], "plan": plan, "note": note, "repairs": repairs or [],
             "plan_repair": plan_repair, "security": security, "quality": quality,
+            # #EXT-037-REQ-16 Start
+            "stdlib_security": stdlib_security,
+            # #EXT-037-REQ-16 End
             "build_path": build_path}
     # #EXT-037-REQ-8 End
 
@@ -3641,6 +3673,22 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     quality = dataclasses.asdict(assess_quality(built))
     # #EXT-037-REQ-8 End
 
+    # #EXT-037-REQ-16 Start
+    # 3d. DEPENDENCY-SECURITY SIGNAL (TASK-20/REQ-16) -- computed AFTER the REQ-7 security
+    # scan gate has already passed, same spot/pattern as the REQ-8 quality signal directly
+    # above. ADVISORY ONLY: never changes `done`, never refuses the build.
+    _stdlib_findings: list[dict] = []
+    for _sec_name, _sec_code in built.items():
+        for _f in stdlib_safety_findings(_sec_code):
+            _f = dict(_f)
+            _f["file"] = _sec_name
+            _stdlib_findings.append(_f)
+    stdlib_security = {
+        "findings": _stdlib_findings,
+        "interpreter_eol_warning": interpreter_eol_warning(),
+    }
+    # #EXT-037-REQ-16 End
+
     # 4. ACCEPTANCE (REQ-2/REQ-7 probe logic) — the real DONE gate, not prose
     _beat("ACCEPTANCE")  # #EXT-040-REQ-3
     # #EXT-036-REQ-22 Start
@@ -3663,6 +3711,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                 # #EXT-037-REQ-8 Start
                 quality=quality,
                 # #EXT-037-REQ-8 End
+                # #EXT-037-REQ-16 Start
+                stdlib_security=stdlib_security,
+                # #EXT-037-REQ-16 End
             )
         try:
             http_result = serve_and_check(root, service, http_checks)
@@ -3681,7 +3732,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
                 (", ".join(unmet) if unmet else (http_result.get("note") or "unknown failure"))
         # #EXT-037-REQ-8 Start
         return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet,
-                        note=note, plan_repair=plan_repair, quality=quality)
+                        note=note, plan_repair=plan_repair, quality=quality,
+                        # #EXT-037-REQ-16 Start
+                        stdlib_security=stdlib_security,
+                        # #EXT-037-REQ-16 End
+                        )
         # #EXT-037-REQ-8 End
     # #EXT-036-REQ-22 End
     # #EXT-036-REQ-26 Start
@@ -3747,7 +3802,11 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
         return _result(modules=built, shipped=True, done=False, plan=plan, plan_repair=plan_repair,
                         unmet=["no acceptance checklist derived"],
                         note="shipped, but no executable acceptance checklist could be derived",
-                        quality=quality)
+                        quality=quality,
+                        # #EXT-037-REQ-16 Start
+                        stdlib_security=stdlib_security,
+                        # #EXT-037-REQ-16 End
+                        )
         # #EXT-037-REQ-8 End
     unmet = [c.get("name", "?") for c in checks if not _run_check(root, c)]
     # #EXT-036-REQ-4 End
@@ -4022,6 +4081,9 @@ def build_system(spec: str, root: "str | Path", *, llm=None,
     # #EXT-037-REQ-8 Start
     return _result(modules=built, shipped=True, done=done, plan=plan, unmet=unmet, note=note,
                     repairs=repairs, plan_repair=plan_repair, quality=quality,
+                    # #EXT-037-REQ-16 Start
+                    stdlib_security=stdlib_security,
+                    # #EXT-037-REQ-16 End
                     # #EXT-058-REQ-3 Start
                     build_path=build_path,
                     # #EXT-058-REQ-3 End

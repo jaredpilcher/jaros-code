@@ -52,6 +52,8 @@ implementation:
   - tests/test_ext037_build_jaros_write.py
   - .jaros-data/tools/delete_file_tool.py
   - tests/test_ext037_delete_decision.py
+  - harness/stdlib_safety.py
+  - tests/test_ext037_stdlib_safety.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -984,3 +986,82 @@ task's scope boundary).
   and the bare `import urllib`), the mixed-file case is refused, and both integration
   (stdlib-HTTP-service-passes / urllib.request-still-fails) cases pass; the full pre-existing
   `test_ext037_secure_exec.py` suite remains green with no regression
+
+### [REQ-16] Dependency-security gate — Phase 1: deprecated/dangerous stdlib + EOL interpreter (offline, advisory)  (covered)
+
+**Owner directive (2026-07-10) — "gate builds on dependency security."** Generated systems in
+this harness are STDLIB-ONLY by design (Tenet 2 / no network egress), so the usual SCA/CVE-
+database approach doesn't apply — the stdlib has no independently-versioned packages to look
+up. The honest risk model instead has three axes: (1) a stdlib module that is
+DEPRECATED/REMOVED across supported CPython versions (PEP 594 "dead batteries" + a handful of
+older removals — code using one will break on a newer interpreter); (2) a stdlib API that is
+DANGEROUS when used carelessly (weak hashing, `subprocess(shell=True)`, bare `eval`/`exec`, a
+racy `tempfile.mktemp`, unpickling untrusted bytes); (3) an EOL interpreter. Phase 1 is fully
+OFFLINE (no network, no CVE-DB call), deterministic, and ADDS a check — it never weakens any
+existing gate (`harness/secure_exec.py`'s egress/subprocess/dynamic-exec/destructive-fs scan,
+REQ-7, is untouched). It also hardens the just-shipped REQ-66 affordance hint (which
+recommends spec-permitted stdlib modules) so it can never recommend a dangerous/deprecated
+module.
+
+**HONEST STATUS (Tenet 3, TASK-20):** a new, standalone, PURE-STDLIB module
+`harness/stdlib_safety.py` mirrors the house pattern already established by
+`harness/secure_exec.py::scan_code` and `harness/code_quality.py::assess_quality` (never
+raises; AST-based; conservative/precise detectors, no false-positive storms). It exposes:
+`DEPRECATED_REMOVED` (a dict of stdlib module name -> a short PEP-594/removal note, covering
+`telnetlib`/`cgi`/`cgitb`/`crypt`/`imghdr`/`nntplib`/`asyncore`/`asynchat`/`imp`/`smtpd`/
+`sndhdr`/`spwd`/`nis`/`ossaudiodev`/`audioop`/`chunk`/`mailcap`/`msilib`/`pipes`/`uu`/
+`xdrlib`/`formatter`/`distutils`); `DANGEROUS_AFFORDANCES` (that set unioned with
+`{pickle, marshal, shelve, telnetlib, crypt, cgi}` — modules that must never be RECOMMENDED as
+an affordance even though some, like `pickle`, are not deprecated); `is_safe_affordance(module)`
+(the REQ-66 gate); `stdlib_safety_findings(code)` (an AST scan returning
+`{kind, module|api, message, severity}` dicts for a deprecated-module import or one of five
+precise dangerous-use call shapes — `hashlib.md5(`/`sha1(`, `subprocess.*(shell=True)`, bare
+`eval(`/`exec(`, `tempfile.mktemp(`, `pickle.load`/`loads` — deliberately SKIPPING a
+`random.`-for-secrets detector, too ambiguous to flag reliably without false-positiving on
+legitimate simulation/sampling use); and `interpreter_eol_warning(version_info=None)` (pure,
+testable with a fake version tuple, comparing against `MIN_SUPPORTED = (3, 9)`).
+
+Two wiring points in `harness/system_builder.py`: (a) `_spec_affordance_hint` now FILTERS its
+module list through `is_safe_affordance` before rendering the hint — a pure removal (can only
+shrink the recommended list, never add to it), so the empty-list-when-nothing-safe path stays
+byte-identical to before this task, proven by a new REQ-66-coupling test (`pickle` yields no
+hint, `base64` still does); (b) `build_system` computes a `stdlib_security` field (findings
+across every built module, tagged with `file`, plus the interpreter EOL warning) in the SAME
+spot/pattern as the REQ-8 `quality` signal — right after the REQ-7 security scan gate has
+already passed — and attaches it via a new additive `stdlib_security=None` default kwarg on
+`_result`, threaded to the exact same relevant return paths `quality` already reaches. This is
+ADVISORY ONLY, exactly like `quality`: no return path's `shipped`/`done`/`unmet` computation
+reads `stdlib_security` in any way, and no pre-existing caller/test that ignores the field is
+affected except for the new `"stdlib_security"` key on the result dict.
+
+**Honest scope note (Phase 1 only):** this is offline/static only — no CVE database, no
+package-version lookup (moot for stdlib), and the findings are ADVISORY, not gating. Whether
+any of this becomes a hard gate (e.g. refuse a build over `pickle.loads` on untrusted input)
+is deferred to a later phase, once real measured data exists on false-positive rate and
+whether the model actually reaches for these patterns.
+
+#### Acceptance Criteria
+- [x] `harness/stdlib_safety.py::DEPRECATED_REMOVED` covers the PEP-594 "dead batteries" +
+  known removals/deprecations named above, each with a short version/reason note
+- [x] `DANGEROUS_AFFORDANCES` includes `pickle`/`marshal`/`shelve`/`telnetlib`/`crypt`/`cgi`
+  unioned with `DEPRECATED_REMOVED`; `is_safe_affordance(module)` returns `False` for any
+  member of either set, `True` otherwise (e.g. `base64`/`difflib`/`hashlib`/`textwrap`)
+- [x] `stdlib_safety_findings(code)` never raises (syntactically broken code returns `[]`),
+  flags a deprecated-module import and each of the five dangerous-use call shapes on a
+  positive example, and returns `[]` for clean code
+- [x] `interpreter_eol_warning(version_info=None)` returns a warning string for an EOL tuple
+  (e.g. `(3, 7)`) and `None` for a current one (e.g. `(3, 12)`), pure/testable via the
+  `version_info` parameter
+- [x] `_spec_affordance_hint` never recommends a `DANGEROUS_AFFORDANCES`/`DEPRECATED_REMOVED`
+  module even when the spec explicitly names it — proven by a spec naming `pickle` yielding no
+  hint while a spec naming `base64` still yields one
+- [x] `build_system` attaches an ADVISORY `stdlib_security` field (findings + EOL warning) on
+  the same relevant return paths `quality` already reaches, via `_result`'s additive
+  `stdlib_security=None` default kwarg — never gates `done`/`shipped`/`unmet`
+- [x] The REQ-7 `secure_exec.py` egress/subprocess/dynamic-exec/destructive-fs scan gate is
+  completely untouched — no weakening of any existing security check
+- [x] Proven by `tests/test_ext037_stdlib_safety.py`: `is_safe_affordance` true/false cases,
+  each `stdlib_safety_findings` detector firing on a positive example and staying silent on
+  clean/broken code, `interpreter_eol_warning`'s EOL/current cases, and the REQ-66-coupling
+  test; no regression in `tests/test_ext036_spec_affordance_hint.py` or
+  `tests/test_ext060_*.py`

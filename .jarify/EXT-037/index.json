@@ -1,128 +1,100 @@
 {
-  "REQ-5": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 232,
-      "endLine": 254
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 1088,
-      "endLine": 1102
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 1336,
-      "endLine": 1482
-    },
-    {
-      "file": "harness/system_finalize.py",
-      "startLine": 59,
-      "endLine": 227
-    },
-    {
-      "file": "tests/test_ext037_finalize.py",
-      "startLine": 26,
-      "endLine": 296
-    },
-    {
-      "file": "tests/test_ext037_cli_git.py",
-      "startLine": 28,
-      "endLine": 157
-    }
-  ],
-  "REQ-10": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 920,
-      "endLine": 933
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 1247,
-      "endLine": 1251
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 22,
-      "endLine": 50
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 232,
-      "endLine": 236
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 242,
-      "endLine": 244
-    },
-    {
-      "file": "harness/multi_file.py",
-      "startLine": 326,
-      "endLine": 328
-    }
-  ],
-  "REQ-9": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 952,
-      "endLine": 957
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 966,
-      "endLine": 969
-    },
-    {
-      "file": "harness/refactor.py",
-      "startLine": 26,
-      "endLine": 51
-    },
-    {
-      "file": "harness/refactor.py",
-      "startLine": 111,
-      "endLine": 116
-    },
-    {
-      "file": "harness/refactor.py",
-      "startLine": 167,
-      "endLine": 172
-    },
-    {
-      "file": "harness/refactor.py",
-      "startLine": 175,
-      "endLine": 180
-    }
-  ],
-  "REQ-13": [
-    {
-      "file": "harness/cli.py",
-      "startLine": 1017,
-      "endLine": 1023
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 27,
-      "endLine": 29
-    },
-    {
-      "file": "harness/intent_loop.py",
-      "startLine": 135,
-      "endLine": 195
-    },
-    {
-      "file": "harness/spec_loop.py",
-      "startLine": 227,
-      "endLine": 230
-    },
-    {
-      "file": "tests/test_ext037_build_jaros_write.py",
-      "startLine": 16,
-      "endLine": 191
-    }
-  ],
   "REQ-11": [
+    {
+      "file": "tests/test_ext036_buildsystem_escalate.py",
+      "startLine": 101,
+      "endLine": 103
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 208,
+      "endLine": 210
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 285,
+      "endLine": 287
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 294,
+      "endLine": 306
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2791,
+      "endLine": 2798
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 2917,
+      "endLine": 2920
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3017,
+      "endLine": 3019
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3039,
+      "endLine": 3041
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3162,
+      "endLine": 3164
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3631,
+      "endLine": 3633
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3819,
+      "endLine": 3821
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4611,
+      "endLine": 4613
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4696,
+      "endLine": 4698
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4713,
+      "endLine": 4715
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4741,
+      "endLine": 4743
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 5271,
+      "endLine": 5273
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 5285,
+      "endLine": 5287
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 5336,
+      "endLine": 5338
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 5519,
+      "endLine": 5521
+    },
     {
       "file": "harness/cli.py",
       "startLine": 1048,
@@ -137,118 +109,295 @@
       "file": "harness/cli.py",
       "startLine": 1131,
       "endLine": 1134
+    }
+  ],
+  "REQ-7": [
+    {
+      "file": "tests/test_ext036_server_oracle.py",
+      "startLine": 68,
+      "endLine": 81
+    },
+    {
+      "file": "tests/test_ext036_server_oracle.py",
+      "startLine": 191,
+      "endLine": 214
+    },
+    {
+      "file": "tests/test_ext036_system_builder.py",
+      "startLine": 66,
+      "endLine": 82
+    },
+    {
+      "file": "tests/test_ext036_system_builder.py",
+      "startLine": 1255,
+      "endLine": 1318
+    },
+    {
+      "file": "tests/test_ext036_suite.py",
+      "startLine": 13,
+      "endLine": 17
+    },
+    {
+      "file": "tests/test_ext036_suite.py",
+      "startLine": 25,
+      "endLine": 27
+    },
+    {
+      "file": "tests/test_ext036_suite.py",
+      "startLine": 601,
+      "endLine": 662
+    },
+    {
+      "file": "tests/test_ext037_secure_exec.py",
+      "startLine": 26,
+      "endLine": 379
+    },
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 39,
+      "endLine": 42
+    },
+    {
+      "file": "harness/system_suite.py",
+      "startLine": 66,
+      "endLine": 86
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 208,
-      "endLine": 210
+      "startLine": 213,
+      "endLine": 218
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 274,
-      "endLine": 276
+      "startLine": 2763,
+      "endLine": 2779
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 283,
-      "endLine": 295
+      "startLine": 2801,
+      "endLine": 2803
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2691,
-      "endLine": 2698
+      "startLine": 2923,
+      "endLine": 2925
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2817,
-      "endLine": 2820
+      "startLine": 3250,
+      "endLine": 3254
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2917,
-      "endLine": 2919
+      "startLine": 3639,
+      "endLine": 3665
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 41,
+      "endLine": 59
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 203,
+      "endLine": 236
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 358,
+      "endLine": 383
+    },
+    {
+      "file": "harness/server_oracle.py",
+      "startLine": 410,
+      "endLine": 418
+    },
+    {
+      "file": "harness/secure_exec.py",
+      "startLine": 43,
+      "endLine": 775
+    }
+  ],
+  "REQ-5": [
+    {
+      "file": "tests/test_ext037_finalize.py",
+      "startLine": 26,
+      "endLine": 296
+    },
+    {
+      "file": "tests/test_ext037_cli_git.py",
+      "startLine": 28,
+      "endLine": 157
+    },
+    {
+      "file": "harness/system_finalize.py",
+      "startLine": 59,
+      "endLine": 227
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 232,
+      "endLine": 254
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1088,
+      "endLine": 1102
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1336,
+      "endLine": 1482
+    }
+  ],
+  "REQ-3": [
+    {
+      "file": "tests/test_ext037_env_tools.py",
+      "startLine": 31,
+      "endLine": 256
+    },
+    {
+      "file": ".jaros-data/tools/_envtools.py",
+      "startLine": 12,
+      "endLine": 49
+    },
+    {
+      "file": ".jaros-data/tools/venv_pin_tool.py",
+      "startLine": 41,
+      "endLine": 132
+    },
+    {
+      "file": ".jaros-data/tools/venv_install_tool.py",
+      "startLine": 54,
+      "endLine": 161
+    },
+    {
+      "file": ".jaros-data/tools/venv_create_tool.py",
+      "startLine": 40,
+      "endLine": 84
+    },
+    {
+      "file": ".jaros-data/tools/python_detect_tool.py",
+      "startLine": 19,
+      "endLine": 70
+    }
+  ],
+  "REQ-14": [
+    {
+      "file": "tests/test_ext037_delete_decision.py",
+      "startLine": 15,
+      "endLine": 186
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 2939,
-      "endLine": 2941
+      "startLine": 316,
+      "endLine": 318
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 3062,
-      "endLine": 3064
+      "startLine": 338,
+      "endLine": 340
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 3520,
-      "endLine": 3522
+      "startLine": 348,
+      "endLine": 360
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 3681,
-      "endLine": 3683
+      "startLine": 4024,
+      "endLine": 4028
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 4470,
-      "endLine": 4472
+      "startLine": 4061,
+      "endLine": 4063
+    },
+    {
+      "file": ".jaros-data/tools/delete_file_tool.py",
+      "startLine": 24,
+      "endLine": 56
+    }
+  ],
+  "REQ-8": [
+    {
+      "file": "tests/test_ext037_code_quality.py",
+      "startLine": 24,
+      "endLine": 323
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 4555,
-      "endLine": 4557
+      "startLine": 220,
+      "endLine": 227
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 4572,
-      "endLine": 4574
+      "startLine": 3255,
+      "endLine": 3278
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 4600,
-      "endLine": 4602
+      "startLine": 3667,
+      "endLine": 3674
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 5130,
-      "endLine": 5132
+      "startLine": 3711,
+      "endLine": 3713
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 5144,
-      "endLine": 5146
+      "startLine": 3733,
+      "endLine": 3740
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 5195,
-      "endLine": 5197
+      "startLine": 3801,
+      "endLine": 3810
     },
     {
       "file": "harness/system_builder.py",
-      "startLine": 5378,
-      "endLine": 5380
+      "startLine": 4081,
+      "endLine": 4091
     },
     {
-      "file": "tests/test_ext036_buildsystem_escalate.py",
-      "startLine": 101,
-      "endLine": 103
+      "file": "harness/code_quality.py",
+      "startLine": 37,
+      "endLine": 261
+    }
+  ],
+  "REQ-13": [
+    {
+      "file": "tests/test_ext037_build_jaros_write.py",
+      "startLine": 16,
+      "endLine": 191
+    },
+    {
+      "file": "harness/spec_loop.py",
+      "startLine": 227,
+      "endLine": 230
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 27,
+      "endLine": 29
+    },
+    {
+      "file": "harness/intent_loop.py",
+      "startLine": 135,
+      "endLine": 195
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1017,
+      "endLine": 1023
     }
   ],
   "REQ-12": [
     {
-      "file": "harness/cli.py",
-      "startLine": 1163,
-      "endLine": 1175
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 1590,
-      "endLine": 1600
-    },
-    {
-      "file": "harness/cli.py",
-      "startLine": 2123,
-      "endLine": 2131
+      "file": "tests/test_ext037_agent_plan_jaros_write.py",
+      "startLine": 21,
+      "endLine": 456
     },
     {
       "file": "harness/spec_loop.py",
@@ -276,16 +425,145 @@
       "endLine": 434
     },
     {
-      "file": "tests/test_ext037_agent_plan_jaros_write.py",
-      "startLine": 21,
-      "endLine": 456
+      "file": "harness/cli.py",
+      "startLine": 1163,
+      "endLine": 1175
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1590,
+      "endLine": 1600
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 2123,
+      "endLine": 2131
+    }
+  ],
+  "REQ-16": [
+    {
+      "file": "tests/test_ext037_stdlib_safety.py",
+      "startLine": 9,
+      "endLine": 209
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 229,
+      "endLine": 238
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 1244,
+      "endLine": 1253
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3243,
+      "endLine": 3245
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3266,
+      "endLine": 3270
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3274,
+      "endLine": 3276
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3676,
+      "endLine": 3690
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3714,
+      "endLine": 3716
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3736,
+      "endLine": 3738
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3806,
+      "endLine": 3808
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4084,
+      "endLine": 4086
+    },
+    {
+      "file": "harness/stdlib_safety.py",
+      "startLine": 38,
+      "endLine": 232
+    }
+  ],
+  "REQ-15": [
+    {
+      "file": "tests/test_ext037_secure_exec.py",
+      "startLine": 382,
+      "endLine": 550
+    },
+    {
+      "file": "harness/secure_exec.py",
+      "startLine": 90,
+      "endLine": 141
+    },
+    {
+      "file": "harness/secure_exec.py",
+      "startLine": 248,
+      "endLine": 293
     }
   ],
   "REQ-1": [
     {
-      "file": "harness/agent_loop.py",
-      "startLine": 96,
-      "endLine": 104
+      "file": "tests/test_ext037_root_enforcement.py",
+      "startLine": 29,
+      "endLine": 212
+    },
+    {
+      "file": "tests/test_ext037_pathjail.py",
+      "startLine": 26,
+      "endLine": 162
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 246,
+      "endLine": 307
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3016,
+      "endLine": 3023
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3038,
+      "endLine": 3042
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 3629,
+      "endLine": 3637
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4609,
+      "endLine": 4617
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4693,
+      "endLine": 4725
+    },
+    {
+      "file": "harness/system_builder.py",
+      "startLine": 4740,
+      "endLine": 4744
     },
     {
       "file": "harness/coding_loop.py",
@@ -303,39 +581,9 @@
       "endLine": 226
     },
     {
-      "file": "harness/system_builder.py",
-      "startLine": 235,
-      "endLine": 296
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2916,
-      "endLine": 2923
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2938,
-      "endLine": 2942
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3518,
-      "endLine": 3526
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 4468,
-      "endLine": 4476
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 4552,
-      "endLine": 4584
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 4599,
-      "endLine": 4603
+      "file": "harness/agent_loop.py",
+      "startLine": 96,
+      "endLine": 104
     },
     {
       "file": ".jaros-data/tools/_pathjail.py",
@@ -371,239 +619,26 @@
       "file": ".jaros-data/tools/apply_patch_tool.py",
       "startLine": 46,
       "endLine": 52
-    },
-    {
-      "file": "tests/test_ext037_pathjail.py",
-      "startLine": 26,
-      "endLine": 162
-    },
-    {
-      "file": "tests/test_ext037_root_enforcement.py",
-      "startLine": 29,
-      "endLine": 212
-    }
-  ],
-  "REQ-8": [
-    {
-      "file": "harness/code_quality.py",
-      "startLine": 37,
-      "endLine": 261
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 220,
-      "endLine": 227
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3152,
-      "endLine": 3167
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3556,
-      "endLine": 3563
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3584,
-      "endLine": 3586
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3603,
-      "endLine": 3606
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3667,
-      "endLine": 3672
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3943,
-      "endLine": 3950
-    },
-    {
-      "file": "tests/test_ext037_code_quality.py",
-      "startLine": 24,
-      "endLine": 323
-    }
-  ],
-  "REQ-7": [
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 41,
-      "endLine": 59
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 203,
-      "endLine": 236
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 358,
-      "endLine": 383
-    },
-    {
-      "file": "harness/server_oracle.py",
-      "startLine": 410,
-      "endLine": 418
-    },
-    {
-      "file": "harness/secure_exec.py",
-      "startLine": 43,
-      "endLine": 775
-    },
-    {
-      "file": "harness/system_suite.py",
-      "startLine": 39,
-      "endLine": 42
-    },
-    {
-      "file": "harness/system_suite.py",
-      "startLine": 66,
-      "endLine": 86
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 213,
-      "endLine": 218
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2663,
-      "endLine": 2679
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2701,
-      "endLine": 2703
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 2823,
-      "endLine": 2825
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3147,
-      "endLine": 3151
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3528,
-      "endLine": 3554
-    },
-    {
-      "file": "tests/test_ext036_system_builder.py",
-      "startLine": 66,
-      "endLine": 82
-    },
-    {
-      "file": "tests/test_ext036_system_builder.py",
-      "startLine": 1255,
-      "endLine": 1318
-    },
-    {
-      "file": "tests/test_ext036_suite.py",
-      "startLine": 13,
-      "endLine": 17
-    },
-    {
-      "file": "tests/test_ext036_suite.py",
-      "startLine": 25,
-      "endLine": 27
-    },
-    {
-      "file": "tests/test_ext036_suite.py",
-      "startLine": 601,
-      "endLine": 662
-    },
-    {
-      "file": "tests/test_ext036_server_oracle.py",
-      "startLine": 68,
-      "endLine": 81
-    },
-    {
-      "file": "tests/test_ext036_server_oracle.py",
-      "startLine": 191,
-      "endLine": 214
-    },
-    {
-      "file": "tests/test_ext037_secure_exec.py",
-      "startLine": 26,
-      "endLine": 379
-    }
-  ],
-  "REQ-15": [
-    {
-      "file": "harness/secure_exec.py",
-      "startLine": 90,
-      "endLine": 141
-    },
-    {
-      "file": "harness/secure_exec.py",
-      "startLine": 248,
-      "endLine": 293
-    },
-    {
-      "file": "tests/test_ext037_secure_exec.py",
-      "startLine": 382,
-      "endLine": 550
     }
   ],
   "REQ-6": [
     {
-      "file": "harness/research_scripts.py",
-      "startLine": 31,
-      "endLine": 195
-    },
-    {
       "file": "tests/test_ext037_research_scripts.py",
       "startLine": 22,
       "endLine": 180
-    }
-  ],
-  "REQ-14": [
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 305,
-      "endLine": 307
     },
     {
-      "file": "harness/system_builder.py",
-      "startLine": 327,
-      "endLine": 329
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 337,
-      "endLine": 349
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3886,
-      "endLine": 3890
-    },
-    {
-      "file": "harness/system_builder.py",
-      "startLine": 3923,
-      "endLine": 3925
-    },
-    {
-      "file": ".jaros-data/tools/delete_file_tool.py",
-      "startLine": 24,
-      "endLine": 56
-    },
-    {
-      "file": "tests/test_ext037_delete_decision.py",
-      "startLine": 15,
-      "endLine": 186
+      "file": "harness/research_scripts.py",
+      "startLine": 31,
+      "endLine": 195
     }
   ],
   "REQ-4": [
+    {
+      "file": "tests/test_ext037_git_tools.py",
+      "startLine": 36,
+      "endLine": 373
+    },
     {
       "file": ".jaros-data/tools/_gittools.py",
       "startLine": 23,
@@ -648,46 +683,14 @@
       "file": ".jaros-data/tools/git_branch_tool.py",
       "startLine": 27,
       "endLine": 91
-    },
-    {
-      "file": "tests/test_ext037_git_tools.py",
-      "startLine": 36,
-      "endLine": 373
-    }
-  ],
-  "REQ-3": [
-    {
-      "file": ".jaros-data/tools/_envtools.py",
-      "startLine": 12,
-      "endLine": 49
-    },
-    {
-      "file": ".jaros-data/tools/venv_pin_tool.py",
-      "startLine": 41,
-      "endLine": 132
-    },
-    {
-      "file": ".jaros-data/tools/venv_install_tool.py",
-      "startLine": 54,
-      "endLine": 161
-    },
-    {
-      "file": ".jaros-data/tools/venv_create_tool.py",
-      "startLine": 40,
-      "endLine": 84
-    },
-    {
-      "file": ".jaros-data/tools/python_detect_tool.py",
-      "startLine": 19,
-      "endLine": 70
-    },
-    {
-      "file": "tests/test_ext037_env_tools.py",
-      "startLine": 31,
-      "endLine": 256
     }
   ],
   "REQ-2": [
+    {
+      "file": "tests/test_ext037_gated_exec.py",
+      "startLine": 34,
+      "endLine": 148
+    },
     {
       "file": ".jaros-data/tools/shell_exec_tool.py",
       "startLine": 86,
@@ -702,11 +705,70 @@
       "file": ".jaros-data/tools/shell_exec_tool.py",
       "startLine": 120,
       "endLine": 136
+    }
+  ],
+  "REQ-9": [
+    {
+      "file": "harness/refactor.py",
+      "startLine": 26,
+      "endLine": 51
     },
     {
-      "file": "tests/test_ext037_gated_exec.py",
-      "startLine": 34,
-      "endLine": 148
+      "file": "harness/refactor.py",
+      "startLine": 111,
+      "endLine": 116
+    },
+    {
+      "file": "harness/refactor.py",
+      "startLine": 167,
+      "endLine": 172
+    },
+    {
+      "file": "harness/refactor.py",
+      "startLine": 175,
+      "endLine": 180
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 952,
+      "endLine": 957
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 966,
+      "endLine": 969
+    }
+  ],
+  "REQ-10": [
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 22,
+      "endLine": 50
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 232,
+      "endLine": 236
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 242,
+      "endLine": 244
+    },
+    {
+      "file": "harness/multi_file.py",
+      "startLine": 326,
+      "endLine": 328
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 920,
+      "endLine": 933
+    },
+    {
+      "file": "harness/cli.py",
+      "startLine": 1247,
+      "endLine": 1251
     }
   ]
 }

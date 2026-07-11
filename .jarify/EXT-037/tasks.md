@@ -1160,3 +1160,58 @@ the default-deny posture is unchanged for anything not explicitly allowlisted.
 
 #### Implements
 - [REQ-15] Egress-scan PRECISION for listener/parser submodules — no weakening
+
+### [TASK-20] Dependency-security gate — Phase 1: deprecated/dangerous stdlib + EOL interpreter (REQ-16)
+
+**Owner directive (2026-07-10).** Add a deterministic, OFFLINE (no network, no CVE-DB call)
+dependency-security signal over the standard library itself — the honest risk model for a
+stdlib-only build: (1) DEPRECATED/REMOVED modules, (2) security-DANGEROUS stdlib APIs used
+unsafely, (3) an EOL interpreter. This ADDS a check; it never weakens `harness/secure_exec.py`
+(untouched by this task). It also hardens the REQ-66 affordance hint so it can never recommend
+a dangerous/deprecated stdlib module.
+
+#### Steps
+1. Create `harness/stdlib_safety.py`, mirroring `harness/secure_exec.py::scan_code`/
+   `harness/code_quality.py::assess_quality`'s house pattern (pure stdlib `ast`, never raises):
+   `DEPRECATED_REMOVED` (dict of module name -> short note, covering the PEP-594 "dead
+   batteries" + known removals: `telnetlib`, `cgi`, `cgitb`, `crypt`, `imghdr`, `nntplib`,
+   `asyncore`, `asynchat`, `imp`, `smtpd`, `sndhdr`, `spwd`, `nis`, `ossaudiodev`, `audioop`,
+   `chunk`, `mailcap`, `msilib`, `pipes`, `uu`, `xdrlib`, `formatter`, `distutils`);
+   `DANGEROUS_AFFORDANCES` (that set unioned with `{pickle, marshal, shelve, telnetlib, crypt,
+   cgi}`); `is_safe_affordance(module) -> bool`; `stdlib_safety_findings(code: str) ->
+   list[dict]` (AST-scan, never raises on a syntax error — returns `[]` — reporting a
+   deprecated-module import plus a small, precise dangerous-use pattern set:
+   `hashlib.md5(`/`sha1(`, `subprocess.*(shell=True)`, bare `eval(`/`exec(`,
+   `tempfile.mktemp(`, `pickle.load`/`loads`; deliberately SKIPPING a `random.`-for-secrets
+   detector — too ambiguous to flag reliably); `interpreter_eol_warning(version_info=None) ->
+   str | None` (compares against `MIN_SUPPORTED = (3, 9)`, pure/testable via the parameter).
+2. In `harness/system_builder.py`, import the three public names from `harness.stdlib_safety`
+   and, inside `_spec_affordance_hint` (the `# #EXT-036-REQ-66` region), filter the module list
+   through `is_safe_affordance` BEFORE rendering the hint — a pure removal (can only shrink the
+   list, never add to it), so the byte-identical-empty-prompt property that region's tests
+   already assert stays true.
+3. Add a new `stdlib_security=None` default kwarg to `_result` (mirroring the existing
+   `quality=None` REQ-8 kwarg exactly) and include it in the returned dict. Immediately after
+   `quality = dataclasses.asdict(assess_quality(built))` in `build_system` (same spot, right
+   after the REQ-7 security scan gate has already passed), compute `stdlib_security = {
+   "findings": [...], "interpreter_eol_warning": interpreter_eol_warning()}` — findings are
+   `stdlib_safety_findings(code)` run over every built module, each tagged with a `"file"` key
+   — and thread `stdlib_security=stdlib_security` to the exact same relevant return paths that
+   already pass `quality=quality`. ADVISORY ONLY: no return path's `shipped`/`done`/`unmet`
+   computation may read `stdlib_security`.
+4. Add `tests/test_ext037_stdlib_safety.py` covering: `is_safe_affordance` is `False` for
+   `pickle`/`telnetlib`/`crypt` and `True` for `base64`/`difflib`/`hashlib`/`textwrap`;
+   `stdlib_safety_findings` flags `import telnetlib`, `hashlib.md5(x)`,
+   `subprocess.run(c, shell=True)`, `eval(s)`, `tempfile.mktemp()`, `pickle.loads(b)`, and
+   returns `[]` for clean code and for syntactically-broken code; `interpreter_eol_warning`
+   returns a string for `(3, 7)` and `None` for `(3, 12)`; and a REQ-66-coupling test: a spec
+   sentence naming `pickle` ("the `pickle` module is allowed") yields NO affordance hint while
+   a spec naming `base64` still yields one.
+5. Run `python -m pytest tests/test_ext037_stdlib_safety.py -q` (all pass), then
+   `python -m pytest tests/test_ext036_spec_affordance_hint.py tests/test_ext037_*.py
+   tests/test_ext060_*.py -q` to confirm no regression — especially that the REQ-66
+   empty-list-prompt byte-identical property still holds. Offline only — no Jetson, no
+   network.
+
+#### Implements
+- [REQ-16] Dependency-security gate — Phase 1: deprecated/dangerous stdlib + EOL interpreter (offline, advisory)
