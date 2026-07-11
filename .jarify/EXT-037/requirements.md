@@ -54,6 +54,8 @@ implementation:
   - tests/test_ext037_delete_decision.py
   - harness/stdlib_safety.py
   - tests/test_ext037_stdlib_safety.py
+  - harness/dep_advisory.py
+  - tests/test_ext037_dep_advisory.py
 ---
 
 **Owner directive (2026-07-03):** for Claude-Code parity the prompt→system CLI product (PRIME-001, EXT-036)
@@ -1065,3 +1067,76 @@ whether the model actually reaches for these patterns.
   clean/broken code, `interpreter_eol_warning`'s EOL/current cases, and the REQ-66-coupling
   test; no regression in `tests/test_ext036_spec_affordance_hint.py` or
   `tests/test_ext060_*.py`
+
+### [REQ-17] Dependency-security gate — Phase 2: third-party package version advisories (offline, illustrative, advisory)  (covered)
+
+**Owner directive (2026-07-10) — "gate builds on dependency security."** Phase 1 (REQ-16)
+covered the stdlib-only risk model — this closes the other half: a build that DOES declare
+a third-party dependency (an existing `requirements.txt`, or a non-stdlib top-level import
+detected by `harness.system_finalize._detect_dependencies`) is exactly where "old/vulnerable
+VERSION" is literally true, and the stdlib argument for "no CVE database applies" no longer
+holds. Fully OFFLINE (no network, no PyPI/OSV/pip-audit call by default, no vendored CVE
+database), deterministic, and ADDS a check — it never weakens `harness/secure_exec.py`'s
+existing egress/subprocess/dynamic-exec/destructive-fs scan gate (REQ-7), which is completely
+untouched by this task.
+
+**HONEST STATUS (Tenet 3, TASK-21):** a new, standalone module `harness/dep_advisory.py`
+mirrors the house pattern already established by `harness/secure_exec.py::scan_code`,
+`harness/code_quality.py::assess_quality`, and `harness/stdlib_safety.py::
+stdlib_safety_findings` (pure functions, never raise). It exposes `parse_requirement(line)`
+(splits a requirement string into `(name, operator, version)`, handling a pinned exact spec,
+a range spec, a bare name, extras (`pkg[extra]==1.2`), and a trailing environment marker;
+never raises — garbage input degrades to `("", None, None)`); a SMALL, DATED (2026-07),
+EXPLICITLY-NON-EXHAUSTIVE `KNOWN_VULNERABLE` table of six genuinely well-known
+package/fixed-version advisories (`pyyaml`, `jinja2`, `flask`, `requests`, `urllib3`,
+`cryptography` — each with a public CVE id and a one-line note); `dependency_security_findings
+(package_names)` (for each entry: an UNPINNED dependency — no exact `==` version — is flagged
+`"warn"`/`"unpinned"` since its real installed version is unknowable at build time and no
+security claim can honestly be made either way; a PINNED dependency matching a
+`KNOWN_VULNERABLE` entry's affected-version threshold is flagged `"warn"`/`"known-advisory"`;
+everything else yields no finding — explicitly NOT a clean bill of health, just "nothing in
+our small table flagged it," stated honestly in the returned `note`); and a placeholder
+`pip_audit_available()` that always returns `False` today (this module never shells out to
+`pip-audit`/OSV over the network — that stays an explicit, separate, not-built-here opt-in).
+
+`harness/system_finalize.py::finalize_system` computes `dep_security =
+dependency_security_findings(packages)` (only when `_detect_dependencies` reports
+`has_deps`, else `None`) and attaches it as an ADDITIVE `dep_security` field on the returned
+result dict — the SAME advisory pattern REQ-16's `stdlib_security` field uses on
+`build_system`'s result. `ok` is computed from `steps` alone, before `dep_security` is ever
+attached to the return dict, so it cannot be influenced by this signal in any way; the venv
+step (REQ-3) and every other finalize step run completely unaffected.
+
+**Honest scope note (Phase 2 only):** this table is a small, hand-curated, high-confidence
+subset — NOT a complete CVE database, and NOT a substitute for a real `pip-audit`/OSV pass
+against the actually-installed dependency tree. It exists to surface the most obviously
+well-known, high-confidence cases at zero cost/zero network, honestly labeled as illustrative
+in both the module docstring and the returned `note`.
+
+#### Acceptance Criteria
+- [x] `harness/dep_advisory.py::parse_requirement(line)` correctly parses a pinned spec
+  (`pkg==1.2.3`), a range spec (`pkg>=1.0`), a bare name (`pkg`), extras (`pkg[extra]==1.2`),
+  and a trailing environment marker (`pkg==1.2;python_version>"3"`); never raises on garbage
+  input (degrades to `("", None, None)`)
+- [x] `KNOWN_VULNERABLE` is a small (~6-entry), dated, explicitly-non-exhaustive table of
+  genuinely well-known package/fixed-version advisories, each with a public CVE id and a
+  short note
+- [x] `dependency_security_findings(package_names)` flags an unpinned dependency as
+  `"warn"`/`"unpinned"`, flags a pinned dependency below a `KNOWN_VULNERABLE` threshold as
+  `"warn"`/`"known-advisory"`, yields no finding for a safe pinned dependency, never raises on
+  junk input, and returns a `note` honestly stating the offline/limited/illustrative nature of
+  the check plus an `advisory_table_date`
+- [x] `pip_audit_available()` is an honest placeholder (`False` today) — no network call is
+  ever made by this module
+- [x] `harness/system_finalize.py::finalize_system` attaches an ADDITIVE `dep_security` field
+  (or `None` when no dependency is detected) on the returned result dict — `ok` is computed
+  from `steps` alone and is never influenced by `dep_security`; the venv step and every other
+  finalize step are unaffected
+- [x] The REQ-7 `secure_exec.py` egress/subprocess/dynamic-exec/destructive-fs scan gate is
+  completely untouched — no weakening of any existing security check; no large CVE database is
+  vendored; no network/pip-audit call is added
+- [x] Proven by `tests/test_ext037_dep_advisory.py` (parse cases, unpinned/known-advisory/
+  clean findings, the honest `note`, never-raises-on-junk) and two new tests in
+  `tests/test_ext037_finalize.py` (`dep_security` appears when a dependency is detected and
+  stays advisory-only — `ok`/the venv step are unaffected; `dep_security` is `None` for a
+  stdlib-only build)

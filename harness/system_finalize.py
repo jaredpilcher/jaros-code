@@ -60,6 +60,11 @@ if _TOOLS_DIR not in sys.path:
 from jaros.core import create_decision  # noqa: E402
 
 from harness.coding_loop import DATA_DIR, Runtime  # noqa: E402
+# #EXT-037-REQ-5 End
+# #EXT-037-REQ-17 Start
+from harness.dep_advisory import dependency_security_findings  # noqa: E402
+# #EXT-037-REQ-17 End
+# #EXT-037-REQ-5 Start
 
 _DEFAULT_VENV_PATH = ".venv"
 _DEFAULT_REQUIREMENTS = "requirements.txt"
@@ -194,6 +199,13 @@ def finalize_system(root, modules: "dict | None" = None, *, git: bool = True,
 
         # --- 2. venv-if-deps --------------------------------------------------------
         has_deps, packages, dep_reason = _detect_dependencies(root, modules or {})
+        # #EXT-037-REQ-17 Start
+        # ADVISORY ONLY (Phase 2 / REQ-17, mirrors REQ-16's `stdlib_security` pattern in
+        # `harness/system_builder.py`): offline third-party-dependency signal, computed only
+        # when a dependency was actually detected -- never read by `ok`/any step's own `ok`.
+        dep_security = dependency_security_findings(packages) if has_deps else None
+        # #EXT-037-REQ-17 End
+        # #EXT-037-REQ-5 Start
         if venv == "off":
             steps.append({"step": "venv", "ok": True, "skipped": "venv=off"})
         else:
@@ -220,8 +232,16 @@ def finalize_system(root, modules: "dict | None" = None, *, git: bool = True,
                         steps.append({"step": "env.venv_pin", "ok": False, "error": str(exc)})
 
         ok = all(s.get("ok", True) for s in steps)
+        # #EXT-037-REQ-5 End
+        # #EXT-037-REQ-17 Start
+        # `dep_security` is ADDITIVE and ADVISORY ONLY -- `ok` above was already computed
+        # from `steps` alone (this key never contributes to it), so attaching it here can
+        # never change finalize's pass/fail outcome, exactly mirroring REQ-16's
+        # `stdlib_security` field on `build_system`'s own result dict.
         return {"ok": ok, "steps": steps, "note": "finalize complete",
-                "dependenciesDetected": has_deps}
+                "dependenciesDetected": has_deps, "dep_security": dep_security}
+        # #EXT-037-REQ-17 End
+        # #EXT-037-REQ-5 Start
     except Exception as exc:  # pragma: no cover-defensive -- finalize must never raise
         return {"ok": False, "steps": steps, "note": f"finalize failed: {exc}"}
 # #EXT-037-REQ-5 End

@@ -1215,3 +1215,65 @@ a dangerous/deprecated stdlib module.
 
 #### Implements
 - [REQ-16] Dependency-security gate — Phase 1: deprecated/dangerous stdlib + EOL interpreter (offline, advisory)
+
+### [TASK-21] Dependency-security gate — Phase 2: third-party package version advisories (REQ-17)
+
+**Owner directive (2026-07-10).** Phase 1 (TASK-20) covered the stdlib-only risk model.
+This task adds the complementary offline, deterministic, ADVISORY signal for the OTHER
+half of dependency risk: a build that DOES declare a third-party dependency (an existing
+`requirements.txt`, or a non-stdlib top-level import `harness.system_finalize
+._detect_dependencies` already detects) — this is exactly where "old/vulnerable VERSION"
+is literally true. Fully OFFLINE (no network, no vendored CVE database), and it ADDS a
+check — never weakens `harness/secure_exec.py` (untouched by this task).
+
+#### Steps
+1. Create `harness/dep_advisory.py`, mirroring `harness/secure_exec.py::scan_code`/
+   `harness/stdlib_safety.py::stdlib_safety_findings`'s house pattern (pure functions,
+   never raise): `parse_requirement(line: str) -> tuple[str, str | None, str | None]`
+   (parses a pinned exact spec `pkg==1.2.3`, a range spec `pkg>=1.0`, a bare name `pkg`,
+   extras `pkg[extra]==1`, and a trailing environment marker `pkg==1.2;python_version>"3"`
+   — strip everything after the first `;` or `#`; never raises, garbage input degrades to
+   `("", None, None)`); a small (~6-entry), dated (`2026-07`), explicitly-non-exhaustive
+   `KNOWN_VULNERABLE` dict covering `pyyaml` (below `5.4`), `jinja2` (below `2.11.3`),
+   `flask` (below `2.3.2`), `requests` (below `2.20.0`), `urllib3` (below `1.24.2`), and
+   `cryptography` (below `3.3.2`) — each entry carrying a public CVE id and a one-line
+   note; a module docstring stating clearly this is an ILLUSTRATIVE high-signal subset as
+   of 2026-07, NOT a complete CVE database, and that a full audit needs an opt-in
+   pip-audit/OSV pass (not run here, to respect $0/offline/storage-light); a placeholder
+   `pip_audit_available() -> bool` that always returns `False` (no network call added by
+   this task).
+2. In `harness/dep_advisory.py`, add `dependency_security_findings(package_names: list |
+   None) -> dict` returning `{"findings": [...], "note": "...",
+   "advisory_table_date": "2026-07"}`. For each entry (via `parse_requirement`): (a)
+   UNPINNED (no exact `==` version) -> a `{"package", "severity": "warn", "kind":
+   "unpinned", "message": "version not verifiable at build time -- pin an exact version to
+   enable a security check"}` finding; (b) pinned AND its version compares below a
+   matching `KNOWN_VULNERABLE` entry's `below` threshold (simple dotted-version tuple
+   compare) -> a `{"package", "severity": "warn", "kind": "known-advisory", "message":
+   "..."}` finding citing the CVE id; (c) otherwise -> no finding. The `note` MUST
+   honestly state this is a lightweight offline/illustrative check, not a complete audit.
+   Never raises on a garbage/non-string entry (skip it, keep scanning the rest).
+3. In `harness/system_finalize.py`, import `dependency_security_findings` from
+   `harness.dep_advisory` and, inside `finalize_system` immediately after `has_deps,
+   packages, dep_reason = _detect_dependencies(...)`, compute `dep_security =
+   dependency_security_findings(packages) if has_deps else None`. Attach it as an
+   ADDITIVE `"dep_security"` key on the function's final returned dict (alongside `"ok"`,
+   `"steps"`, `"note"`, `"dependenciesDetected"`) — `ok` MUST remain computed from `steps`
+   alone (unchanged), so `dep_security` can never gate/block finalize or the venv step.
+4. Add `tests/test_ext037_dep_advisory.py` covering: `parse_requirement` on
+   `flask==2.0.1`/`pyyaml`/`requests>=2.0`/`pkg[extra]==1.2;python_version>"3"`/garbage
+   input; `dependency_security_findings` flags an unpinned dep, flags `pyyaml==5.3` (or
+   another `KNOWN_VULNERABLE` entry below its threshold) as `known-advisory`, and returns
+   no finding for a safe pinned dep (`flask==2.3.3`); the `note` mentions the
+   offline/limited/illustrative nature; findings never raise on junk input
+   (`None`/non-string entries). Add two tests to `tests/test_ext037_finalize.py`: a
+   `dep_security` field appears (with a `known-advisory` finding) when a build declares a
+   known-vulnerable pinned dependency, while `ok` and the `env.venv_create` step remain
+   unaffected; `dep_security` is `None` when no dependency is detected.
+5. Run `python -m pytest tests/test_ext037_dep_advisory.py -q` (all pass), then
+   `python -m pytest tests/test_ext037_*.py -q` to confirm no regression. Confirm
+   `import harness.dep_advisory` and `import harness.system_finalize` both stay clean.
+   Offline only -- no Jetson, no network.
+
+#### Implements
+- [REQ-17] Dependency-security gate — Phase 2: third-party package version advisories (offline, illustrative, advisory)

@@ -271,6 +271,48 @@ def test_finalize_git_false_and_venv_off_skip_everything(tmp_path):
     assert not (root / ".venv").exists()
 
 
+# #EXT-037-REQ-5 End
+# #EXT-037-REQ-17 Start
+# --- (f) REQ-17: dep_security is advisory-only, additive on the finalize result -----------
+
+
+def test_finalize_attaches_dep_security_when_deps_detected_and_stays_advisory(tmp_path):
+    root = tmp_path / "sys_with_deps_advisory"
+    root.mkdir()
+    (root / "requirements.txt").write_text("pyyaml==5.3\n", encoding="utf-8")
+    (root / "main.py").write_text("import yaml\n", encoding="utf-8")
+
+    out = finalize_system(str(root), {"main.py": "import yaml\n"},
+                           git=False, venv="auto", data_dir=tmp_path / "state")
+
+    assert out["dependenciesDetected"] is True
+    assert out["dep_security"] is not None
+    findings = out["dep_security"]["findings"]
+    assert any(f["package"] == "pyyaml" and f["kind"] == "known-advisory" for f in findings)
+    # ADVISORY ONLY: a known-vulnerable pinned dep never affects `ok`, and the venv step
+    # (REQ-3) still runs exactly as before -- dep_security is purely additive.
+    assert out["ok"] is True
+    venv_step = next(s for s in out["steps"] if s["step"] == "env.venv_create")
+    assert venv_step["ok"] is True
+    assert (root / ".venv").is_dir()
+
+
+def test_finalize_dep_security_is_none_when_no_dependency_detected(tmp_path):
+    root = tmp_path / "sys_stdlib_only_advisory"
+    root.mkdir()
+    (root / "main.py").write_text("import os\n", encoding="utf-8")
+
+    out = finalize_system(str(root), {"main.py": "import os\n"},
+                           git=False, venv="auto", data_dir=tmp_path / "state")
+
+    assert out["dependenciesDetected"] is False
+    assert out["dep_security"] is None
+    assert out["ok"] is True
+
+# #EXT-037-REQ-17 End
+# #EXT-037-REQ-5 Start
+
+
 def test_cli_finalize_config_env_gate(monkeypatch):
     from harness.cli import _buildsystem_finalize_config
 
