@@ -3,7 +3,7 @@ id: EXT-036
 title: Sentence-to-System — build a complex Python system from a one-sentence spec (Claude-Code-parity)
 status: partial
 priority: high
-implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py", "harness/endpoint_shape.py", "harness/server_address_tuple.py"]
+implementation: ["harness/session.py", "harness/cli.py", "harness/project_md.py", "harness/repo_memory.py", "harness/system_builder.py", "harness/task_store.py", "harness/experiment_store.py", "harness/multi_tests.py", "harness/ask_user.py", "harness/system_suite.py", "harness/modification_suite.py", "harness/server_oracle.py", "harness/coherence_suite.py", "harness/episodic_memory.py", "harness/acceptance_review.py", "harness/filename_contract.py", "harness/http_service_scaffold.py", "harness/agent_scaffold.py", "harness/port_coercion.py", "harness/endpoint_shape.py", "harness/server_address_tuple.py", "harness/db_init_call.py"]
 ---
 
 **Owner directive (2026-07-03):** the next major gap for CC-parity is to be *"really really really good at
@@ -2832,3 +2832,78 @@ candidate without ever routing it through the pipeline either.
   `_apply_deterministic_repairs`) is proven via a recording spy at both call sites; an
   already-correct regenerated/candidate module is left byte-identical (idempotent no-op) at both
   sites.
+
+### [REQ-70] Deterministic DB/state-INIT-CALL repair — call the model's own zero-arg init before the server binds, when the model kept its OWN real serve loop (DONE — EXT-036 TASK-85)
+
+MEASURED ROOT CAUSE (reproduced locally with the exact traceback, canonical-board
+`url-shortener-http-service`): after the REQ-68/REQ-69 server-address-tuple levers, the server now
+BINDS, but on a FRESH database (the oracle's condition — `serve_and_check_stdlib` runs in a clean
+tempdir) the first request crashes:
+
+    File "server.py", do_POST -> self.handler.route('POST', ...)
+    File "api.py", route -> self.create_link(url)
+    File "database.py", create_link -> cursor.execute("INSERT INTO links ...")
+    sqlite3.OperationalError: no such table: links
+
+gemma's `database.py` defines a correct ZERO-ARG init method `initialize_db(self)` (a
+`CREATE TABLE IF NOT EXISTS links (...)` on a zero-arg-constructible `DatabaseManager`), but
+NOTHING ever CALLS it before serving — `main.py` → `start_server(port)` (in `server.py`) →
+`with socketserver.TCPServer(('', int(port)), Handler) as httpd: httpd.serve_forever()` — no init
+call anywhere on the path to the bind. `harness/http_service_scaffold.py` (REQ-65) already solves
+the ANALOGOUS problem for the SCAFFOLD path (`find_init_functions` recognizes a confident zero-arg
+init/create-table export and `generate_skeleton`/`generate_route_skeleton` call it once before the
+generated main binds), but that path only fires when the scaffold GENERATES main; here gemma kept
+its OWN real serve loop (`has_real_serve_loop` is true), so the scaffold correctly no-ops and the
+init call is never injected. A general DB-backed-service defect (T3 tier), not overfit to one
+class.
+
+#### Acceptance Criteria
+- [x] `harness/db_init_call.py::find_instance_init_methods(modules)` — best-effort, never-raise
+  AST scan reusing `harness.http_service_scaffold._INIT_FUNC_NAME_RE` (the init-name pattern) and
+  `_init_all_defaulted` (zero-arg-constructible owning class) to find a confident, zero-arg-
+  callable INSTANCE METHOD matching that pattern (the measured `DatabaseManager.initialize_db`
+  shape) — returns `{"module", "class", "callable"}` dicts, module order.
+- [x] `harness/db_init_call.py::find_serve_sites(modules)` — best-effort, never-raise AST scan for
+  the "serve site": a TOP-LEVEL function, or a top-level `if __name__ == "__main__":` block, whose
+  body contains BOTH a recognized server-constructor call (reusing
+  `harness.server_address_tuple._SERVER_CTORS`/`_callee_name`) and a `.serve_forever(` call.
+- [x] `harness/db_init_call.py::apply_db_init_call(modules, spec_text, *, llm=None)` — fires ONLY
+  when (a) the spec demands a stdlib `http.server` service AND a real serve loop already exists
+  (reusing `spec_demands_stdlib_http_service`/`has_real_serve_loop`) AND no Flask/FastAPI/Starlette
+  service was detected (reusing `harness.server_oracle.detect_web_service`); (b) EXACTLY ONE
+  confident zero-arg init candidate exists across the whole build (instance-method, via
+  `find_instance_init_methods`, OR top-level, via the REUSED `find_init_functions`) — more than one
+  or zero is ambiguous, a strict no-op; (c) EXACTLY ONE serve site is found; (d) the candidate's
+  name (the class, for an instance method; the function itself, for a top-level candidate) is
+  ALREADY resolvable in the serve site's own module (defined there, or already imported via
+  `from <module> import <name>`) — NO import is ever added, an unresolvable name is a strict no-op;
+  (e) the candidate is NOT already called ANYWHERE in the built module set (idempotent). When all
+  hold, injects a single call (`ClassName().method()` for an instance candidate, `function()` for a
+  top-level one) as the FIRST statement of the serve site, before the ctor.
+- [x] Non-degrading, leak-free, never-raising: reads only the built modules' own AST plus the
+  spec-driven detection already proven in `http_service_scaffold` — never an oracle/test/reference.
+  Any ambiguity, an unresolvable name, an already-present call, no real serve loop, a framework
+  service, or a non-web spec → byte-identical no-op. Idempotent (applying twice equals applying
+  once). Any parse/transform/unparse failure leaves the module set unmodified.
+- [x] Wired into `harness/system_builder.py`'s `_apply_deterministic_repairs` chain, IMMEDIATELY
+  AFTER `apply_http_service_scaffold` — so it only handles the case that repair deliberately leaves
+  as a real-serve-loop no-op. Because REQ-69 already routes every regeneration site (`_repair_system`,
+  the single-file-retry fallback, and `modify_system`'s new-behavior repair loop) through
+  `_apply_deterministic_repairs`, wiring it here alone reaches every one of those sites without a
+  separate call site. CAVEAT (honest scope): unlike the sibling repairs in this chain, this one is
+  NOT also duplicated inline in `build_system`'s own initial repair pass — it specifically targets
+  the case the http-service-scaffold repair leaves untouched (a real serve loop already exists),
+  which is only assessable once that serve loop is present in the candidate under repair; it fires
+  the first time any regeneration round (already wired through `_apply_deterministic_repairs`)
+  touches the affected module(s).
+- [x] Proven OFFLINE for detection/injection/idempotency/no-op shapes, plus a LIVE reproduction:
+  `tests/test_ext036_db_init_call.py` — the exact measured shape (`database.py`/`api.py`/
+  `server.py`/`main.py`) is repaired so `start_server` calls `DatabaseManager().initialize_db()`
+  before the bind (AST-verified); the UNREPAIRED build is actually LAUNCHED as a real subprocess in
+  a fresh tempdir over a free ephemeral port (`harness.server_oracle.serve_and_check_stdlib`) and
+  genuinely FAILS a POST-create/GET round-trip (proving the reproduction is real, not a sandbox
+  artifact), while the REPAIRED build, launched the same way, genuinely PASSES it; already-called is
+  a byte-identical no-op; applying twice equals applying once; no init export, a non-zero-arg
+  owning constructor, multiple candidates, multiple serve sites, an unresolvable class/function
+  name, a Flask/FastAPI service, a non-web spec, and no real serve loop are all byte-identical
+  no-ops; garbage/malformed input never raises.

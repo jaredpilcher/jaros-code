@@ -4606,7 +4606,15 @@ def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | No
     """Run the build path's deterministic repair chain, in the SAME order `build_system` applies
     it, over an arbitrary CANDIDATE ``{name: code}`` module set: `apply_signature_contract` ->
     `apply_endpoint_shape` (REQ-53, TASK-66) -> `apply_server_address_tuple` (REQ-68, TASK-83) ->
-    `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_agent_scaffold`.
+    `apply_port_coercion` -> `apply_http_service_scaffold` -> `apply_db_init_call` (REQ-70,
+    TASK-85) -> `apply_agent_scaffold`.
+
+    `apply_db_init_call` is the ONE repair in this chain NOT ALSO duplicated inline in
+    `build_system`'s own initial repair pass -- it specifically targets the case
+    `apply_http_service_scaffold` deliberately leaves untouched (the model kept its OWN real
+    serve loop), which can only be assessed for a missing DB/state-init call once that serve
+    loop exists; wiring it here reaches every regeneration site (REQ-69 already routes every one
+    through this function) without a separate call site.
 
     Deliberately EXCLUDES `apply_filename_contract` -- a rename is safe at CREATE time (nothing
     yet depends on the chosen filename) but NOT at MODIFY time, where a rename could break an
@@ -4647,6 +4655,20 @@ def _apply_deterministic_repairs(modules: "dict[str, str]", spec_text: "str | No
         result = apply_port_coercion(result)
         from harness.http_service_scaffold import apply_http_service_scaffold
         result, _http_notes = apply_http_service_scaffold(result, spec_text, llm=llm)
+        # #EXT-036-REQ-70 Start
+        # TASK-85: deterministic DB/state-INIT-CALL repair (REQ-70), wired IMMEDIATELY AFTER the
+        # http-service scaffold repair -- it only handles the case that repair deliberately
+        # leaves as a no-op (the model kept its OWN real serve loop, so no scaffold main is
+        # generated and REQ-65's own init-carry-forward logic never runs). MEASURED: on a FRESH
+        # database, `url-shortener-http-service`'s own `initialize_db(self)` (a zero-arg
+        # instance method on a zero-arg-constructible `DatabaseManager`) is never called before
+        # the server binds, so the first real request crashes with `sqlite3.OperationalError: no
+        # such table`. Every regeneration site already routes its candidate through
+        # `_apply_deterministic_repairs` (REQ-69), so wiring this repair here alone reaches the
+        # build path, the modify path, and every acceptance-repair round automatically.
+        from harness.db_init_call import apply_db_init_call
+        result, _db_init_notes = apply_db_init_call(result, spec_text, llm=llm)
+        # #EXT-036-REQ-70 End
         from harness.agent_scaffold import apply_agent_scaffold
         result, _agent_notes = apply_agent_scaffold(result, spec_text, llm=llm)
         return result

@@ -3528,3 +3528,73 @@ also writes/adopts without ever routing through the pipeline.
 #### Implements
 - [REQ-69] Sweep model-regenerated code through the deterministic-repair chain at every
   regeneration site
+
+### [TASK-85] Deterministic DB/state-init-CALL repair for a build that kept its own real serve loop (REQ-70, MEASURED root cause reproduced locally on `url-shortener-http-service`)
+
+MEASURED ROOT CAUSE (reproduced locally with the exact traceback): after REQ-68/REQ-69, the
+`url-shortener-http-service` server now BINDS, but on a FRESH database the first request crashes
+`sqlite3.OperationalError: no such table: links` — gemma's `database.py` defines a correct
+zero-arg `initialize_db(self)` (a `CREATE TABLE IF NOT EXISTS` on a zero-arg-constructible
+`DatabaseManager`), but nothing on the path to the server bind (`main.py` → `server.py`'s
+`start_server(port)` → `TCPServer(...).serve_forever()`) ever calls it. REQ-65's
+`find_init_functions`/scaffold carry-forward already solves the ANALOGOUS problem when the
+scaffold GENERATES main, but here gemma kept its OWN real serve loop so the scaffold correctly
+no-ops and REQ-65's logic never runs.
+
+#### Steps
+1. Create `harness/db_init_call.py` with `find_instance_init_methods(modules) -> list[dict]`:
+   best-effort, never-raise AST scan reusing `harness.http_service_scaffold._INIT_FUNC_NAME_RE`
+   (the init-name pattern) and `_init_all_defaulted` (zero-arg-constructible owning class) to find
+   a confident, zero-arg-callable INSTANCE METHOD matching that pattern — returns
+   `{"module", "class", "callable"}` dicts, module order. Wrap in `# #EXT-036-REQ-70 Start`/`End`
+   markers.
+2. Add `find_serve_sites(modules) -> list[dict]`: best-effort, never-raise AST scan for a
+   TOP-LEVEL function, or a top-level `if __name__ == "__main__":` block, whose body contains BOTH
+   a recognized server-constructor call (reuse `harness.server_address_tuple._SERVER_CTORS`/
+   `_callee_name`) and a `.serve_forever(` call — returns `{"module", "kind", "name"}` dicts.
+3. Add `apply_db_init_call(modules, spec_text, *, llm=None) -> tuple[dict, list[str]]`: fires ONLY
+   when (a) `spec_demands_stdlib_http_service(spec_text)` AND `has_real_serve_loop(modules)`
+   (both reused from `harness.http_service_scaffold`) AND NOT
+   `harness.server_oracle.detect_web_service(modules)`; (b) EXACTLY ONE confident zero-arg init
+   candidate exists across the whole build (`find_instance_init_methods` combined with the REUSED
+   `harness.http_service_scaffold.find_init_functions` for the top-level case) — otherwise
+   ambiguous no-op; (c) EXACTLY ONE serve site found (`find_serve_sites`) — otherwise ambiguous
+   no-op; (d) the candidate's name (class for instance-method, function name for top-level) is
+   ALREADY resolvable in the serve site's own module (a top-level `class`/`def` there, or a
+   `from <module> import <name>`) — NEVER add an import, unresolvable is a no-op; (e) the
+   candidate is not already called ANYWHERE in the module set (idempotent). When all hold,
+   prepends `ClassName().method()` (or `function()` for a top-level candidate) as the FIRST
+   statement of the serve site, before the ctor, via an `ast.NodeTransformer` + `ast.unparse`.
+   Never raises: any parse/transform/unparse failure leaves `modules` unchanged.
+4. Wire `apply_db_init_call` into `harness/system_builder.py::_apply_deterministic_repairs`
+   (~line 4648), IMMEDIATELY AFTER the `apply_http_service_scaffold` call — do NOT add a separate
+   call site in `build_system`'s own inline repair pass or anywhere else; REQ-69 already routes
+   every regeneration site (`_repair_system`, the single-file-retry fallback, `modify_system`'s
+   new-behavior repair loop) through `_apply_deterministic_repairs`, so wiring it here alone
+   reaches all of them. Wrap in `# #EXT-036-REQ-70 Start`/`End` markers. Update the function's
+   docstring to name the new step in the chain and note it is the one repair NOT also duplicated
+   in `build_system`'s initial inline pass (see the module docstring for why).
+5. Add offline tests `tests/test_ext036_db_init_call.py` (NO model/Jetson calls) covering: (a) the
+   exact measured reproduction (`main.py`/`server.py`/`api.py`/`database.py`) — after the repair,
+   `start_server`'s body has `DatabaseManager().initialize_db()` as its first statement, before
+   the `TCPServer(...)` ctor (assert via `ast` inspection); (b) the STRONGEST proof — actually
+   RUN the built service in a fresh tempdir over a free ephemeral port
+   (`harness.server_oracle.serve_and_check_stdlib`): the UNREPAIRED build genuinely FAILS a
+   POST-create/GET round-trip (proving the reproduction is real, not a sandbox artifact) and the
+   REPAIRED build genuinely PASSES it; (c) idempotency — an already-called init is a byte-identical
+   no-op, and applying twice equals applying once; (d) non-degrading no-ops — no init export, a
+   non-zero-arg owning constructor, multiple candidates, multiple serve sites, an unresolvable
+   class/function name, a Flask/FastAPI service, a non-web spec, no real serve loop; (e) never
+   raises on garbage/malformed input.
+6. Run `python -m pytest tests/test_ext036_db_init_call.py tests/test_ext036_server_address_tuple.py tests/test_ext036_regen_deterministic_repair.py -q`
+   (offline) and the broader `tests/test_ext036_*.py -q`; confirm green. Also run
+   `python -c "import harness.system_builder, harness.db_init_call"` (clean import smoke). Update
+   `.jarify/EXT-036/index.json` (REQ-70 ranges) per jarify-manage-links. Scope: ONLY
+   `harness/db_init_call.py`, the one wiring edit + docstring update in
+   `harness/system_builder.py::_apply_deterministic_repairs`, the new test file, and
+   `.jarify/EXT-036` docs. Do NOT touch `harness/server_oracle.py`, `harness/real_systems_suite.py`,
+   `harness/http_service_scaffold.py`, or any other repair module.
+
+#### Implements
+- [REQ-70] Deterministic DB/state-INIT-CALL repair — call the model's own zero-arg init before the
+  server binds, when the model kept its OWN real serve loop
