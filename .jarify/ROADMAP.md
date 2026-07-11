@@ -137,12 +137,13 @@ per-class pass/fail table is the metric (not one blended number).
 
 - **[★★ HEADLINE INTEGRITY — verified@N≥3 replaces provisional N=1 55/65 (supervisor #167, 2026-07-11)]** The 55/65 (85%) was N=1
   PROVISIONAL. Ran an honest verified@N≥3 sweep (`.jaros-data/verify_n3.py`, each class ×3, independent oracle, gemma-served, serialized).
-  **verified@N≥3 over 46 MEASURED classes (35 of 54 create + all 11 modify) = 37/46 strict-3/3 (80%), 42/46 majority-verified (91%).**
-  Create 30/35 strict (86%); Modify 7/11 strict (64% — editing is harder to get exactly right than fresh builds). Honest residual: 5 FLAKY-2/3
-  (running-median, ranked-choice-irv, progressive-tax-withholding [create]; order-lifecycle-add-refund, helpdesk-sla-add-onhold [modify]); 1 WEAK-1/3
-  (ini-section-query-default-flag-modify); 2 REAL-0/3 (schema-validation-retry-loop [create, #170]; url-shortener-add-delete-endpoint-modify [modify, SaaS-tier]);
-  1 PARKED-0/3 (base32-codec). N≥3 caught classes that would read as false-green at N=1 (the whole point). ⚠️ NOT the full 65-class board yet — 17 create
-  classes still UNMEASURED (slices G-I in flight) + 2 SaaS-HTTP-tier separately-worked; when G-I land → the TRUE full-board verified@N≥3 replaces N=1 55/65. high · #167
+  **★ FULL-BOARD verified@N≥3 COMPLETE = 54/65 strict-3/3 (83%), 59/65 majority-verified (91%)** over all 52 measurable create (54 minus 2
+  SaaS-HTTP build-variance) + 11 modify = 63 measured. Create 47/52 strict; Modify 7/11 strict (editing is harder to get exactly right than fresh builds).
+  **THIS RETIRES the provisional N=1 55/65 (85%)** — which was slightly OPTIMISTIC (5 classes it counted green are flaky-2/3 or fail at N≥3). Non-green (11):
+  5 FLAKY-2/3 (running-median, ranked-choice-irv, progressive-tax-withholding [create]; order-lifecycle-add-refund, helpdesk-sla-add-onhold [modify]); 1 WEAK-1/3
+  (ini-section-query-default-flag-modify); 2 REAL-0/3 (schema-validation-retry-loop [create, #170]; url-shortener-add-delete-endpoint-modify [modify, SaaS]);
+  1 PARKED-0/3 (base32-codec); 2 SaaS-HTTP CREATE (url-shortener-http-service, rest-sqlite-items-crud-service — build-variance, levered REQ-68/69/70).
+  N≥3 caught the false-N=1-greens — the whole point. verified@N≥3 IS the number now; #167 headline-integrity COMPLETE. high · #167
 - **[SaaS-HTTP T3 tier · 4 deterministic levers LANDED, class NOT yet N≥3-green — honest 2026-07-11]** url-shortener-http-service
   peeled layer-by-layer (each lever proven correct on reproduced/tested code, NOT a model ceiling): **REQ-68** server-address-tuple
   (e3f6191, `HTTPServer("",p,h)`→tuple), **REQ-69** regen-sweep (2830592, repair rounds + single-file-retry now re-apply the
