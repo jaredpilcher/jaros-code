@@ -20,18 +20,19 @@ signal to look harder and generate the next horizon, never to stop.
   (honest numbers, why each gap is what it is). This Roadmap is the organized forward plan that
   draws on it. GAP-MAP detail folds into this paradigm over time.
 - **Relationship to `docs/PRODUCTION-SYSTEMS-ATLAS.md`:** the Atlas is the **source-of-truth
-  completeness ledger** — now **≈485 distinct real production-system classes** (expanded from ~182 via
-  6 parallel GitHub-mining research waves, 2026-07-10 — SaaS/devtools, fintech/FinOps, edtech/health/
-  e-commerce/logistics/media, PLUS 6 new verticals: gov/civic, legal, proptech, agriculture,
-  energy/utilities, insurance), each tagged with an oracle, difficulty, create/modify,
+  completeness ledger** — now **≈547 distinct real production-system classes** (expanded from ~182 via
+  **8 parallel GitHub-mining research waves**, 2026-07-10, c2eaf5f — SaaS/devtools, fintech/FinOps,
+  edtech/health/e-commerce/logistics/media, PLUS 6 new verticals: gov/civic, legal, proptech,
+  agriculture, energy/utilities, insurance), each tagged with an oracle, difficulty, create/modify,
   stdlib-buildability (~98%), and a status. **The real-systems NOW/NEXT horizon is pulled FROM the
   Atlas** — it is the backlog this roadmap prioritizes against; the roadmap never invents a class the
   Atlas doesn't hold, and **coverage (verified / total) is a first-class scoreboard signal.** The
   canonical EXT-060 board is the execution surface; its verified roster IS the Atlas's `verified`
-  tier. Atlas coverage today ≈ **14 verified + 2 capable (2/3) + 4 measuring / 485** (board grew
-  21→32 classes on 2026-07-10; ALL 6 oracle kinds in active board service; injectable-clock PROVEN
-  on-device). ⭐ Convergence finding (waves 1–6): **no new oracle KIND
-  needed** — the substrate vocabulary is complete in kind; remaining work is demand-ranked instances.
+  tier. Atlas coverage today ≈ **37-class board roster, latest full headline 32/37 (86%) N=1 /
+  547 mapped** (board grew 18→37 classes in a day; ALL 6 oracle kinds in active board service;
+  injectable-clock PROVEN on-device). ⭐ **RESEARCH PLANE CONVERGED (definitive, 8 waves): no new
+  oracle KIND needed** — the substrate vocabulary is complete in kind; the bottleneck is now
+  BUILDING (greening + board-adding), not MAPPING. Remaining work is demand-ranked instances.
 - **Item format:** `- **[<id|tag>]** <one line> — <priority> · <rationale / links to spec·REQ·GAP·#task>`
   where priority ∈ `high|med|low`. Sections carry status: NOW=in-flight, NEXT=planned-soon,
   LATER=planned-later, LANDED=recently-shipped trail, PARKED=deferred with a reason.
@@ -73,19 +74,20 @@ highest impact×tractability CAPABILITY gap, measured honestly, until jcode code
 - Full test suite: **3153 green / 0 red** (3a3c102 — 11 stale/environmental reds fixed meaning-preserving).
   Product-surface parity **84.4%** (13 works + 2 partial / 16).
   Security envelope: closed for the build pipeline; every product host-write routes through the Jaros gate.
-- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): ≈ **14
-  verified + 2 capable (2/3) + 4 measuring / 485** classes (denominator grew 182→485 on 2026-07-10 — an
-  honest coverage-% DROP because the map got more complete, not because capability regressed). Verified =
-  the utility/leaf FLOOR (retry-backoff-lib, memoize-lib, ini-config-cli, file-organizer, csv-etl) + the
-  invariant-oracle service rungs (double-entry-ledger, subscription-lifecycle-state-machine,
-  wallet-no-overdraw, agent-loop) + **rest-put-modify FLIPPED 3/3 post-lever-chain** (the board's last
-  consistent red; every pass independently DB-verified) + the 2026-07-10 board-growth wave's 3/3 rungs:
-  **helpdesk-ticket-lifecycle, court-deadline math, account-lockout-backoff (★ INJECTABLE-CLOCK ORACLE
-  PROVEN ON-DEVICE), llm-output-parser**. Capable-not-reliable (2/3): IRV ranked-choice tally,
-  progressive-tax withholding. Measuring now: GFS-retention, CI-matrix, URL-shortener, token-validity
-  (a35230e). The board grew **21 → 32 classes (26 create + 6 modify)** and **ALL 6 oracle kinds are in
-  active board service**; clock + state-machine + conservation alone make **150+ of the 485 classes
-  honestly gradable**. Rising `verified` under honest oracles is progress; "mapped rows" is not.
+- **Production-systems coverage** (real-world breadth — `docs/PRODUCTION-SYSTEMS-ATLAS.md`): the canonical
+  EXT-060 board is now a **37-class roster (26 create + 11 modify)**, and the **NEW CANONICAL HEADLINE**
+  (N=1, leaves-OFF, independent oracles, fresh full-board run) is **create 22/26, modify 10/11 = 32/37
+  (86%)** — measured on a board GROWN 18→37 classes in one day (the prior 19/21=90% was an 18-class board;
+  the number dipped 4pts only because the roster nearly doubled with harder rungs, honest). Against the
+  547-class atlas denominator that 37-class verified/capable roster is coverage ≈ **32-passing (N=1) of 37
+  board / 547 mapped** (the % is small because the MAP got more complete — capability did not regress).
+  **All 5 misses are honest + characterized:** 3 = the SaaS url-shortener class (create + delete-modify,
+  behavioral per-draw variance, PARKED as a best-of-k-on-real-oracle candidate); 1 = schema-validation-retry
+  (parked agent, token-cap truncation, #162); 1 = IRV-create 0/1 = N=1 noise (normally 2/3, IRV-modify
+  passed the same run). The **modify half is 10/11 (91%)** — the SaaS-modify flip (rest-put-modify) held on
+  the board. **ALL 6 oracle kinds are in active board service**; clock + state-machine + conservation alone
+  make **150+ of the 547 classes honestly gradable**. Rising board-verified under honest oracles is
+  progress; "mapped rows" is not. (N=1 is a single-draw headline — reliably-verified = 3/3, tracked separately.)
 - **Daily-driver parity instrument** (#51, §9.2 — the frequency-weighted North-Star breadth number):
   **0.975 weighted (28/29)**, dev split PERFECT 25/25, holdout 3/4. Discriminating again (was saturated at
   19/19=100%). Sole miss: build_hard_lru_cache (a MISSING-DETERMINISTIC-TOOL gap — the pointer-bug in its
@@ -134,11 +136,13 @@ real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fal
   protocol server — each with an honest behavioral oracle, measured with NO leaves so the number reflects
   GENUINE capability. Being designed by the `real-systems-capability-push` workflow. Toy-CLI + the 4 hard
   classes become the FLOOR.
-- **[EXT-060 canonical scoreboard — FRESH FULL HEADLINE RUN, NOW]** the board has grown to **32 classes
-  (26 create + 6 modify)**; last full headline was **14/18** (pre-SaaS-lever-chain, pre-growth-wave). Run
-  `.jaros-data/realsys_canonical.py` live on the Jetson for the fresh combined pass@1 once the batch-3
-  measurement (a35230e) completes — rest-put-modify has FLIPPED (final: 3/3 post-lever, every pass
-  independently DB-verified). This IS the tracked number; trend it every growth wave. high.
+- **[EXT-060 canonical scoreboard — ✅ FRESH FULL HEADLINE RUN DONE, the tracked number]** the board grew
+  to **37 classes (26 create + 11 modify)** and the fresh full-board run landed: **create 22/26, modify
+  10/11 = 32/37 (86%)** (N=1, leaves-OFF, independent oracles) — up from the prior 18-class 14/18 tier, on
+  a nearly-doubled roster. All 5 misses honest+characterized (see the Scoreboard line). **NOW: periodic
+  full-board headline RE-RUNS** are the standing tracked number — re-run `.jaros-data/realsys_canonical.py`
+  after each growth wave and trend the combined pass@1; add N=3 reliability passes to separate
+  capable-not-reliable (2/3) from verified (3/3). high.
 - **[first real-system probe — RUNNING]** build a real stdlib HTTP REST API from one sentence; build_system
   serve-and-checks it (starts server, drives HTTP). No API leaf → tests genuine capability. Result pending.
 - **[GENERIC capability mechanisms — NEXT, from the workflow plan]** decompose → cross-module coherence →
@@ -148,7 +152,7 @@ real behavioral tests (serve it / run it), no leak. Leaves stay as an honest fal
   single-file tier; if the multifile tier also passes, ratchet the modify suite with harder classes (mirror
   the create ratchet). med
 
-### ★★ ATLAS-DRIVEN REAL-SYSTEMS HORIZON (pulled FROM `docs/PRODUCTION-SYSTEMS-ATLAS.md`, REGENERATED 2026-07-10 from the 485-class atlas's aggregated top-10 lists)
+### ★★ ATLAS-DRIVEN REAL-SYSTEMS HORIZON (pulled FROM `docs/PRODUCTION-SYSTEMS-ATLAS.md`, REGENERATED 2026-07-10 from the 547-class / 8-wave atlas's aggregated top-10 lists)
 
 The real-systems NOW/NEXT is drawn straight from the Production-Systems Atlas (§2.3 coverage + §4 oracle
 ranking + §5 seed shortlist). Every class below is stdlib-buildable, offline, $0, CREATE **and** MODIFY,
@@ -156,35 +160,58 @@ graded by an EXISTING oracle, and lands on the canonical EXT-060 board (its veri
 `verified` tier). Simulated-only for providers (payments/cloud/IdP/SMTP = high-fidelity in-process mocks,
 never deployed — Tenet 2/3 clean). **The SUBSTRATE (the oracles) is the lever, not any single build.**
 
-**★ RE-PRIORITIZED 2026-07-10 (atlas 182→485 + injectable-clock LANDED + SaaS rung flipping):** the top-5
-oracles (agent-loop, state-machine, conservation, double-entry, injectable-clock) all exist; the SaaS-tier
-lever chain flipped the board's last consistent red; and six research waves converged on "no new oracle kind
-needed." So the highest impact×tractability move is **GROW the board with the atlas's immediately-gradable
-classes** — each is independent-oracle-verified coverage at near-zero new-substrate cost — and re-measure
-the full board headline. All items below trace to PRIME-001 tenet 3 (honest oracles) + the real-systems
+**★ RE-PRIORITIZED 2026-07-10 (atlas 182→547 across 8 waves + injectable-clock PROVEN + fresh headline
+32/37):** the top-5 oracles (agent-loop, state-machine, conservation, double-entry, injectable-clock) all
+exist; the SaaS-tier lever chain flipped the board's last consistent red; and **8 research waves DEFINITIVELY
+converged on "no new oracle kind needed."** So the highest impact×tractability move is **GROW the board with
+the atlas's immediately-gradable classes** — each is independent-oracle-verified coverage at near-zero
+new-substrate cost — and re-measure the full board headline. All items below trace to PRIME-001 tenet 3
+(honest oracles) + the real-systems
 North Star (build ANY real system a production developer ships, verified honestly, at $0).
 
-**NOW — post-growth-wave (the 2026-07-10 board-growth wave LANDED — b6f46de + cee0abf + a35230e, board
-21→32 classes, see the LANDED trail; these are the next highest impact × tractability moves):**
-1. **[EXT-060 · MODIFY-half growth — HIGH, NOW]** the board is lopsided: **26 CREATE vs only 6 MODIFY**.
-   Add MODIFY variants for the freshly-verified classes — **helpdesk add-a-state, tax add-bracket-edge,
-   IRV add-tie-rule, URL-shortener add-delete-endpoint, lockout add-admin-unlock** — each reusing the
-   class's already-landed oracle (zero new substrate). MODIFY measured historically MORE robust than
-   CREATE (starts composed), so this is cheap, honest coverage growth. high.
-2. **[schema-validation-retry-loop residual — HIGH, NOW · DIAGNOSE before any lever]** the post-gating
-   failure mode: gemma's own agent program consistently fails the **SYNTAX gate** (complex single-file
-   agent code). Per the playbook, code-dump the failing draws and characterize the syntax-failure SHAPE
-   first — the fix is a deterministic tool aimed at the actual failure class, not a guess. high.
-3. **[plan-parse robustness watch — MED, NOW]** "planner produced no parseable JSON plan" recurred on
-   the GFS draws (2/3); if it recurs ACROSS classes it graduates to a plan-parse robustness follow-up
-   (extending the `_recover_missing_braces` deterministic-recovery family, 2190faf). Watch the batch-3
-   results; don't build yet. med.
-4. **[FULL canonical board headline run — HIGH, NOW · the number]** fresh on-Jetson run of the FULL
-   EXT-060 board (32 classes) for the new headline combined pass@1, once the batch-3 measurement
-   (GFS/CI-matrix/URL-shortener/token-validity, a35230e) completes. Every growth item above re-runs
-   under this same headline; the trend is the progress signal. high.
+**NOW — post-headline (the 18→37 board-growth wave + modify-half growth + 4 diagnosis-driven levers ALL
+LANDED, see the LANDED trail; fresh full headline 32/37 (86%) captured; these are the next highest
+impact × tractability moves):**
+1. **[EXT-060 · KEEP GROWING the board with atlas gradable-today classes — HIGH, NOW · the bottleneck]**
+   the research plane has CONVERGED (no new oracle kind needed) so the bottleneck is now BUILDING/adding,
+   not mapping. In flight: **wave-7 recovery-point / permission-overwrites / blended-overtime / SMS-segments**;
+   then harvest the biggest gradable backlogs — more **state-machine** (~70 classes: order/shipment/RMA/
+   dispute/document-approval lifecycles), **conservation** (~57: inventory available+committed==on_hand,
+   seat-booking no-double-book, invoice-total==Σlines), and **import-driver rule-table** verticals. Each is
+   independent-oracle-verified coverage at near-zero new-substrate cost; re-run the headline after each batch. high.
+2. **[schema-validation-retry-loop residual → single-file-retry lever — HIGH, NOW · #162]** the diagnosed
+   failure: gemma's own agent program consistently fails the **SYNTAX gate** on complex single-file agent
+   code, worsened by token-cap truncation. The aimed lever = wire the retry-loop syntax failure into the
+   **single-file-retry** mechanism (the over-decomposition retry that already exists) so a truncated/broken
+   single-file agent draw gets a clean re-emit rather than shipping broken. Deterministic, aimed at the
+   actual failure class, not a guess. high.
+3. **[best-of-k on the REAL service oracle — GENERAL mechanism, HIGH, NOW · greens the last hard tier]**
+   the ONE remaining hard tier is the SaaS url-shortener pair (create + delete-modify) + rest-crud CREATE:
+   per-draw BEHAVIORAL variance, and each class's oracle is genuinely behavior-checkable (run the app +
+   real HTTP + independent DB re-read) — so best-of-k is legit here (NOT the self-acceptance-blind-spot
+   trap). FIRST verify the sometimes-correct rate on-Jetson (is any draw of k actually correct?), THEN
+   wire best-of-k on the real service oracle for exactly these checkable-oracle classes. Would flip the
+   board's last 3 misses. high.
+4. **[periodic FULL canonical board headline RE-RUNS — HIGH, NOW · the standing number]** re-run
+   `.jaros-data/realsys_canonical.py` on the Jetson after every growth batch; trend the combined pass@1
+   (now 32/37) as THE progress signal, and add N=3 reliability runs to split capable-not-reliable (2/3)
+   from verified (3/3). high.
 
 **NEXT — the expansion wave (planned this week, oracles landed or one-step):**
+- **[★ strong property/round-trip/fixture import-driver RUNNER with good failure diffs — HIGH · the wave-8
+  lever]** the atlas wave-8 finding: the biggest un-graded backlog is the **~41 leaf-component/library
+  classes** that need a real property/round-trip/fixture-table import-driver RUNNER that (a) drives a pinned
+  public API in a fresh subprocess, (b) checks round-trip + property invariants, and (c) emits a GOOD
+  FAILURE DIFF (what was expected vs got, localized) so execution-feedback repair can act on it. This is the
+  single highest-leverage NEXT substrate item — it unlocks the leaf-component tier the same way the four
+  invariant oracles unlocked the service tier. high.
+- **[#163 agent-tier egress + sentinel review — MED-HIGH]** the agent classes (LangGraph-behind-API,
+  agent-loop rungs) need the agent-tier egress envelope + a sentinel review pass so a built agent's LLM
+  backend provably points at LOCAL Gemma/stub and never egresses (Tenet 2), verified independently. Pairs
+  with the LangGraph track below. med-high · #163.
+- **[#151 index-churn governance bug — MED]** the ~34 perpetually-dirty `.jarify/*/index.json` files
+  (non-deterministic ordering from `jarify-manage-links`) create commit noise + risk scoping mistakes; a
+  skill-level deterministic-ordering fix closes it. med · governance hygiene, memory [[jaros-code-index-json-churn]].
 - **[state-machine + conservation class expansion — HIGH]** the atlas post-merge counts: state-machine
   ~70 classes (largest absolute), conservation ~57 — **~127 combined**, the biggest remaining gradable
   backlog now both oracles are proven in board service (helpdesk 3/3 joined subscription-lifecycle under
@@ -223,7 +250,7 @@ workflow-replay-determinism + process-lifecycle probe, are small refinements of 
 **★ TOP-5 SUBSTRATE COMPLETE — AND ALL 6 ORACLE KINDS NOW IN ACTIVE BOARD SERVICE (2026-07-10):** the four
 2026-07-09 oracles PLUS injectable-clock are ALL LANDED, and the growth wave put every kind (state-machine,
 cli-exact, import-driver fixture-tables, clock, agent-loop, http+datastore) behind a live board class; clock +
-state-machine + conservation alone flip **150+ of the 485 classes** to honestly gradable.
+state-machine + conservation alone flip **150+ of the 547 classes** to honestly gradable.
 - **[1 · agent-loop oracle — ✅ LANDED (2ee7efa)]** **~27 classes post-merge** (A1–A10 + 17 of the wave-5
   A11–A40, gradable TODAY). Scripted stub-model + fake tools + assertions over the transcript. ★ The agent
   tool_calls-parse build scaffold (f77080a) FLIPPED the agent class 0/3→3/3 on-Jetson. ★ 2nd wave-5 agent
@@ -689,6 +716,13 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## PARKED (deferred, with reason — revisit triggers in GAP-MAP)
 
+- **[SaaS url-shortener class (create + delete-modify) — the board's 3 remaining misses]** PARKED as
+  behavioral per-draw VARIANCE (not a class incapability) — a checkable-behavior oracle (run the app + real
+  HTTP + independent DB re-read) but no single k=1 draw reliably passes. REVISIT TRIGGER: the NOW
+  **best-of-k-on-the-REAL-service-oracle** mechanism — first verify the sometimes-correct rate on-Jetson,
+  then wire best-of-k for exactly these checkable-oracle classes (legit here, NOT the self-acceptance
+  blind-spot trap). Would flip all 3 misses. Not a model ceiling — a missing selection mechanism on an honest oracle.
+
 - **[#27 non-CLI surfaces]** IDE extensions, desktop/web app, Slack/GitHub-Actions, remote control — DEFERRED
   (recorded not silent, GAP-MAP #27); out of scope for the CLI-product-parity pursuit for now; none block the terminal product.
 
@@ -732,6 +766,31 @@ the docs, monthly re-sync) — high · it's the scoreboard for this whole axis.
 
 ## LANDED (recent trail — newest first)
 
+- **[★★ NEW CANONICAL HEADLINE — 32/37 (86%) on a board GROWN 18→37 CLASSES IN ONE DAY (2026-07-10)]** the
+  fresh full-board EXT-060 run: **create 22/26, modify 10/11 = 32/37 (86%)** (N=1, leaves-OFF, independent
+  oracles). The board nearly doubled (prior headline 19/21=90% was an 18-class board) so the 4pt dip is
+  honest — a bigger, harder roster, not a regression. **All 5 misses honest + characterized:** 3 = SaaS
+  url-shortener class (create + delete-modify — behavioral per-draw variance, PARKED as the
+  best-of-k-on-real-oracle candidate); 1 = schema-validation-retry (parked agent, token-cap truncation, #162);
+  1 = IRV-create 0/1 = N=1 noise (normally 2/3; IRV-modify passed the same run). **Modify half 10/11 (91%)** —
+  the SaaS-modify flip (rest-put-modify) held on the board. This IS the canonical tracked number now
+  (PRIME-001 Tenet 3, independent oracles). The board = **26 create + 11 modify = 37 classes, ALL 6 oracle
+  kinds in active service.**
+- **[★★ FOUR DIAGNOSIS-DRIVEN CYCLE LEVERS — all landed+pushed (2026-07-10)]** each aimed at a measured
+  failure class, the deterministic-toolset thesis: **(1) egress-precision (30bb3bf, EXT-037 REQ-15)** —
+  security-bounded, doubly-verified egress refinement; **(2) truncation-salvage (60be94f, EXT-036 REQ-58)** —
+  the GFS plan-parse truncation fixed (GFS-retention 1/3 → **2/3**, the salvage worked); **(3) DB-init-scaffold
+  (f1b62f5, EXT-036 REQ-65)** — deterministic DB-init scaffolding; **(4) modify-half growth (a13ac2f, EXT-060
+  REQ-35..39)** — grew the MODIFY roster 6 → 11 (the board was lopsided at 26 create vs 6 modify). Plus the
+  earlier same-wave integrity fixes: conservative agent-scaffold gating (c4d13a9) + ADT pq-convention detection
+  (a098023).
+- **[★★ ATLAS 182 → 547 across 8 RESEARCH WAVES — RESEARCH PLANE CONVERGED (c2eaf5f, 2026-07-10)]** two further
+  waves (7–8) extended the 6-wave 485-class ledger to **≈547 distinct classes**. **DEFINITIVE convergence
+  finding: 8 independent waves needed ZERO new oracle KIND** — every newly staged class grades onto the
+  existing substrate vocabulary. The discovery/research plane has CONVERGED: the bottleneck is now BUILDING
+  (greening + board-adding), NOT mapping. wave-8 surfaced the one high-leverage NEXT substrate item — a strong
+  property/round-trip/fixture import-driver RUNNER for the ~41 leaf-component classes (see NEXT). Supersedes the
+  6-wave/485 entry below.
 - **[★★ EXT-060 BOARD GREW 21 → 32 CLASSES (26 CREATE + 6 MODIFY) — three atlas growth batches (2026-07-10)]**
   the NOW board-growth wave executed end-to-end. **Batch-1 (b6f46de):** helpdesk-ticket-lifecycle
   [state-machine], IRV ranked-choice tally [cli-exact], progressive-tax withholding [import-driver],
