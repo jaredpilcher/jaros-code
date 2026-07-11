@@ -661,7 +661,9 @@ ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
   its harness code — **self-running the whole convergence machine**: the local model itself discovers new
   classes it can't yet handle, **extends the Atlas, authors the new ORACLES those classes need, grows the
   EXT-060 board, and runs the per-class build → diagnose → lever → re-measure loop** — so it EXPANDS ITS OWN
-  set of handled classes with no human or paid model in the loop (the orchestration itself becomes $0-local).
+  set of handled classes with no human or paid model in the loop (the orchestration itself becomes $0-local),
+  **all while REMAINING a tool that builds/modifies systems from a user's prompt on demand** — literally
+  jaros-code running the Jarify governance loop on jaros-code itself; self-running never displaces the product.
   The true asymptote of the pursuit; every NOW/NEXT item is a rung toward it. Approach INCREMENTALLY + honestly:
   add jaros-code-self-operation tasks to the board (fix a real harness bug / add a deterministic lever / author
   a new oracle / propose an atlas class — all from a prompt) graded by the existing test-suite + oracle as an

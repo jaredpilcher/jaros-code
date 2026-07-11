@@ -34,9 +34,13 @@ system classes it cannot yet handle, extending the Production-Systems Atlas, aut
 ORACLES those classes need, growing the EXT-060 board, and running the per-class build → diagnose → build-the-
 missing-deterministic-lever → re-measure loop** — autonomously, on-device, at $0. In the end the harness
 should be **self-running**: it expands its OWN set of handled classes and its own capability surface without
-a human or a paid model in the loop. This is the last and hardest class — the system improving and operating
-the system — and it is likely the final set of things the owner will need to hand it; it is the true
-asymptote of "as good as or better than Claude Code." It NEVER relaxes a tenet to get there: every self-change
+a human or a paid model in the loop — **all while REMAINING, first and foremost, a TOOL that builds and
+modifies real systems from a user's prompt on demand.** Self-running never displaces the product duty; it is
+literally **jaros-code running the Jarify governance loop on jaros-code itself** — the same
+discover → spec → build → verify → converge machine we run for it today, now hosted on-device — so the
+product keeps serving developers even as it improves and operates itself in the same loop. This is the last
+and hardest class — the system improving and operating the system — and it is likely the final set of things
+the owner will need to hand it; it is the true asymptote of "as good as or better than Claude Code." It NEVER relaxes a tenet to get there: every self-change
 flows through its own Jarify workflow, is verified by its own honest oracles, and uses no paid/cloud model and
 no off-device inference — ever (the orchestration itself becomes $0-local, closing the last gap). Progress is
 measured, not asserted (a self-change or a self-authored oracle only counts when it passes independent
