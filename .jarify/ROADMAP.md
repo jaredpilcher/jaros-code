@@ -664,6 +664,11 @@ ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
   set of handled classes with no human or paid model in the loop (the orchestration itself becomes $0-local),
   **all while REMAINING a tool that builds/modifies systems from a user's prompt on demand** — literally
   jaros-code running the Jarify governance loop on jaros-code itself; self-running never displaces the product.
+  **QUALITY BAR (owner 2026-07-10, non-negotiable):** self-built improvements must clear the SAME quality bar a
+  frontier orchestrator (Claude) would set — creative, ambitious, high-leverage, not the thinner/safer increments
+  an unguided small model produces; correct-but-mediocre does NOT count, and the bar is NEVER relaxed because the
+  builder is the local model — the orchestrator remains the quality gate (review/curate/raise) until the system
+  provably builds at that level.
   The true asymptote of the pursuit; every NOW/NEXT item is a rung toward it. Approach INCREMENTALLY + honestly:
   add jaros-code-self-operation tasks to the board (fix a real harness bug / add a deterministic lever / author
   a new oracle / propose an atlas class — all from a prompt) graded by the existing test-suite + oracle as an

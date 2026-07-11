@@ -45,6 +45,13 @@ flows through its own Jarify workflow, is verified by its own honest oracles, an
 no off-device inference — ever (the orchestration itself becomes $0-local, closing the last gap). Progress is
 measured, not asserted (a self-change or a self-authored oracle only counts when it passes independent
 verification with no regression), and it remains an asymptote we converge on without ever declaring "done."
+**THE QUALITY BAR IS NON-NEGOTIABLE (owner directive, 2026-07-10): self-development must build to the SAME
+quality a frontier orchestrator (Claude) would — genuinely creative, ambitious, high-leverage improvements,
+NOT the thinner, safer, less-impressive increments an unguided small local model tends to produce.** Correct-
+but-mediocre is NOT good enough: a self-authored change counts only if it also clears the Claude-grade quality
+bar (real design insight and impact, not just "it passes"). The quality bar is NEVER relaxed because the builder
+is a small local model — until the system provably builds at that level, the frontier orchestrator remains the
+quality gate that reviews, curates, and raises self-built work to that standard.
 
 **REAL systems, increasingly complex — the ratchet (owner clarification, 2026-07-03).** "Complete
 software systems" means **REAL** ones, not toy stdin/stdout scripts: real web servers and API

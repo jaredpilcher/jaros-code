@@ -60,7 +60,14 @@ This is the complete operating method — the machine we run every cycle. If con
 industries — SaaS, fintech/FinOps, edtech, healthcare, e-commerce/retail, logistics, media, devtools,
 marketplaces, analytics — INCLUDING agent systems — from a plain-English sentence, on the single small
 LOCAL Gemma 4 2B (`e2b`) at $0, VERIFIED HONESTLY. It is a monumental, multi-month road; progress = the
-scoreboard trend + atlas coverage, never activity.
+scoreboard trend + atlas coverage, never activity. The TERMINAL goal (PRIME-001 intent) is that jaros-code
+eventually DEVELOPS AND RUNS ITSELF on the Jetson under these same constraints — but with one **non-negotiable
+QUALITY BAR (owner directive, 2026-07-10):** self-built improvements must clear the SAME quality a frontier
+orchestrator (Claude) would produce — genuinely creative, ambitious, high-leverage — NOT the thinner, safer,
+less-impressive increments an unguided small model tends to emit. Correct-but-mediocre does NOT count; the bar is
+NEVER relaxed because the builder is the local model. **Until the system provably builds at that level, I (Claude,
+the orchestrator) remain the quality gate — reviewing, curating, and raising every self-built change to my
+standard**; self-running proceeds only at that quality, never below it.
 
 **1. ONE SCOREBOARD.** `EXT-060` is THE canonical real-systems board: a CREATE half + a MODIFY half, a
 fixed roster that only GROWS, every task graded by an INDEPENDENT oracle, reported as ONE combined pass@1.
