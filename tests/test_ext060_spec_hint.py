@@ -148,11 +148,12 @@ def test_roster_size_unchanged():
     # REQ-31..34 (tests/test_ext060_atlas_wave2_tasks.py), REQ-40..43 (tests/test_ext060_atlas_
     # wave7_tasks.py), REQ-44..47 (tests/test_ext060_atlas_batch4_tasks.py), REQ-48..51
     # (tests/test_ext060_wave8_import_tasks.py), REQ-52..55 (tests/test_ext060_batch5_tasks.py),
-    # and REQ-56..59 (tests/test_ext060_batch6_tasks.py) each added four more. The CREATE count is
-    # still unchanged by this file. MODIFY bumped 6 -> 11: REQ-35..39
-    # (tests/test_ext060_modify_wave2.py) added five more MODIFY tasks, growing the previously
-    # lopsided 26-CREATE-vs-6-MODIFY split (now 46-vs-11).
-    assert len(REAL_SYSTEMS_TASKS) == 46
+    # REQ-56..59 (tests/test_ext060_batch6_tasks.py), and REQ-60..63
+    # (tests/test_ext060_batch7_tasks.py) each added four more. The CREATE count is still unchanged
+    # by this file. MODIFY bumped 6 -> 11: REQ-35..39 (tests/test_ext060_modify_wave2.py) added
+    # five more MODIFY tasks, growing the previously lopsided 26-CREATE-vs-6-MODIFY split (now
+    # 50-vs-11).
+    assert len(REAL_SYSTEMS_TASKS) == 50
     assert len(REAL_SYSTEMS_MODIFY_TASKS) == 11
     names = {t.name for t in REAL_SYSTEMS_MODIFY_TASKS}
     assert names == {

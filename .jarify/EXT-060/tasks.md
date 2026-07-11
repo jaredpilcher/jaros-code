@@ -1813,3 +1813,129 @@
 
 #### Implements
 - [REQ-59] Twenty-fourth CREATE task ("batch-6"), in a NEW fintech-billing vertical (penny allocation)
+
+### [TASK-55] Twenty-fifth CREATE task ("batch-7"), the batch's state_machine member, in a NEW embedded/devops vertical (elevator dispatch) (REQ-60)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `ELEVATOR_DISPATCH_TASK` (`RealSystemTask`,
+   `cls="embedded"`, `oracle_kind="state_machine"`) with a contract-exact sentence for a
+   stdlib-only single-file module `elevator_dispatch.py` defining `ElevatorController`: a `state`
+   property over exactly four states (`idle`/`moving_up`/`moving_down`/`doors_open`) and five
+   zero-argument action methods (`call_up`/`call_down`/`arrive`/`open`/`close`), each legal from
+   exactly one source state. Reuse the ALREADY-LANDED `_grade_state_machine` dispatch (REQ-13) --
+   no new oracle code.
+2. Hand-walk (against `spec['transitions']`, not trusted blindly) a ten-step `drive` script before
+   adding the task to the roster: illegal `arrive`-from-`idle` FIRST, then a full up-trip
+   (`call_up` -> illegal `open`-from-`moving_up` -> `arrive` -> illegal `call_up`-from-`doors_open`
+   -> `close`), then a full down-trip (`call_down` -> illegal `open`-from-`moving_down` -> `arrive`
+   -> `close`), landing on `expect_final="idle"`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(ELEVATOR_DISPATCH_TASK.sentence) is None`.
+4. Create `tests/test_ext060_batch7_tasks.py` (OFFLINE, no model/Jetson): a CORRECT
+   `elevator_dispatch.py` fixture (a real transition-table class) is accepted by
+   `grade_real_system_task(ELEVATOR_DISPATCH_TASK, ...)`; a BROKEN fixture whose `open()` never
+   checks the current state (opens doors mid-travel) is rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch7_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-60 ranges, via `jarify-manage-links`) and flip the
+   REQ-60 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-60] Twenty-fifth CREATE task ("batch-7"), the batch's state_machine member, in a NEW embedded/devops vertical (elevator dispatch)
+
+### [TASK-56] Twenty-sixth CREATE task ("batch-7"), the batch's conservation member, in a NEW hospitality/logistics vertical (hotel room inventory) (REQ-61)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `HOTEL_ROOM_INVENTORY_TASK` (`RealSystemTask`,
+   `cls="hospitality"`, `oracle_kind="conservation"`) with a contract-exact sentence for a
+   stdlib-only single-file module `hotel_room_inventory.py` defining `RoomInventory`:
+   `available`/`reserved`/`occupied` quantities always summing to `total_rooms`, with
+   `reserve`/`check_in`/`check_out`/`cancel` action methods (`reserve`/`check_in` reject an
+   over-draw of `available`/`reserved` respectively). Reuse the ALREADY-LANDED
+   `_grade_conservation` dispatch (REQ-15) -- no new oracle code. Phrase the sentence with
+   "reserve"/"reserved"/"occupied"/"cancel" throughout -- never "hold"/"queue"/"cache"/"expire"/
+   "stack"/"buffer"/"ring" -- so no leaf keyword is ever fingerprinted.
+2. Hand-verify (via a scratch walk of the exact same mirror-pair bookkeeping, not trusted blindly)
+   a six-op `drive` script before adding the task to the roster: illegal `reserve(150)` (over 100
+   available), legal `reserve(40)`, illegal `check_in(50)` (over 40 reserved), legal `check_in(30)`,
+   `check_out(10)`, `cancel(5)`, landing on
+   `expect_final={"available": 75, "reserved": 5, "occupied": 20}`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(HOTEL_ROOM_INVENTORY_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch7_tasks.py` (same file TASK-55 creates, OFFLINE, no
+   model/Jetson): a CORRECT `hotel_room_inventory.py` fixture is accepted by
+   `grade_real_system_task(HOTEL_ROOM_INVENTORY_TASK, ...)`; a BROKEN fixture whose `reserve()`
+   never checks `available` (allows an over-reserve) is rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch7_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-61 ranges, via `jarify-manage-links`) and flip the
+   REQ-61 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-61] Twenty-sixth CREATE task ("batch-7"), the batch's conservation member, in a NEW hospitality/logistics vertical (hotel room inventory)
+
+### [TASK-57] Twenty-seventh CREATE task ("batch-7"), the batch's double_entry member, in a NEW fintech/HR vertical (payroll run) (REQ-62)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `PAYROLL_RUN_TASK` (`RealSystemTask`, `cls="payroll"`,
+   `oracle_kind="double_entry"`) with a contract-exact sentence for a stdlib-only single-file
+   module `payroll_ledger.py` defining `PayrollLedger`: a double-entry ledger over
+   `wage_expense`/`tax_payable`/`cash`, `post(legs)` applying debit-ADDS/credit-SUBTRACTS legs and
+   rejecting an unbalanced entry. Reuse the ALREADY-LANDED `_grade_double_entry` dispatch (REQ-17)
+   -- no new oracle code.
+2. Hand-verify (via an independent debit-positive/credit-negative shadow-math walk, not trusted
+   blindly) a four-posting `drive` script before adding the task to the roster: an unbalanced entry
+   FIRST (debits 500000, credits 490000 -- must be rejected), a balanced $5000.00 payroll run, a
+   balanced $6000.00 payroll run, and a balanced 270000-cent tax remittance, landing on
+   `expect_final={"wage_expense": 1100000, "tax_payable": 0, "cash": -1100000}`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(PAYROLL_RUN_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch7_tasks.py` (same file TASK-55/56 create, OFFLINE, no
+   model/Jetson): a CORRECT `payroll_ledger.py` fixture is accepted by
+   `grade_real_system_task(PAYROLL_RUN_TASK, ...)`; a BROKEN fixture whose `post()` never checks
+   debits==credits (accepts an unbalanced posting) is rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_batch7_tasks.py -q`; confirm green (offline only).
+   Update `.jarify/EXT-060/index.json` (REQ-62 ranges, via `jarify-manage-links`) and flip the
+   REQ-62 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-62] Twenty-seventh CREATE task ("batch-7"), the batch's double_entry member, in a NEW fintech/HR vertical (payroll run)
+
+### [TASK-58] Twenty-eighth CREATE task ("batch-7"), the batch's clock member, in a NEW saas/infra vertical (API rate limiter) (REQ-63)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `TOKEN_BUCKET_RATE_LIMITER_TASK` (`RealSystemTask`,
+   `cls="infra"`, `oracle_kind="clock"`) with a contract-exact sentence for a stdlib-only
+   single-file module `rate_limiter.py` defining `TokenBucket`: `TokenBucket(capacity,
+   refill_rate, now_fn)`, `allow()` refilling `min(capacity, tokens + elapsed_seconds *
+   refill_rate)` before consuming a token if at least 1 is available. Reuse the ALREADY-LANDED
+   `_grade_clock` dispatch (REQ-28) -- no new oracle code. Say "contain"/"contains" (never
+   "hold"/"holds") and avoid every other banned leaf-fingerprinting token.
+2. Hand-walk (capacity=5, refill_rate=1 token/sec, not trusted blindly) a fifteen-step `timeline`
+   before adding the task to the roster: drain all 5 tokens at t=0 (5x `True`), 6th fails; advance
+   to t=2 (+2 refilled) -> 2 more succeed, 3rd fails; advance to t=100 (98 simulated seconds' worth
+   of refill, capped at `capacity=5`) -> exactly 5 more succeed (proving the cap held), 6th fails.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and
+   `leaf_for_spec(TOKEN_BUCKET_RATE_LIMITER_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_batch7_tasks.py` (same file TASK-55/56/57 create, OFFLINE, no
+   model/Jetson): a CORRECT `rate_limiter.py` fixture is accepted by
+   `grade_real_system_task(TOKEN_BUCKET_RATE_LIMITER_TASK, ...)`; a BROKEN fixture that reads the
+   real wall clock (`time.time()`) instead of the injected `now_fn` is rejected; leaves-OFF holds;
+   the task is a member of `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting
+   `REAL_SYSTEMS_TASKS` grew by exactly these four REQ-60/61/62/63 tasks (length 46 -> 50), one per
+   non-import oracle kind.
+5. Bump the twelve pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 46` -> `== 50`) in `tests/test_ext060_atlas_batch4_tasks.py`,
+   `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_atlas_wave2_tasks.py`,
+   `tests/test_ext060_atlas_wave7_tasks.py`, `tests/test_ext060_batch5_tasks.py`,
+   `tests/test_ext060_batch6_tasks.py`, `tests/test_ext060_clock_agent_tasks.py`,
+   `tests/test_ext060_modify_wave2.py`, `tests/test_ext060_spec_hint.py`,
+   `tests/test_ext060_ticket_booking_invoice.py`, and `tests/test_ext060_wave8_import_tasks.py`.
+6. Run `python -m pytest tests/test_ext060_*.py -q`; confirm green (offline only; 50-item CREATE
+   roster). Update `.jarify/EXT-060/index.json` (REQ-63 ranges, via `jarify-manage-links`) and flip
+   the REQ-63 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-63] Twenty-eighth CREATE task ("batch-7"), the batch's clock member, in a NEW saas/infra vertical (API rate limiter)

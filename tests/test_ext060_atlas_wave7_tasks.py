@@ -373,12 +373,13 @@ def test_no_new_wave7_task_sentence_contains_a_banned_leaf_keyword():
 # ------------------------------------------------------------------------------------------------
 
 def test_real_systems_tasks_roster_grew_by_the_four_new_wave7_tasks():
-    # bumped 26 -> 30 -> 34 -> 38 -> 42 -> 46: this module's own REQ-40/41/42/43 add four more
+    # bumped 26 -> 30 -> 34 -> 38 -> 42 -> 46 -> 50: this module's own REQ-40/41/42/43 add four more
     # CREATE tasks, then REQ-44..47 (tests/test_ext060_atlas_batch4_tasks.py) added four more,
     # then REQ-48..51 (tests/test_ext060_wave8_import_tasks.py) added four more, then REQ-52..55
     # (tests/test_ext060_batch5_tasks.py) added four more, then REQ-56..59
-    # (tests/test_ext060_batch6_tasks.py) added four more.
-    assert len(REAL_SYSTEMS_TASKS) == 46
+    # (tests/test_ext060_batch6_tasks.py) added four more, then REQ-60..63
+    # (tests/test_ext060_batch7_tasks.py) added four more.
+    assert len(REAL_SYSTEMS_TASKS) == 50
     names = {t.name for t in REAL_SYSTEMS_TASKS}
     assert "reliability-recovery-point-executor-lib" in names
     assert "discord-permission-overwrite-resolution-lib" in names

@@ -5286,3 +5286,343 @@ PENNY_ALLOCATION_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(PENNY_ALLOCATION_TASK)
 # #EXT-060-REQ-59 End
+
+
+# #EXT-060-REQ-60 Start
+# TASK-55: a TWENTY-FIFTH held-out CREATE task ("batch-7", picked for ORACLE-KIND DIVERSITY --
+# the roster had grown heavy on `oracle_kind="import"` reusable-library tasks -- this is the
+# batch's `state_machine` member), in a NEW embedded/devops vertical (a single elevator car's
+# dispatch lifecycle) -- graded by the ALREADY-LANDED `oracle_kind="state_machine"` dispatch REQ-13
+# lands (no new oracle code: reuses `_grade_state_machine` -> `harness.state_machine_oracle.
+# grade_state_machine` verbatim). DISTINCT from every prior state_machine task (order/subscription/
+# ticket/helpdesk/incident/job -- all business-workflow lifecycles): this models a PHYSICAL dispatch
+# state machine with FOUR states (`idle`/`moving_up`/`moving_down`/`doors_open`) and an explicit
+# manual `open()` action alongside the automatic `arrive()`-triggered door-open, so "the doors can
+# never open while the car is travelling" is a real, testable illegal-transition case. Every
+# transition below was hand-walked against `spec['transitions']` before this task was added to the
+# roster (see the inline shadow-state comments on `drive`).
+_ELEVATOR_DISPATCH_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "elevator_dispatch.py, using only the standard library, defining exactly one public class "
+    "named `ElevatorController` modeling a single elevator car's dispatch state machine. "
+    "`ElevatorController()` (no constructor arguments) creates a controller whose car starts in "
+    "the `\"idle\"` state (parked, doors closed, not moving). It exposes a read-only property "
+    "named `state` (accessed as an attribute, never called) that always returns the car's CURRENT "
+    "state as one of exactly four strings: `\"idle\"` (parked, doors closed), `\"moving_up\"` "
+    "(travelling upward between floors), `\"moving_down\"` (travelling downward between floors), "
+    "or `\"doors_open\"` (stopped with its doors open). It defines exactly five zero-argument "
+    "action methods: `call_up()` moves the car from `\"idle\"` to `\"moving_up\"` (a floor call "
+    "above the car's current floor has been accepted) -- legal ONLY from `\"idle\"`; `call_down()` "
+    "moves the car from `\"idle\"` to `\"moving_down\"` -- legal ONLY from `\"idle\"`; `arrive()` "
+    "moves the car from EITHER `\"moving_up\"` OR `\"moving_down\"` to `\"doors_open\"` (the car "
+    "has reached its destination floor and its doors have opened) -- legal ONLY from "
+    "`\"moving_up\"` or `\"moving_down\"`; `open()` moves the car from `\"idle\"` directly to "
+    "`\"doors_open\"` (the doors are opened manually while the car is parked, with no travel) -- "
+    "legal ONLY from `\"idle\"`; and `close()` moves the car from `\"doors_open\"` back to "
+    "`\"idle\"` (the doors close and the car is parked again) -- legal ONLY from `\"doors_open\"`. "
+    "Calling ANY of these five methods when the car is not in that method's one legal source state "
+    "(for example, calling `arrive()` while `state` is `\"idle\"`, calling `open()` while `state` "
+    "is `\"moving_up\"` or `\"moving_down\"`, or calling `call_up()` while `state` is "
+    "`\"doors_open\"`) must instead raise `ValueError` and must leave `state` COMPLETELY "
+    "UNCHANGED -- a car mid-travel can never have its doors opened, and a car cannot depart or "
+    "arrive from a state it is not actually in."
+)
+
+ELEVATOR_DISPATCH_TASK = RealSystemTask(
+    name="elevator-dispatch-state-machine",
+    cls="embedded",
+    sentence=_ELEVATOR_DISPATCH_SENTENCE,
+    oracle_kind="state_machine",
+    oracle_spec={
+        "module": "elevator_dispatch",
+        "entity": "ElevatorController",
+        "spec": {
+            "states": ["idle", "moving_up", "moving_down", "doors_open"],
+            "initial": "idle",
+            "transitions": {
+                "idle:call_up": "moving_up",
+                "idle:call_down": "moving_down",
+                "moving_up:arrive": "doors_open",
+                "moving_down:arrive": "doors_open",
+                "idle:open": "doors_open",
+                "doors_open:close": "idle",
+            },
+            # Hand-walked shadow-state script (see the module docstring for the recompute
+            # discipline): illegal arrive-from-"idle" FIRST, then a full up-trip (call_up ->
+            # illegal open-from-"moving_up" -> arrive -> illegal call_up-from-"doors_open" ->
+            # close), then a full down-trip (call_down -> illegal open-from-"moving_down" ->
+            # arrive -> close), landing back on "idle" -- exercising all three REQUIRED illegal
+            # cases (open-from-moving, call_up-from-doors_open, arrive-from-idle) plus a fourth
+            # (open-from-moving_down) for full state coverage.
+            "drive": [
+                {"action": "arrive", "expect": "reject"},
+                {"action": "call_up", "expect": "accept"},
+                {"action": "open", "expect": "reject"},
+                {"action": "arrive", "expect": "accept"},
+                {"action": "call_up", "expect": "reject"},
+                {"action": "close", "expect": "accept"},
+                {"action": "call_down", "expect": "accept"},
+                {"action": "open", "expect": "reject"},
+                {"action": "arrive", "expect": "accept"},
+                {"action": "close", "expect": "accept"},
+            ],
+            "expect_final": "idle",
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(ELEVATOR_DISPATCH_TASK)
+# #EXT-060-REQ-60 End
+
+
+# #EXT-060-REQ-61 Start
+# TASK-56: a TWENTY-SIXTH held-out CREATE task ("batch-7"), the batch's `conservation` member, in a
+# NEW hospitality/logistics vertical (a hotel's room inventory across a
+# reserve/check-in/check-out/cancel workflow) -- graded by the ALREADY-LANDED
+# `oracle_kind="conservation"` dispatch REQ-15 lands (no new oracle code: reuses
+# `_grade_conservation` -> `harness.conservation_oracle.grade_conservation` verbatim). Distinct
+# from every prior conservation task's own vocabulary (SEAT_HOLD/WAREHOUSE_STOCK_RESERVATION's
+# available/held/sold and on_hand/reserved/shipped mirror pairs): this models
+# available/reserved/occupied room bookkeeping. Deliberately phrased with "reserve"/"reserved"/
+# "occupied"/"cancel" throughout (never "hold"/"queue"/"cache"/"expire"/"stack"/"buffer"/"ring") so
+# no leaf keyword (`harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS`) is ever fingerprinted --
+# confirmed directly via `leaf_for_spec(...) is None`, not just a literal substring scan. Every
+# driven delta below was hand-verified via a scratch walk of the exact same
+# available/reserved/occupied mirror-pair bookkeeping the sentence pins (their sum always equals
+# `total_rooms`, the conservation invariant) before this task was added to the roster.
+_HOTEL_ROOM_INVENTORY_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "hotel_room_inventory.py, using only the standard library, defining exactly one public class "
+    "named `RoomInventory` modeling one hotel property's room inventory through a "
+    "reserve/check-in/check-out workflow -- rooms move from being freely available, to being "
+    "reserved against a booking, to finally being physically occupied by a guest. "
+    "`RoomInventory(total_rooms)` (exactly one positional constructor argument, a non-negative "
+    "integer) creates tracking for one property whose `available` rooms start at `total_rooms`, "
+    "whose `reserved` rooms start at `0`, and whose `occupied` rooms start at `0`. It exposes "
+    "three zero-argument reader methods, `available()`, `reserved()`, and `occupied()`, each "
+    "returning the current integer value of that quantity; `available() + reserved() + "
+    "occupied()` must always equal `total_rooms`, since a room is only ever MOVED between these "
+    "three buckets, never created or destroyed. It defines four methods that each take one "
+    "positional integer argument, `n`: `reserve(n)` moves `n` rooms from `available` to "
+    "`reserved` (decreasing `available` by `n` and increasing `reserved` by `n`) -- a booking has "
+    "claimed `n` rooms against a future stay -- but if `n` is GREATER than the CURRENT "
+    "`available` count, it must instead raise `ValueError` and leave "
+    "`available`/`reserved`/`occupied` COMPLETELY UNCHANGED; `check_in(n)` moves `n` rooms from "
+    "`reserved` to `occupied` (decreasing `reserved` by `n` and increasing `occupied` by `n`) -- a "
+    "reserved booking's guest has physically arrived -- but if `n` is GREATER than the CURRENT "
+    "`reserved` count, it must instead raise `ValueError` and leave "
+    "`available`/`reserved`/`occupied` COMPLETELY UNCHANGED; `check_out(n)` moves `n` rooms from "
+    "`occupied` back to `available` (decreasing `occupied` by `n` and increasing `available` by "
+    "`n`) -- a guest has departed and their rooms are cleaned and freed up again; and `cancel(n)` "
+    "moves `n` rooms from `reserved` back to `available` (decreasing `reserved` by `n` and "
+    "increasing `available` by `n`) -- a booking is cancelled before the guest ever arrives and "
+    "its rooms return to available inventory."
+)
+
+HOTEL_ROOM_INVENTORY_TASK = RealSystemTask(
+    name="hotel-room-inventory-conservation",
+    cls="hospitality",
+    sentence=_HOTEL_ROOM_INVENTORY_SENTENCE,
+    oracle_kind="conservation",
+    oracle_spec={
+        "module": "hotel_room_inventory",
+        "entity": "RoomInventory",
+        "spec": {
+            "quantities": ["available", "reserved", "occupied"],
+            "initial": {"available": 100, "reserved": 0, "occupied": 0},
+            "construct_args": [100],
+            # Illegal over-reserve FIRST (150 of 100 available -- must be rejected), then a legal
+            # reserve (40), then a SECOND illegal op -- checking in 50 when only 40 are reserved
+            # (must ALSO be rejected, proving the guard holds after a legal op has moved the
+            # balance too), then a legal check_in (30 of the 40 reserved), a legal check_out (10 of
+            # the 30 occupied), and a legal cancel (5 of the remaining 10 reserved) landing on a
+            # concrete expect_final.
+            "drive": [
+                {"action": "reserve", "args": [150], "expect": "reject"},
+                {"action": "reserve", "args": [40], "expect": "accept",
+                 "deltas": {"available": -40, "reserved": 40}},
+                {"action": "check_in", "args": [50], "expect": "reject"},
+                {"action": "check_in", "args": [30], "expect": "accept",
+                 "deltas": {"reserved": -30, "occupied": 30}},
+                {"action": "check_out", "args": [10], "expect": "accept",
+                 "deltas": {"occupied": -10, "available": 10}},
+                {"action": "cancel", "args": [5], "expect": "accept",
+                 "deltas": {"reserved": -5, "available": 5}},
+            ],
+            "expect_final": {"available": 75, "reserved": 5, "occupied": 20},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(HOTEL_ROOM_INVENTORY_TASK)
+# #EXT-060-REQ-61 End
+
+
+# #EXT-060-REQ-62 Start
+# TASK-57: a TWENTY-SEVENTH held-out CREATE task ("batch-7"), the batch's `double_entry` member, in
+# a NEW fintech/HR (payroll) vertical -- graded by the ALREADY-LANDED `oracle_kind="double_entry"`
+# dispatch REQ-17 lands (no new oracle code: reuses `_grade_double_entry` ->
+# `harness.double_entry_oracle.grade_double_entry` verbatim). Distinct from every prior
+# double-entry task (general cash/revenue/expense journal, accounts-receivable invoicing/aging):
+# this models a payroll run posting gross wages to `wage_expense`, withheld tax to `tax_payable`,
+# and net pay out of `cash`, plus a later tax remittance. `expect_final` is hand-derived from the
+# debit-positive/credit-negative shadow math (independently re-walked below) before this task was
+# added to the roster.
+_PAYROLL_RUN_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "payroll_ledger.py, using only the standard library, defining exactly one public class named "
+    "`PayrollLedger` modeling a double-entry payroll ledger over exactly three named accounts: "
+    "`wage_expense`, `tax_payable`, and `cash`. `PayrollLedger()` (no constructor arguments) "
+    "creates a ledger where all three accounts start at a balance of `0` (an exact integer number "
+    "of cents). It exposes three zero-argument reader methods, `wage_expense()`, `tax_payable()`, "
+    "and `cash()`, each returning that account's CURRENT integer balance in cents. It defines "
+    "exactly one method, `post(legs)`, taking one positional argument -- a list of leg dicts, "
+    "each either `{\"account\": <name>, \"debit\": <cents>}` or `{\"account\": <name>, "
+    "\"credit\": <cents>}`, where `<name>` is one of `wage_expense`/`tax_payable`/`cash` and "
+    "`<cents>` is a positive integer. Posting a leg to an account with `debit` ADDS that many "
+    "cents to the account's balance; posting a leg with `credit` SUBTRACTS that many cents from "
+    "the account's balance. Running one payroll cycle is recorded by posting legs that DEBIT "
+    "`wage_expense` for the full gross pay amount, and CREDIT `tax_payable` for the withheld tax "
+    "amount and CREDIT `cash` for the net amount actually paid out (gross pay always equals "
+    "withheld tax plus net pay); later remitting the withheld taxes to the government is recorded "
+    "by posting legs that DEBIT `tax_payable` and CREDIT `cash` for the same amount. If the legs "
+    "in one call to `post(legs)` are BALANCED (the sum of every `debit` amount in the list equals "
+    "the sum of every `credit` amount in the list), `post(legs)` must apply EVERY leg to its "
+    "account's balance and return normally. If the legs are UNBALANCED (the sum of the `debit` "
+    "amounts does not equal the sum of the `credit` amounts), `post(legs)` must instead raise "
+    "`ValueError` and leave EVERY account's balance COMPLETELY UNCHANGED -- no partial posting of "
+    "any leg from an unbalanced call."
+)
+
+PAYROLL_RUN_TASK = RealSystemTask(
+    name="payroll-run-double-entry-ledger",
+    cls="payroll",
+    sentence=_PAYROLL_RUN_SENTENCE,
+    oracle_kind="double_entry",
+    oracle_spec={
+        "module": "payroll_ledger",
+        "entity": "PayrollLedger",
+        "spec": {
+            "accounts": ["wage_expense", "tax_payable", "cash"],
+            "initial": {"wage_expense": 0, "tax_payable": 0, "cash": 0},
+            "post_method": "post",
+            # Unbalanced entry FIRST (debit wage_expense 500000, credit tax_payable 150000,
+            # credit cash 340000 -- credits sum to 490000, off by 10000 cents, must be rejected),
+            # then a balanced $5000.00 payroll run (debit wage_expense 500000 / credit tax_payable
+            # 150000 / credit cash 350000), a balanced $6000.00 payroll run (debit wage_expense
+            # 600000 / credit tax_payable 120000 / credit cash 480000), and a balanced tax
+            # remittance of the full 270000 cents accrued across both runs (debit tax_payable
+            # 270000 / credit cash 270000) -- landing on wage_expense=1100000, tax_payable=0,
+            # cash=-1100000 (debit-positive/credit-negative sign convention, matching
+            # DOUBLE_ENTRY_LEDGER_TASK/INVOICE_AR_TASK's own convention).
+            "drive": [
+                {"legs": [{"account": "wage_expense", "debit": 500000},
+                          {"account": "tax_payable", "credit": 150000},
+                          {"account": "cash", "credit": 340000}],
+                 "expect": "reject"},
+                {"legs": [{"account": "wage_expense", "debit": 500000},
+                          {"account": "tax_payable", "credit": 150000},
+                          {"account": "cash", "credit": 350000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "wage_expense", "debit": 600000},
+                          {"account": "tax_payable", "credit": 120000},
+                          {"account": "cash", "credit": 480000}],
+                 "expect": "accept"},
+                {"legs": [{"account": "tax_payable", "debit": 270000},
+                          {"account": "cash", "credit": 270000}],
+                 "expect": "accept"},
+            ],
+            "expect_final": {"wage_expense": 1100000, "tax_payable": 0, "cash": -1100000},
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(PAYROLL_RUN_TASK)
+# #EXT-060-REQ-62 End
+
+
+# #EXT-060-REQ-63 Start
+# TASK-58: a TWENTY-EIGHTH held-out CREATE task ("batch-7"), the batch's `clock` member, in a NEW
+# saas/infra vertical (an API rate limiter) -- graded by the ALREADY-LANDED `oracle_kind="clock"`
+# dispatch REQ-28 lands (no new oracle code: reuses `_grade_clock` -> `harness.clock_oracle.
+# grade_clock` verbatim). Distinct from every prior clock task (access-token validity, account
+# lockout backoff -- both auth): this models a token-bucket API rate limiter whose bucket refills
+# CONTINUOUSLY with elapsed simulated time, never merely at fixed checkpoints, so a build that
+# secretly calls the real wall clock instead of `now_fn` is caught the same way REQ-28/34's own
+# tasks are (a huge simulated jump executes in real milliseconds). PINNED conventions (both in the
+# sentence and re-derived below, not trusted blindly): refill is `min(capacity, tokens + elapsed_
+# seconds * refill_rate)` (fractional accrual permitted internally, but every timeline `at` value
+# below is chosen so the exact token count landed on is always an integer -- no floating-point
+# comparison ambiguity anywhere in this spec); `allow()` consumes a token whenever the bucket holds
+# AT LEAST 1 token after refilling.
+_TOKEN_BUCKET_RATE_LIMITER_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "rate_limiter.py, using only the standard library, defining exactly one public class named "
+    "`TokenBucket` modeling a token-bucket API rate limiter. `TokenBucket(capacity, refill_rate, "
+    "now_fn)` accepts exactly three arguments: two positional integers, `capacity` (the maximum "
+    "number of tokens the bucket can ever contain) and `refill_rate` (the number of tokens added "
+    "back per elapsed second), plus the keyword `now_fn`: a zero-argument callable that returns "
+    "the current time as an integer number of epoch seconds. The class must determine EVERY "
+    "time-based decision by calling `now_fn()` at the moment it needs to know the current time -- "
+    "it must never read the real system clock (`time.time()`, `datetime.datetime.now()`, or any "
+    "other wall-clock source) for any purpose. At construction, the bucket starts completely "
+    "full: it contains exactly `capacity` tokens, and its internal last-refill reading is set to "
+    "the `now_fn()` value read at construction time. It exposes exactly one method, `allow()` "
+    "(zero arguments), called once per incoming API request to decide whether that request is "
+    "allowed. Every time `allow()` is called, it must FIRST refill the bucket based on elapsed "
+    "time: read the current `now_fn()` value, compute the number of seconds elapsed since the "
+    "bucket's internal last-refill reading, add `elapsed_seconds * refill_rate` tokens to the "
+    "bucket's current token count, cap the result so it never exceeds `capacity` (the bucket can "
+    "never contain more than `capacity` tokens, no matter how much time has elapsed), and then "
+    "update the internal last-refill reading to the `now_fn()` value just read. AFTER that refill "
+    "step, if the bucket contains at least 1 token, `allow()` consumes exactly 1 token from the "
+    "bucket (decreasing its token count by 1) and returns `True` (the request is allowed); "
+    "otherwise the bucket is left unchanged and `allow()` returns `False` (the request is denied, "
+    "not enough tokens available)."
+)
+
+TOKEN_BUCKET_RATE_LIMITER_TASK = RealSystemTask(
+    name="api-rate-limit-token-bucket-lib",
+    cls="infra",
+    sentence=_TOKEN_BUCKET_RATE_LIMITER_SENTENCE,
+    oracle_kind="clock",
+    oracle_spec={
+        "module": "rate_limiter",
+        "entity": "TokenBucket",
+        "spec": {
+            "clock_param": "now_fn",
+            "construct_args": [5, 1],
+            "construct_kwargs": {},
+            # Hand-walked timeline (capacity=5, refill_rate=1 token/sec): start full at t=0 ->
+            # drain all 5 tokens (5x True), the 6th allow() at t=0 has none left (False). Advance
+            # to t=2 (2 simulated seconds -> +2 tokens refilled) -> 2 more allow()s succeed, the
+            # 3rd at t=2 fails again. Advance to t=100 (98 simulated seconds -> 98 tokens' worth of
+            # refill, but capped at capacity=5, NEVER exceeding it) -> exactly 5 more allow()s
+            # succeed (proving the cap held, not 98), the 6th at t=100 fails.
+            "timeline": [
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 0, "call": "allow", "args": [], "expect": {"returns": False}},
+                {"at": 2, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 2, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 2, "call": "allow", "args": [], "expect": {"returns": False}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": True}},
+                {"at": 100, "call": "allow", "args": [], "expect": {"returns": False}},
+            ],
+        },
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(TOKEN_BUCKET_RATE_LIMITER_TASK)
+# #EXT-060-REQ-63 End

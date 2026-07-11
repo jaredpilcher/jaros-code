@@ -1889,3 +1889,143 @@ division, with the leftover-remainder rule PINNED exactly: add 1 cent to each of
       ...)`; a BROKEN fixture that never redistributes the remainder is rejected; the task is a member
       of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-56/57/58/59 tasks
       (length 42 -> 46).
+
+### [REQ-60] Twenty-fifth CREATE task ("batch-7"), the batch's state_machine member, in a NEW embedded/devops vertical (elevator dispatch)
+
+A TWENTY-FIFTH held-out CREATE task ("batch-7", picked for ORACLE-KIND DIVERSITY -- the roster had
+grown heavy on `oracle_kind="import"` reusable-library tasks -- this is the batch's `state_machine`
+member), in a NEW embedded/devops vertical, graded by the ALREADY-LANDED
+`oracle_kind="state_machine"` dispatch REQ-13 lands (no new oracle code: reuses
+`_grade_state_machine` -> `harness.state_machine_oracle.grade_state_machine` verbatim).
+`ELEVATOR_DISPATCH_TASK` (`RealSystemTask`, `cls="embedded"`, `oracle_kind="state_machine"`) is
+added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file module
+`elevator_dispatch.py` defining `ElevatorController` -- a single elevator car's
+idle/moving_up/moving_down/doors_open dispatch lifecycle, with an explicit manual `open()` action
+legal only while parked, distinct from the automatic `arrive()`-triggered door-open after travel.
+
+#### Acceptance Criteria
+- [x] `ELEVATOR_DISPATCH_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      lifecycle contract (filename `elevator_dispatch.py`, the class name, the `state` property, all
+      five action methods and their exact one legal source state each) with every oracle-checked
+      value derivable from that same visible sentence (no hidden key, no leak).
+- [x] A ten-step driven script, hand-walked against `spec['transitions']` before being added to the
+      roster, exercising all three REQUIRED illegal cases (`open()` from a moving state, `call_up()`
+      from `"doors_open"`, `arrive()` from `"idle"`) plus a fourth (`open()` from the other moving
+      state), interleaved with the full legal up-trip and down-trip paths, landing on
+      `expect_final="idle"`. A build that lets `open()` fire while the car is `"moving_up"` or
+      `"moving_down"` (opening doors mid-travel) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No banned leaf keyword (lru/priority-queue/
+      ttl-store/fifo/ring-buffer fingerprints) appears in the sentence.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `elevator_dispatch.py` fixture is accepted by `grade_real_system_task(ELEVATOR_DISPATCH_TASK,
+      ...)`; a BROKEN fixture whose `open()` never checks the current state (opens doors mid-travel)
+      is rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-61] Twenty-sixth CREATE task ("batch-7"), the batch's conservation member, in a NEW hospitality/logistics vertical (hotel room inventory)
+
+A TWENTY-SIXTH held-out CREATE task ("batch-7"), the batch's `conservation` member, in a NEW
+hospitality/logistics vertical, graded by the ALREADY-LANDED `oracle_kind="conservation"` dispatch
+REQ-15 lands (no new oracle code: reuses `_grade_conservation` ->
+`harness.conservation_oracle.grade_conservation` verbatim). `HOTEL_ROOM_INVENTORY_TASK`
+(`RealSystemTask`, `cls="hospitality"`, `oracle_kind="conservation"`) is added to
+`REAL_SYSTEMS_TASKS`: a contract-exact sentence for a stdlib-only, single-file module
+`hotel_room_inventory.py` defining `RoomInventory` -- a hotel property's
+available/reserved/occupied room bookkeeping through a reserve/check-in/check-out/cancel workflow.
+The sentence is deliberately phrased with "reserve"/"reserved"/"occupied"/"cancel" throughout
+(never "hold"/"queue"/"cache"/"expire"/"stack"/"buffer"/"ring") so no leaf keyword
+(`harness.adt_oracle._KEYWORDS`/`_METHOD_TOKENS`) is ever fingerprinted.
+
+#### Acceptance Criteria
+- [x] `HOTEL_ROOM_INVENTORY_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      conservation contract (filename `hotel_room_inventory.py`, the class name, the constructor,
+      the three reader methods, the `available()+reserved()+occupied()==total_rooms` invariant, and
+      all four action methods' exact legal-vs-illegal conditions) with every oracle-checked value
+      derivable from that same visible sentence (no hidden key, no leak).
+- [x] A six-op driven script, hand-verified via a scratch walk of the exact same mirror-pair
+      bookkeeping before being added to the roster: illegal over-reserve (150 of 100 available) FIRST,
+      then a legal `reserve(40)`, then illegal `check_in(50)` (only 40 reserved), then legal
+      `check_in(30)`, `check_out(10)`, and `cancel(5)`, landing on
+      `expect_final={"available": 75, "reserved": 5, "occupied": 20}` (sums to `total_rooms=100`
+      throughout). A build that lets `reserve()` succeed beyond current `available` is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. No banned leaf keyword appears in the sentence,
+      confirmed both by a literal substring scan and `leaf_for_spec(...) is None`.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `hotel_room_inventory.py` fixture is accepted by
+      `grade_real_system_task(HOTEL_ROOM_INVENTORY_TASK, ...)`; a BROKEN fixture whose `reserve()`
+      never checks `available` (allows an over-reserve) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-62] Twenty-seventh CREATE task ("batch-7"), the batch's double_entry member, in a NEW fintech/HR vertical (payroll run)
+
+A TWENTY-SEVENTH held-out CREATE task ("batch-7"), the batch's `double_entry` member, in a NEW
+fintech/HR (payroll) vertical, graded by the ALREADY-LANDED `oracle_kind="double_entry"` dispatch
+REQ-17 lands (no new oracle code: reuses `_grade_double_entry` ->
+`harness.double_entry_oracle.grade_double_entry` verbatim). `PAYROLL_RUN_TASK` (`RealSystemTask`,
+`cls="payroll"`, `oracle_kind="double_entry"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file module `payroll_ledger.py` defining `PayrollLedger` --
+a double-entry ledger over `wage_expense`/`tax_payable`/`cash` posting payroll runs (gross wages
+debited, withheld tax and net pay credited) plus a later tax remittance (tax_payable debited, cash
+credited).
+
+#### Acceptance Criteria
+- [x] `PAYROLL_RUN_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the double-entry
+      contract (filename `payroll_ledger.py`, the class name, the three account reader methods, the
+      `post(legs)` signature and debit-ADDS/credit-SUBTRACTS convention, the balanced-vs-unbalanced
+      accept/reject contract) with every oracle-checked value derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] A four-posting driven script, hand-verified via an independent debit-positive/credit-negative
+      shadow-math walk before being added to the roster: an unbalanced entry FIRST (debits 500000,
+      credits 490000 -- off by 10000 cents, must be rejected), then two balanced payroll runs
+      ($5000.00 and $6000.00 gross) and one balanced tax remittance (270000 cents, the full amount
+      accrued across both runs), landing on
+      `expect_final={"wage_expense": 1100000, "tax_payable": 0, "cash": -1100000}`. A build that
+      lets an unbalanced posting succeed is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `payroll_ledger.py` fixture is accepted by `grade_real_system_task(PAYROLL_RUN_TASK, ...)`; a
+      BROKEN fixture whose `post()` never checks debits==credits (accepts an unbalanced posting) is
+      rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-63] Twenty-eighth CREATE task ("batch-7"), the batch's clock member, in a NEW saas/infra vertical (API rate limiter)
+
+A TWENTY-EIGHTH held-out CREATE task ("batch-7"), the batch's `clock` member, in a NEW saas/infra
+vertical, graded by the ALREADY-LANDED `oracle_kind="clock"` dispatch REQ-28 lands (no new oracle
+code: reuses `_grade_clock` -> `harness.clock_oracle.grade_clock` verbatim). This completes
+batch-7's ORACLE-KIND DIVERSITY goal -- one task per non-import oracle kind
+(state_machine/conservation/double_entry/clock), across four distinct verticals, all reusing an
+already-landed oracle. `TOKEN_BUCKET_RATE_LIMITER_TASK` (`RealSystemTask`, `cls="infra"`,
+`oracle_kind="clock"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact sentence for a
+stdlib-only, single-file module `rate_limiter.py` defining `TokenBucket` -- a token-bucket API rate
+limiter whose bucket refills continuously with injected elapsed time (never merely at fixed
+checkpoints), distinct from the two prior clock tasks (both auth-vertical validity/lockout windows).
+
+#### Acceptance Criteria
+- [x] `TOKEN_BUCKET_RATE_LIMITER_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      injected-clock contract (filename `rate_limiter.py`, the class name, the `now_fn` clock-param
+      contract, the `capacity`/`refill_rate` constructor arguments, the exact refill-then-consume
+      order of operations in `allow()`, and the capacity cap) with every oracle-checked value
+      derivable from that same visible sentence (no hidden key, no leak).
+- [x] A fifteen-step driven timeline (capacity=5, refill_rate=1 token/sec), hand-walked before being
+      added to the roster: drain all 5 tokens at t=0 (5x `True`), the 6th `allow()` at t=0 fails
+      (`False`); advance to t=2 (+2 tokens refilled) -> 2 more succeed, the 3rd at t=2 fails; advance
+      to t=100 (98 simulated seconds' worth of refill, but capped at `capacity=5`, never exceeding
+      it) -> exactly 5 more succeed (proving the cap held, not 98), the 6th at t=100 fails. A build
+      that secretly calls the real wall clock instead of the injected `now_fn` is caught the same way
+      REQ-28/34's own tasks are (the huge simulated jump from t=2 to t=100 executes in real
+      milliseconds, so a real-clock-driven build cannot correctly report the refill).
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure. The sentence says "contain"/"contains" (never
+      "hold"/"holds") and avoids every other banned leaf-fingerprinting token.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `rate_limiter.py` fixture is accepted by
+      `grade_real_system_task(TOKEN_BUCKET_RATE_LIMITER_TASK, ...)`; a BROKEN fixture that reads the
+      real wall clock (`time.time()`) instead of the injected `now_fn` is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-60/61/62/63
+      tasks (length 46 -> 50), covering all four non-import oracle kinds exactly once.
