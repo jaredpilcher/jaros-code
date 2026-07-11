@@ -4459,3 +4459,234 @@ CHECK_DIGIT_TASK = RealSystemTask(
 
 REAL_SYSTEMS_TASKS.append(CHECK_DIGIT_TASK)
 # #EXT-060-REQ-47 End
+
+
+# #EXT-060-REQ-48 Start
+# TASK-43: a THIRTEENTH held-out CREATE task, in a NEW fintech-calculator vertical (distinct from the
+# double_entry-ledger fintech tasks above -- this is a plain pure-function import-oracle task), graded
+# by the ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code.
+_NPV_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named npv.py, "
+    "using only the standard library, defining exactly one public function `npv(rate, "
+    "cashflows)` that computes the Net Present Value of a financial project's cashflows. `rate` "
+    "is a Python `float` (the per-period discount rate, e.g. 0.1 for 10%) and `cashflows` is a "
+    "Python `list` of numbers where `cashflows[0]` is the cashflow received at time `t=0` (the "
+    "initial outlay, typically negative), `cashflows[1]` is the cashflow at `t=1`, and so on -- "
+    "the value at index `t` is discounted by dividing it by `(1 + rate) ** t` (so the `t=0` "
+    "cashflow is NEVER discounted, since `(1+rate)**0 == 1`). The function returns the sum of "
+    "every discounted cashflow, ROUNDED to exactly 2 decimal places using Python's built-in "
+    "`round(value, 2)` before returning, as a plain Python `float`."
+)
+
+# Hand-verified (recomputed independently, not trusted blindly) before being added to the roster:
+# npv(0.1, [-1000, 500, 500, 500]) == -1000 + 500/1.1 + 500/1.1**2 + 500/1.1**3
+#                                    = 243.42599549211099 -> round(., 2) == 243.43
+# npv(0.0, [-100, 50, 50]) == -100 + 50 + 50 == 0.0 (rate 0.0 never discounts anything)
+# npv(0.05, [100]) == 100 / 1.05**0 == 100.0 (a single t=0 inflow is never discounted)
+NPV_CALCULATOR_TASK = RealSystemTask(
+    name="net-present-value-calculator-lib",
+    cls="fintech",
+    sentence=_NPV_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "npv",
+        "api_calls": [
+            {"id": "npv_multi_period", "target": "npv",
+             "args": [0.1, [-1000, 500, 500, 500]], "kwargs": {}},
+            {"id": "npv_zero_rate", "target": "npv",
+             "args": [0.0, [-100, 50, 50]], "kwargs": {}},
+            {"id": "npv_single_inflow", "target": "npv",
+             "args": [0.05, [100]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "npv_multi_period", "expected": 243.43},
+            {"kind": "returns_equals", "call_id": "npv_zero_rate", "expected": 0.0},
+            {"kind": "returns_equals", "call_id": "npv_single_inflow", "expected": 100.0},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(NPV_CALCULATOR_TASK)
+# #EXT-060-REQ-48 End
+
+
+# #EXT-060-REQ-49 Start
+# TASK-44: a FOURTEENTH held-out CREATE task, in a NEW scheduling/devtools vertical, graded by the
+# ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code.
+_INTERVAL_MERGE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "interval_merge.py, using only the standard library, defining exactly one public function "
+    "`merge(intervals)` for a scheduling/calendar system's overlap-collapsing step. `intervals` "
+    "is a Python `list` of two-element `list`s `[start, end]` of integers, each representing one "
+    "CLOSED interval (both `start` and `end` inclusive), NOT necessarily already sorted. The "
+    "function returns a NEW `list` of merged, non-overlapping `[start, end]` two-element "
+    "`list`s, SORTED by `start` ascending, where any two input intervals that overlap OR merely "
+    "TOUCH (one interval's `start` is less than or EQUAL TO another already-merged interval's "
+    "`end`) are combined into a single interval spanning the minimum `start` and the maximum "
+    "`end` of everything merged into it. An empty input returns an empty `list`. The input "
+    "`list` itself must never be mutated."
+)
+
+# Hand-verified before being added to the roster:
+# merge([[1,3],[2,6],[8,10],[15,18]]) -> [1,3]+[2,6] overlap (2<=3) -> [1,6]; [8,10] and [15,18]
+#   are disjoint gaps -> [[1,6],[8,10],[15,18]]
+# merge([[1,4],[4,5]]) -> [1,4] and [4,5] merely TOUCH (4<=4) -> must merge -> [[1,5]] (the
+#   off-by-one bug this task is designed to catch: a strict `<` overlap test would leave these
+#   as two separate intervals)
+# merge([]) -> [] (empty input)
+# merge([[5,5]]) -> [[5,5]] (a single degenerate zero-length interval, unchanged)
+INTERVAL_MERGE_TASK = RealSystemTask(
+    name="interval-merge-lib",
+    cls="scheduling",
+    sentence=_INTERVAL_MERGE_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "interval_merge",
+        "api_calls": [
+            {"id": "merge_overlap_and_gap", "target": "merge",
+             "args": [[[1, 3], [2, 6], [8, 10], [15, 18]]], "kwargs": {}},
+            {"id": "merge_touching", "target": "merge",
+             "args": [[[1, 4], [4, 5]]], "kwargs": {}},
+            {"id": "merge_empty", "target": "merge", "args": [[]], "kwargs": {}},
+            {"id": "merge_single_point", "target": "merge",
+             "args": [[[5, 5]]], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "merge_overlap_and_gap",
+             "expected": [[1, 6], [8, 10], [15, 18]]},
+            {"kind": "returns_equals", "call_id": "merge_touching", "expected": [[1, 5]]},
+            {"kind": "returns_equals", "call_id": "merge_empty", "expected": []},
+            {"kind": "returns_equals", "call_id": "merge_single_point", "expected": [[5, 5]]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(INTERVAL_MERGE_TASK)
+# #EXT-060-REQ-49 End
+
+
+# #EXT-060-REQ-50 Start
+# TASK-45: a FIFTEENTH held-out CREATE task, in a NEW devtools/codec vertical, graded by the
+# ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code.
+_BASE32_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "base32_codec.py, using only the standard library (the `base64` module is allowed), "
+    "defining exactly two public functions implementing the RFC 4648 Base32 codec: "
+    "`encode(data)` takes a Python `list` of integers, each in the range 0-255 (representing "
+    "raw bytes in order), and returns the standard RFC 4648 Base32 encoding of those bytes as "
+    "an uppercase Python `str`, WITH the standard `=` padding characters appended so the "
+    "result's length is always a multiple of 8; `decode(s)` takes a Base32-encoded Python `str` "
+    "(uppercase, using the standard `A-Z2-7` alphabet, with its `=` padding present) and "
+    "returns a Python `list` of integers (each 0-255) representing the decoded bytes in order. "
+    "`encode([])` returns the empty string `\"\"`. `decode` must exactly invert `encode` for "
+    "every valid input (round-trips)."
+)
+
+# Hand-verified against Python's own `base64.b32encode`/`base64.b32decode` (the RFC 4648
+# reference implementation) before being added to the roster:
+# encode([]) == ""
+# encode([102]) == "MY======"                          (b"f")
+# encode([102,111,111]) == "MZXW6==="                   (b"foo")
+# encode([102,111,111,98,97,114]) == "MZXW6YTBOI======" (b"foobar", the canonical RFC 4648
+#   Base32 test vector)
+# decode("MY======") == [102]
+# decode(encode([102,111,111,98,97,114])) == [102,111,111,98,97,114] (round-trip, chained via
+#   a `__jaros_ref__` back into the prior `encode_foobar` call's own result)
+BASE32_CODEC_TASK = RealSystemTask(
+    name="base32-codec-lib",
+    cls="devtools",
+    sentence=_BASE32_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "base32_codec",
+        "api_calls": [
+            {"id": "encode_empty", "target": "encode", "args": [[]], "kwargs": {}},
+            {"id": "encode_f", "target": "encode", "args": [[102]], "kwargs": {}},
+            {"id": "encode_foo", "target": "encode", "args": [[102, 111, 111]], "kwargs": {}},
+            {"id": "encode_foobar", "target": "encode",
+             "args": [[102, 111, 111, 98, 97, 114]], "kwargs": {}},
+            {"id": "decode_f", "target": "decode", "args": ["MY======"], "kwargs": {}},
+            {"id": "decode_foobar", "target": "decode",
+             "args": ["MZXW6YTBOI======"], "kwargs": {}},
+            {"id": "decode_roundtrip_foobar", "target": "decode",
+             "args": [{"__jaros_ref__": "encode_foobar"}], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "encode_empty", "expected": ""},
+            {"kind": "returns_equals", "call_id": "encode_f", "expected": "MY======"},
+            {"kind": "returns_equals", "call_id": "encode_foo", "expected": "MZXW6==="},
+            {"kind": "returns_equals", "call_id": "encode_foobar",
+             "expected": "MZXW6YTBOI======"},
+            {"kind": "returns_equals", "call_id": "decode_f", "expected": [102]},
+            {"kind": "returns_equals", "call_id": "decode_foobar",
+             "expected": [102, 111, 111, 98, 97, 114]},
+            {"kind": "returns_equals", "call_id": "decode_roundtrip_foobar",
+             "expected": [102, 111, 111, 98, 97, 114]},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(BASE32_CODEC_TASK)
+# #EXT-060-REQ-50 End
+
+
+# #EXT-060-REQ-51 Start
+# TASK-46: a SIXTEENTH held-out CREATE task, in a NEW logistics/geo vertical, graded by the
+# ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands -- no new oracle code.
+_HAVERSINE_SENTENCE = (
+    "Write a single-file Python module (never a script -- it must not run anything, print "
+    "anything, or have any side effect merely from being imported) in a file named "
+    "geo_distance.py, using only the standard library (the `math` module), defining exactly "
+    "one public function `distance_km(lat1, lon1, lat2, lon2)` for a logistics routing "
+    "system's straight-line distance estimate. Every argument is a Python `float` (degrees). "
+    "Compute the great-circle distance between the two points using the standard haversine "
+    "formula with Earth radius `R = 6371.0` kilometers: convert every latitude/longitude value "
+    "to radians using `math.radians`; let `dphi` be the radian difference `lat2 - lat1` and "
+    "`dlambda` be the radian difference `lon2 - lon1`; let `a = sin(dphi / 2) ** 2 + "
+    "cos(radians(lat1)) * cos(radians(lat2)) * sin(dlambda / 2) ** 2`; let `c = 2 * "
+    "math.asin(math.sqrt(a))`; the distance is `R * c`. Return the result ROUNDED to exactly 2 "
+    "decimal places using Python's built-in `round(value, 2)`, as a plain Python `float`."
+)
+
+# Hand-verified (recomputed independently with Python's own `math` module, not trusted blindly)
+# before being added to the roster:
+# distance_km(0, 0, 0, 0) == 0.0 (identical points)
+# distance_km(0, 0, 0, 90) == round(6371.0 * math.pi / 2, 2) == round(10007.543398010288, 2)
+#                            == 10007.54 (a quarter of the way around the equator)
+# distance_km(52.2296, 21.0122, 52.4064, 16.9252) [Warsaw -> Poznan]
+#   == round(278.4550198592262, 2) == 278.46 (recomputed independently -- NOT the 279 a naive
+#   round-to-nearest-int guess might suggest; 278.46 is the actual value the haversine formula
+#   above produces for these two coordinate pairs)
+HAVERSINE_DISTANCE_TASK = RealSystemTask(
+    name="haversine-distance-lib",
+    cls="logistics",
+    sentence=_HAVERSINE_SENTENCE,
+    oracle_kind="import",
+    oracle_spec={
+        "module": "geo_distance",
+        "api_calls": [
+            {"id": "distance_same_point", "target": "distance_km",
+             "args": [0, 0, 0, 0], "kwargs": {}},
+            {"id": "distance_equator_quarter", "target": "distance_km",
+             "args": [0, 0, 0, 90], "kwargs": {}},
+            {"id": "distance_warsaw_poznan", "target": "distance_km",
+             "args": [52.2296, 21.0122, 52.4064, 16.9252], "kwargs": {}},
+        ],
+        "checks": [
+            {"kind": "returns_equals", "call_id": "distance_same_point", "expected": 0.0},
+            {"kind": "returns_equals", "call_id": "distance_equator_quarter",
+             "expected": 10007.54},
+            {"kind": "returns_equals", "call_id": "distance_warsaw_poznan", "expected": 278.46},
+        ],
+        "timeout": IMPORT_DEFAULT_TIMEOUT_S,
+    },
+)
+
+REAL_SYSTEMS_TASKS.append(HAVERSINE_DISTANCE_TASK)
+# #EXT-060-REQ-51 End

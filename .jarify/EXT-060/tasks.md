@@ -1436,3 +1436,126 @@
 
 #### Implements
 - [REQ-47] Twelfth CREATE task, in a NEW validation-library vertical (Luhn/ISBN-13/EAN-13 check digits)
+
+### [TASK-43] Thirteenth CREATE task, in a NEW fintech-calculator vertical (Net Present Value) (REQ-48)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `NPV_CALCULATOR_TASK` (`RealSystemTask`,
+   `cls="fintech"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `npv.py` defining one function `npv(rate, cashflows)`: `cashflows[t]` is
+   discounted by `(1 + rate) ** t` (so `t=0` is NEVER discounted), returns the sum ROUNDED to
+   exactly 2 decimal places via Python's `round(value, 2)`. Reuse the ALREADY-LANDED
+   `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via independent recomputation, not trusted blindly) three vectors before adding
+   the task to the roster: `npv(0.1, [-1000, 500, 500, 500])` -> `243.42599549211099` -> rounds to
+   `243.43`; `npv(0.0, [-100, 50, 50])` -> `0.0`; `npv(0.05, [100])` -> `100.0` (a single `t=0`
+   inflow is never discounted). Add all three as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced (static `leaf_for_spec` + post-build
+   `build_path` check) + leak-free; confirm no banned leaf keyword appears in the sentence and
+   `leaf_for_spec(NPV_CALCULATOR_TASK.sentence) is None`.
+4. Add `tests/test_ext060_wave8_import_tasks.py` (new file, OFFLINE, no model/Jetson): a CORRECT
+   `npv.py` fixture is accepted by `grade_real_system_task(NPV_CALCULATOR_TASK, ...)`; a BROKEN
+   fixture that discounts the `t=0` cashflow too (uses exponent `t+1` for every entry, an
+   off-by-one bug) is rejected; leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_wave8_import_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-48 ranges, via
+   `jarify-manage-links`) and flip the REQ-48 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-48] Thirteenth CREATE task, in a NEW fintech-calculator vertical (Net Present Value)
+
+### [TASK-44] Fourteenth CREATE task, in a NEW scheduling/devtools vertical (closed-interval merge) (REQ-49)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `INTERVAL_MERGE_TASK` (`RealSystemTask`,
+   `cls="scheduling"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `interval_merge.py` defining one function `merge(intervals)`: a list of
+   closed `[start, end]` integer intervals, NOT necessarily sorted, merged into a sorted,
+   non-overlapping list where any two intervals that overlap OR merely TOUCH (`start <= end` of
+   the previous merged interval) are combined. Reuse the ALREADY-LANDED `_grade_import` dispatch
+   (REQ-3) -- no new oracle code.
+2. Hand-verify (via a scratch walk) four vectors before adding the task to the roster:
+   `merge([[1,3],[2,6],[8,10],[15,18]]) == [[1,6],[8,10],[15,18]]`; `merge([[1,4],[4,5]]) ==
+   [[1,5]]` (the touching-interval case that a strict `<` overlap test would miss);
+   `merge([]) == []`; `merge([[5,5]]) == [[5,5]]`. Add all four as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(INTERVAL_MERGE_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_wave8_import_tasks.py` (same file TASK-43 creates, OFFLINE, no
+   model/Jetson): a CORRECT `interval_merge.py` fixture is accepted by
+   `grade_real_system_task(INTERVAL_MERGE_TASK, ...)`; a BROKEN fixture using a strict `<`
+   overlap test (fails to merge touching intervals) is rejected; leaves-OFF holds; the task is a
+   member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_wave8_import_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-49 ranges, via
+   `jarify-manage-links`) and flip the REQ-49 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-49] Fourteenth CREATE task, in a NEW scheduling/devtools vertical (closed-interval merge)
+
+### [TASK-45] Fifteenth CREATE task, in a NEW devtools vertical (RFC 4648 Base32 codec) (REQ-50)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `BASE32_CODEC_TASK` (`RealSystemTask`,
+   `cls="devtools"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `base32_codec.py` defining `encode(data)` (a `list[int]` of byte values 0-
+   255 -> an RFC 4648 Base32 `str` WITH standard `=` padding) and `decode(s)` (a padded Base32
+   `str` -> a `list[int]` of byte values), using JSON-safe `list[int]` byte representations
+   throughout (never a raw `bytes` object, which cannot cross the import-driver's JSON-argument
+   boundary). Reuse the ALREADY-LANDED `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (against Python's own `base64.b32encode`/`base64.b32decode`, the RFC 4648
+   reference implementation) before adding the task to the roster: `encode([]) == ""`;
+   `encode([102]) == "MY======"`; `encode([102,111,111]) == "MZXW6==="`;
+   `encode([102,111,111,98,97,114]) == "MZXW6YTBOI======"`; `decode("MY======") == [102]`;
+   `decode("MZXW6YTBOI======") == [102,111,111,98,97,114]`. Add a chained round-trip check
+   (`decode` applied to the prior `encode_foobar` call's own result via a `{"__jaros_ref__":
+   "encode_foobar"}` argument) also equaling `[102,111,111,98,97,114]`.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(BASE32_CODEC_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_wave8_import_tasks.py` (same file TASK-43/44 create, OFFLINE, no
+   model/Jetson): a CORRECT `base32_codec.py` fixture is accepted by
+   `grade_real_system_task(BASE32_CODEC_TASK, ...)`; a BROKEN fixture that strips the required
+   `=` padding is rejected; leaves-OFF holds; the task is a member of `REAL_SYSTEMS_TASKS`.
+5. Run `python -m pytest tests/test_ext060_wave8_import_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only). Update `.jarify/EXT-060/index.json` (REQ-50 ranges, via
+   `jarify-manage-links`) and flip the REQ-50 acceptance boxes in `requirements.md`.
+
+#### Implements
+- [REQ-50] Fifteenth CREATE task, in a NEW devtools vertical (RFC 4648 Base32 codec)
+
+### [TASK-46] Sixteenth CREATE task, in a NEW logistics/geo vertical (haversine distance) (REQ-51)
+
+#### Steps
+1. In `harness/real_systems_suite.py`, add `HAVERSINE_DISTANCE_TASK` (`RealSystemTask`,
+   `cls="logistics"`, `oracle_kind="import"`) with a contract-exact sentence for a stdlib-only
+   single-file module `geo_distance.py` defining one function `distance_km(lat1, lon1, lat2,
+   lon2)`: the standard haversine great-circle formula with `R = 6371.0` km, converting every
+   coordinate to radians via `math.radians` before any `sin`/`cos` call, returning the result
+   ROUNDED to exactly 2 decimal places via `round(value, 2)`. Reuse the ALREADY-LANDED
+   `_grade_import` dispatch (REQ-3) -- no new oracle code.
+2. Hand-verify (via independent recomputation with Python's own `math` module, not trusted
+   blindly) three vectors before adding the task to the roster: `distance_km(0, 0, 0, 0) == 0.0`;
+   `distance_km(0, 0, 0, 90)` -> `10007.543398010288` -> rounds to `10007.54`;
+   `distance_km(52.2296, 21.0122, 52.4064, 16.9252)` [Warsaw -> Poznan] -> `278.4550198592262` ->
+   rounds to `278.46` (the ACTUAL recomputed value, not a naive round-to-nearest-int guess of
+   279). Add all three as `api_calls`/`checks` entries.
+3. Add it to `REAL_SYSTEMS_TASKS`. Keep leaves-OFF enforced + leak-free; confirm no banned leaf
+   keyword appears in the sentence and `leaf_for_spec(HAVERSINE_DISTANCE_TASK.sentence) is None`.
+4. Extend `tests/test_ext060_wave8_import_tasks.py` (same file TASK-43/44/45 create, OFFLINE, no
+   model/Jetson): a CORRECT `geo_distance.py` fixture is accepted by
+   `grade_real_system_task(HAVERSINE_DISTANCE_TASK, ...)`; a BROKEN fixture that never converts
+   degrees to radians before `sin`/`cos` is rejected; leaves-OFF holds; the task is a member of
+   `REAL_SYSTEMS_TASKS`. Add a final roster-wide test asserting `REAL_SYSTEMS_TASKS` grew by
+   exactly these four REQ-48/49/50/51 tasks (length 34 -> 38).
+5. Bump the eight pre-existing hardcoded CREATE roster-size assertions
+   (`len(REAL_SYSTEMS_TASKS) == 34` -> `== 38`) in `tests/test_ext060_atlas_batch4_tasks.py`,
+   `tests/test_ext060_atlas_wave1_tasks.py`, `tests/test_ext060_atlas_wave2_tasks.py`,
+   `tests/test_ext060_atlas_wave7_tasks.py`, `tests/test_ext060_clock_agent_tasks.py`,
+   `tests/test_ext060_modify_wave2.py`, `tests/test_ext060_spec_hint.py`, and
+   `tests/test_ext060_ticket_booking_invoice.py`.
+6. Run `python -m pytest tests/test_ext060_wave8_import_tasks.py tests/test_ext060*.py -q`;
+   confirm green (offline only; 38-item CREATE roster). Update `.jarify/EXT-060/index.json`
+   (REQ-51 ranges, via `jarify-manage-links`) and flip the REQ-51 acceptance boxes in
+   `requirements.md`.
+
+#### Implements
+- [REQ-51] Sixteenth CREATE task, in a NEW logistics/geo vertical (haversine distance)

@@ -1508,3 +1508,125 @@ real ISBN-13 code IS a valid EAN-13 number) -- each returning a `bool`.
       accepts a numerically-invalid Luhn number (format-only check, no real checksum) is rejected; the
       task is a member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four
       REQ-44/45/46/47 tasks (length 30 -> 34).
+
+### [REQ-48] Thirteenth CREATE task, in a NEW fintech-calculator vertical (Net Present Value)
+
+A THIRTEENTH held-out CREATE task, in a NEW fintech vertical distinct from the double-entry-ledger
+fintech tasks above (a plain pure-function calculator, not a ledger), graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `NPV_CALCULATOR_TASK` (`RealSystemTask`,
+`cls="fintech"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file module `npv.py` defining one function `npv(rate,
+cashflows)` computing the standard Net Present Value (sum of `cashflows[t] / (1+rate)**t` for
+every index `t`, so the `t=0` cashflow is never discounted), returning the result rounded to 2
+decimal places.
+
+#### Acceptance Criteria
+- [x] `NPV_CALCULATOR_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the NPV
+      contract (filename `npv.py`, the function signature, the per-index discount formula
+      including the `t=0`-never-discounted rule, the round-to-2-decimal-places return contract)
+      with every oracle-checked value derivable from that same visible sentence (no hidden key,
+      no leak).
+- [x] Three driven checks, every expected value hand-verified via independent recomputation
+      (not trusted blindly) before being added to the roster: `npv(0.1, [-1000, 500, 500, 500])
+      == 243.43`; `npv(0.0, [-100, 50, 50]) == 0.0`; `npv(0.05, [100]) == 100.0`. A build that
+      discounts the `t=0` cashflow too (an off-by-one exponent bug) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT `npv.py`
+      fixture is accepted by `grade_real_system_task(NPV_CALCULATOR_TASK, ...)`; a BROKEN fixture
+      that discounts the `t=0` cashflow (off-by-one exponent) is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-49] Fourteenth CREATE task, in a NEW scheduling/devtools vertical (closed-interval merge)
+
+A FOURTEENTH held-out CREATE task, in a NEW scheduling/devtools vertical, graded by the
+ALREADY-LANDED `oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses
+`_grade_import` -> `harness.import_driver.drive_import` verbatim). `INTERVAL_MERGE_TASK`
+(`RealSystemTask`, `cls="scheduling"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`:
+a contract-exact sentence for a stdlib-only, single-file module `interval_merge.py` defining one
+function `merge(intervals)` that merges overlapping (or merely touching) closed `[start, end]`
+intervals into a sorted, non-overlapping list.
+
+#### Acceptance Criteria
+- [x] `INTERVAL_MERGE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the merge
+      contract (filename `interval_merge.py`, the function signature, closed-interval semantics,
+      the overlap-OR-touch merge rule, the sorted-by-start output ordering, the no-mutation and
+      empty-input contracts) with every oracle-checked value derivable from that same visible
+      sentence (no hidden key, no leak).
+- [x] Four driven checks, every expected value hand-verified via a scratch walk before being added
+      to the roster: `merge([[1,3],[2,6],[8,10],[15,18]]) == [[1,6],[8,10],[15,18]]`;
+      `merge([[1,4],[4,5]]) == [[1,5]]` (the touching-interval case); `merge([]) == []`;
+      `merge([[5,5]]) == [[5,5]]`. A build that uses a strict `<` overlap test (fails to merge
+      merely-touching intervals) is caught by the touching-interval check.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `interval_merge.py` fixture is accepted by `grade_real_system_task(INTERVAL_MERGE_TASK,
+      ...)`; a BROKEN fixture that fails to merge touching intervals (strict `<` overlap test) is
+      rejected; the task is a member of `REAL_SYSTEMS_TASKS`.
+
+### [REQ-50] Fifteenth CREATE task, in a NEW devtools vertical (RFC 4648 Base32 codec)
+
+A FIFTEENTH held-out CREATE task, in a NEW devtools/codec vertical, graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `BASE32_CODEC_TASK` (`RealSystemTask`,
+`cls="devtools"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file module `base32_codec.py` defining `encode(data)` (a list
+of byte-value integers -> an RFC 4648 Base32 `str` with standard `=` padding) and `decode(s)` (a
+Base32 `str` -> a list of byte-value integers), fully round-tripping.
+
+#### Acceptance Criteria
+- [x] `BASE32_CODEC_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the codec
+      contract (filename `base32_codec.py`, both function signatures using JSON-safe `list[int]`
+      byte representations rather than a raw `bytes` object, the standard `A-Z2-7` alphabet with
+      required `=` padding to a multiple of 8) with every oracle-checked value derivable from that
+      same visible sentence (no hidden key, no leak).
+- [x] Seven driven checks, every expected value hand-verified against Python's own
+      `base64.b32encode`/`base64.b32decode` (the RFC 4648 reference implementation) before being
+      added to the roster: `encode([]) == ""`; `encode([102]) == "MY======"`; `encode([102,111,111])
+      == "MZXW6==="`; `encode([102,111,111,98,97,114]) == "MZXW6YTBOI======"`; `decode("MY======")
+      == [102]`; `decode("MZXW6YTBOI======") == [102,111,111,98,97,114]`; a chained round-trip
+      check (`decode` applied to the prior `encode_foobar` call's own result via a `__jaros_ref__`)
+      also equals `[102,111,111,98,97,114]`. A build that strips the required `=` padding is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `base32_codec.py` fixture is accepted by `grade_real_system_task(BASE32_CODEC_TASK, ...)`; a
+      BROKEN fixture that strips the `=` padding is rejected; the task is a member of
+      `REAL_SYSTEMS_TASKS`.
+
+### [REQ-51] Sixteenth CREATE task, in a NEW logistics/geo vertical (haversine distance)
+
+A SIXTEENTH held-out CREATE task, in a NEW logistics/geo vertical, graded by the ALREADY-LANDED
+`oracle_kind="import"` dispatch REQ-3 lands (no new oracle code: reuses `_grade_import` ->
+`harness.import_driver.drive_import` verbatim). `HAVERSINE_DISTANCE_TASK` (`RealSystemTask`,
+`cls="logistics"`, `oracle_kind="import"`) is added to `REAL_SYSTEMS_TASKS`: a contract-exact
+sentence for a stdlib-only, single-file module `geo_distance.py` defining one function
+`distance_km(lat1, lon1, lat2, lon2)` computing the great-circle haversine distance in kilometers
+using Earth radius `R = 6371.0`, returning the result rounded to 2 decimal places.
+
+#### Acceptance Criteria
+- [x] `HAVERSINE_DISTANCE_TASK` is added to `REAL_SYSTEMS_TASKS`: the sentence fully pins the
+      haversine contract (filename `geo_distance.py`, the function signature, the exact formula
+      -- `math.radians` conversion, `a`/`c` intermediate terms, `R = 6371.0`, the round-to-2-
+      decimal-places return contract) with every oracle-checked value derivable from that same
+      visible sentence (no hidden key, no leak).
+- [x] Three driven checks, every expected value hand-verified via independent recomputation with
+      Python's own `math` module (not trusted blindly) before being added to the roster:
+      `distance_km(0, 0, 0, 0) == 0.0`; `distance_km(0, 0, 0, 90) == 10007.54` (a quarter of the
+      equator's circumference, `R * pi / 2`); `distance_km(52.2296, 21.0122, 52.4064, 16.9252) ==
+      278.46` (Warsaw -> Poznan, the ACTUAL recomputed value -- not a naive round-to-nearest-int
+      guess of 279). A build that never converts degrees to radians before calling `sin`/`cos`
+      (a formula-domain bug) is caught.
+- [x] Leaves-OFF enforced identically to every other task in this module (static `leaf_for_spec` +
+      post-build `build_path` check, already automatic via the existing `_run_one_task` runner); a
+      leaf-produced green is treated as a failure.
+- [x] Offline-testable (no real model/Jetson, hand-written fixtures only): a CORRECT
+      `geo_distance.py` fixture is accepted by `grade_real_system_task(HAVERSINE_DISTANCE_TASK,
+      ...)`; a BROKEN fixture that never converts degrees to radians is rejected; the task is a
+      member of `REAL_SYSTEMS_TASKS`; `REAL_SYSTEMS_TASKS` grew by exactly the four REQ-48/49/50/51
+      tasks (length 34 -> 38).
