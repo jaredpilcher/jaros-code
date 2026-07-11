@@ -23,18 +23,24 @@ build-and-modify CLI is **not one feature among many; it is the point** — and 
 that measure it (the held-out creation + modification suites, graded end-to-end through the CLI by
 independent oracles) are therefore the headline scoreboard for the whole pursuit.
 
-**THE TERMINAL GOAL — SELF-DEVELOPMENT (owner directive, 2026-07-10).** The ultimate, final class of
-system this product must be able to build and evolve from a prompt is **jaros-code itself**: the harness
-must become so capable that it can **develop itself — on the Jetson Orin Nano, under every one of these
-same constraints** (all reasoning on the single small local model at $0, two-plane discipline, honest
-independent verification, spec-first governance). This is the last and hardest class — the system
-improving the system — and it is likely the final set of things the owner will need to hand it; it is
-the true asymptote of "as good as or better than Claude Code." It NEVER relaxes a tenet to get there:
-self-development means jaros-code planning, building, testing, and shipping changes to its own harness
-through its own Jarify workflow, verified by its own honest oracles, with no paid/cloud model and no
-off-device inference — ever. Progress toward it is measured, not asserted (a self-change only counts
-when its oracle passes and no regression lands), and it remains an asymptote we converge on without
-ever declaring "done."
+**THE TERMINAL GOAL — SELF-DEVELOPMENT AND SELF-RUNNING (owner directive, 2026-07-10).** The ultimate,
+final class of system this product must be able to build and evolve from a prompt is **jaros-code itself**:
+the harness must become so capable that it can **develop AND RUN itself — on the Jetson Orin Nano, under
+every one of these same constraints** (all reasoning on the single small local model at $0, two-plane
+discipline, honest independent verification, spec-first governance). This is not merely self-modifying its
+own harness code; it is **self-RUNNING the entire convergence machine** — the same governance loop that a
+frontier orchestrator drives today must eventually be driven by the local model itself: **discovering new
+system classes it cannot yet handle, extending the Production-Systems Atlas, authoring the new verification
+ORACLES those classes need, growing the EXT-060 board, and running the per-class build → diagnose → build-the-
+missing-deterministic-lever → re-measure loop** — autonomously, on-device, at $0. In the end the harness
+should be **self-running**: it expands its OWN set of handled classes and its own capability surface without
+a human or a paid model in the loop. This is the last and hardest class — the system improving and operating
+the system — and it is likely the final set of things the owner will need to hand it; it is the true
+asymptote of "as good as or better than Claude Code." It NEVER relaxes a tenet to get there: every self-change
+flows through its own Jarify workflow, is verified by its own honest oracles, and uses no paid/cloud model and
+no off-device inference — ever (the orchestration itself becomes $0-local, closing the last gap). Progress is
+measured, not asserted (a self-change or a self-authored oracle only counts when it passes independent
+verification with no regression), and it remains an asymptote we converge on without ever declaring "done."
 
 **REAL systems, increasingly complex — the ratchet (owner clarification, 2026-07-03).** "Complete
 software systems" means **REAL** ones, not toy stdin/stdout scripts: real web servers and API

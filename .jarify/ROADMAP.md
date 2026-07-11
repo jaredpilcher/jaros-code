@@ -655,16 +655,19 @@ ranked generic mechanisms (NOT per-class leaves) that unlock breadth:
 
 ## LATER (weeks — the hard bar + the flywheel)
 
-- **[★★ THE TERMINAL GOAL — SELF-DEVELOPMENT (owner directive 2026-07-10, PRIME-001 intent)]** the final,
-  hardest class: jaros-code becomes good enough to **develop ITSELF on the Jetson under all the same
-  constraints** ($0 local model only, two-plane, honest oracles, spec-first) — planning/building/testing/
-  shipping changes to its own harness through its own Jarify workflow, verified by its own oracles, no
-  paid/cloud/off-device inference ever. This is the true asymptote of the pursuit; every NOW/NEXT item is
-  a rung toward it. Approach INCREMENTALLY + honestly: the board's own path is to add jaros-code-harness
-  self-modification tasks (fix a real harness bug / add a small deterministic lever from a prompt) graded
-  by the existing test-suite + oracle as an independent judge — a self-change counts ONLY when its oracle
-  passes with no regression. Not near-term buildable as a whole; it is the north-star horizon that orders
-  the roadmap, never "done". — asymptote · PRIME-001 terminal intent.
+- **[★★ THE TERMINAL GOAL — SELF-DEVELOPMENT + SELF-RUNNING (owner directive 2026-07-10, PRIME-001 intent)]**
+  the final, hardest class: jaros-code becomes good enough to **develop AND RUN ITSELF on the Jetson under all
+  the same constraints** ($0 local model only, two-plane, honest oracles, spec-first). Not just self-modifying
+  its harness code — **self-running the whole convergence machine**: the local model itself discovers new
+  classes it can't yet handle, **extends the Atlas, authors the new ORACLES those classes need, grows the
+  EXT-060 board, and runs the per-class build → diagnose → lever → re-measure loop** — so it EXPANDS ITS OWN
+  set of handled classes with no human or paid model in the loop (the orchestration itself becomes $0-local).
+  The true asymptote of the pursuit; every NOW/NEXT item is a rung toward it. Approach INCREMENTALLY + honestly:
+  add jaros-code-self-operation tasks to the board (fix a real harness bug / add a deterministic lever / author
+  a new oracle / propose an atlas class — all from a prompt) graded by the existing test-suite + oracle as an
+  independent judge; a self-change or self-authored oracle counts ONLY when it passes with no regression. Not
+  near-term buildable as a whole; it is the north-star horizon that orders the roadmap, never "done". —
+  asymptote · PRIME-001 terminal intent.
 - **[roster growth]** admit a stronger **fast-trainable Jetson-fit base** model — med · a
   COMPLEMENTARY, SECONDARY lever for the SWE-bench ~13% bar. The PRIMARY lever is the deterministic
   PROSTHETIC toolset (EXT-056 + the ranked complete set — build the tool that makes each miss VISIBLE +
